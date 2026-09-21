@@ -1,0 +1,48 @@
+extends Node2D
+
+## Tiny ambient wanderer for sheep: picks a near target, idles, and shuffles
+## between grazing spots — never into the water.
+
+var rng := RandomNumberGenerator.new()
+var _home := Vector2.ZERO
+var _target := Vector2.ZERO
+var _speed := 26.0
+var _timer := 0.0
+
+
+func _ready() -> void:
+	rng.seed = int(Time.get_unix_time_from_system()) + randi()
+	if OS.is_debug_build():
+		rng.seed = absi(position.x) * 31 + absi(position.y) * 17
+	_home = position
+	_pick_target()
+
+
+func _process(delta: float) -> void:
+	var spr: AnimatedSprite2D = get_child(0) as AnimatedSprite2D
+	var moving := position.distance_to(_target) > 6.0
+	if moving:
+		var dir := (_target - position).normalized()
+		position += dir * _speed * delta
+		if not _walkable(position + dir * 4.0):
+			_pick_target()
+		spr.scale = Vector2(0.45 * (1.0 if dir.x >= 0.0 else -1.0), 0.45)
+	if spr.animation != ("walk" if moving else "idle"):
+		spr.play("walk" if moving else "idle")
+	_timer += delta
+	if not moving and _timer > rng.randf_range(1.5, 4.0):
+		_timer = 0.0
+		_pick_target()
+
+
+func _pick_target() -> void:
+	_target = _home + Vector2(rng.randf_range(-46.0, 46.0), rng.randf_range(-34.0, 34.0))
+
+
+func _walkable(p: Vector2) -> bool:
+	var world := get_parent()
+	if world == null or not world.has_meta("grass"):
+		return true
+	var layer: TileMapLayer = world.get_meta("grass")
+	var t: float = world.get_meta("tile", 32.0)
+	return layer.get_cell_source_id(Vector2i(floori(p.x / t), floori(p.y / t))) != -1

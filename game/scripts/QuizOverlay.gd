@@ -1,0 +1,319 @@
+extends Control
+
+## The station challenge: intro mission → items (prompt, input, hint/skip) →
+## feedback with rule reminders → completion ribbon. Runs the whole station.
+
+enum Phase { INTRO, QUESTION, FEEDBACK, DONE }
+
+var adventure: Control
+var station_index := 0
+
+var phase := Phase.INTRO
+var item_index := 0
+var current: Dictionary = {}
+var answer := 0
+var meta: Dictionary = {}
+
+var _panel: VBoxContainer
+var _q_prompt: Label
+var _q_index: Label
+var _input: LineEdit
+var _hint_text: Label
+var _btn_submit: Button
+var _btn_hint: Button
+var _btn_skip: Button
+var _inrow: HBoxContainer
+var _action: HBoxContainer
+var _result_title: Label
+var _result_rule: Label
+var _delta_label: Label
+var _continue_btn: Button
+var _gems_row: Label
+var _time_row: Label
+var _digits := RegEx.create_from_string("[^0-9]")
+
+
+func setup(_data: Dictionary) -> void:
+	meta = QuestionGen.station_meta(station_index)
+	_build()
+	_show_intro()
+
+
+func _ready() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.06, 0.05, 0.09, 0.85)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(dim)
+	Game.time_changed.connect(_on_time)
+	Game.gems_changed.connect(_on_gems)
+
+
+func _exit_tree() -> void:
+	Game.time_changed.disconnect(_on_time)
+	Game.gems_changed.disconnect(_on_gems)
+
+
+func _build() -> void:
+	var panel := Ui.panel(Vector2(560, 300), meta.title)
+	panel.position = Vector2(40, 26)
+	add_child(panel)
+	_panel = panel.get_child(0) as VBoxContainer
+	_panel.alignment = BoxContainer.ALIGNMENT_CENTER
+	_panel.add_theme_constant_override("separation", 7)
+
+	var hud := HBoxContainer.new()
+	hud.add_theme_constant_override("separation", 26)
+	_gems_row = Art.label("Gems: %d" % Game.gems, 13, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER)
+	_time_row = Art.label("Time: %02d:%02d" % [int(Game.time_left) / 60, int(Game.time_left) % 60],
+			13, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER)
+	hud.add_child(_gems_row)
+	hud.add_child(_time_row)
+	_panel.add_child(hud)
+
+	_q_index = Art.label("", 13, Color("8a6a3a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_panel.add_child(_q_index)
+
+	_q_prompt = Art.label("", 30, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_panel.add_child(_q_prompt)
+
+	var inrow := HBoxContainer.new()
+	inrow.alignment = BoxContainer.ALIGNMENT_CENTER
+	inrow.add_theme_constant_override("separation", 8)
+	_input = Ui.line_edit("", 150, 36, 22)
+	_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_input.max_length = 12
+	_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER_DECIMAL
+	_input.text_changed.connect(_filter_input)
+	_input.text_submitted.connect(func(_t: String) -> void: _submit())
+	var go_lbl := Art.label("=", 24, Color("2a201a"))
+	var img := Art.texrect("res://assets/ui/Icon_03.png", 28, 28)
+	inrow.add_child(go_lbl)
+	inrow.add_child(_input)
+	if Game.touch:
+		var neg := Ui.button("±", 46, 36, Ui.SMALL)
+		neg.pressed.connect(_toggle_sign)
+		inrow.add_child(neg)
+	inrow.add_child(img)
+	_inrow = inrow
+	_panel.add_child(inrow)
+
+	_hint_text = Art.label("", 13, Color("3a5a8c"), HORIZONTAL_ALIGNMENT_CENTER)
+	_hint_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint_text.custom_minimum_size = Vector2(500, 0)
+	_panel.add_child(_hint_text)
+
+	var action := HBoxContainer.new()
+	action.alignment = BoxContainer.ALIGNMENT_CENTER
+	action.add_theme_constant_override("separation", 10)
+	_btn_hint = Ui.button("Hint (−5)", 120, 38, Ui.SMALL)
+	_btn_hint.pressed.connect(_use_hint)
+	_btn_submit = Ui.button("Submit Answer", 150, 42)
+	_btn_submit.pressed.connect(_submit)
+	var btn_skip := Ui.button("Skip (−15)", 120, 38, Ui.SMALL_RED)
+	btn_skip.pressed.connect(_skip)
+	var rescue := Ui.button("Rescue", 92, 38, Ui.SMALL)
+	rescue.disabled = true
+	rescue.tooltip_text = "Needs a teammate to transfer gems"
+	action.add_child(_btn_hint)
+	action.add_child(_btn_submit)
+	action.add_child(btn_skip)
+	action.add_child(rescue)
+	_btn_skip = btn_skip
+	_action = action
+	_panel.add_child(action)
+
+	# Feedback sub-panel (hidden until a result is shown)
+	_result_title = Art.label("", 26, Color("3f7a1e"), HORIZONTAL_ALIGNMENT_CENTER)
+	_panel.add_child(_result_title)
+	_delta_label = Art.label("", 18, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER)
+	_panel.add_child(_delta_label)
+	_result_rule = Art.label("", 14, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_result_rule.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_result_rule.custom_minimum_size = Vector2(520, 0)
+	_panel.add_child(_result_rule)
+	_continue_btn = Ui.button("Continue", 160, 44, Ui.RED)
+	_continue_btn.pressed.connect(_advance)
+	_panel.add_child(_continue_btn)
+
+
+func _show_intro() -> void:
+	phase = Phase.INTRO
+	_q_index.text = "Station %d — %s" % [meta.id, meta.short]
+	_q_prompt.text = "MISSION"
+	_layout()
+	_continue_btn.text = "Continue"
+	var m := Art.label(meta.mission, 15, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+	m.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	m.custom_minimum_size = Vector2(520, 0)
+	m.name = "Mission"
+	_panel.add_child(m)
+	_hint_text.text = ""
+
+
+## QUESTION shows the entry row; FEEDBACK/DONE hide it and reveal the result
+## block so the panel never overflows its 300px frame. INTRO shows neither, just
+## the mission text and Continue. Every caller sets `phase` first.
+func _layout() -> void:
+	var asking := phase == Phase.QUESTION
+	for c in [_inrow, _action, _btn_hint, _btn_submit, _btn_skip, _input, _hint_text]:
+		(c as Control).visible = asking
+	for c in [_result_title, _delta_label, _result_rule]:
+		(c as Control).visible = phase == Phase.FEEDBACK or phase == Phase.DONE
+	_continue_btn.visible = not asking
+
+
+func _next_question() -> void:
+	phase = Phase.QUESTION
+	Game.begin_item()
+	var total: int = Game.ITEMS_PER_STATION[station_index]
+	item_index += 1
+	current = QuestionGen.item_for_station(station_index, item_index - 1)
+	answer = current.answer
+	_q_index.text = "Item %d / %d" % [item_index, total]
+	_q_prompt.text = current.prompt
+	_layout()
+	_hint_text.text = ""
+	_input.text = ""
+	_input.grab_focus()
+	_btn_hint.disabled = false
+	var mission := _panel.get_node_or_null("Mission")
+	if mission != null:
+		mission.queue_free()
+
+
+func _submit() -> void:
+	if phase != Phase.QUESTION:
+		return
+	var t := _input.text.strip_edges()
+	if not t.is_valid_int():
+		_flash_trouble("Type a whole number first")
+		return
+	var ok := int(t) == answer
+	if ok:
+		Game.mark_correct()
+		_show_result(true)
+	else:
+		Game.mark_wrong()
+		_show_result(false)
+
+
+func _show_result(correct: bool) -> void:
+	phase = Phase.FEEDBACK
+	_layout()
+	_continue_btn.text = "Continue"
+	if correct:
+		_result_title.text = "CORRECT!  You got it!"
+		_result_title.add_theme_color_override("font_color", Color("3f7a1e"))
+		_delta_label.text = "+%d gems" % Game.GEM_CORRECT
+		_delta_label.add_theme_color_override("font_color", Color("e09a1f"))
+		_result_rule.text = current.hint
+		_burst()
+	else:
+		_result_title.text = "Almost there!  Keep trying!"
+		_result_title.add_theme_color_override("font_color", Color("b03a1e"))
+		_delta_label.text = "%d gems" % Game.GEM_WRONG
+		_delta_label.add_theme_color_override("font_color", Color("b03a1e"))
+		_result_rule.text = "Correct answer: %d\n%s" % [answer, current.rule]
+	_continue_btn.grab_focus()
+
+
+func _advance() -> void:
+	match phase:
+		Phase.INTRO:
+			_continue_btn.visible = false
+			_next_question()
+		Phase.FEEDBACK:
+			_finish_item_or_station()
+		Phase.DONE:
+			_finish()
+
+
+func _finish_item_or_station() -> void:
+	var total: int = Game.ITEMS_PER_STATION[station_index]
+	if item_index >= total:
+		_show_complete()
+	else:
+		_next_question()
+
+
+func _show_complete() -> void:
+	phase = Phase.DONE
+	var bonus := Game.finish_station(station_index)
+	_layout()
+	_continue_btn.text = "Return to Map"
+	_result_title.text = "Station complete!"
+	_result_title.add_theme_color_override("font_color", Color("e09a1f"))
+	_delta_label.text = "Perfect run! +%d bonus gems" % bonus if bonus > 0 else "All %d items finished" % Game.ITEMS_PER_STATION[station_index]
+	_delta_label.add_theme_color_override("font_color", Color("3f7a1e") if bonus > 0 else Color("2a201a"))
+	_result_rule.text = "Return to the map and seek the next station."
+	var mission := _panel.get_node_or_null("Mission")
+	if mission != null:
+		mission.queue_free()
+	if bonus > 0:
+		_burst()
+	_continue_btn.grab_focus()
+
+
+func _finish() -> void:
+	if adventure != null and adventure.has_method("close_overlay"):
+		adventure.close_overlay()
+
+
+func _use_hint() -> void:
+	if phase != Phase.QUESTION or Game.item_used_hint:
+		return
+	if Game.spend_hint():
+		_hint_text.text = "Hint: " + current.hint
+		_btn_hint.disabled = true
+	else:
+		_flash_trouble("No gems left for a hint")
+
+
+func _skip() -> void:
+	if phase != Phase.QUESTION:
+		return
+	if Game.gems <= 0:
+		_flash_trouble("No gems left to skip")
+		return
+	Game.mark_skipped()
+	_finish_item_or_station()
+
+
+func _on_time(sec: int) -> void:
+	if is_instance_valid(_time_row):
+		_time_row.text = "Time: %02d:%02d" % [sec / 60, sec % 60]
+
+
+func _on_gems(g: int) -> void:
+	if is_instance_valid(_gems_row):
+		_gems_row.text = "Gems: %d" % g
+
+
+## Android's number pad has no minus key, and plenty of the answers here are
+## negative. Assigning `text` skips `text_changed`, so the filter stays out.
+func _toggle_sign() -> void:
+	_input.text = _input.text.substr(1) if _input.text.begins_with("-") else "-" + _input.text
+	_input.caret_column = _input.text.length()
+
+
+## Digits, plus a leading minus. LineEdit has no numeric mode of its own.
+func _filter_input(text: String) -> void:
+	var out := ("-" if text.begins_with("-") else "") + _digits.sub(text, "", true)
+	_input.set_text(out)
+	_input.caret_column = out.length()
+
+
+func _flash_trouble(msg: String) -> void:
+	Art.toast(_hint_text, msg, 1.0, _hint_text.text)
+
+
+func _burst() -> void:
+	var fx := AnimatedSprite2D.new()
+	fx.sprite_frames = Art.anim_spriteframes({"boom": ["res://assets/fx/Explosion_01.png", 14.0, false]})
+	fx.scale = Vector2(0.9, 0.9)
+	fx.position = Vector2(320, 130)
+	fx.z_index = 10
+	fx.centered = true
+	add_child(fx)
+	fx.play("boom")
+	fx.animation_finished.connect(fx.queue_free)
