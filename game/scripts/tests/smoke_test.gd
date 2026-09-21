@@ -77,9 +77,9 @@ func _t_generator() -> void:
 	# spot-check computed answers against direct re-computation
 	var a := QuestionGen.item_for_station(0, 0)
 	check("basic add 8+(-3)=5", int(a.answer) == 5, str(a.answer))
-	var b := QuestionGen.item_for_station(1, 1)
+	var b := QuestionGen.item_for_station(2, 1)
 	check("exponent is perfect square", is_sqrt(int(b.answer)), str(b.answer))
-	var c := QuestionGen.item_for_station(2, 0)
+	var c := QuestionGen.item_for_station(1, 0)
 	check("pemdas is int", c.answer is int, str(c.answer))
 
 

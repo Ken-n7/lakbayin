@@ -1,6 +1,7 @@
 extends Node
-## E2E: drives the real UI — title → hero select → adventure map → station quiz
-## → summary → leaderboard/learn — then restores the saved profile.
+## E2E: drives the real UI — title → hero select → adventure map → tower
+## briefing → one circle per item → Victory Gate → summary → leaderboard/learn —
+## then restores the saved profile.
 ## Run with:  godot --headless res://scripts/tests/e2e_test.tscn
 
 var failures := 0
@@ -69,6 +70,16 @@ func _find_button(root: Node, text: String) -> Button:
 	return null
 
 
+func _find_label(root: Node, text: String) -> Label:
+	for child in root.get_children():
+		if child is Label and child.text.contains(text):
+			return child
+		var hit := _find_label(child, text)
+		if hit != null:
+			return hit
+	return null
+
+
 func _find_line_edit(root: Node) -> LineEdit:
 	for child in root.get_children():
 		if child is LineEdit:
@@ -109,22 +120,64 @@ func _find_button_tooltip(root: Node, tip: String) -> Button:
 	return null
 
 
-## Drives a full station quiz through the real UI: answers every item
-## correctly (submit → continue) and leaves the overlay in the DONE phase
-## so the caller can click "Return to Map".
-func _play_quiz(ov: Node, count: int) -> void:
+## Every map open starts frozen on the aerial POV; collapse it so nothing in the
+## test waits on a tween — and so the clock is running again.
+func _map() -> Node:
+	var scr := _screen()
+	if scr != null and scr.has_method("skip_intro"):
+		scr.call("skip_intro")
+	return scr
+
+
+## The tower hands out the station briefing card and nothing else.
+func _enter_tower(adv: Node, s: int) -> void:
+	(adv.get("player") as Node2D).position = (adv.get("_station_nodes")[s] as Node2D).position
+	adv.call("_try_enter_station")
+	await _wait(2)
+	var ov: Node = adv.get("_overlay")
+	check("station %d briefing opened" % (s + 1), ov != null)
+	if ov == null:
+		return
+	check("briefing is the intro card", bool(ov.get("intro_only")))
+	_click(ov, "Continue")
+	await _wait(2)
+	check("briefing returns to the map", adv.get("_overlay") == null)
+	check("station %d circles unlocked" % (s + 1), Game.towers_entered[s])
+
+
+## Walk onto circle `n` and open its item. Returns the overlay, or null.
+func _open_circle(adv: Node, n: int) -> Node:
+	(adv.get("player") as Node2D).position = (adv.get("_circles")[n] as Node2D).position
+	adv.call("_try_answer_circle")
+	await _wait(2)
+	return adv.get("_overlay")
+
+
+## Answers every circle of station `s` correctly, one overlay each, and clicks
+## through the completion ribbon its last item raises.
+func _play_station(adv: Node, s: int) -> void:
+	await _enter_tower(adv, s)
+	var count: int = Game.ITEMS_PER_STATION[s]
 	for i in count:
-		if not is_instance_valid(ov):
-			check("item %d overlay still alive" % (i + 1), false)
+		var n: int = Game.items_done
+		var ov: Node = await _open_circle(adv, n)
+		if ov == null:
+			check("circle %d opened" % (n + 1), false)
 			return
-		check("item %d in question phase" % (i + 1), int(ov.get("phase")) == 1, str(ov.get("phase")))
-		var ans: int = ov.get("answer")
-		_find_line_edit(ov).text = str(ans)
+		check("circle %d in question phase" % (n + 1), int(ov.get("phase")) == 1, str(ov.get("phase")))
+		_find_line_edit(ov).text = str(ov.get("answer"))
 		_click(ov, "Submit Answer")
 		await _wait(1)
-		check("feedback after item %d" % (i + 1), int(ov.get("phase")) == 2, str(ov.get("phase")))
+		check("feedback on circle %d" % (n + 1), int(ov.get("phase")) == 2, str(ov.get("phase")))
 		_click(ov, "Continue")
 		await _wait(1)
+		if i < count - 1:
+			check("circle %d returned to the map" % (n + 1), adv.get("_overlay") == null)
+		else:
+			# The station's last item pays the perfect bonus on its own ribbon.
+			check("station %d ribbon shown" % (s + 1), int(ov.get("phase")) == 3, str(ov.get("phase")))
+			_click(ov, "Return to Map")
+			await _wait(2)
 
 
 ## Deterministically end the active adventure by exhausting the timer:
@@ -140,8 +193,12 @@ func _run() -> void:
 	add_child(_main_scene)
 	await _wait(4)
 
-	print("== 1. boot to title ==")
-	check("booted to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	print("== 1. splash -> title ==")
+	check("booted to splash", _script_of(_screen(), "res://scripts/SplashScreen.gd"))
+	check("splash shows the tagline", _find_label(_screen(), "Explore.") != null)
+	_screen().call("skip")
+	await _wait(3)
+	check("splash routes to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
 	check("start button present", _find_button(_screen(), "Start New Journey") != null)
 	check("learn button present", _find_button(_screen(), "Learn") != null)
 	check("board button present", _find_button(_screen(), "Leaderboard") != null)
@@ -160,63 +217,80 @@ func _run() -> void:
 	await _wait(4)
 
 	print("== 3. adventure map ==")
-	var adv := _screen()
+	var adv := _map()
 	check("reached adventure", adv.has_method("_try_enter_station"))
 	check("island cells", int(adv.get("_land").size()) > 700, str(adv.get("_land").size()))
 	check("three stations", (adv.get("_station_nodes") as Array).size() == 3)
+	check("forty circles", (adv.get("_circles") as Array).size() == Game.TOTAL_ITEMS,
+			str((adv.get("_circles") as Array).size()))
+	check("victory gate built", adv.get("_gate") != null)
 	check("player spawned", adv.get("player") != null and adv.get("player").get_child_count() > 0)
+	check("player starts at base camp", (adv.get("player") as Node2D).position == (adv.get("_anchors") as Array)[0])
 	check("world y-sorted", (adv.get("world") as Node2D).y_sort_enabled)
 	check("grass meta set", (adv.get("world") as Node2D).has_meta("grass"))
+	check("intro collapsed, clock running", not Game.clock_paused)
 
-	# walk to station 1 and interact
+	# No circle answers before its tower briefing, and the gate is shut.
 	var stations: Array = adv.get("_station_nodes")
 	var player: Node2D = adv.get("player")
-	player.position = (stations[0] as Node2D).position
-	adv.call("_try_enter_station")
-	await _wait(3)
-	var ov: Node = adv.get("_overlay")
-	check("quiz overlay opened", ov != null)
-	check("quiz panel built (intro)", not str(ov.get("phase")) == "" )
+	check("circle 1 locked before the briefing", not bool(adv.call("_can_answer", 0)))
+	check("gate shut at the start", not bool(adv.call("_can_enter_gate")))
+	var early: Node = await _open_circle(adv, 0)
+	check("locked circle opens nothing", early == null)
 
-	print("== 4. station 1 quiz items ==")
+	print("== 4. station 1: briefing, then one circle per item ==")
 	var gems0 := Game.gems
 	check("start gems 50", Game.gems == Game.START_GEMS, str(Game.gems))
-	# intro -> first question
-	_click(ov, "Continue")
-	await _wait(2)
+	await _enter_tower(adv, 0)
+	check("circle 1 current after the briefing", bool(adv.call("_can_answer", 0)))
+	check("circle 2 still locked", not bool(adv.call("_can_answer", 1)))
+
+	# circle 1: correct
+	var ov: Node = await _open_circle(adv, 0)
+	check("circle overlay opened", ov != null)
+	check("circle is not the intro card", not bool(ov.get("intro_only")))
 	check("question phase", int(ov.get("phase")) == 1, str(ov.get("phase")))
-	# item 1: correct
-	var ans1: int = ov.get("answer")
-	_find_line_edit(ov).text = str(ans1)
+	_find_line_edit(ov).text = str(ov.get("answer"))
 	_click(ov, "Submit Answer")
 	await _wait(2)
 	check("feedback after submit", int(ov.get("phase")) == 2, str(ov.get("phase")))
 	check("correct gains +10", Game.gems == gems0 + 10, str(Game.gems))
 	_click(ov, "Continue")
 	await _wait(2)
-	# item 2: wrong
+	check("one item, then back to the map", adv.get("_overlay") == null)
+	check("circle 1 done", Game.items_done == 1, str(Game.items_done))
+
+	# circle 2: wrong
+	ov = await _open_circle(adv, 1)
+	var rescue := _find_button(ov, "Rescue")
+	check("rescue present", rescue != null)
+	check("rescue disabled", rescue != null and rescue.disabled)
 	_find_line_edit(ov).text = "999"
 	_click(ov, "Submit Answer")
 	await _wait(2)
 	check("wrong loses 5", Game.gems == gems0 + 5, str(Game.gems))
 	_click(ov, "Continue")
 	await _wait(2)
-	# item 3: hint, then correct
+
+	# circle 3: hint, then correct
+	ov = await _open_circle(adv, 2)
 	_click(ov, "Hint")
 	await _wait(1)
 	check("hint consumed", Game.hints_used == 1, str(Game.hints_used))
-	var ans3: int = ov.get("answer")
-	_find_line_edit(ov).text = str(ans3)
+	_find_line_edit(ov).text = str(ov.get("answer"))
 	_click(ov, "Submit Answer")
 	await _wait(2)
 	check("hint costs 5 then +10", Game.gems == gems0 + 10, str(Game.gems))
 	_click(ov, "Continue")
 	await _wait(2)
-	# item 4: skip
+
+	# circle 4: skip
+	ov = await _open_circle(adv, 3)
 	_click(ov, "Skip")
 	await _wait(2)
 	check("skip costs 15", Game.gems == gems0 - 5, str(Game.gems))
-	check("advanced past skip feedback", int(ov.get("item_index")) == 5, str(ov.get("item_index")))
+	check("skip resolves the circle", Game.items_done == 4, str(Game.items_done))
+	check("skip returns to the map", adv.get("_overlay") == null)
 
 	print("== 5. finish run -> summary ==")
 	Game.end_adventure()
@@ -254,7 +328,7 @@ func _run() -> void:
 	await _wait(3)
 	_click(_screen(), "Continue Quest")
 	await _wait(4)
-	adv = _screen()
+	adv = _map()
 	check("reached adventure from continue", adv.has_method("_try_enter_station"))
 	adv.call("_toggle_pause")
 	await _wait(1)
@@ -276,7 +350,7 @@ func _run() -> void:
 	await _wait(1)
 	_click(adv, "Restart")
 	await _wait(4)
-	adv = _screen()
+	adv = _map()
 	check("restart reopened the map", adv.has_method("_try_enter_station"))
 	check("restart reset gems", Game.gems == Game.START_GEMS, str(Game.gems))
 	check("restart reset stations", (Game.completed_stations as Array) == [false, false, false])
@@ -294,7 +368,7 @@ func _run() -> void:
 	await _wait(3)
 	_click(_screen(), "Continue Quest")
 	await _wait(4)
-	adv = _screen()
+	adv = _map()
 	check("back on the map", adv.has_method("_try_enter_station"))
 	adv.call("_toggle_pause")
 	await _wait(1)
@@ -339,7 +413,7 @@ func _run() -> void:
 	check("reached adventure (hero 7 / 5min)", _screen().has_method("_try_enter_station"))
 	check("hero 7 persisted", Game.hero_id == 7, str(Game.hero_id))
 	check("duration 300 persisted", Game.duration_seconds == 300, str(Game.duration_seconds))
-	adv = _screen()
+	adv = _map()
 	adv.call("_toggle_pause")
 	await _wait(1)
 	_click(adv, "Home")
@@ -352,6 +426,7 @@ func _run() -> void:
 	print("== 9. summary buttons / natural end ==")
 	_click(_screen(), "Continue Quest")
 	await _wait(4)
+	_map()
 	check("adventure again (fresh)", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
 	await _end_via_time()
 	sum = _screen()
@@ -361,6 +436,7 @@ func _run() -> void:
 	check("penalty applied (25)", int(res9.get("gems", 0)) == 25, str(res9.get("gems")))
 	_click(sum, "Adventure again")
 	await _wait(4)
+	_map()
 	check("adventure again reached", _screen().has_method("_try_enter_station"))
 	await _end_via_time()
 	sum = _screen()
@@ -376,12 +452,13 @@ func _run() -> void:
 	await _wait(3)
 	check("board back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
 
-	print("== 10. complete all three stations via the UI ==")
+	print("== 10. walk the whole board via the UI ==")
 	_click(_screen(), "Continue Quest")
 	await _wait(4)
-	adv = _screen()
+	adv = _map()
 	check("fresh adventure", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
 	check("all stations locked", (Game.completed_stations as Array) == [false, false, false])
+	check("no circles resolved", Game.items_done == 0, str(Game.items_done))
 	player = adv.get("player") as Node2D
 	stations = adv.get("_station_nodes") as Array
 	var p0: Vector2 = (stations[0] as Node2D).position
@@ -389,29 +466,24 @@ func _run() -> void:
 	var p2: Vector2 = (stations[2] as Node2D).position
 	check("stations distinct cells", p0 != p1 and p1 != p2 and p0 != p2, "%s / %s / %s" % [p0, p1, p2])
 	for s in 3:
-		player.position = (stations[s] as Node2D).position
-		adv.call("_try_enter_station")
-		await _wait(3)
-		var ov2: Node = adv.get("_overlay")
-		check("station %d overlay opened" % (s + 1), ov2 != null)
-		_click(ov2, "Continue")
-		await _wait(1)
-		if s == 0:
-			var rescue := _find_button(ov2, "Rescue")
-			check("rescue present", rescue != null)
-			check("rescue disabled", rescue != null and rescue.disabled)
-		var items: int = Game.ITEMS_PER_STATION[s]
-		await _play_quiz(ov2, items)
-		_click(ov2, "Return to Map")
-		await _wait(3)
-		# Clearing the last station ends the adventure, which frees the map.
-		if s < 2:
-			check("station %d returned to map" % (s + 1), adv.get("_overlay") == null)
+		await _play_station(adv, s)
+		check("station %d returned to map" % (s + 1), adv.get("_overlay") == null)
 		check("station %d complete" % (s + 1), Game.completed_stations[s])
 		check("station %d perfect" % (s + 1), Game.perfect_stations[s])
+		if s < 2:
+			check("station %d does not end the run" % (s + 1), Game.adventure_active)
 	check("all stations complete", (Game.completed_stations as Array) == [true, true, true])
+	check("all forty circles resolved", Game.items_done == Game.TOTAL_ITEMS, str(Game.items_done))
 	check("perfect gems 480 (40 correct + 3 perfect bonuses)", Game.gems == 480, str(Game.gems))
-	check("adventure ended on the last station", not Game.adventure_active)
+	check("board cleared but the run is still live", Game.adventure_active)
+
+	# The Victory Gate is the end of the player flow (SPECS Q6): it scores the run.
+	var gate: Node2D = adv.get("_gate")
+	check("gate now open", bool(adv.call("_can_enter_gate")))
+	player.position = gate.position
+	adv.call("_try_enter_gate")
+	await _wait(4)
+	check("gate ended the adventure", not Game.adventure_active)
 	sum = _screen()
 	check("summary after full run", _script_of(sum, "res://scripts/SummaryScreen.gd"))
 	var res10: Dictionary = Game.last_run

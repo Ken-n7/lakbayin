@@ -1,7 +1,11 @@
 extends Control
 
-## The Adventure Map: an explorable Tiny Swords island with three math-quiz
-## stations. WASD/arrows move the hero; E (or Space/Enter) enters a station.
+## The Adventure Map: the client's board laid over a Tiny Swords island --
+## base camp, Tower 1, its 20 circles, Tower 2, 10 circles, Tower 3, 10 circles,
+## Victory Gate, all on one authored path. One circle is one question item, and
+## they resolve strictly in order. WASD/arrows move the hero; E (or Space/Enter)
+## enters the tower you stand at, answers the circle you stand on, or walks
+## through the gate once all forty are cleared.
 
 const TILE := 32        # world px per cell; art is 64px drawn at 0.5
 const SHEET_TILE := 64  # the tileset's own tile size
@@ -25,6 +29,27 @@ const BUILDINGS := [
 const PLAYER_SPEED := 150.0
 const INTERACT_RADIUS := 42.0
 
+## The authored path: four horizontal lanes, bottom-right to top-right, inset so
+## every corner lands on (or close to) the generated island. Normalized map
+## coords; `_stamp_path()` guarantees the walk even where the generator left water.
+const PATH_WAY := [
+	Vector2(0.72, 0.78),   # base camp
+	Vector2(0.28, 0.78),
+	Vector2(0.28, 0.5933),
+	Vector2(0.72, 0.5933),
+	Vector2(0.72, 0.4067),
+	Vector2(0.28, 0.4067),
+	Vector2(0.28, 0.22),
+	Vector2(0.72, 0.22),   # victory gate
+]
+## Towers stand beside the path, not on it: their walls are up to 150px wide and
+## would otherwise swallow the next circle, 68px along. `_tower_lift()` picks the
+## side.
+const TOWER_LIFT := 56.0
+## Zoom that frames the whole board for the pre-start aerial POV. Any lower and
+## the visible rect outgrows the camera limits, which then shove it off-centre.
+const AERIAL_ZOOM := 0.46
+
 var main: Control
 
 var world: Node2D
@@ -37,6 +62,10 @@ var _beach := {}      # Vector2i -> true
 var _solid: Array[Rect2] = []  # building base walls, in world px
 var _station_nodes: Array = []
 var _station_locks: Array = []
+var _circles: Array = []        # 40 PathCircle nodes, path order
+var _anchors: Array = []        # base camp, 3 towers, 40 circles, gate -- in walk order
+var _gate: Node2D = null
+var _cam: Camera2D
 var _prompt: Label
 var _hud_gems: Label
 var _hud_time: Label
@@ -50,6 +79,8 @@ var _touch_pad: Node2D = null
 var _overlay: Control = null
 var _paused := false
 var _flash_active := false
+var _frozen := false            # the aerial POV before the adventure starts
+var _intro_tw: Tween = null
 
 
 func setup(_data: Dictionary) -> void:
@@ -60,18 +91,23 @@ func setup(_data: Dictionary) -> void:
 	world = Node2D.new()
 	add_child(world)
 	world.y_sort_enabled = true
+	_anchors = _path_anchors()
 	_build_terrain()
 	_build_island()
-	_build_stations()
+	_build_path()
 	_build_decor()
 	_spawn_player()
 	Game.time_changed.connect(_on_time)
 	Game.gems_changed.connect(_on_gems)
 	Game.adventure_ended.connect(_on_adventure_end)
 	_refresh_hud()
+	_refresh_circles()
+	_start_intro()
 
 
 func _exit_tree() -> void:
+	# Leaving during the frozen POV would otherwise strand the clock paused.
+	Game.clock_paused = false
 	Game.time_changed.disconnect(_on_time)
 	Game.gems_changed.disconnect(_on_gems)
 	Game.adventure_ended.disconnect(_on_adventure_end)
@@ -147,6 +183,7 @@ func _build_island() -> void:
 			var cell := Vector2i(x, y)
 			if _cell_inside(cell):
 				_land[cell] = true
+	_stamp_path()
 	for cell in _land:
 		var up: bool = _land.has(cell + Vector2i(0, -1))
 		var down: bool = _land.has(cell + Vector2i(0, 1))
@@ -178,26 +215,142 @@ func _first_land(nx: float, ny: float) -> Vector2:
 	return Vector2(W * TILE / 2, H * TILE / 2)
 
 
-## First land cell at least MIN_STATION_GAP apart from every already taken spot,
-## so stations never share the same (or adjacent) cells.
-func _land_away_from(w: Vector2, taken: Array) -> Vector2:
-	var base := _first_land(w.x, w.y)
-	var bc := Vector2i(floori(base.x / TILE), floori(base.y / TILE))
-	for ring in 44:
-		for ox in range(-ring, ring + 1):
-			for oy in range(-ring, ring + 1):
-				if maxi(absi(ox), absi(oy)) != ring:
-					continue
-				var cand := bc + Vector2i(ox, oy)
-				if not _land.has(cand):
-					continue
-				var pos := Vector2(cand.x * TILE + TILE / 2, cand.y * TILE + TILE / 2)
-				if taken.any(func(t) -> bool:
-					# 6 cells, not 4: the castle alone is 156 world px wide.
-					return (t as Vector2).distance_to(pos) < TILE * 6.0):
-					continue
-				return pos
-	return base
+# --- The path ---------------------------------------------------------------
+func _way_world(i: int) -> Vector2:
+	return Vector2(PATH_WAY[i].x * W * TILE, PATH_WAY[i].y * H * TILE)
+
+
+## Evenly spaced stops along the polyline, in walk order: base camp, Tower 1, its
+## 20 circles, Tower 2, its 10, Tower 3, its 10, Victory Gate. 45 stops over
+## ~3000px of path, so they sit ~68px apart -- wider than INTERACT_RADIUS, which
+## is what keeps "the circle you are standing on" unambiguous.
+func _path_anchors() -> Array:
+	var pts: Array[Vector2] = []
+	for i in PATH_WAY.size():
+		pts.append(_way_world(i))
+	var segs: Array[float] = []
+	var total := 0.0
+	for i in pts.size() - 1:
+		var d := pts[i].distance_to(pts[i + 1])
+		segs.append(d)
+		total += d
+	var count := 1 + 3 + Game.TOTAL_ITEMS + 1
+	var out: Array = []
+	for k in count:
+		var want := total * float(k) / float(count - 1)
+		var acc := 0.0
+		var at: Vector2 = pts[pts.size() - 1]
+		for i in segs.size():
+			if want <= acc + segs[i] or i == segs.size() - 1:
+				at = pts[i].lerp(pts[i + 1], clampf((want - acc) / segs[i], 0.0, 1.0))
+				break
+			acc += segs[i]
+		out.append(at)
+	return out
+
+
+## Anchor index of each tower: one before each station's run of circles.
+func _tower_anchors() -> Array:
+	var out: Array = []
+	var k := 1                       # anchor 0 is the base camp
+	for st in 3:
+		out.append(k)
+		k += 1 + Game.ITEMS_PER_STATION[st]
+	return out
+
+
+## Which way the building steps off the path: straight up on a lane, outward when
+## the anchor sits on a bend. It has to be perpendicular to the walk, or the wall
+## covers the next circle -- and its footprint is axis-aligned, so on a vertical
+## bend "up" would put the wall right across the path.
+func _tower_lift(k: int) -> Vector2:
+	var a: Vector2 = _anchors[maxi(k - 1, 0)]
+	var b: Vector2 = _anchors[mini(k + 1, _anchors.size() - 1)]
+	var dir := (b - a).normalized()
+	if absf(dir.x) >= absf(dir.y):
+		return Vector2(0, -TOWER_LIFT)
+	return Vector2(signf(_anchors[k].x - W * TILE * 0.5) * TOWER_LIFT, 0)
+
+
+## The path is authored, the island is generated, so the two can disagree: force
+## land under the whole walk (three cells wide) before the autotile pass paints
+## the shoreline, and the board is never cut by a stray inlet.
+func _stamp_path() -> void:
+	for i in PATH_WAY.size() - 1:
+		var a := _way_world(i)
+		var b := _way_world(i + 1)
+		var steps := maxi(int(a.distance_to(b) / (TILE * 0.5)), 1)
+		for k in steps + 1:
+			var pos := a.lerp(b, float(k) / float(steps))
+			var c := Vector2i(floori(pos.x / TILE), floori(pos.y / TILE))
+			for oy in [-1, 0, 1]:
+				for ox in [-1, 0, 1]:
+					var cc := c + Vector2i(ox, oy)
+					if cc.x >= 0 and cc.y >= 0 and cc.x < W and cc.y < H:
+						_land[cc] = true
+	# The towers step off the path, so their ground has to be stamped as well or
+	# one ends up standing in the shallows at a bend.
+	for k in _tower_anchors():
+		var base: Vector2 = _anchors[k] + _tower_lift(k)
+		var bc := Vector2i(floori(base.x / TILE), floori(base.y / TILE))
+		for oy in range(-2, 2):
+			for ox in range(-2, 3):
+				var cc := bc + Vector2i(ox, oy)
+				if cc.x >= 0 and cc.y >= 0 and cc.x < W and cc.y < H:
+					_land[cc] = true
+
+
+func _build_path() -> void:
+	var k := 1                       # anchor 0 is the base camp
+	for st in 3:
+		var meta := QuestionGen.station_meta(st)
+		_make_station(st, _anchors[k], meta.accent, _tower_lift(k))
+		k += 1
+		for _i in Game.ITEMS_PER_STATION[st]:
+			var c: Node2D = preload("res://scripts/PathCircle.gd").new()
+			c.position = _anchors[k]
+			world.add_child(c)
+			c.setup(_circles.size(), meta.accent)
+			_circles.append(c)
+			# Keep trees and rocks off the circle itself.
+			_station_rects.append(Rect2(_anchors[k] - Vector2(22, 22), Vector2(44, 44)))
+			k += 1
+	_build_camp(_anchors[0])
+	_build_gate(_anchors[k])
+
+
+func _build_camp(at: Vector2) -> void:
+	Art.anim_sprite(world, "res://assets/fx/Fire_01.png", at + Vector2(0, -26), 0.7, 9.0)
+	var l := Art.label("BASE CAMP", 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
+	l.position = at + Vector2(-70, -54)
+	l.size = Vector2(140, 20)
+	Art.shadow(l)
+	world.add_child(l)
+	_station_rects.append(Rect2(at - Vector2(48, 60), Vector2(96, 80)))
+
+
+## The end of the whole player flow: walking in ends the adventure and the
+## summary opens (SPECS Q6). Two boulders and a ribbon, no new art.
+func _build_gate(at: Vector2) -> void:
+	_gate = Node2D.new()
+	_gate.position = at
+	world.add_child(_gate)
+	for side in [-1.0, 1.0]:
+		Art.sprite(_gate, Art.tex("res://assets/terrain/decorations/Rock4.png"),
+				Vector2(side * 30.0, 0), 1.3)
+	var rib := Art.cell("res://assets/ui/BigRibbons.png", 0, 1)
+	var spr := Sprite2D.new()
+	spr.texture = rib
+	spr.scale = Vector2(0.42, 0.42)
+	spr.offset = Vector2(0, -rib.region.size.y * 0.5)
+	spr.position = Vector2(0, -34)
+	_gate.add_child(spr)
+	var l := Art.label("VICTORY GATE", 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
+	l.position = Vector2(-80, -30)
+	l.size = Vector2(160, 20)
+	Art.shadow(l)
+	_gate.add_child(l)
+	_station_rects.append(Rect2(at - Vector2(64, 96), Vector2(128, 120)))
 
 
 # --- Decorations ------------------------------------------------------------
@@ -277,17 +430,7 @@ func _near_station(c: Vector2i) -> bool:
 var _station_rects: Array = []   # keep-out boxes for decor
 
 
-func _build_stations() -> void:
-	var spots: Array = []
-	for w in [Vector2(0.22, 0.30), Vector2(0.78, 0.30), Vector2(0.50, 0.80)]:
-		spots.append(_land_away_from(w, spots))
-	for i in 3:
-		var meta := QuestionGen.station_meta(i)
-		var at: Vector2 = spots[i]
-		_make_station(i, at, meta.accent)
-
-
-func _make_station(i: int, at: Vector2, _accent: String) -> void:
+func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOWER_LIFT)) -> void:
 	var st := Node2D.new()
 	st.position = at
 	world.add_child(st)
@@ -296,34 +439,40 @@ func _make_station(i: int, at: Vector2, _accent: String) -> void:
 	# hang above the grass. Anchored at its base like the decor.
 	var btex := Art.cell(BUILDINGS[i], 0, 0)
 	var bsize := btex.region.size
+	# Lifted off the path and parented to the world, so the y-sort places it by
+	# where it actually stands rather than by the doorstep on the path.
 	var building := Sprite2D.new()
 	building.texture = btex
 	building.scale = Vector2(BUILDING_SCALE, BUILDING_SCALE)
+	building.position = at + lift
 	building.offset = Vector2(0, -bsize.y * 0.5)
-	st.add_child(building)
+	world.add_child(building)
 	var hw := bsize.x * 0.5 * BUILDING_SCALE
 	var bh := bsize.y * BUILDING_SCALE
 	# Only the walls standing on the ground, not the whole sprite: the roof is
 	# walkable so the player can pass behind, which is what the y-sort expects.
 	# `has_point` excludes the bottom edge, so the doorstep row the station node
 	# sits on stays open and `INTERACT_RADIUS` is always reachable.
-	_solid.append(Rect2(at.x - hw, at.y - bh * 0.45, hw * 2.0, bh * 0.45))
+	var base := at + lift
+	_solid.append(Rect2(base.x - hw, base.y - bh * 0.45, hw * 2.0, bh * 0.45))
 	# Keep decor off the building itself, plus a tile of breathing room.
 	_station_rects.append(Rect2(
-			at + Vector2(-(hw + TILE), -(bh + TILE)),
+			Vector2(base.x - (hw + TILE), base.y - (bh + TILE)),
 			Vector2(hw * 2.0 + TILE * 2.0, bh + TILE * 2.0)))
 	# Signage over the doorway rather than over the roof. Above the roof the
 	# castle's label sits 138px up, and since the camera centres on the player
 	# it slides behind the HUD bar the moment you approach from the south.
 	# World-space text, so size 14 is 28px on screen after the 2x upscale.
-	var sign_y := -(bh * 0.45) - 22.0
+	# Over the doorstep on the path: above the lifted roof it is 200px up, which
+	# is off-screen the moment the player stands on the path below it.
+	var sign_y := -30.0
 	var title := Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
 	title.position = Vector2(-100, sign_y)
 	title.size = Vector2(200, 20)
 	st.add_child(title)
 	_station_locks.append(title)
 	var topic := Art.label(QuestionGen.station_meta(i).short, 11, Color(1, 1, 1, 0.92), HORIZONTAL_ALIGNMENT_CENTER)
-	topic.position = Vector2(-100, sign_y + 16.0)
+	topic.position = Vector2(-100, sign_y + 18.0)
 	topic.size = Vector2(200, 16)
 	st.add_child(topic)
 	# Both sit over grass and roof, so they need the same shadow the map prompts
@@ -335,7 +484,7 @@ func _make_station(i: int, at: Vector2, _accent: String) -> void:
 
 func _spawn_player() -> void:
 	player = Node2D.new()
-	player.position = _first_land(0.50, 0.58)
+	player.position = _anchors[0]
 	var shade := Sprite2D.new()
 	shade.texture = Art.tex("res://assets/terrain/tileset/Shadow.png")
 	shade.scale = Vector2(0.3, 0.3)
@@ -351,14 +500,54 @@ func _spawn_player() -> void:
 	spr.pause()
 	player.add_child(spr)
 	world.add_child(player)
-	var cam := Camera2D.new()
-	cam.position_smoothing_enabled = true
-	cam.position_smoothing_speed = 6.0
-	cam.limit_left = 0
-	cam.limit_top = 0
-	cam.limit_right = W * TILE
-	cam.limit_bottom = H * TILE
-	player.add_child(cam)
+	# On the world, not the hero: the aerial POV has to frame the whole board
+	# before it swoops down to him.
+	_cam = Camera2D.new()
+	_cam.position_smoothing_enabled = true
+	_cam.position_smoothing_speed = 6.0
+	_cam.limit_left = 0
+	_cam.limit_top = 0
+	_cam.limit_right = W * TILE
+	_cam.limit_bottom = H * TILE
+	_cam.position = player.position
+	world.add_child(_cam)
+
+
+# --- Pre-start aerial POV ---------------------------------------------------
+## The client's flow shows the board from far away and frozen, then the camera
+## swoops to the hero when the adventure starts. Offline that is a timed intro;
+## in Phase 3 the admin's Start Game drives it, which is what `Game.clock_paused`
+## is for -- no time is spent while the board is still frozen.
+func _start_intro() -> void:
+	_frozen = true
+	Game.clock_paused = true
+	_cam.position_smoothing_enabled = false
+	_cam.zoom = Vector2(AERIAL_ZOOM, AERIAL_ZOOM)
+	_cam.position = Vector2(W * TILE * 0.5, H * TILE * 0.5)
+	_prompt.text = "Scouting the board..."
+	_intro_tw = create_tween()
+	_intro_tw.tween_interval(1.2)
+	_intro_tw.set_parallel(true)
+	_intro_tw.tween_property(_cam, "zoom", Vector2.ONE, 0.9).set_ease(Tween.EASE_IN_OUT)
+	_intro_tw.tween_property(_cam, "position", player.position, 0.9).set_ease(Tween.EASE_IN_OUT)
+	_intro_tw.chain().tween_callback(skip_intro)
+
+
+## Collapse the intro at once -- the tail of the tween, and what the tests call so
+## nothing waits on wall-clock time.
+func skip_intro() -> void:
+	if not _frozen:
+		return
+	if _intro_tw != null and _intro_tw.is_valid():
+		_intro_tw.kill()
+	_intro_tw = null
+	_frozen = false
+	Game.clock_paused = false
+	_cam.zoom = Vector2.ONE
+	_cam.position = player.position
+	_cam.position_smoothing_enabled = true
+	_prompt.text = ""
+	_update_interaction()
 
 
 ## Which way the sprite faces. Vertical wins ties so a diagonal walk still
@@ -372,8 +561,9 @@ static func _facing(dir: Vector2) -> String:
 func _process(delta: float) -> void:
 	if _overlay != null and is_instance_valid(_overlay) and Game.adventure_active:
 		return
-	if _paused or not Game.adventure_active:
+	if _paused or _frozen or not Game.adventure_active:
 		return
+	_cam.position = player.position
 	var dir := Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_up", "move_down"))
@@ -401,47 +591,155 @@ func _process(delta: float) -> void:
 	_update_interaction()
 
 
+# --- Gating -----------------------------------------------------------------
+## One item per circle, strictly in order: the tower briefing unlocks its own
+## circles, circle n unlocks only when n-1 is resolved, and the gate only once
+## every circle is behind you.
+func _can_enter_tower(i: int) -> bool:
+	return (Game.items_done < Game.TOTAL_ITEMS
+			and Game.station_of_item(Game.items_done) == i
+			and not Game.towers_entered[i])
+
+
+func _can_answer(n: int) -> bool:
+	return n == Game.items_done and Game.towers_entered[Game.station_of_item(n)]
+
+
+func _can_enter_gate() -> bool:
+	return Game.items_done >= Game.TOTAL_ITEMS
+
+
+## Index of the nearest node in `nodes` within reach, or -1.
+func _nearest_of(nodes: Array) -> int:
+	var best := -1
+	var best_d := INTERACT_RADIUS
+	for i in nodes.size():
+		var n: Node2D = nodes[i]
+		if n == null:
+			continue
+		var d := n.position.distance_to(player.position)
+		if d < best_d:
+			best_d = d
+			best = i
+	return best
+
+
+## What the hero is standing at: {kind: "tower"|"circle"|"gate", index}, or {}.
+## Anchors are ~68px apart against a 42px reach, so this is never ambiguous.
+func _nearest_target() -> Dictionary:
+	var best := {}
+	var best_d := INTERACT_RADIUS
+	for pair in [["tower", _station_nodes], ["circle", _circles], ["gate", [_gate]]]:
+		var nodes: Array = pair[1]
+		for i in nodes.size():
+			var n: Node2D = nodes[i]
+			if n == null:
+				continue
+			var d := n.position.distance_to(player.position)
+			if d < best_d:
+				best_d = d
+				best = {"kind": pair[0], "index": i}
+	return best
+
+
+func _prompt_for(target: Dictionary) -> String:
+	var go := "Tap GO" if Game.touch else "Press E / Space / Enter"
+	match target.get("kind", ""):
+		"tower":
+			var i: int = target.index
+			if _can_enter_tower(i):
+				return "%s — enter Station %d" % [go, i + 1]
+			if Game.items_done >= Game.TOTAL_ITEMS:
+				return "Every circle cleared — head for the Victory Gate"
+			if Game.towers_entered[i]:
+				return "Station %d briefing done — follow the circles" % (i + 1)
+			return "Complete Station %d first" % (Game.station_of_item(Game.items_done) + 1)
+		"circle":
+			var n: int = target.index
+			if _can_answer(n):
+				return "%s — Answer Quest!" % go
+			if n < Game.items_done:
+				return "Circle %d cleared" % (n + 1)
+			if not Game.towers_entered[Game.station_of_item(n)]:
+				return "Enter Station %d first" % (Game.station_of_item(n) + 1)
+			return "Answer circle %d first" % (Game.items_done + 1)
+		"gate":
+			if _can_enter_gate():
+				return "%s — enter the Victory Gate" % go
+			return "Conquer all %d circles first" % Game.TOTAL_ITEMS
+	return ""
+
+
 func _update_interaction() -> void:
 	if _flash_active:
 		return
-	var next_station := Game.completed_stations.find(false)
-	_prompt.text = ""
-	for i in 3:
-		if _station_nodes[i] != null and _station_nodes[i].position.distance_to(player.position) < INTERACT_RADIUS:
-			if next_station < 0:
-				_prompt.text = "Every station conquered!"
-			elif i == next_station:
-				_prompt.text = "%s — enter Station %d" % [
-						"Tap GO" if Game.touch else "Press E / Space / Enter", i + 1]
-			else:
-				_prompt.text = "Complete Station %d first" % (next_station + 1)
-			break
+	_prompt.text = _prompt_for(_nearest_target())
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _overlay != null or _paused:
+	if _overlay != null or _paused or _frozen:
 		return
 	if event.is_action_pressed("interact"):
-		_try_enter_station()
+		_interact()
 	elif event.is_action_pressed("pause"):
 		_toggle_pause()
 
 
+func _interact() -> void:
+	match _nearest_target().get("kind", ""):
+		"tower": _try_enter_station()
+		"circle": _try_answer_circle()
+		"gate": _try_enter_gate()
+
+
+## The tower briefing: the station intro card, and nothing else. Its circles are
+## what ask the questions.
 func _try_enter_station() -> void:
-	var next := Game.completed_stations.find(false)
-	if next < 0:
+	var i := _nearest_of(_station_nodes)
+	if i < 0:
 		return
-	for i in 3:
-		if _station_nodes[i].position.distance_to(player.position) < INTERACT_RADIUS:
-			if i != next:
-				_flash_tip("Complete Station %d first!" % (next + 1))
-				return
-			Game.current_station = i
-			var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
-			quiz.adventure = self
-			quiz.station_index = i
-			_show_overlay(quiz)
-			return
+	if not _can_enter_tower(i):
+		if Game.items_done >= Game.TOTAL_ITEMS:
+			_flash_tip("Every circle is cleared — head for the Victory Gate!")
+		elif Game.towers_entered[i]:
+			_flash_tip("Station %d is briefed — answer its circles!" % (i + 1))
+		else:
+			_flash_tip("Complete Station %d first!" % (Game.station_of_item(Game.items_done) + 1))
+		return
+	Game.current_station = i
+	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
+	quiz.adventure = self
+	quiz.station_index = i
+	quiz.intro_only = true
+	_show_overlay(quiz)
+
+
+func _try_answer_circle() -> void:
+	var n := _nearest_of(_circles)
+	if n < 0:
+		return
+	if not _can_answer(n):
+		if n < Game.items_done:
+			_flash_tip("Circle %d is already cleared!" % (n + 1))
+		elif not Game.towers_entered[Game.station_of_item(n)]:
+			_flash_tip("Enter Station %d first!" % (Game.station_of_item(n) + 1))
+		else:
+			_flash_tip("Answer circle %d first!" % (Game.items_done + 1))
+		return
+	Game.current_station = Game.station_of_item(n)
+	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
+	quiz.adventure = self
+	quiz.station_index = Game.current_station
+	_show_overlay(quiz)
+
+
+func _try_enter_gate() -> void:
+	if _gate == null or _gate.position.distance_to(player.position) >= INTERACT_RADIUS:
+		return
+	if not _can_enter_gate():
+		_flash_tip("Conquer all %d circles first!" % Game.TOTAL_ITEMS)
+		return
+	Game.end_adventure()
 
 
 # --- HUD --------------------------------------------------------------------
@@ -620,8 +918,12 @@ func _refresh_hud() -> void:
 	_on_gems(Game.gems)
 	_on_time(int(ceilf(Game.time_left)))
 	var next := Game.completed_stations.find(false)
-	var label := "All stations!" if next < 0 else "Station %d" % (next + 1)
-	_hud_station.text = label
+	if Game.items_done >= Game.TOTAL_ITEMS:
+		_hud_station.text = "Victory Gate!"
+	else:
+		var st := Game.station_of_item(Game.items_done)
+		_hud_station.text = "Station %d · %d/%d" % [st + 1,
+				Game.item_in_station(Game.items_done), Game.ITEMS_PER_STATION[st]]
 	var marks := ""
 	for i in 3:
 		marks += ["✓", "★", "—"][ 0 if Game.completed_stations[i] else (1 if Game.perfect_stations[i] else 2) ] + " "
@@ -636,10 +938,21 @@ func _refresh_hud() -> void:
 		_station_locks[i].text = "Station %d  %s" % [i + 1, mark]
 
 
+## Locked / current / done for all forty, after every resolved item.
+func _refresh_circles() -> void:
+	for n in _circles.size():
+		var state := "locked"
+		if n < Game.items_done:
+			state = "done"
+		elif _can_answer(n):
+			state = "current"
+		(_circles[n] as Node2D).set_state(state)
+
+
 ## Android's back button, routed here by Main: leaving a station mid-question
 ## is not on offer, so back opens the pause menu instead.
 func go_back() -> void:
-	if _overlay == null and not _paused:
+	if _overlay == null and not _paused and not _frozen:
 		_toggle_pause()
 
 
@@ -693,14 +1006,16 @@ func _show_overlay(overlay: Control) -> void:
 
 func close_overlay() -> void:
 	if _overlay != null:
+		# A briefing overlay unlocks its station's circles on the way out.
+		if bool(_overlay.get("intro_only")):
+			Game.towers_entered[int(_overlay.get("station_index"))] = true
 		_overlay.queue_free()
 		_overlay = null
 		_set_pad(true)
 		_refresh_hud()
-	# Clearing the board is a win condition, not just a HUD change: without this
-	# the player wanders a finished map until the timer runs out.
-	if Game.adventure_active and Game.completed_stations.all(func(v: bool) -> bool: return v):
-		Game.end_adventure()
+		_refresh_circles()
+	# Clearing the board no longer ends the run on its own -- the Victory Gate
+	# does, and walking to it is the last step of the player flow.
 
 
 func _on_adventure_end(result: Dictionary) -> void:

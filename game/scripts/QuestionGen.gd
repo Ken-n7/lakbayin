@@ -37,17 +37,17 @@ const STATIONS := [
 	},
 	{
 		"id": 2,
-		"title": "Station 2: Power Up with Exponents!",
-		"accent": "Yellow",
-		"short": "Exponential Notation",
-		"mission": "Welcome to the power zone! In this station you will learn how exponential notation represents repeated multiplication. Understand bases and exponents to simplify expressions easily.",
+		"title": "Station 2: Follow the Right Order!",
+		"accent": "Orange",
+		"short": "Order of Operations",
+		"mission": "Not all math problems are solved left to right! In this station you'll apply the correct order of operations: Parentheses, Exponents, Multiplication & Division, Addition & Subtraction.",
 	},
 	{
 		"id": 3,
-		"title": "Station 3: Follow the Right Order!",
+		"title": "Station 3: Power Up with Exponents!",
 		"accent": "Red",
-		"short": "Order of Operations",
-		"mission": "Not all math problems are solved left to right! In this station you'll apply the correct order of operations: Parentheses, Exponents, Multiplication & Division, Addition & Subtraction.",
+		"short": "Exponential Notation",
+		"mission": "Welcome to the power zone! In this station you will learn how exponential notation represents repeated multiplication. Understand bases and exponents to simplify expressions easily.",
 	},
 ]
 
@@ -59,8 +59,8 @@ static func station_meta(index: int) -> Dictionary:
 static func item_for_station(station_index: int, item_index: int) -> Dictionary:
 	match station_index:
 		0: return _basic(item_index)
-		1: return _exponent(item_index)
-		2: return _pemdas(item_index)
+		1: return _pemdas(item_index)
+		2: return _exponent(item_index)
 	return _basic(item_index)
 
 
@@ -128,18 +128,21 @@ static func _basic(i: int) -> Dictionary:
 	return {}
 
 
-# --- Station 2: Exponential notation -----------------------------------------
+# --- Station 3: Exponential notation -----------------------------------------
 static func _exponent(i: int) -> Dictionary:
 	var mode := i % 3
 	var base := randi_range(2, 6)
 	var exp := randi_range(2, 4)
+	# Each mode needs enough distinct outputs that a 10-item station does not
+	# repeat itself: mode 2 used to be base 2 only, i.e. two possible questions.
 	if mode == 0:
 		base = -randi_range(2, 5)
 		exp = randi_range(2, 3)
 	elif mode == 1:
+		base = randi_range(2, 9)
 		exp = 2
 	elif mode == 2:
-		base = 2
+		base = randi_range(2, 4)
 		exp = randi_range(3, 4)
 	var display := "%s%s" % [("%d" % base) if base >= 0 else "(%d)" % base, SUPER[exp]]
 	return {
@@ -151,7 +154,7 @@ static func _exponent(i: int) -> Dictionary:
 	}
 
 
-# --- Station 3: Order of operations (PEMDAS) --------------------------------
+# --- Station 2: Order of operations (PEMDAS) --------------------------------
 static func _pemdas(i: int) -> Dictionary:
 	var tpl := i % 6
 	match tpl:

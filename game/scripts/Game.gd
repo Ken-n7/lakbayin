@@ -19,6 +19,7 @@ const GEM_TEAM_FINISH_PENALTY := -25
 
 # --- Adventure shape --------------------------------------------------------
 const ITEMS_PER_STATION := [20, 10, 10]   # Station 1/2/3
+const TOTAL_ITEMS := 40                   # sum of ITEMS_PER_STATION: one circle each
 const DURATION_CHOICES := [300, 600, 900] # 5 / 10 / 15 minutes
 
 # --- Hero roster ------------------------------------------------------------
@@ -51,6 +52,9 @@ var duration_seconds := 600.0
 var time_left := 0.0
 
 var current_station := 0          # 0-based index of the active quiz station
+var items_done := 0               # global circle progress, 0..TOTAL_ITEMS
+var towers_entered: Array[bool] = [false, false, false]  # station intro card seen
+var clock_paused := false         # frozen aerial POV now; the admin's pause in Phase 3
 var completed_stations: Array[bool] = [false, false, false]
 var perfect_stations: Array[bool] = [false, false, false]
 var station_flawed := false       # flags a "no errors" run inside the current station
@@ -111,7 +115,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if adventure_active and time_left > 0.0:
+	if adventure_active and not clock_paused and time_left > 0.0:
 		time_left = maxf(0.0, time_left - delta)
 		time_changed.emit(int(ceilf(time_left)))
 		if time_left <= 0.0:
@@ -124,7 +128,10 @@ func begin_adventure(seconds: int = 600) -> void:
 	duration_seconds = float(seconds)
 	time_left = duration_seconds
 	adventure_active = true
+	clock_paused = false
 	current_station = 0
+	items_done = 0
+	towers_entered = [false, false, false]
 	completed_stations = [false, false, false]
 	perfect_stations = [false, false, false]
 	adventure_started.emit()
@@ -168,6 +175,28 @@ func end_adventure() -> void:
 	adventure_ended.emit(result)
 
 
+# --- Circle progress --------------------------------------------------------
+## The 20/10/10 split is decoded in exactly these two places. `items_done` is a
+## single global counter because the path is strictly sequential -- circle n+1
+## cannot be resolved before n, so one number is the whole progress state.
+static func station_of_item(i: int) -> int:
+	var seen := 0
+	for s in ITEMS_PER_STATION.size():
+		seen += ITEMS_PER_STATION[s]
+		if i < seen:
+			return s
+	return ITEMS_PER_STATION.size() - 1   # past the last circle: stay on station 3
+
+
+static func item_in_station(i: int) -> int:
+	var seen := 0
+	for s in ITEMS_PER_STATION.size():
+		if i < seen + ITEMS_PER_STATION[s]:
+			return i - seen
+		seen += ITEMS_PER_STATION[s]
+	return ITEMS_PER_STATION[ITEMS_PER_STATION.size() - 1] - 1
+
+
 # --- Gems bookkeeping -------------------------------------------------------
 func _gems_reset() -> void:
 	gems = START_GEMS
@@ -203,17 +232,20 @@ func begin_item() -> void:
 
 func mark_wrong() -> void:
 	wrong += 1
+	items_done += 1
 	station_flawed = true
 	_apply(GEM_WRONG)
 
 
 func mark_correct() -> void:
 	correct += 1
+	items_done += 1
 	_apply(GEM_CORRECT)
 
 
 func mark_skipped() -> void:
 	skipped += 1
+	items_done += 1
 	station_flawed = true
 	_apply(GEM_SKIP)
 

@@ -40,7 +40,10 @@ func _ready() -> void:
 	main.open("adventure")
 	await frames(4)
 	_map = main.current
+	# The map opens frozen on the aerial POV; collapse it so the hero can walk.
+	_map.skip_intro()
 	check("pad built", _map._touch_pad != null)
+	check("intro collapsed", not Game.clock_paused)
 
 	var start: Vector2 = _map.player.position
 	touch(Vector2(34, 273), true)   # left arrow

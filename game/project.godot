@@ -30,6 +30,8 @@ window/size/window_height_override=720
 window/size/mode=2
 window/stretch/mode="canvas_items"
 window/stretch/aspect="keep"
+; Sensor Landscape -- both landscape rotations, portrait locked out.
+window/handheld/orientation=4
 
 [gui]
 

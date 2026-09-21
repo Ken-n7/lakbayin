@@ -39,7 +39,7 @@ static func button(text: String, w: float, h: float, kind := BLUE) -> Button:
 	b.add_theme_color_override("font_color", Color(1, 1, 1, 0.96))
 	b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
 	b.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
-	b.add_theme_font_size_override("font_size", KINDS[kind][2])
+	b.add_theme_font_size_override("font_size", maxi(int(KINDS[kind][2]), Art.MIN_FONT))
 	return b
 
 
@@ -49,7 +49,7 @@ static func line_edit(placeholder: String, w: float, h := 30.0, size := 15) -> L
 	var le := LineEdit.new()
 	le.placeholder_text = placeholder
 	le.custom_minimum_size = Vector2(w, h)
-	le.add_theme_font_size_override("font_size", size)
+	le.add_theme_font_size_override("font_size", maxi(size, Art.MIN_FONT))
 	le.add_theme_color_override("font_color", Color("2a201a"))
 	le.add_theme_color_override("font_placeholder_color", Color(0.35, 0.28, 0.22, 0.6))
 	le.add_theme_color_override("caret_color", Color("3a2c22"))

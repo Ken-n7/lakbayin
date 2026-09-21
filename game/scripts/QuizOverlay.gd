@@ -1,12 +1,18 @@
 extends Control
 
-## The station challenge: intro mission → items (prompt, input, hint/skip) →
-## feedback with rule reminders → completion ribbon. Runs the whole station.
+## One stop on the board. Opened by the tower as the station briefing
+## (`intro_only`), or by a circle as a single item: prompt, input, hint/skip,
+## then the feedback with its rule reminder. The station's last item also shows
+## the completion ribbon, which is where the perfect-station bonus is paid.
+##
+## Progress lives in `Game.items_done`, not here: the map drives one item at a
+## time and the player walks between them.
 
 enum Phase { INTRO, QUESTION, FEEDBACK, DONE }
 
 var adventure: Control
 var station_index := 0
+var intro_only := false      # the tower briefing card, no question
 
 var phase := Phase.INTRO
 var item_index := 0
@@ -31,12 +37,19 @@ var _continue_btn: Button
 var _gems_row: Label
 var _time_row: Label
 var _digits := RegEx.create_from_string("[^0-9]")
+var _station_end := 0        # items_done once this station's last item is resolved
 
 
 func setup(_data: Dictionary) -> void:
 	meta = QuestionGen.station_meta(station_index)
+	_station_end = 0
+	for s in station_index + 1:
+		_station_end += Game.ITEMS_PER_STATION[s]
 	_build()
-	_show_intro()
+	if intro_only:
+		_show_intro()
+	else:
+		_next_question()
 
 
 func _ready() -> void:
@@ -89,10 +102,11 @@ func _build() -> void:
 	var img := Art.texrect("res://assets/ui/Icon_03.png", 28, 28)
 	inrow.add_child(go_lbl)
 	inrow.add_child(_input)
-	if Game.touch:
-		var neg := Ui.button("±", 46, 36, Ui.SMALL)
-		neg.pressed.connect(_toggle_sign)
-		inrow.add_child(neg)
+	# Desktop keyboards have a minus key, but the field filters to digits and a
+	# leading "-", so the button is the only sign control that always works.
+	var neg := Ui.button("±", 46, 36, Ui.SMALL)
+	neg.pressed.connect(_toggle_sign)
+	inrow.add_child(neg)
 	inrow.add_child(img)
 	_inrow = inrow
 	_panel.add_child(inrow)
@@ -166,19 +180,16 @@ func _next_question() -> void:
 	phase = Phase.QUESTION
 	Game.begin_item()
 	var total: int = Game.ITEMS_PER_STATION[station_index]
-	item_index += 1
-	current = QuestionGen.item_for_station(station_index, item_index - 1)
+	item_index = Game.item_in_station(Game.items_done)
+	current = QuestionGen.item_for_station(station_index, item_index)
 	answer = current.answer
-	_q_index.text = "Item %d / %d" % [item_index, total]
+	_q_index.text = "Item %d / %d" % [item_index + 1, total]
 	_q_prompt.text = current.prompt
 	_layout()
 	_hint_text.text = ""
 	_input.text = ""
 	_input.grab_focus()
 	_btn_hint.disabled = false
-	var mission := _panel.get_node_or_null("Mission")
-	if mission != null:
-		mission.queue_free()
 
 
 func _submit() -> void:
@@ -220,20 +231,21 @@ func _show_result(correct: bool) -> void:
 func _advance() -> void:
 	match phase:
 		Phase.INTRO:
-			_continue_btn.visible = false
-			_next_question()
+			_finish()
 		Phase.FEEDBACK:
 			_finish_item_or_station()
 		Phase.DONE:
 			_finish()
 
 
+## The item is resolved (right, wrong or skipped). Its station's last circle also
+## earns the completion ribbon and the perfect bonus; otherwise it is back to the
+## map to walk to the next circle.
 func _finish_item_or_station() -> void:
-	var total: int = Game.ITEMS_PER_STATION[station_index]
-	if item_index >= total:
+	if Game.items_done >= _station_end:
 		_show_complete()
 	else:
-		_next_question()
+		_finish()
 
 
 func _show_complete() -> void:
@@ -246,9 +258,6 @@ func _show_complete() -> void:
 	_delta_label.text = "Perfect run! +%d bonus gems" % bonus if bonus > 0 else "All %d items finished" % Game.ITEMS_PER_STATION[station_index]
 	_delta_label.add_theme_color_override("font_color", Color("3f7a1e") if bonus > 0 else Color("2a201a"))
 	_result_rule.text = "Return to the map and seek the next station."
-	var mission := _panel.get_node_or_null("Mission")
-	if mission != null:
-		mission.queue_free()
 	if bonus > 0:
 		_burst()
 	_continue_btn.grab_focus()

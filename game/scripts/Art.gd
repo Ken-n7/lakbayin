@@ -7,6 +7,11 @@ extends RefCounted
 ## a fixed hframes grid would mis-cut. `frames()` scans the alpha channel to
 ## find each frame's bounding box, then builds AtlasTextures for animation.
 
+## The client asked twice for large, legible text. Nothing renders below this;
+## at the 640x360 canvas a phone upscales ~3x, so 14 lands near 42 physical px.
+## Raise it here after a real-device read, not per call site.
+const MIN_FONT := 14
+
 const PIXEL_FONT := "res://assets/fonts/PixelifySans.ttf"
 const SYMBOL_FONT := "res://assets/fonts/DejaVuSans.ttf"
 
@@ -295,7 +300,7 @@ static func texrect(path: String, w: float, h: float, region := Rect2()) -> Text
 static func label(text: String, size := 16, color: Color = Color.WHITE, align := HORIZONTAL_ALIGNMENT_LEFT) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", maxi(size, MIN_FONT))
 	l.add_theme_color_override("font_color", color)
 	l.horizontal_alignment = align
 	l.clip_text = false

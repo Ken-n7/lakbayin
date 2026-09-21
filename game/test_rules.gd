@@ -51,14 +51,21 @@ func _init() -> void:
 		seen[row.name] = true
 	assert(seen.has("Ken") and seen.has("Math Mavericks"), "player and rivals both listed")
 
-	# Fix #8: no station-3 item should demand five-digit arithmetic.
+	# Fix #8: no item should demand five-digit arithmetic.
 	var QG := load("res://scripts/QuestionGen.gd")
-	var worst := 0
-	for i in 600:
-		var item: Dictionary = QG.item_for_station(2, i)
-		worst = maxi(worst, absi(int(item.answer)))
-	assert(worst <= 400, "station 3 answers stay sane, worst was %d" % worst)
-	print("station 3 worst answer over 600 items: %d" % worst)
+	for station in [1, 2]:
+		var worst := 0
+		for i in 600:
+			var item: Dictionary = QG.item_for_station(station, i)
+			worst = maxi(worst, absi(int(item.answer)))
+		assert(worst <= 400, "station %d answers stay sane, worst was %d" % [station + 1, worst])
+		print("station %d worst answer over 600 items: %d" % [station + 1, worst])
+
+	# The mockups order the stations Basics / Order of Operations / Exponents.
+	assert(QG.station_meta(1).short == "Order of Operations", "S2 is order of operations")
+	assert(QG.station_meta(2).short == "Exponential Notation", "S3 is exponents")
+	assert(QG.item_for_station(2, 1).topic == "exp", "S3 items are exponents")
+	assert(QG.item_for_station(1, 0).topic == "pemdas", "S2 items are PEMDAS")
 
 	# The pixel font has no tick/star/arrow; without the symbol fallback the HUD
 	# pips and Learn screen arrows silently render as blank boxes.

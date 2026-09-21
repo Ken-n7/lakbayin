@@ -4,6 +4,7 @@ extends Control
 ## registered here and switched via `Main.open(name, data)`.
 
 const SCREENS := {
+	"splash": preload("res://scripts/SplashScreen.gd"),
 	"title": preload("res://scripts/TitleScreen.gd"),
 	"hero": preload("res://scripts/HeroSelectScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),
@@ -19,7 +20,7 @@ func _ready() -> void:
 	Art.apply_font_fallback()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	focus_mode = Control.FOCUS_ALL
-	open("title")
+	open("splash")
 
 
 func open(name: String, data: Dictionary = {}) -> void:
