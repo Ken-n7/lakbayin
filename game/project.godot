@@ -1,5 +1,14 @@
 ; Engine configuration file.
 ; NumXventure — Explore. Solve. Conquer.
+;
+; Comments here start with ';' and NEVER with '#'. Godot's config parser does not
+; treat '#' as a comment: it folds the line, and the key underneath it, into one
+; garbage quoted key, so the setting below silently never applies. That is what
+; had `config/quit_on_go_back=false` reading back as `true`.
+;
+; Even ';' comments are dropped whenever the editor writes this file back, which
+; it does when any setting changes. The durable record of why the non-default
+; values below are what they are lives in SPECS.md, "Project settings".
 
 config_version=5
 
@@ -11,8 +20,8 @@ config/version="0.1.0"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
-# The back button opens the pause menu (Main._notification) instead of killing
-# a run in progress.
+; The back button opens the pause menu (Main._notification) instead of killing
+; a run in progress.
 config/quit_on_go_back=false
 boot_splash/bg_color=Color(0.10, 0.08, 0.13, 1)
 boot_splash/show_image=false
