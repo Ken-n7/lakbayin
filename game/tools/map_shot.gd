@@ -11,20 +11,25 @@ extends SceneTree
 
 const SHOT_SIZE := Vector2i(1920, 1080)
 
-## `zoom` 0 means "frame the whole board" (`_aerial_zoom()`); `at` is in
-## normalized world coords, matching `ISLANDS` and `TRAILS`.
+## `zoom` 0 means "frame the whole board" (`_aerial_zoom()`); `at` is in normalized
+## world coords, matching `ISLANDS` and `TRAILS`. `dismiss` brief the station first
+## and `hold` waits that many frames, which is how the after state of anything that
+## animates gets photographed.
 const SHOTS := [
 	{"name": "map_full", "at": Vector2(0.50, 0.50), "zoom": 0.0},
 	{"name": "island1", "at": Vector2(0.45, 0.78), "zoom": 0.45},
 	{"name": "station1", "at": Vector2(0.70, 0.79), "zoom": 1.0},
 	{"name": "barricade", "at": Vector2(0.665, 0.775), "zoom": 0.75},
 	{"name": "camp_bridge", "at": Vector2(0.86, 0.82), "zoom": 0.75},
+	{"name": "barricade_open", "at": Vector2(0.665, 0.775), "zoom": 0.75,
+			"dismiss": true, "hold": 120},
 ]
 
 var _screen: Control
 var _out := "user://"
 var _shot := 0
 var _armed := false
+var _hold := 0
 
 
 func _initialize() -> void:
@@ -53,7 +58,13 @@ func _process(_delta: float) -> bool:
 			z = _screen._aerial_zoom()
 		_screen._cam.zoom = Vector2(z, z)
 		_screen._cam.position = _screen._norm(shot.at)
+		if bool(shot.get("dismiss", false)):
+			_screen._dismiss_knight()
+		_hold = int(shot.get("hold", 0))
 		_armed = true
+		return false
+	if _hold > 0:
+		_hold -= 1
 		return false
 	var path: String = _out.path_join("%s.png" % shot.name)
 	var err := root.get_texture().get_image().save_png(path)

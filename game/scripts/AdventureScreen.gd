@@ -73,7 +73,7 @@ const TRAILS := [
 	[Vector2(0.955, 0.855), Vector2(0.720, 0.800)],
 	# Island 1: Station 1's eight circles, starting west of the boulder line that
 	# `_build_barricade()` draws between them and the monastery.
-	[Vector2(0.605, 0.775), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
+	[Vector2(0.585, 0.780), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
 	 Vector2(0.10, 0.83), Vector2(0.16, 0.69), Vector2(0.40, 0.65),
 	 Vector2(0.38, 0.60)],
 	[Vector2(0.31, 0.39), Vector2(0.12, 0.35), Vector2(0.12, 0.22),
@@ -108,10 +108,11 @@ const KNIGHT_SCALE := 0.9
 ## sea to sea, between the monastery and Station 1's first circle. Objects, not
 ## terrain -- the old three-tile neck had to be stamped because `_island_index()`
 ## gives a shore ten cells wide, and a line of rocks just plugs whatever is there.
-## `BARRICADE_T` is how far along monastery -> circle 1 it stands, `BARRICADE_GAP`
-## the cells of it the knight fills, `ROCK_SCALE` picked by eye against the 32px
-## grid with DevTools' live tuner.
-const BARRICADE_T := 0.5
+## `BARRICADE_T` is how far along monastery -> circle 1 it stands -- past halfway,
+## so the yard between the station and the rocks is wide enough to hold the knight
+## once he steps out of the way. `BARRICADE_GAP` is the cells of the line he fills,
+## `ROCK_SCALE` picked by eye against the 32px grid with DevTools' live tuner.
+const BARRICADE_T := 0.55
 const BARRICADE_GAP := 2
 const ROCK_SCALE := 1.0
 
@@ -146,6 +147,7 @@ var _causeways: Array = []   # [{cells, open, props, sign}] -- one per island se
 var _solid: Array[Rect2] = []  # building base walls, in world px
 var _knight: Node2D = null     # null once dismissed, or never posted on a restart
 var _knight_post := Vector2.ZERO
+var _knight_stand := Vector2.ZERO  # where he steps aside to once briefed
 var _knight_wall := Rect2()
 var _barricade: Array[Rect2] = []  # the boulder line either side of him, forever
 var _station_nodes: Array = []
@@ -720,6 +722,12 @@ func _build_barricade() -> void:
 			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
 					% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
 			n += int(run[1])
+	_knight_stand = _knight_rest()
+	# His spot has to stay clear too, or the decor pass plants a tree in it and he
+	# steps down into a bush. Reserved here, before `_build_decor()` runs, which is
+	# also what makes it the same spot on a restart that has already briefed.
+	_station_rects.append(Rect2(_knight_stand - Vector2(TILE, TILE * 1.5),
+			Vector2(TILE * 2.0, TILE * 2.0)))
 	# Keep the decor pass a full tile clear of the rubble. Touching it is not
 	# enough: a loose boulder alongside the line reads as part of the wall, and
 	# walking through that one is the bug it looks like.
@@ -742,17 +750,48 @@ func _cells_rect(c: Vector2i, step: Vector2i, lo: int, hi: int, size: Vector2) -
 ## ponytail: one hard-coded blocker, for Station 1. If a later station ever wants
 ## one, lift post+wall into a per-station array alongside `_tower_anchors()`.
 func _post_knight() -> void:
-	# A restart mid-run keeps whatever it had already briefed, so it never posts him.
+	# A restart mid-run keeps whatever it had already briefed. He is not a wall any
+	# more, but he is still the station's man, so he stands where he stepped aside
+	# to -- posted as scenery, never as `_knight`, which means "the blocker".
 	if Game.towers_entered[0]:
+		_spawn_knight(_knight_stand)
 		return
 	_solid.append(_knight_wall)
-	_knight = Art.anim_sprite(world, KNIGHT_SHEET, _knight_post, KNIGHT_SCALE, 5.0)
+	_knight = _spawn_knight(_knight_post)
+
+
+func _spawn_knight(at: Vector2) -> Node2D:
+	var k := Art.anim_sprite(world, KNIGHT_SHEET, at, KNIGHT_SCALE, 5.0)
 	# Over the grass like the outpost guards, who are decoration at the same depth.
-	_knight.z_index = 1
+	k.z_index = 1
+	return k
 
 
-## The briefing sends him away. His wall goes the moment it starts, so the player can
-## walk on while he fades -- he blackens first, then out, then he is gone for good.
+## Where the briefing will send him: open ground in the yard between his post and
+## the station, off the road so he is not standing in the walk, and clear of the
+## rocks, the buildings and the signage. Searched rather than authored, so retuning
+## `BARRICADE_T` or moving the station does not strand him in a wall. Called once,
+## from `_build_barricade()`, and cached in `_knight_stand`.
+func _knight_rest() -> Vector2:
+	var door: Vector2 = _anchors[1]
+	var dir := (door - _knight_post).normalized()
+	var perp := dir.orthogonal()
+	# Toward the station, then off to one side -- inland side first, since the
+	# seaward one is a strip of beach that props already keep off.
+	for along: int in [3, 2, 4]:
+		for across: int in [2, -2, 3, -3]:
+			var at: Vector2 = _knight_post + dir * (float(along) * TILE) \
+					+ perp * (float(across) * TILE)
+			var c := _cell_at(at)
+			if _is_walkable(at) and not _trail.has(c) and not _near_station(c):
+				return at
+	# Nothing open: at least get out of the gap.
+	return _knight_post + dir * (3.0 * TILE)
+
+
+## The briefing stands him down. His wall goes the moment it starts, so the player
+## can walk on while he is still moving -- and he walks, rather than fading out:
+## the gate was a man, and a man who has let you past is still standing there.
 func _dismiss_knight() -> void:
 	if _knight == null or not is_instance_valid(_knight):
 		return
@@ -760,9 +799,7 @@ func _dismiss_knight() -> void:
 	var k := _knight
 	_knight = null
 	var tw := k.create_tween()
-	tw.tween_property(k, "modulate", Color(0, 0, 0, 1), 0.35)
-	tw.tween_property(k, "modulate", Color(0, 0, 0, 0), 0.35)
-	tw.tween_callback(k.queue_free)
+	tw.tween_property(k, "position", _knight_stand, 1.2).set_ease(Tween.EASE_IN_OUT)
 
 
 func _build_camp(at: Vector2) -> void:

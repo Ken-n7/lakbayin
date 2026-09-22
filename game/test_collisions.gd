@@ -117,6 +117,17 @@ func _initialize() -> void:
 	# walkable-to, and `_assert_islands(-1)` is what proves it.
 	_assert_islands(screen, G, -1)
 
+	# He steps aside rather than vanishing, so the spot he steps to has to be real
+	# ground: open, off the road, and not inside the rocks he was standing in.
+	var rest: Vector2 = screen._knight_stand
+	assert(screen._is_walkable(rest), "the knight steps down into a wall")
+	assert(not screen._trail.has(Vector2i(floori(rest.x / screen.TILE),
+			floori(rest.y / screen.TILE))), "the knight steps down onto the road")
+	assert(rest.distance_to(screen._knight_post) > screen.TILE,
+			"the knight steps down into the gap he was plugging")
+	assert(rest.distance_to(screen._anchors[1]) < rest.distance_to(screen._anchors[2]),
+			"the knight steps down nearer the circles than the station")
+
 	screen._dismiss_knight()
 	assert(screen._is_walkable(screen._knight_wall.get_center()),
 			"the knight's wall outlived him")
