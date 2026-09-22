@@ -96,27 +96,32 @@ func _initialize() -> void:
 		var mid: Vector2 = screen._cell_mid(cw.cells[cw.cells.size() / 2])
 		assert(not screen._is_walkable(mid), "causeway %d is walkable before its station" % i)
 
-	# --- The knight in the neck --------------------------------------------
+	# --- The knight in the boulder line ------------------------------------
 	# The camp crossing is a land bridge, so the first gate is not terrain that
-	# rises but a body standing in the one place the geography is narrow. Same
+	# rises but a wall of rocks across island 1 with a body in its one gap. Same
 	# proof either way: walk the ground and see where you can get to.
 	assert(screen._knight != null, "no knight posted on a fresh run")
 	assert(not screen._is_walkable(screen._knight_wall.get_center()),
 			"the knight is not solid")
 	assert(screen._clear_of_anchors(screen._knight_wall),
 			"the knight's wall swallows a stop on the board")
+	_assert_barricade(screen)
 	# ...and the door he is guarding has to stay usable from the bridge side, or
 	# the briefing that dismisses him can never happen.
 	var door: Vector2 = screen._anchors[1]
-	assert(screen._is_walkable(door), "Tower 1's doorstep is inside the knight's wall")
+	assert(screen._is_walkable(door), "Station 1's doorstep is inside the knight's wall")
 	var held := _reachable(screen)
 	assert(held.has(Vector2i(floori(door.x / screen.TILE), floori(door.y / screen.TILE))),
-			"Tower 1 is unreachable from camp, so it can never be briefed")
+			"Station 1 is unreachable from camp, so it can never be briefed")
+	# Which is the whole point: with him in the gap, nothing past the line is
+	# walkable-to, and `_assert_islands(-1)` is what proves it.
 	_assert_islands(screen, G, -1)
 
 	screen._dismiss_knight()
 	assert(screen._is_walkable(screen._knight_wall.get_center()),
 			"the knight's wall outlived him")
+	# He goes, the rocks do not -- only his gap opens.
+	_assert_barricade(screen)
 	_assert_islands(screen, G, 0)
 	screen.open_causeway(0)
 	assert(screen._is_walkable(screen._cell_mid(screen._causeways[0].cells[0])),
@@ -147,7 +152,9 @@ func _initialize() -> void:
 	briefed.setup({})
 	assert(briefed._knight == null, "knight re-posted on a run that was already briefed")
 	assert(briefed._is_walkable(briefed._knight_wall.get_center()),
-			"the neck is walled on a run that was already briefed")
+			"the gap is walled on a run that was already briefed")
+	# The line is scenery, not a gate: it is laid on every build, briefed or not.
+	_assert_barricade(briefed)
 
 	print("collisions ok")
 	quit()
@@ -179,6 +186,36 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 	var gcell := Vector2i(floori(gate.x / screen.TILE), floori(gate.y / screen.TILE))
 	assert(reach.has(gcell) == (opened >= 2),
 			"victory gate reachability wrong with %d causeway(s) open" % opened)
+
+
+## The boulder line: every rock solid and clear of the board, and both ends of the
+## line running into the sea -- if either end stopped short of the water there
+## would be a way round it and the knight would be decoration.
+func _assert_barricade(screen: Control) -> void:
+	var rocks: Array = screen._barricade
+	assert(rocks.size() >= 4, "the boulder line is only %d rocks long" % rocks.size())
+	for r in rocks:
+		assert(not screen._is_walkable((r as Rect2).get_center()),
+				"a boulder at %s is not solid" % (r as Rect2).get_center())
+		assert(screen._clear_of_anchors(r),
+				"a boulder at %s swallows a stop on the board" % (r as Rect2).get_center())
+	# The rocks are laid outward from the gap in both directions until they run
+	# out of land, so the ends are the two extremes along the line's own axis.
+	var axis := 0 if absf(rocks[0].position.x - rocks[rocks.size() - 1].position.x) \
+			> absf(rocks[0].position.y - rocks[rocks.size() - 1].position.y) else 1
+	var lo: Rect2 = rocks[0]
+	var hi: Rect2 = rocks[0]
+	for r in rocks:
+		if (r as Rect2).get_center()[axis] < lo.get_center()[axis]:
+			lo = r
+		if (r as Rect2).get_center()[axis] > hi.get_center()[axis]:
+			hi = r
+	for spec in [[lo, -1.0], [hi, 1.0]]:
+		var beyond: Vector2 = (spec[0] as Rect2).get_center()
+		beyond[axis] += float(spec[1]) * screen.TILE
+		assert(not screen._land.has(Vector2i(floori(beyond.x / screen.TILE),
+				floori(beyond.y / screen.TILE))),
+				"the boulder line stops on dry land at %s -- walk around it" % beyond)
 
 
 ## Cells walkable from the base camp, by flood fill over cell centres.

@@ -1,0 +1,63 @@
+extends SceneTree
+
+## Screenshots of the Adventure Map, for looking at the board without playing to
+## it. Run it windowed -- it needs a real GL context, so no `--headless`:
+##
+##   godot --path game --script res://tools/map_shot.gd [-- <out dir>]
+##
+## Writes one PNG per entry in SHOTS and prints the absolute paths. Dev tool: it
+## is never loaded by the game, and the only thing it knows about
+## `AdventureScreen` is its camera.
+
+const SHOT_SIZE := Vector2i(1920, 1080)
+
+## `zoom` 0 means "frame the whole board" (`_aerial_zoom()`); `at` is in
+## normalized world coords, matching `ISLANDS` and `TRAILS`.
+const SHOTS := [
+	{"name": "map_full", "at": Vector2(0.50, 0.50), "zoom": 0.0},
+	{"name": "island1", "at": Vector2(0.45, 0.78), "zoom": 0.45},
+	{"name": "station1", "at": Vector2(0.70, 0.79), "zoom": 1.0},
+	{"name": "barricade", "at": Vector2(0.665, 0.775), "zoom": 0.75},
+	{"name": "camp_bridge", "at": Vector2(0.86, 0.82), "zoom": 0.75},
+]
+
+var _screen: Control
+var _out := "user://"
+var _shot := 0
+var _armed := false
+
+
+func _initialize() -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.size() > 0:
+		_out = args[0]
+	DisplayServer.window_set_size(SHOT_SIZE)
+	_screen = load("res://scripts/AdventureScreen.gd").new()
+	root.add_child(_screen)
+	_screen.setup({})
+	# The board, not the game: no HUD bar, no joystick, no "tap to start".
+	_screen._hud_layer.visible = false
+	_screen._ui_layer.visible = false
+	_screen._cam.position_smoothing_enabled = false
+	_screen._clamp_cam(false)
+
+
+## One frame to move the camera, the next to save what it drew.
+func _process(_delta: float) -> bool:
+	if _shot >= SHOTS.size():
+		return true
+	var shot: Dictionary = SHOTS[_shot]
+	if not _armed:
+		var z: float = float(shot.zoom)
+		if z <= 0.0:
+			z = _screen._aerial_zoom()
+		_screen._cam.zoom = Vector2(z, z)
+		_screen._cam.position = _screen._norm(shot.at)
+		_armed = true
+		return false
+	var path: String = _out.path_join("%s.png" % shot.name)
+	var err := root.get_texture().get_image().save_png(path)
+	print("%s  %s" % ["ok " if err == OK else "FAIL", ProjectSettings.globalize_path(path)])
+	_shot += 1
+	_armed = false
+	return false

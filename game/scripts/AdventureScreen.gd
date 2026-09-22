@@ -1,7 +1,7 @@
 extends Control
 
 ## The Adventure Map: the client's board laid over a Tiny Swords island --
-## base camp, Tower 1, its circles, Tower 2, its circles, Tower 3, its circles,
+## base camp, Station 1, its circles, Station 2, its circles, Station 3, its circles,
 ## Victory Gate, all on one authored path. One circle is one question item, and
 ## they resolve strictly in order. WASD/arrows move the hero; E (or Space/Enter)
 ## enters the tower you stand at, answers the circle you stand on, or walks
@@ -24,26 +24,36 @@ const H := 54
 const UNIT_SCALE := 1.4
 # Buildings are the tileset's own 64px art, so they take the tileset's scale.
 const BUILDING_SCALE := 0.5
+## Each station's keep -- one building per station, each its own kind, so the
+## three stations do not read as the same outpost three times.
 const BUILDINGS := [
-	"res://assets/buildings/Blue_Tower.png",
+	"res://assets/buildings/Blue_Monastery.png",
 	"res://assets/buildings/Yellow_Archery.png",
-	"res://assets/buildings/Red_House1.png",   # Red_Castle moved to the Victory Gate
+	"res://assets/buildings/Red_Barracks.png",
 ]
-## The Victory Gate's building -- the red livery only has one castle-scale
-## asset, so it went to the gate and station 3's tower stepped down to a house.
+## The walk-up towers on the circles. Every circle is a tower -- the keep is what
+## tells the stations apart, the towers are what tell a stop from a keep -- so it
+## is the same art in the station's own livery, no tint.
+const CIRCLE_BUILDINGS := [
+	"res://assets/buildings/Blue_Tower.png",
+	"res://assets/buildings/Yellow_Tower.png",
+	"res://assets/buildings/Red_Tower.png",
+]
+## The Victory Gate's building -- the only castle-scale asset in the red livery,
+## and nothing else on the board is that big.
 const GATE_BUILDING := "res://assets/buildings/Red_Castle.png"
 const PLAYER_SPEED := 150.0
 const INTERACT_RADIUS := 42.0
-## Half a circle tower, near enough: the three buildings are 78-92px tall drawn,
-## so this reaches the whole body from its middle. Tap reach only -- walking up
-## to a tower is still `INTERACT_RADIUS` against the anchor it stands beside.
+## Half a circle tower, near enough: every circle is the same tower, 92px tall
+## drawn, so this reaches the whole body from its middle. Tap reach only -- walking
+## up to a tower is still `INTERACT_RADIUS` against the anchor it stands beside.
 const TOWER_TAP_REACH := 46.0
 
 ## Four islands, as normalized centre + radii. `wobble` only shifts the coastline
 ## noise so they do not come out as the same shape rotated. Island 0 is the camp,
-## bottom right; island 1 beside it is the big one, carrying Station 1's eight
-## circles. The walk runs right to left along the bottom, then up and back across
-## the top: camp -> island 1 -> island 2 -> island 3 and the Victory Gate.
+## bottom right; island 1 beside it is the big one, carrying Station 1 and its
+## eight circles. The walk runs right to left along the bottom, then up and back
+## across the top: camp -> island 1 -> island 2 -> island 3 and the Victory Gate.
 const ISLANDS := [
 	{"c": Vector2(0.925, 0.800), "r": Vector2(0.058, 0.135), "wobble": 0.6},
 	{"c": Vector2(0.415, 0.765), "r": Vector2(0.365, 0.225), "wobble": 1.7},
@@ -55,11 +65,15 @@ const ISLANDS := [
 ## that fills its island and ends near the causeway mouth, so the walk flows from
 ## one island into the next. `_stamp_path()` guarantees land under all of it.
 const TRAILS := [
-	# The camp: the fire, then Tower 1 -- whose anchor sits out over the channel, so
-	# `_stamp_path()` lays the land bridge under the walk and the tower's own pad
-	# becomes the headland it stands on, against Station 1's island.
-	[Vector2(0.955, 0.855), Vector2(0.815, 0.795)],
-	[Vector2(0.75, 0.79), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
+	# The camp: the fire, then Station 1. Its anchor is across the channel on
+	# island 1 -- the trail runs over open water to get there, so `_stamp_path()`
+	# lays the land bridge under the walk. The monastery itself stands on island
+	# ground, well clear of the shore, which is the point of the crossing being
+	# the trail's and not the building's problem.
+	[Vector2(0.955, 0.855), Vector2(0.720, 0.800)],
+	# Island 1: Station 1's eight circles, starting west of the boulder line that
+	# `_build_barricade()` draws between them and the monastery.
+	[Vector2(0.605, 0.775), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
 	 Vector2(0.10, 0.83), Vector2(0.16, 0.69), Vector2(0.40, 0.65),
 	 Vector2(0.38, 0.60)],
 	[Vector2(0.31, 0.39), Vector2(0.12, 0.35), Vector2(0.12, 0.22),
@@ -82,16 +96,22 @@ const ISLAND_PROPS := [
 ## to walk without the shoreline tiles pinching it shut.
 const CAUSEWAY_HALF := 1
 
-## The giant knight who holds the neck between Station 1's headland and the rest of
-## its island -- the same Warrior_Idle sheet `_build_outpost()` gives its guards, at
-## three times their 0.3 scale. He is a wall, not a trigger: the briefing sends him
-## away, and until then the neck is the only way off the headland.
+## The giant knight who holds the road west out of Station 1 -- the same
+## Warrior_Idle sheet `_build_outpost()` gives its guards, at three times their
+## 0.3 scale. He is a wall, not a trigger: the briefing sends him away, and until
+## then he is the one gap in `_build_barricade()`'s line of boulders.
 const KNIGHT_SHEET := "res://assets/units/Blue/Warrior_Idle.png"
 const KNIGHT_SCALE := 0.9
-## Tiles of neck stamped between the headland and the island. Stamped rather than
-## generated on purpose -- `_island_index()` gives a shore ten cells wide, and
-## nothing can plug that.
-const NECK_CELLS := 6
+## The boulder line: a wall of rocks laid cell by cell straight across island 1,
+## sea to sea, between the monastery and Station 1's first circle. Objects, not
+## terrain -- the old three-tile neck had to be stamped because `_island_index()`
+## gives a shore ten cells wide, and a line of rocks just plugs whatever is there.
+## `BARRICADE_T` is how far along monastery -> circle 1 it stands, `BARRICADE_GAP`
+## the cells of it the knight fills, `ROCK_SCALE` picked by eye against the 32px
+## grid with DevTools' live tuner.
+const BARRICADE_T := 0.5
+const BARRICADE_GAP := 2
+const ROCK_SCALE := 1.0
 
 ## Towers stand beside the path, not on it: their walls are up to 150px wide and
 ## would otherwise swallow the next circle along. `_tower_lift()` picks the side.
@@ -123,6 +143,7 @@ var _solid: Array[Rect2] = []  # building base walls, in world px
 var _knight: Node2D = null     # null once dismissed, or never posted on a restart
 var _knight_post := Vector2.ZERO
 var _knight_wall := Rect2()
+var _barricade: Array[Rect2] = []  # the boulder line either side of him, forever
 var _station_nodes: Array = []
 var _station_locks: Array = []
 var _circles: Array = []        # Game.TOTAL_ITEMS PathCircle nodes, path order
@@ -327,13 +348,16 @@ func _retile(cells: Array) -> void:
 # --- Causeways: the gate between stations -----------------------------------
 ## Each causeway is the stretch of water along the line between two island
 ## centres: the shortest crossing, and the only one, because everything either
-## side of it is sea. That is the whole reason for three islands -- a boulder on
+## side of it is sea. That is the whole reason for three islands -- one boulder on
 ## open ground can be walked around, a channel cannot, so the sequential rule is
-## enforced by the geography rather than by a flag the player never sees.
+## enforced by the geography rather than by a flag the player never sees. (A whole
+## LINE of boulders, sea to sea, cannot be walked around either -- that is what
+## `_build_barricade()` lays across island 1, where there is no channel to use.)
 ## Seam 0 -- camp to Station 1's island -- is skipped: that crossing is the land
-## bridge `_stamp_path()` lays down, walkable from the first step and held by the
-## knight in the neck beyond it instead. Without the skip this would lay a second
-## crossing alongside the bridge, along the line between the two island centres.
+## bridge `_stamp_path()` lays down, walkable from the first step, with the knight
+## and his boulders holding the road past the monastery instead. Without the skip
+## this would lay a second crossing alongside the bridge, along the line between
+## the two island centres.
 ## So `_causeways[i]` is the seam into island `i + 2`, the one station `i + 1` lives
 ## on, and it rises when station `i` runs out of circles.
 func _find_causeways() -> Array:
@@ -450,16 +474,18 @@ func _first_land(nx: float, ny: float, toward: Vector2) -> Vector2:
 
 
 # --- The trails -------------------------------------------------------------
-## How many stops each island's trail carries. The camp island holds the base camp
-## and Tower 1 -- the gatehouse whose briefing raises the causeway out of camp --
-## so island `i` then holds station `i - 1`'s circles, and stations 2 and 3 keep
-## their own towers. The last island also holds the Victory Gate.
+## How many stops each TRAIL carries -- not each island. The camp's trail holds the
+## base camp and Station 1, whose briefing raises the causeway out of camp; the
+## crossing between them is the land bridge, so the trail spans two islands and
+## Station 1 stands on island 1's ground. Trail `i` then holds station `i - 1`'s
+## circles, and stations 2 and 3 keep their own towers. The last one also holds the
+## Victory Gate.
 ##
-## Flattened, that is still the same walk order as before Tower 1 moved:
-## camp, T1, its circles, T2, its circles, T3, its circles, gate.
+## Flattened, that is still the same walk order it always was:
+## camp, S1, its circles, S2, its circles, S3, its circles, gate.
 func _stops_on(i: int) -> int:
 	if i == 0:
-		return 2                                  # base camp, then Tower 1
+		return 2                                  # base camp, then Station 1
 	var n: int = int(Game.ITEMS_PER_STATION[i - 1])
 	if i > 1:
 		n += 1                                    # that station's own tower
@@ -495,9 +521,9 @@ static func _space_along(way: Array, stops: int) -> Array:
 
 
 ## Every stop on the board, flat, in the global walk order the rest of the file
-## indexes by: base camp, Tower 1, its circles, Tower 2, its circles, Tower 3,
-## its circles, Victory Gate -- spread over three islands instead of one
-## serpentine. The spacing that matters is ~200px, comfortably wider than
+## indexes by: base camp, Station 1, its circles, Station 2, its circles, Station
+## 3, its circles, Victory Gate -- spread over three islands instead of one
+## serpentine. The spacing that matters is ~270px at the tightest, far wider than
 ## INTERACT_RADIUS, which is what keeps "the circle you are standing on"
 ## unambiguous.
 func _path_anchors() -> Array:
@@ -507,9 +533,10 @@ func _path_anchors() -> Array:
 	return out
 
 
-## Which island a stop stands on. Indexed by anchor rather than by station, because
-## Tower 1 and its circles no longer share an island -- the tower is the camp's
-## gatehouse. Everything that needs "outward from my own island" asks this.
+## Which TRAIL a stop belongs to. Indexed by anchor rather than by station, because
+## Station 1 rides the camp's trail while its circles ride island 1's. Everything
+## that needs "outward from my own island" asks this; for Station 1 that means the
+## camp's centre, which is the right answer -- it is the stop nearest the camp.
 func _island_of_anchor(k: int) -> int:
 	var seen := 0
 	for i in TRAILS.size():
@@ -582,8 +609,13 @@ func _stamp_path() -> void:
 					for ox in [-1, 0, 1]:
 						var cc := c + Vector2i(ox, oy)
 						if _in_bounds(cc):
+							# Only ground the trail invents belongs to the trail: the
+							# camp trail crosses island 1's east spit to reach Station
+							# 1, and relabelling those cells island 0 would dress the
+							# spit with the camp's props.
+							if not _land.has(cc):
+								_island_of[cc] = t
 							_land[cc] = true
-							_island_of[cc] = t
 	# The towers step off the path, so their ground has to be stamped as well or
 	# one ends up standing in the shallows at a bend.
 	for k in _tower_anchors():
@@ -594,34 +626,9 @@ func _stamp_path() -> void:
 			for ox in range(-2, 3):
 				var cc := bc + Vector2i(ox, oy)
 				if _in_bounds(cc):
+					if not _land.has(cc):
+						_island_of[cc] = isl
 					_land[cc] = true
-					_island_of[cc] = isl
-	_stamp_neck()
-
-
-## The neck: the three-cell strip joining Station 1's headland to the rest of its
-## island, and the spot the knight stands on. The land bridge and the headland both
-## fall out of `_stamp_path()` above -- the camp trail's far anchor sits out over the
-## channel, so the walk stamps the crossing and the tower's pad stamps the landing.
-## What is left is to join that landing to the island at a width something can block.
-func _stamp_neck() -> void:
-	var from: Vector2 = _anchors[1]                     # Tower 1's doorstep
-	var dir := (_norm(ISLANDS[1].c) - from).normalized()
-	var perp := dir.orthogonal()
-	var steps := NECK_CELLS * 2
-	for k in steps + 1:
-		var p := from + dir * (float(k) * TILE * 0.5)
-		for wi in range(-1, 2):
-			var cc := _cell_at(p + perp * (float(wi) * TILE))
-			if _in_bounds(cc):
-				_land[cc] = true
-				_island_of[cc] = 1
-	_knight_post = from + dir * (float(NECK_CELLS) * 0.5 * TILE)
-	# Two tiles deep along the walk by five across: five covers the three-tile neck
-	# with margin, and the cells either side of it are sea, so oversizing is free.
-	# Two deep leaves the doorstep behind him clear -- `_clear_of_anchors()` checks it.
-	var size := (Vector2(2, 5) if absf(dir.x) >= absf(dir.y) else Vector2(5, 2)) * TILE
-	_knight_wall = Rect2(_knight_post - size * 0.5, size)
 
 
 func _build_path() -> void:
@@ -631,9 +638,9 @@ func _build_path() -> void:
 		var meta := QuestionGen.station_meta(st)
 		_make_station(st, _anchors[k], meta.accent, _tower_lift(k))
 		k += 1
-		# Each station's circles use that same station's building -- native
-		# colors, no tint -- so size the decor keep-out box off it too.
-		var building: String = BUILDINGS[st]
+		# Every circle is a tower in its station's livery -- native colors, no
+		# tint -- so size the decor keep-out box off it too.
+		var building: String = CIRCLE_BUILDINGS[st]
 		var ctex := Art.cell(building, 0, 0)
 		var chw := ctex.region.size.x * 0.5 * PathCircle.TOWER_SCALE
 		var cbh := ctex.region.size.y * PathCircle.TOWER_SCALE
@@ -659,7 +666,66 @@ func _build_path() -> void:
 			k += 1
 	_build_camp(_anchors[0])
 	_build_gate(_anchors[k])
+	_build_barricade()
 	_post_knight()
+
+
+## The boulder line, and the gap in it the knight fills. Laid across the walk from
+## Station 1's monastery to its first circle, cell by cell out to the sea on both
+## sides, so there is no way round it and exactly one way through.
+##
+## Objects rather than terrain: the rocks are what the player reads, and the same
+## `_solid` rect per cell is what stops them. The line is laid on every build,
+## briefed or not -- only the knight in its gap comes and goes.
+##
+## ponytail: one hard-coded barricade, for Station 1. If a later station ever wants
+## one, take the anchor pair as an argument and call it once per station.
+func _build_barricade() -> void:
+	var a: Vector2 = _anchors[1]
+	var b: Vector2 = _anchors[2]
+	var dir := (b - a).normalized()
+	# Whole cells, square to the grid, or the rects leave diagonal slips between
+	# them: across the walk is the other axis, whichever one that is.
+	var step := Vector2i(0, 1) if absf(dir.x) >= absf(dir.y) else Vector2i(1, 0)
+	# Each cell of the line is two cells deep along the walk, one across. Two deep
+	# because `_is_walkable()` is a point test against the player's position, and a
+	# one-tile wall can be stepped clean over in a single frame after a hitch.
+	var size := (Vector2(2, 1) if step == Vector2i(0, 1) else Vector2(1, 2)) * TILE
+	# The gap runs from `mid` outward for BARRICADE_GAP cells; the rocks start on
+	# either side of it and run to the sea.
+	var mid := _cell_at(a.lerp(b, BARRICADE_T))
+	var last := BARRICADE_GAP - 1
+	_knight_post = _cell_mid(mid) + Vector2(step) * (float(last) * 0.5 * TILE)
+	_knight_wall = _cells_rect(mid, step, 0, last, size)
+	_barricade.clear()
+	for run in [[-1, -1], [last + 1, 1]]:
+		var n: int = run[0]
+		while true:
+			var c := mid + step * n
+			if not _land.has(c):
+				break
+			var rect := _cells_rect(c, step, 0, 0, size)
+			_barricade.append(rect)
+			_solid.append(rect)
+			# Round-robin off the cell so the wall is not four of the same stone.
+			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
+					% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
+			n += int(run[1])
+	# Keep the decor pass from dropping a tree into the rubble.
+	if not _barricade.is_empty():
+		var span: Rect2 = _barricade[0]
+		for r in _barricade:
+			span = span.merge(r)
+		_station_rects.append(span)
+
+
+## The rect covering the cells `lo` to `hi` steps of `step` away from `c`, each cell
+## being `size` (already deeper along the walk than one tile). Shared so the
+## knight's plug and the rocks either side of it line up exactly.
+func _cells_rect(c: Vector2i, step: Vector2i, lo: int, hi: int, size: Vector2) -> Rect2:
+	var from := _cell_mid(c) + Vector2(step) * (float(lo) * TILE) - size * 0.5
+	var to := _cell_mid(c) + Vector2(step) * (float(hi) * TILE) + size * 0.5
+	return Rect2(from, to - from)
 
 
 ## ponytail: one hard-coded blocker, for Station 1. If a later station ever wants
@@ -860,6 +926,8 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOW
 	_station_rects.append(Rect2(
 			Vector2(base.x - (hw + TILE), base.y - (bh + TILE)),
 			Vector2(hw * 2.0 + TILE * 2.0, bh + TILE * 2.0)))
+	# ...and off the signage below it, which is wider than any of the buildings
+	# and was getting a tree planted through the middle of the topic line.
 	# Signage over the doorway rather than over the roof. Above the roof the
 	# castle's label sits 138px up, and since the camera centres on the player
 	# it slides behind the HUD bar the moment you approach from the south.
@@ -867,6 +935,7 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOW
 	# Over the doorstep on the path: above the lifted roof it is 200px up, which
 	# is off-screen the moment the player stands on the path below it.
 	var sign_y := -30.0
+	_station_rects.append(Rect2(at + Vector2(-100.0, sign_y), Vector2(200.0, 44.0)))
 	var title := Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
 	title.position = Vector2(-100, sign_y)
 	title.size = Vector2(200, 20)
