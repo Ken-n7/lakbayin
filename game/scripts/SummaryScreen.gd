@@ -61,8 +61,13 @@ func _build() -> void:
 	var top_txt := ""
 	for i in top.size():
 		top_txt += "%d  %s — %d    " % [i + 1, str(top[i].name), int(top[i].gems)]
-	box.add_child(Art.label("Party: " + top_txt.strip_edges(), 13, Color("2a201a"),
-			HORIZONTAL_ALIGNMENT_CENTER))
+	# Four ranked entries run well past 640px unwrapped -- found on a real device,
+	# where the row ran off the right edge with no way to scroll and see the rest.
+	var party := Art.label("Party: " + top_txt.strip_edges(), 13, Color("2a201a"),
+			HORIZONTAL_ALIGNMENT_CENTER)
+	party.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	party.custom_minimum_size = Vector2(540, 0)
+	box.add_child(party)
 
 	var btns := HBoxContainer.new()
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER

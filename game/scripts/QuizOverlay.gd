@@ -23,6 +23,7 @@ var meta: Dictionary = {}
 var _panel: VBoxContainer
 var _q_prompt: Label
 var _q_index: Label
+var _mission_text: Label   # the intro's welcome paragraph, shown under "MISSION"
 var _input: LineEdit
 var _hint_text: Label
 var _btn_submit: Button
@@ -89,6 +90,15 @@ func _build() -> void:
 	_q_prompt = Art.label("", 30, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_q_prompt)
 
+	# Built here, right after the "MISSION" heading, and just shown/hidden by
+	# `_layout()` -- `_show_intro()` used to `add_child` a fresh label instead,
+	# which always lands at the END of the VBox (after Continue, already a
+	# child from here), rendering the welcome paragraph below the button.
+	_mission_text = Art.label("", 15, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_mission_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_mission_text.custom_minimum_size = Vector2(520, 0)
+	_panel.add_child(_mission_text)
+
 	var inrow := HBoxContainer.new()
 	inrow.alignment = BoxContainer.ALIGNMENT_CENTER
 	inrow.add_theme_constant_override("separation", 8)
@@ -154,13 +164,9 @@ func _show_intro() -> void:
 	phase = Phase.INTRO
 	_q_index.text = "Station %d — %s" % [meta.id, meta.short]
 	_q_prompt.text = "MISSION"
+	_mission_text.text = meta.mission
 	_layout()
 	_continue_btn.text = "Continue"
-	var m := Art.label(meta.mission, 15, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
-	m.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	m.custom_minimum_size = Vector2(520, 0)
-	m.name = "Mission"
-	_panel.add_child(m)
 	_hint_text.text = ""
 
 
@@ -173,6 +179,7 @@ func _layout() -> void:
 		(c as Control).visible = asking
 	for c in [_result_title, _delta_label, _result_rule]:
 		(c as Control).visible = phase == Phase.FEEDBACK or phase == Phase.DONE
+	_mission_text.visible = phase == Phase.INTRO
 	_continue_btn.visible = not asking
 
 
