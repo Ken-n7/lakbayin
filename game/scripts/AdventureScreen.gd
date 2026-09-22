@@ -84,12 +84,14 @@ const TRAILS := [
 
 ## Each island gets its own dressing, so the stations do not read as the same field
 ## three times: a thin camp clearing, a wooded starter valley, a stony quarry, a
-## bare highland. Cumulative thresholds for the one weighted roll in `_build_decor()`.
+## bare highland. Cumulative thresholds for the one weighted roll in `_build_decor()`,
+## and `count` is props, not patches -- since they arrive in clumps the counts are
+## higher than they were when every roll dropped one prop on its own.
 const ISLAND_PROPS := [
-	{"tree": 0.55, "stump": 0.70, "rock": 0.88, "count": 10, "sheep": 1},
-	{"tree": 0.60, "stump": 0.70, "rock": 0.86, "count": 80, "sheep": 3},
-	{"tree": 0.22, "stump": 0.46, "rock": 0.90, "count": 44, "sheep": 1},
-	{"tree": 0.08, "stump": 0.20, "rock": 0.80, "count": 38, "sheep": 0},
+	{"tree": 0.55, "stump": 0.70, "rock": 0.88, "count": 14, "sheep": 1},
+	{"tree": 0.60, "stump": 0.70, "rock": 0.86, "count": 140, "sheep": 3},
+	{"tree": 0.22, "stump": 0.46, "rock": 0.90, "count": 70, "sheep": 1},
+	{"tree": 0.08, "stump": 0.20, "rock": 0.80, "count": 60, "sheep": 0},
 ]
 
 ## Half-width of a causeway, in cells: 1 gives a three-tile crossing, wide enough
@@ -138,6 +140,8 @@ var player: Node2D
 var _land := {}       # Vector2i -> true
 var _beach := {}      # Vector2i -> true
 var _island_of := {}  # Vector2i -> island index, for the per-island props pass
+var _trail := {}      # Vector2i -> true, the road corridor: decor keeps off it
+var _taken := {}      # Vector2i -> true, cells a prop already stands on
 var _causeways: Array = []   # [{cells, open, props, sign}] -- one per island seam
 var _solid: Array[Rect2] = []  # building base walls, in world px
 var _knight: Node2D = null     # null once dismissed, or never posted on a restart
@@ -609,6 +613,11 @@ func _stamp_path() -> void:
 					for ox in [-1, 0, 1]:
 						var cc := c + Vector2i(ox, oy)
 						if _in_bounds(cc):
+							# The corridor the walk actually runs down, three cells
+							# wide. `_build_decor()` plants nothing in it, which is
+							# what makes the trail read as a road through the trees
+							# rather than a line of towers lost in them.
+							_trail[cc] = true
 							# Only ground the trail invents belongs to the trail: the
 							# camp trail crosses island 1's east spit to reach Station
 							# 1, and relabelling those cells island 0 would dress the
@@ -711,12 +720,14 @@ func _build_barricade() -> void:
 			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
 					% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
 			n += int(run[1])
-	# Keep the decor pass from dropping a tree into the rubble.
+	# Keep the decor pass a full tile clear of the rubble. Touching it is not
+	# enough: a loose boulder alongside the line reads as part of the wall, and
+	# walking through that one is the bug it looks like.
 	if not _barricade.is_empty():
 		var span: Rect2 = _barricade[0]
 		for r in _barricade:
 			span = span.merge(r)
-		_station_rects.append(span)
+		_station_rects.append(span.grow(TILE))
 
 
 ## The rect covering the cells `lo` to `hi` steps of `step` away from `c`, each cell
@@ -805,6 +816,13 @@ func _build_gate(at: Vector2) -> void:
 ## Dressed per island, off one weight table, so the three stations read as three
 ## places: a wooded valley, a stony quarry, a bare highland. Same weighted roll as
 ## before -- only the thresholds and the counts now come from `ISLAND_PROPS`.
+## Props arrive as patches of one kind, on ground that is clear of the road, the
+## stations and every prop already standing. That is the whole difference between
+## a wood and a scatter of single trees: the roll picks WHAT grows here, and then
+## a handful of it grows here, together.
+##
+## Deterministic -- one fixed seed, so the board is the same every run. There is
+## nothing to be gained from a different mess each time; there is a lot to be lost.
 func _build_decor() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 90210
@@ -815,29 +833,9 @@ func _build_decor() -> void:
 		while placed < int(mix.count) and tries < int(mix.count) * 60:
 			tries += 1
 			var c := Vector2i(rng.randi_range(1, W - 2), rng.randi_range(1, H - 2))
-			if not _land.has(c) or _beach.has(c):
+			if not _plantable(c, isl):
 				continue
-			if int(_island_of.get(c, -1)) != isl or _near_station(c):
-				continue
-			var p := _cell_mid(c)
-			var roll := rng.randf()
-			if roll < float(mix.tree):
-				var t := rng.randi_range(1, 4)
-				var fl := 1.0 if rng.randf() < 0.9 else -1.0
-				Art.anim_sprite(world, "res://assets/terrain/decorations/Tree%d.png" % t, p, 0.42, 3.0, fl)
-			elif roll < float(mix.stump):
-				Art.sprite(world, Art.tex("res://assets/terrain/decorations/Stump %d.png" % rng.randi_range(1, 4)), p, 0.4)
-			elif roll < float(mix.rock):
-				Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png" % rng.randi_range(1, 4)), p, 1.4)
-			else:
-				var golds := [
-					"res://assets/terrain/resources/Gold_Resource.png",
-					"res://assets/terrain/resources/Wood Resource.png",
-					"res://assets/terrain/resources/Meat Resource.png",
-					"res://assets/terrain/resources/Tool_0%d.png" % rng.randi_range(1, 4),
-				]
-				Art.sprite(world, Art.tex(golds[rng.randi_range(0, golds.size() - 1)]), p, 0.5)
-			placed += 1
+			placed += _plant_patch(rng, c, _roll_kind(rng, mix), isl)
 		for _k in int(mix.sheep):
 			world.add_child(_sheep_at(rng, isl))
 	# Animated rocks in the water off each island, to break up the open sea.
@@ -849,6 +847,90 @@ func _build_decor() -> void:
 			if _in_bounds(_cell_at(wrp)) and not _is_walkable(wrp):
 				Art.anim_sprite(world, "res://assets/terrain/decorations/Water Rocks_0%d.png" % rng.randi_range(1, 4),
 						wrp, 1.4, 4.0)
+
+
+## How many of a kind stand together at most. A wood is a wood, a rock field is a
+## handful of stones, and loot is a single thing someone dropped.
+const PATCH := {"tree": 6, "stump": 3, "rock": 4, "loot": 1}
+
+
+## The same weighted roll as before, but for the patch rather than for one prop.
+func _roll_kind(rng: RandomNumberGenerator, mix: Dictionary) -> String:
+	var roll := rng.randf()
+	if roll < float(mix.tree):
+		return "tree"
+	if roll < float(mix.stump):
+		return "stump"
+	if roll < float(mix.rock):
+		return "rock"
+	return "loot"
+
+
+## Ground a prop may stand on: this island's, inland of the shore, off the road,
+## off the stations and not already occupied. Everything that makes the board read
+## as a place rather than as noise is this one predicate.
+func _plantable(c: Vector2i, isl: int) -> bool:
+	if _taken.has(c) or _trail.has(c):
+		return false
+	if not _land.has(c) or _beach.has(c):
+		return false
+	if int(_island_of.get(c, -1)) != isl:
+		return false
+	return not _near_station(c)
+
+
+## Grow a patch of `kind` out from `c`, centre first then ring by ring, and return
+## how many actually took. The skipped cells are the point: a patch with no holes
+## in it reads as a hedge, not as a wood.
+func _plant_patch(rng: RandomNumberGenerator, c: Vector2i, kind: String, isl: int) -> int:
+	var want := rng.randi_range(1, int(PATCH[kind]))
+	var n := 0
+	for cc in _rings(c, 2):
+		if n >= want:
+			break
+		if not _plantable(cc, isl):
+			continue
+		if cc != c and rng.randf() < 0.45:
+			continue
+		_taken[cc] = true
+		_plant(rng, cc, kind)
+		n += 1
+	return n
+
+
+## `c`, then the cells one step out, then two, ... out to `radius`.
+static func _rings(c: Vector2i, radius: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = [c]
+	for r in range(1, radius + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) == r:
+					out.append(c + Vector2i(dx, dy))
+	return out
+
+
+## One prop of `kind`, base-anchored on the cell.
+func _plant(rng: RandomNumberGenerator, c: Vector2i, kind: String) -> void:
+	var p := _cell_mid(c)
+	match kind:
+		"tree":
+			var fl := 1.0 if rng.randf() < 0.9 else -1.0
+			Art.anim_sprite(world, "res://assets/terrain/decorations/Tree%d.png"
+					% rng.randi_range(1, 4), p, 0.42, 3.0, fl)
+		"stump":
+			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Stump %d.png"
+					% rng.randi_range(1, 4)), p, 0.4)
+		"rock":
+			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
+					% rng.randi_range(1, 4)), p, 1.4)
+		_:
+			var loot := [
+				"res://assets/terrain/resources/Gold_Resource.png",
+				"res://assets/terrain/resources/Wood Resource.png",
+				"res://assets/terrain/resources/Meat Resource.png",
+				"res://assets/terrain/resources/Tool_0%d.png" % rng.randi_range(1, 4),
+			]
+			Art.sprite(world, Art.tex(loot[rng.randi_range(0, loot.size() - 1)]), p, 0.5)
 
 
 func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
