@@ -27,10 +27,17 @@ const BUILDING_SCALE := 0.5
 const BUILDINGS := [
 	"res://assets/buildings/Blue_Tower.png",
 	"res://assets/buildings/Yellow_Archery.png",
-	"res://assets/buildings/Red_Castle.png",
+	"res://assets/buildings/Red_House1.png",   # Red_Castle moved to the Victory Gate
 ]
+## The Victory Gate's building -- the red livery only has one castle-scale
+## asset, so it went to the gate and station 3's tower stepped down to a house.
+const GATE_BUILDING := "res://assets/buildings/Red_Castle.png"
 const PLAYER_SPEED := 150.0
 const INTERACT_RADIUS := 42.0
+## Half a circle tower, near enough: the three buildings are 78-92px tall drawn,
+## so this reaches the whole body from its middle. Tap reach only -- walking up
+## to a tower is still `INTERACT_RADIUS` against the anchor it stands beside.
+const TOWER_TAP_REACH := 46.0
 
 ## One island per station, as normalized centre + radii. `wobble` only shifts the
 ## coastline noise so the three do not come out as the same shape rotated.
@@ -69,6 +76,11 @@ const CAUSEWAY_HALF := 1
 ## Towers stand beside the path, not on it: their walls are up to 150px wide and
 ## would otherwise swallow the next circle along. `_tower_lift()` picks the side.
 const TOWER_LIFT := 56.0
+## A question circle's tower stands at its own doorstep, close enough that the
+## glowing "answer here" ring reads as the tower's entrance. See `_circle_lift()`
+## for why stepping sideways needs more room than stepping up.
+const CIRCLE_LIFT := 26.0
+const CIRCLE_SIDE_LIFT := 40.0
 ## How close the play camera sits. 1.0 is the crispest -- the art is never
 ## resampled -- but shows only a screenful of a world this size; 0.75 trades a
 ## little sharpness for a third more trail in view. Try both on the device.
@@ -95,6 +107,7 @@ var _anchors: Array = []        # base camp, 3 towers, Game.TOTAL_ITEMS circles,
 var _gate: Node2D = null
 var _cam: Camera2D
 var _prompt: Label
+var _bang: Label = null         # the "!" over the hero when something is in reach
 var _hud_gems: Label
 var _hud_time: Label
 var _hud_station: Label
@@ -486,6 +499,26 @@ func _tower_lift(k: int, st: int) -> Vector2:
 	return Vector2(signf(_anchors[k].x - mid.x) * TOWER_LIFT, 0)
 
 
+## Same direction logic for a question circle's tower, but much closer in: the
+## player stands on the anchor to answer, so a full TOWER_LIFT leaves the glowing
+## spot stranded half a tower away from the door it belongs to.
+##
+## The two magnitudes differ because the wall is axis-aligned. Stepping *up* only
+## has to clear the anchor vertically, and the wall sits above it at any positive
+## lift. Stepping *sideways* has to clear it horizontally, so the lift has to beat
+## the widest circle building's wall half-width (Yellow_Archery, 28px once
+## `PathCircle.WALL_WIDTH_FRAC` trims it to the base) or the wall reaches back
+## over the doorstep.
+func _circle_lift(k: int, st: int) -> Vector2:
+	var a: Vector2 = _anchors[maxi(k - 1, 0)]
+	var b: Vector2 = _anchors[mini(k + 1, _anchors.size() - 1)]
+	var dir := (b - a).normalized()
+	if absf(dir.x) >= absf(dir.y):
+		return Vector2(0, -CIRCLE_LIFT)
+	var mid := _norm(ISLANDS[_station_island(st)].c)
+	return Vector2(signf(_anchors[k].x - mid.x) * CIRCLE_SIDE_LIFT, 0)
+
+
 ## The path is authored, the island is generated, so the two can disagree: force
 ## land under the whole walk (three cells wide) before the autotile pass paints
 ## the shoreline, and the board is never cut by a stray inlet.
@@ -521,19 +554,37 @@ func _stamp_path() -> void:
 
 
 func _build_path() -> void:
+	var PathCircle := preload("res://scripts/PathCircle.gd")
 	var k := 1                       # anchor 0 is the base camp
 	for st in 3:
 		var meta := QuestionGen.station_meta(st)
 		_make_station(st, _anchors[k], meta.accent, _tower_lift(k, st))
 		k += 1
+		# Each station's circles use that same station's building -- native
+		# colors, no tint -- so size the decor keep-out box off it too.
+		var building: String = BUILDINGS[st]
+		var ctex := Art.cell(building, 0, 0)
+		var chw := ctex.region.size.x * 0.5 * PathCircle.TOWER_SCALE
+		var cbh := ctex.region.size.y * PathCircle.TOWER_SCALE
 		for _i in Game.ITEMS_PER_STATION[st]:
-			var c: Node2D = preload("res://scripts/PathCircle.gd").new()
+			var c: Node2D = PathCircle.new()
 			c.position = _anchors[k]
 			world.add_child(c)
-			c.setup(_circles.size(), meta.accent)
+			var lift := _circle_lift(k, st)
+			c.setup(_circles.size(), building, lift, world)
+			# The middle of the drawn building, for anything aiming at what the
+			# player can see rather than at the anchor it steps off of. Same
+			# `set_meta` channel `_make_station` uses for its wall.
+			c.set_meta("tower_mid", _anchors[k] + lift - Vector2(0, cbh * 0.5))
 			_circles.append(c)
-			# Keep trees and rocks off the circle itself.
-			_station_rects.append(Rect2(_anchors[k] - Vector2(22, 22), Vector2(44, 44)))
+			# The wall PathCircle computed is local to the anchor; place it in
+			# world space and keep decor off the lifted tower's real footprint.
+			var w: Rect2 = c.wall
+			w.position += _anchors[k]
+			_solid.append(w)
+			_station_rects.append(Rect2(
+					_anchors[k] + lift - Vector2(chw + TILE * 0.5, cbh),
+					Vector2(chw * 2.0 + TILE, cbh + TILE * 0.5)))
 			k += 1
 	_build_camp(_anchors[0])
 	_build_gate(_anchors[k])
@@ -549,28 +600,41 @@ func _build_camp(at: Vector2) -> void:
 	_station_rects.append(Rect2(at - Vector2(48, 60), Vector2(96, 80)))
 
 
-## The end of the whole player flow: walking in ends the adventure and the
-## summary opens (SPECS Q6). Two boulders and a ribbon, no new art.
+## The end of the whole player flow: walking up and interacting ends the
+## adventure and the summary opens (SPECS Q6). GATE_BUILDING (the castle) is
+## the centerpiece, ribbon and label riding above its roof.
 func _build_gate(at: Vector2) -> void:
 	_gate = Node2D.new()
 	_gate.position = at
 	world.add_child(_gate)
-	for side in [-1.0, 1.0]:
-		Art.sprite(_gate, Art.tex("res://assets/terrain/decorations/Rock4.png"),
-				Vector2(side * 30.0, 0), 1.3)
+	# Same crop-to-bbox, base-anchored pattern as `_make_station`'s tower sprite,
+	# parented to `world` (not `_gate`) so the y-sort places it by where it
+	# actually stands rather than by the gate's own transform.
+	var btex := Art.cell(GATE_BUILDING, 0, 0)
+	var bsize := btex.region.size
+	var building := Sprite2D.new()
+	building.texture = btex
+	building.scale = Vector2(BUILDING_SCALE, BUILDING_SCALE)
+	building.position = at
+	building.offset = Vector2(0, -bsize.y * 0.5)
+	world.add_child(building)
+	var bh := bsize.y * BUILDING_SCALE
 	var rib := Art.cell("res://assets/ui/BigRibbons.png", 0, 1)
 	var spr := Sprite2D.new()
 	spr.texture = rib
 	spr.scale = Vector2(0.42, 0.42)
 	spr.offset = Vector2(0, -rib.region.size.y * 0.5)
-	spr.position = Vector2(0, -34)
+	spr.position = Vector2(0, -bh - 10.0)
 	_gate.add_child(spr)
 	var l := Art.label("VICTORY GATE", 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-	l.position = Vector2(-80, -30)
+	l.position = Vector2(-80, -bh - 6.0)
 	l.size = Vector2(160, 20)
 	Art.shadow(l)
 	_gate.add_child(l)
-	_station_rects.append(Rect2(at - Vector2(64, 96), Vector2(128, 120)))
+	var hw := bsize.x * 0.5 * BUILDING_SCALE
+	_station_rects.append(Rect2(
+			Vector2(at.x - (hw + TILE), at.y - (bh + TILE)),
+			Vector2(hw * 2.0 + TILE * 2.0, bh + TILE * 2.0)))
 
 
 # --- Decorations ------------------------------------------------------------
@@ -798,6 +862,22 @@ func _spawn_player() -> void:
 	spr.play("down")
 	spr.pause()
 	player.add_child(spr)
+	# "There is something here you can actually do." Clears the hero's head: the
+	# 20px frame sits at `offset` -10 and scales by `_hero_scale`. Bobs so it
+	# catches the eye without a marker on the ground under it.
+	_bang = Art.label("!", 16, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
+	_bang.position = Vector2(-20, -20.0 * _hero_scale - 24.0)
+	_bang.size = Vector2(40, 20)
+	_bang.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_bang.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bang.visible = false
+	Art.shadow(_bang)
+	player.add_child(_bang)
+	var bob := _bang.create_tween().set_loops()
+	bob.tween_property(_bang, "position:y", _bang.position.y - 4.0, 0.45) \
+			.set_trans(Tween.TRANS_SINE)
+	bob.tween_property(_bang, "position:y", _bang.position.y, 0.45) \
+			.set_trans(Tween.TRANS_SINE)
 	world.add_child(player)
 	# On the world, not the hero: the aerial POV has to frame the whole board
 	# before it swoops down to him.
@@ -972,7 +1052,10 @@ func _nearest_of(nodes: Array) -> int:
 
 
 ## What the hero is standing at: {kind: "tower"|"circle"|"gate", index}, or {}.
-## Anchors are ~68px apart against a 42px reach, so this is never ambiguous.
+## Anchors are ~200px apart against a 42px reach, so this is never ambiguous.
+## Measured against the anchor, not the tower beside it: the anchor sits on the
+## trail the hero walks, which gives a wide window of availability, where a disc
+## centred on a sideways-lifted tower would only catch ~25px of that walk.
 func _nearest_target() -> Dictionary:
 	var best := {}
 	var best_d := INTERACT_RADIUS
@@ -989,12 +1072,24 @@ func _nearest_target() -> Dictionary:
 	return best
 
 
+## Would pressing E / GO right now actually do something? The "!" over the
+## player's head is exactly this, and `_prompt_for` opens on the same question,
+## so the rule lives here rather than in both.
+func _can_act_on(target: Dictionary) -> bool:
+	match target.get("kind", ""):
+		"tower": return _can_enter_tower(target.index)
+		"circle": return _can_answer(target.index)
+		"gate": return _can_enter_gate()
+	return false
+
+
 func _prompt_for(target: Dictionary) -> String:
 	var go := "Tap GO" if Game.touch else "Press E / Space / Enter"
+	var ready := _can_act_on(target)
 	match target.get("kind", ""):
 		"tower":
 			var i: int = target.index
-			if _can_enter_tower(i):
+			if ready:
 				return "%s — enter Station %d" % [go, i + 1]
 			if Game.items_done >= Game.TOTAL_ITEMS:
 				return "Every circle cleared — head for the Victory Gate"
@@ -1003,7 +1098,7 @@ func _prompt_for(target: Dictionary) -> String:
 			return "Complete Station %d first" % (Game.station_of_item(Game.items_done) + 1)
 		"circle":
 			var n: int = target.index
-			if _can_answer(n):
+			if ready:
 				return "%s — Answer Quest!" % go
 			if n < Game.items_done:
 				return "Circle %d cleared" % (n + 1)
@@ -1011,16 +1106,21 @@ func _prompt_for(target: Dictionary) -> String:
 				return "Enter Station %d first" % (Game.station_of_item(n) + 1)
 			return "Answer circle %d first" % (Game.items_done + 1)
 		"gate":
-			if _can_enter_gate():
+			if ready:
 				return "%s — enter the Victory Gate" % go
 			return "Conquer all %d circles first" % Game.TOTAL_ITEMS
 	return ""
 
 
 func _update_interaction() -> void:
+	var target := _nearest_target()
+	_bang.visible = _can_act_on(target)
+	# A toast owns the prompt line for a moment, but it has no business freezing
+	# the "!" -- that is a separate channel and has to keep tracking what is in
+	# reach while the tip is up.
 	if _flash_active:
 		return
-	_prompt.text = _prompt_for(_nearest_target())
+	_prompt.text = _prompt_for(target)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1061,14 +1161,18 @@ func _nudge_hero_scale(delta: float) -> void:
 
 
 ## Tap-to-inspect. `self` is a canvas item under the camera, so the viewport's
-## canvas transform is what undoes the zoom and the scroll. The reach is in screen
-## px, converted back: a disc has to stay tappable at the aerial zoom too.
+## canvas transform is what undoes the zoom and the scroll. Aimed at the tower
+## the player can see, not at the anchor below it -- nothing is drawn there any
+## more, so hit-testing the anchor meant tapping bare grass. TOWER_TAP_REACH
+## covers the building; the screen-px slack on top keeps it tappable once the
+## aerial zoom has shrunk it.
 func _tap_at(screen_pos: Vector2) -> void:
 	var at: Vector2 = get_viewport().get_canvas_transform().affine_inverse() * screen_pos
 	var best := -1
-	var best_d := 14.0 / maxf(_cam.zoom.x, 0.01)
+	var best_d := TOWER_TAP_REACH + 14.0 / maxf(_cam.zoom.x, 0.01)
 	for n in _circles.size():
-		var d: float = (_circles[n] as Node2D).position.distance_to(at)
+		var c := _circles[n] as Node2D
+		var d: float = (c.get_meta("tower_mid", c.position) as Vector2).distance_to(at)
 		if d < best_d:
 			best_d = d
 			best = n

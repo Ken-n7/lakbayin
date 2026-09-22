@@ -245,6 +245,20 @@ func _run() -> void:
 	check("circle 1 current after the briefing", bool(adv.call("_can_answer", 0)))
 	check("circle 2 still locked", not bool(adv.call("_can_answer", 1)))
 
+	# The "!" over the hero is the only cue that an item is answerable -- there is
+	# no marker on the ground any more -- so it has to track the gating exactly.
+	var bang: Control = adv.get("_bang")
+	check("bang exists, hidden until something is in reach", bang != null and not bang.visible)
+	(adv.get("player") as Node2D).position = (adv.get("_circles")[0] as Node2D).position
+	adv.call("_update_interaction")
+	check("bang on at the answerable circle", bang != null and bang.visible)
+	(adv.get("player") as Node2D).position = (adv.get("_circles")[3] as Node2D).position
+	adv.call("_update_interaction")
+	check("bang off at a locked circle", bang != null and not bang.visible)
+	(adv.get("player") as Node2D).position += Vector2(400, 0)
+	adv.call("_update_interaction")
+	check("bang off in open grass", bang != null and not bang.visible)
+
 	# circle 1: correct
 	var ov: Node = await _open_circle(adv, 0)
 	check("circle overlay opened", ov != null)

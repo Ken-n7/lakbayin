@@ -1,82 +1,70 @@
 extends Node2D
 
-## One circle on the board path: exactly one question item. Colour is the
-## station's accent; state is locked / current / done.
+## One stop on the board path: exactly one question item. Its tower is the same
+## building as its own station's outpost keep (Blue_Tower / Yellow_Archery /
+## Red_House1) -- native colors, no tint, per the client's call: three towers
+## already exist in the pack in three different colors, use those.
 ##
-## The disc is generated, not loaded: the pack has no circle in three colours,
-## and a white disc tinted by `modulate` is one texture for all forty nodes.
+## It stands lifted just off the path, the same trick `_tower_lift()` uses for
+## the three station keeps, so its wall (the base only -- the roof stays
+## walkable) doesn't cover the anchor point itself, which is where the player
+## has to stand to interact. Nothing is drawn at that anchor: the tower is what
+## you walk up to, and `AdventureScreen` pops a "!" over the player's head once
+## the item is actually answerable.
 
-const ACCENT := {
-	"Blue": Color("3f7ad9"),
-	"Orange": Color("e8891c"),
-	"Red": Color("c8452e"),
-}
-
-static var _disc_tex: ImageTexture = null
+const TOWER_SCALE := 0.5      # same scale as the real station buildings and the gate
+const WALL_HEIGHT_FRAC := 0.45   # only the base blocks; the roof is walkable
+## ...and only the stone base blocks across, not the crenellated top, which
+## overhangs it. Full sprite width would make a tower on a vertical trail bend
+## step 58px aside just to keep its own wall off its doorstep.
+const WALL_WIDTH_FRAC := 0.62
 
 var index := 0
 var state := "locked"
+var wall: Rect2   # local to this node; the caller offsets it by the anchor position
 
-var _spr: Sprite2D
 var _label: Label
-var _accent := Color.WHITE
-var _pulse: Tween = null
 
 
-## White fill with a darker rim, so a single `modulate` tints both together.
-static func disc() -> ImageTexture:
-	if _disc_tex != null:
-		return _disc_tex
-	const D := 24
-	var img := Image.create(D, D, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var c := Vector2(D * 0.5 - 0.5, D * 0.5 - 0.5)
-	for y in D:
-		for x in D:
-			var r := Vector2(x, y).distance_to(c)
-			if r <= 11.0:
-				img.set_pixel(x, y, Color(0.55, 0.55, 0.55) if r > 8.5 else Color.WHITE)
-	_disc_tex = ImageTexture.create_from_image(img)
-	return _disc_tex
-
-
-func setup(circle_index: int, accent: String) -> void:
+## `lift` is local: where the tower building stands relative to the anchor
+## point (this node's own position, which stays the interact spot). The
+## building itself is parented to `world`, not to this node -- same reason
+## `_make_station`/`_build_gate` do it, so the y-sort places it by where it
+## actually stands rather than by the anchor it steps off of.
+func setup(circle_index: int, building_path: String, lift: Vector2, world: Node2D) -> void:
 	index = circle_index
-	_accent = ACCENT.get(accent, Color.WHITE)
-	_spr = Sprite2D.new()
-	_spr.texture = disc()
-	# Nudged up so the disc reads as painted on the ground the node stands on.
-	_spr.offset = Vector2(0, -2)
-	add_child(_spr)
-	_label = Art.label(str(index + 1), 11, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+
+	# Anchored at its base like every other building on the board: native art,
+	# no modulate.
+	var btex := Art.cell(building_path, 0, 0)
+	var bsize := btex.region.size
+	var spr := Sprite2D.new()
+	spr.texture = btex
+	spr.scale = Vector2(TOWER_SCALE, TOWER_SCALE)
+	spr.offset = Vector2(0, -bsize.y * 0.5)
+	spr.position = position + lift
+	world.add_child(spr)
+
+	var bh := bsize.y * TOWER_SCALE
+	var hw := bsize.x * 0.5 * TOWER_SCALE * WALL_WIDTH_FRAC
+	wall = Rect2(lift + Vector2(-hw, -bh * WALL_HEIGHT_FRAC), Vector2(hw * 2.0, bh * WALL_HEIGHT_FRAC))
+
+	# The item number, floating above the roof. One constant color in every
+	# state; it just disappears once the item is done.
+	_label = Art.label(str(index + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
+	_label.position = Vector2(lift.x - 20.0, lift.y - bh - 24.0)
+	_label.size = Vector2(40, 20)
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_label.size = Vector2(40, 24)
-	_label.position = Vector2(-20, -14)
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	Art.shadow(_label, Color(1, 1, 1, 0.55), 0, 2)
+	Art.shadow(_label)
 	add_child(_label)
+
 	set_state("locked")
 
 
+## Only "done" looks different -- it drops the number. Locked and current towers
+## are deliberately identical; which one is yours is the number sequence, and the
+## "!" over the player when you reach it.
 func set_state(s: String) -> void:
 	state = s
-	if _pulse != null and _pulse.is_valid():
-		_pulse.kill()
-	_pulse = null
-	match s:
-		"current":
-			_spr.modulate = _accent
-			_spr.scale = Vector2.ONE
-			_label.text = str(index + 1)
-			# The one circle the player may answer has to be findable at a glance.
-			_pulse = create_tween().set_loops()
-			_pulse.tween_property(_spr, "scale", Vector2(1.18, 1.18), 0.5)
-			_pulse.tween_property(_spr, "scale", Vector2.ONE, 0.5)
-		"done":
-			_spr.modulate = _accent.darkened(0.45)
-			_spr.scale = Vector2.ONE
-			_label.text = "✓"
-		_:
-			_spr.modulate = Color(_accent.darkened(0.3), 0.7)
-			_spr.scale = Vector2(0.85, 0.85)
-			_label.text = str(index + 1)
+	_label.visible = s != "done"
