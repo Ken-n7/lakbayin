@@ -1,0 +1,23 @@
+# Godot 4's local cache: reimported textures, editor folding state, the
+# filesystem index. All of it regenerates on open, none of it is shared, and it
+# rewrites itself every time the project is run -- which is why it showed up
+# dirty after every session. Keep `*.import` and `*.uid` next to the assets
+# though; those carry real import settings and stable ids.
+game/.godot/
+
+# Exported builds. These live on Drive, not here: an APK is ~28MB and git keeps
+# every copy forever, so refreshing it a few times costs more than the entire
+# rest of the project. Rebuild with:
+#   cd game && godot --headless --export-debug "Android" ../build/NumXventure.apk
+build/
+
+# Bytecode from the one-off scripts in game/tools/
+__pycache__/
+*.py[cod]
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*~
