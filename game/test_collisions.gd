@@ -18,7 +18,9 @@ func _initialize() -> void:
 
 	for i in 3:
 		var at: Vector2 = screen._station_nodes[i].position
-		var wall: Rect2 = screen._solid[i]
+		# Off the station itself, not `_solid[i]`: the outpost's houses append walls
+		# too, so the array is no longer one entry per station.
+		var wall: Rect2 = (screen._station_nodes[i] as Node2D).get_meta("wall")
 		var mid_y: float = wall.get_center().y
 
 		assert(not screen._is_walkable(wall.get_center()),
@@ -81,5 +83,77 @@ func _initialize() -> void:
 	assert(G.items_done == G.TOTAL_ITEMS, "40 circles resolved: %d" % G.items_done)
 	assert(screen._can_enter_gate(), "the gate stayed shut after all 40 circles")
 
+	# --- Region gating: the causeway is the ONLY way between islands --------
+	# Flood-fill from the base camp over walkable ground. This is what actually
+	# proves the gate: a flag can be checked, but only reachability shows that the
+	# next island cannot be reached by walking around the obstacle.
+	G.begin_adventure(600)
+	assert(screen._causeways.size() == 2, "expected 2 causeways, got %d" % screen._causeways.size())
+	for i in 2:
+		var cw: Dictionary = screen._causeways[i]
+		assert(not cw.cells.is_empty(), "causeway %d found no water to cross" % i)
+		assert(not bool(cw.open), "causeway %d starts open" % i)
+		var mid: Vector2 = screen._cell_mid(cw.cells[cw.cells.size() / 2])
+		assert(not screen._is_walkable(mid), "causeway %d is walkable before its station" % i)
+
+	_assert_islands(screen, G, 0)
+	screen.open_causeway(0)
+	assert(screen._is_walkable(screen._cell_mid(screen._causeways[0].cells[0])),
+			"causeway 0 stayed water after it opened")
+	_assert_islands(screen, G, 1)
+	screen.open_causeway(1)
+	_assert_islands(screen, G, 2)
+
+	# ...and it opens on its own the moment the station runs out of circles.
+	var fresh: Control = load("res://scripts/AdventureScreen.gd").new()
+	root.add_child(fresh)
+	G.begin_adventure(600)
+	fresh.setup({})
+	assert(not bool(fresh._causeways[0].open), "causeway 0 open at circle 0")
+	for n in G.ITEMS_PER_STATION[0]:
+		G.mark_correct()
+	fresh._refresh_causeways()
+	assert(bool(fresh._causeways[0].open), "causeway 0 shut after Station 1 was cleared")
+	assert(not bool(fresh._causeways[1].open), "causeway 1 opened one station early")
+
 	print("collisions ok")
 	quit()
+
+
+## Every circle of a station the player has reached must be walkable-to from the
+## base camp, and every circle beyond the next shut causeway must not be.
+func _assert_islands(screen: Control, G: Node, opened: int) -> void:
+	var reach := _reachable(screen)
+	for n in G.TOTAL_ITEMS:
+		var st: int = G.station_of_item(n)
+		var pos: Vector2 = (screen._circles[n] as Node2D).position
+		var cell := Vector2i(floori(pos.x / screen.TILE), floori(pos.y / screen.TILE))
+		if st <= opened:
+			assert(reach.has(cell),
+					"circle %d (station %d) unreachable with %d causeway(s) open" % [n + 1, st + 1, opened])
+		else:
+			assert(not reach.has(cell),
+					"circle %d (station %d) reachable with only %d causeway(s) open" % [n + 1, st + 1, opened])
+	var gate: Vector2 = (screen._gate as Node2D).position
+	var gcell := Vector2i(floori(gate.x / screen.TILE), floori(gate.y / screen.TILE))
+	assert(reach.has(gcell) == (opened >= 2),
+			"victory gate reachability wrong with %d causeway(s) open" % opened)
+
+
+## Cells walkable from the base camp, by flood fill over cell centres.
+func _reachable(screen: Control) -> Dictionary:
+	var start: Vector2 = screen._anchors[0]
+	var seen := {}
+	var queue: Array[Vector2i] = [Vector2i(floori(start.x / screen.TILE), floori(start.y / screen.TILE))]
+	seen[queue[0]] = true
+	while not queue.is_empty():
+		var c: Vector2i = queue.pop_back()
+		for d in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
+			var nc: Vector2i = c + d
+			if seen.has(nc) or not screen._in_bounds(nc):
+				continue
+			if not screen._is_walkable(screen._cell_mid(nc)):
+				continue
+			seen[nc] = true
+			queue.append(nc)
+	return seen

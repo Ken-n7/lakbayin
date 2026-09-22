@@ -31,6 +31,16 @@ func frames(n := 4) -> void:
 		await get_tree().process_frame
 
 
+## `_swoop()`'s zoom/position tween runs 0.9s of real engine time, which a fixed
+## frame count can't wait out reliably -- poll wall time instead, same trick the
+## `_start_intro()` exploration probe used.
+func wait_until(cond: Callable, timeout := 3.0) -> void:
+	var t := 0.0
+	while not cond.call() and t < timeout:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+
+
 func _ready() -> void:
 	Game.touch = true
 	Game.player_name = "TouchTest"
@@ -40,10 +50,35 @@ func _ready() -> void:
 	main.open("adventure")
 	await frames(4)
 	_map = main.current
-	# The map opens frozen on the aerial POV; collapse it so the hero can walk.
-	_map.skip_intro()
+	# The map opens frozen on the aerial POV. The client was explicit: no joystick
+	# before the adventure starts, and only a press starts it.
 	check("pad built", _map._touch_pad != null)
+	check("pad hidden on the aerial POV", not _map._touch_pad.visible)
+	check("start hint offered", _map._start_hint != null)
+	check("clock held while frozen", Game.clock_paused)
+
+	# A tap anywhere on the frozen board starts the adventure -- there is no
+	# button to miss, so this is the one thing that has to actually be proven.
+	touch(Vector2(80, 80), true)
+	await frames(2)
+	touch(Vector2(80, 80), false)
+	await wait_until(func() -> bool: return not _map._frozen)
+	check("tap on the frozen board swoops", not Game.clock_paused)
+	check("pad back after a tap-started swoop", _map._touch_pad.visible)
+	check("start hint gone after a tap-started swoop", _map._start_hint == null)
+
+	# Re-freeze and prove the button removal didn't just move the trigger --
+	# skip_intro() is still the instant collapse the rest of the suite uses.
+	main.open("adventure")
+	await frames(8)
+	_map = main.current
+	check("start hint offered", _map._start_hint != null)
+	check("clock held while frozen", Game.clock_paused)
+	# Collapse it so the hero can walk.
+	_map.skip_intro()
 	check("intro collapsed", not Game.clock_paused)
+	check("pad back after the swoop", _map._touch_pad.visible)
+	check("start hint gone", _map._start_hint == null)
 
 	var start: Vector2 = _map.player.position
 	touch(Vector2(34, 273), true)   # left arrow
