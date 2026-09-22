@@ -1,11 +1,11 @@
 extends Control
 
 ## The Adventure Map: the client's board laid over a Tiny Swords island --
-## base camp, Tower 1, its 20 circles, Tower 2, 10 circles, Tower 3, 10 circles,
+## base camp, Tower 1, its circles, Tower 2, its circles, Tower 3, its circles,
 ## Victory Gate, all on one authored path. One circle is one question item, and
 ## they resolve strictly in order. WASD/arrows move the hero; E (or Space/Enter)
 ## enters the tower you stand at, answers the circle you stand on, or walks
-## through the gate once all forty are cleared.
+## through the gate once all of Game.TOTAL_ITEMS are cleared.
 
 const TILE := 32        # world px per cell; art is 64px drawn at 0.5
 const SHEET_TILE := 64  # the tileset's own tile size
@@ -90,8 +90,8 @@ var _causeways: Array = []   # [{cells, open, props, sign}] -- one per island se
 var _solid: Array[Rect2] = []  # building base walls, in world px
 var _station_nodes: Array = []
 var _station_locks: Array = []
-var _circles: Array = []        # 40 PathCircle nodes, path order
-var _anchors: Array = []        # base camp, 3 towers, 40 circles, gate -- in walk order
+var _circles: Array = []        # Game.TOTAL_ITEMS PathCircle nodes, path order
+var _anchors: Array = []        # base camp, 3 towers, Game.TOTAL_ITEMS circles, gate -- in walk order
 var _gate: Node2D = null
 var _cam: Camera2D
 var _prompt: Label
@@ -442,8 +442,8 @@ static func _space_along(way: Array, stops: int) -> Array:
 
 
 ## Every stop on the board, flat, in the global walk order the rest of the file
-## indexes by: base camp, Tower 1, its 20 circles, Tower 2, its 10, Tower 3, its
-## 10, Victory Gate -- 45 in all, now spread over three islands instead of one
+## indexes by: base camp, Tower 1, its circles, Tower 2, its circles, Tower 3,
+## its circles, Victory Gate -- spread over three islands instead of one
 ## serpentine. The spacing that matters is ~200px, comfortably wider than
 ## INTERACT_RADIUS, which is what keeps "the circle you are standing on"
 ## unambiguous.

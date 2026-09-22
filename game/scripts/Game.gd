@@ -18,8 +18,8 @@ const GEM_PERFECT_BONUS := 10
 const GEM_TEAM_FINISH_PENALTY := -25
 
 # --- Adventure shape --------------------------------------------------------
-const ITEMS_PER_STATION := [20, 10, 10]   # Station 1/2/3
-const TOTAL_ITEMS := 40                   # sum of ITEMS_PER_STATION: one circle each
+const ITEMS_PER_STATION := [8, 3, 3]      # Station 1/2/3
+const TOTAL_ITEMS := 14                   # sum of ITEMS_PER_STATION: one circle each
 const DURATION_CHOICES := [300, 600, 900] # 5 / 10 / 15 minutes
 
 # --- Hero roster ------------------------------------------------------------

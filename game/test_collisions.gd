@@ -80,8 +80,8 @@ func _initialize() -> void:
 		if n + 1 < G.TOTAL_ITEMS:
 			assert(not screen._can_answer(n + 1), "circle %d unlocked early" % (n + 2))
 		G.mark_correct()
-	assert(G.items_done == G.TOTAL_ITEMS, "40 circles resolved: %d" % G.items_done)
-	assert(screen._can_enter_gate(), "the gate stayed shut after all 40 circles")
+	assert(G.items_done == G.TOTAL_ITEMS, "all circles resolved: %d" % G.items_done)
+	assert(screen._can_enter_gate(), "the gate stayed shut after all circles")
 
 	# --- Region gating: the causeway is the ONLY way between islands --------
 	# Flood-fill from the base camp over walkable ground. This is what actually

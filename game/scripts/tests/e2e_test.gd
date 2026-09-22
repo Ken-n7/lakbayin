@@ -221,7 +221,7 @@ func _run() -> void:
 	check("reached adventure", adv.has_method("_try_enter_station"))
 	check("island cells", int(adv.get("_land").size()) > 700, str(adv.get("_land").size()))
 	check("three stations", (adv.get("_station_nodes") as Array).size() == 3)
-	check("forty circles", (adv.get("_circles") as Array).size() == Game.TOTAL_ITEMS,
+	check("all circles built", (adv.get("_circles") as Array).size() == Game.TOTAL_ITEMS,
 			str((adv.get("_circles") as Array).size()))
 	check("victory gate built", adv.get("_gate") != null)
 	check("player spawned", adv.get("player") != null and adv.get("player").get_child_count() > 0)
@@ -473,8 +473,8 @@ func _run() -> void:
 		if s < 2:
 			check("station %d does not end the run" % (s + 1), Game.adventure_active)
 	check("all stations complete", (Game.completed_stations as Array) == [true, true, true])
-	check("all forty circles resolved", Game.items_done == Game.TOTAL_ITEMS, str(Game.items_done))
-	check("perfect gems 480 (40 correct + 3 perfect bonuses)", Game.gems == 480, str(Game.gems))
+	check("all circles resolved", Game.items_done == Game.TOTAL_ITEMS, str(Game.items_done))
+	check("perfect gems 220 (14 correct + 3 perfect bonuses)", Game.gems == 220, str(Game.gems))
 	check("board cleared but the run is still live", Game.adventure_active)
 
 	# The Victory Gate is the end of the player flow (SPECS Q6): it scores the run.
@@ -488,8 +488,8 @@ func _run() -> void:
 	check("summary after full run", _script_of(sum, "res://scripts/SummaryScreen.gd"))
 	var res10: Dictionary = Game.last_run
 	check("finished_all", res10.get("finished_all", false))
-	check("no penalty (480)", int(res10.get("gems", 0)) == 480, str(res10.get("gems")))
-	check("40 correct", int(res10.get("correct", 0)) == 40, str(res10.get("correct")))
+	check("no penalty (220)", int(res10.get("gems", 0)) == 220, str(res10.get("gems")))
+	check("14 correct", int(res10.get("correct", 0)) == 14, str(res10.get("correct")))
 	check("0 wrong/skip/hint", int(res10.get("wrong", 0)) == 0 and int(res10.get("skipped", 0)) == 0 and int(res10.get("hints", 0)) == 0)
 	_click(sum, "Home")
 	await _wait(3)
