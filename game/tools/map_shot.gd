@@ -21,6 +21,9 @@ const SHOTS := [
 	{"name": "station1", "at": Vector2(0.70, 0.79), "zoom": 1.0},
 	{"name": "barricade", "at": Vector2(0.665, 0.775), "zoom": 0.75},
 	{"name": "camp_bridge", "at": Vector2(0.86, 0.82), "zoom": 0.75},
+	{"name": "island2_bridge", "at": Vector2(0.345, 0.495), "zoom": 0.6},
+	{"name": "island2_open", "at": Vector2(0.345, 0.495), "zoom": 0.6,
+			"dismiss": true, "hold": 120},
 	{"name": "barricade_walking", "at": Vector2(0.665, 0.775), "zoom": 0.75,
 			"dismiss": true, "hold": 30},
 	{"name": "barricade_open", "at": Vector2(0.665, 0.775), "zoom": 0.75, "hold": 120},
@@ -60,7 +63,8 @@ func _process(_delta: float) -> bool:
 		_screen._cam.zoom = Vector2(z, z)
 		_screen._cam.position = _screen._norm(shot.at)
 		if bool(shot.get("dismiss", false)):
-			_screen._dismiss_knight()
+			for g: Dictionary in _screen._barricades:
+				_screen._open_barricade(g)
 		_hold = int(shot.get("hold", 0))
 		_armed = true
 		return false

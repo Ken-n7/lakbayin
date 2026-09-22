@@ -98,22 +98,38 @@ const ISLAND_PROPS := [
 ## to walk without the shoreline tiles pinching it shut.
 const CAUSEWAY_HALF := 1
 
-## The giant knight who holds the road west out of Station 1 -- the same
-## Warrior_Idle sheet `_build_outpost()` gives its guards, at three times their
-## 0.3 scale. He is a wall, not a trigger: the briefing sends him away, and until
-## then he is the one gap in `_build_barricade()`'s line of boulders.
-const KNIGHT_SHEET := "res://assets/units/Blue/Warrior_Idle.png"
-const KNIGHT_WALK_SHEET := "res://assets/units/Blue/Warrior_Run.png"
-const KNIGHT_SCALE := 0.9
-## The boulder line: a wall of rocks laid cell by cell straight across island 1,
-## sea to sea, between the monastery and Station 1's first circle. Objects, not
-## terrain -- the old three-tile neck had to be stamped because `_island_index()`
-## gives a shore ten cells wide, and a line of rocks just plugs whatever is there.
-## `BARRICADE_T` is how far along monastery -> circle 1 it stands -- past halfway,
-## so the yard between the station and the rocks is wide enough to hold the knight
-## once he steps out of the way. `BARRICADE_GAP` is the cells of the line he fills,
+## Seams crossed by a **land bridge** rather than by a causeway that rises. Seam
+## `i` is the water between island `i` and island `i + 1`. The walk simply carries
+## on over it and `_stamp_path()` lays ground under the corridor, so the crossing
+## is there from the first step -- and a gate holds it instead of the tide.
+## Seam 0 (camp -> Station 1) falls out of trail 0, which spans it; seam 1 is
+## stamped between trail 1's end and trail 2's start. Seam 2 is still a causeway.
+const BRIDGED_SEAMS := [0, 1]
+
+## The gates: a line of boulders across the walk with a giant guard in its one gap
+## -- the same Warrior sheets `_build_outpost()` gives its little guards, at three
+## times their 0.3 scale. A guard is a wall, not a trigger.
+##
+## `st` is the station the gate belongs to: his livery, the tower he steps aside
+## toward, and what stands him down --
+##   `brief` -- that station's own briefing. Gate 0 holds the road out of Station
+##              1's monastery, so the board cannot be walked before the first
+##              briefing has happened.
+##   `clear` -- the station before it running out of circles. Gate 1 holds the far
+##              end of the land bridge onto Station 2's island, which is the job
+##              that causeway used to do.
+## The line stands between the stop `step` past that station's tower and the next
+## one along, `t` of the way from the first to the second.
+const BARRICADES := [
+	{"st": 0, "step": 0, "opens": "brief", "t": 0.55},
+	{"st": 1, "step": -1, "opens": "clear", "t": 0.60},
+]
+const GUARD_SCALE := 0.9
+## A boulder line is laid cell by cell straight across the walk, land's end to
+## land's end. Objects, not terrain -- the old three-tile neck had to be stamped
+## because `_island_index()` gives a shore ten cells wide, and a line of rocks just
+## plugs whatever is there. `BARRICADE_GAP` is the cells of it the guard fills,
 ## `ROCK_SCALE` picked by eye against the 32px grid with DevTools' live tuner.
-const BARRICADE_T := 0.55
 const BARRICADE_GAP := 2
 const ROCK_SCALE := 1.0
 
@@ -146,11 +162,7 @@ var _trail := {}      # Vector2i -> true, the road corridor: decor keeps off it
 var _taken := {}      # Vector2i -> true, cells a prop already stands on
 var _causeways: Array = []   # [{cells, open, props, sign}] -- one per island seam
 var _solid: Array[Rect2] = []  # building base walls, in world px
-var _knight: AnimatedSprite2D = null  # null once dismissed, or never posted
-var _knight_post := Vector2.ZERO
-var _knight_stand := Vector2.ZERO  # where he steps aside to once briefed
-var _knight_wall := Rect2()
-var _barricade: Array[Rect2] = []  # the boulder line either side of him, forever
+var _barricades: Array[Dictionary] = []  # one per BARRICADES entry; see `_build_barricade()`
 var _station_nodes: Array = []
 var _station_locks: Array = []
 var _circles: Array = []        # Game.TOTAL_ITEMS PathCircle nodes, path order
@@ -207,6 +219,7 @@ func setup(_data: Dictionary) -> void:
 	_refresh_circles()
 	# A restart mid-run keeps whatever it had already opened.
 	_refresh_causeways()
+	_refresh_barricades()
 	_start_intro()
 
 
@@ -355,21 +368,23 @@ func _retile(cells: Array) -> void:
 # --- Causeways: the gate between stations -----------------------------------
 ## Each causeway is the stretch of water along the line between two island
 ## centres: the shortest crossing, and the only one, because everything either
-## side of it is sea. That is the whole reason for three islands -- one boulder on
-## open ground can be walked around, a channel cannot, so the sequential rule is
-## enforced by the geography rather than by a flag the player never sees. (A whole
-## LINE of boulders, sea to sea, cannot be walked around either -- that is what
-## `_build_barricade()` lays across island 1, where there is no channel to use.)
-## Seam 0 -- camp to Station 1's island -- is skipped: that crossing is the land
-## bridge `_stamp_path()` lays down, walkable from the first step, with the knight
-## and his boulders holding the road past the monastery instead. Without the skip
-## this would lay a second crossing alongside the bridge, along the line between
-## the two island centres.
-## So `_causeways[i]` is the seam into island `i + 2`, the one station `i + 1` lives
-## on, and it rises when station `i` runs out of circles.
+## side of it is sea -- one boulder on open ground can be walked around, a channel
+## cannot, so the sequential rule is enforced by the geography rather than by a
+## flag the player never sees. (A whole LINE of boulders, land's end to land's end,
+## cannot be walked around either: that is what `_build_barricade()` lays down, and
+## is what holds the bridged seams, where there is no channel to use.)
+##
+## `BRIDGED_SEAMS` are skipped -- those crossings are land bridges `_stamp_path()`
+## lays under the walk, held by a gate. Without the skip this would lay a second
+## crossing alongside each bridge, along the line between the two island centres.
+## Each entry carries its own `seam`, so the rest of the file stays right however
+## many are skipped: seam `i` leads into island `i + 1`, and rises when station
+## `i - 1` runs out of circles.
 func _find_causeways() -> Array:
 	var out: Array = []
-	for i in range(1, ISLANDS.size() - 1):
+	for i in range(ISLANDS.size() - 1):
+		if BRIDGED_SEAMS.has(i):
+			continue
 		var a := _norm(ISLANDS[i].c)
 		var b := _norm(ISLANDS[i + 1].c)
 		var perp := (b - a).normalized().orthogonal()
@@ -383,7 +398,7 @@ func _find_causeways() -> Array:
 				var cc := _cell_at(p + perp * (float(wi) * TILE))
 				if _in_bounds(cc) and not _land.has(cc) and not cells.has(cc):
 					cells.append(cc)
-		out.append({"cells": cells, "open": false, "props": [], "sign": null})
+		out.append({"seam": i, "cells": cells, "open": false, "props": [], "sign": null})
 	return out
 
 
@@ -402,7 +417,7 @@ func _dress_causeways() -> void:
 					_cell_mid(cw.cells[k]), 1.1, 4.0)
 			spr.modulate = Color(0.75, 0.85, 0.95, 0.75)
 			cw.props.append(spr)
-		var l := Art.label("Clear Station %d to raise the causeway" % (i + 1), 13,
+		var l := Art.label("Clear Station %d to raise the causeway" % int(cw.seam), 13,
 				Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
 		# High over the crossing, not just off the shore, and drawn over the
 		# buildings rather than y-sorted behind them: a tower standing near a
@@ -415,11 +430,12 @@ func _dress_causeways() -> void:
 		cw.sign = l
 
 
-## Causeway `i` leads to station `i + 2`, so it rises the moment station `i + 1`
-## has no circles left. Called after every resolved item.
+## A causeway on seam `s` leads to station `s`, so it rises the moment station
+## `s - 1` has no circles left. Called after every resolved item.
 func _refresh_causeways() -> void:
 	for i in _causeways.size():
-		if not bool((_causeways[i] as Dictionary).open) and Game.items_done >= _items_through(i):
+		var cw: Dictionary = _causeways[i]
+		if not bool(cw.open) and Game.items_done >= _items_through(int(cw.seam) - 1):
 			open_causeway(i)
 
 
@@ -440,7 +456,7 @@ func open_causeway(i: int) -> void:
 	for c in cw.cells:
 		_land[c] = true
 		# It belongs to the island it leads to, so that island's props keep off it.
-		_island_of[c] = i + 2
+		_island_of[c] = int(cw.seam) + 1
 	_retile(cw.cells)
 	# The same stones, now dry: what rises reads as a stone causeway rather than
 	# grass climbing out of the sea.
@@ -457,7 +473,7 @@ func open_causeway(i: int) -> void:
 		var done := create_tween()
 		done.tween_interval(0.9)
 		done.tween_callback(puff.queue_free)
-	_flash_tip("The causeway rises! Cross to Station %d." % (i + 2))
+	_flash_tip("The causeway rises! Cross to Station %d." % (int(cw.seam) + 1))
 
 
 func _is_walkable(pos: Vector2) -> bool:
@@ -605,31 +621,49 @@ func _circle_lift(k: int) -> Vector2:
 func _stamp_path() -> void:
 	for t in TRAILS.size():
 		var way: Array = TRAILS[t]
-		for i in way.size() - 1:
-			var a := _norm(way[i])
-			var b := _norm(way[i + 1])
-			var steps := maxi(int(a.distance_to(b) / (TILE * 0.5)), 1)
-			for k in steps + 1:
-				var pos := a.lerp(b, float(k) / float(steps))
-				var c := _cell_at(pos)
-				for oy in [-1, 0, 1]:
-					for ox in [-1, 0, 1]:
-						var cc := c + Vector2i(ox, oy)
-						if _in_bounds(cc):
-							# The corridor the walk actually runs down, three cells
-							# wide. `_build_decor()` plants nothing in it, which is
-							# what makes the trail read as a road through the trees
-							# rather than a line of towers lost in them.
-							_trail[cc] = true
-							# Only ground the trail invents belongs to the trail: the
-							# camp trail crosses island 1's east spit to reach Station
-							# 1, and relabelling those cells island 0 would dress the
-							# spit with the camp's props.
-							if not _land.has(cc):
-								_island_of[cc] = t
-							_land[cc] = true
+		_stamp_way(way, t, true)
+		if t + 1 >= TRAILS.size():
+			continue
+		# The hop on to the next trail is walk as well, so it is road for the decor
+		# pass either way. It is only *ground* where that seam is bridged -- on an
+		# unbridged one the causeway is what rises there later, and stamping would
+		# hand the player the crossing for free.
+		var next: Array = TRAILS[t + 1]
+		_stamp_way([way[way.size() - 1], next[0]], t + 1, BRIDGED_SEAMS.has(t))
 	# The towers step off the path, so their ground has to be stamped as well or
 	# one ends up standing in the shallows at a bend.
+	_stamp_towers()
+
+
+## Land (three cells wide) under a polyline, and the corridor recorded in `_trail`
+## either way: `_build_decor()` plants nothing in it, which is what makes the walk
+## read as a road through the trees rather than a line of towers lost in them.
+func _stamp_way(way: Array, isl: int, ground: bool) -> void:
+	for i in way.size() - 1:
+		var a := _norm(way[i])
+		var b := _norm(way[i + 1])
+		var steps := maxi(int(a.distance_to(b) / (TILE * 0.5)), 1)
+		for k in steps + 1:
+			var pos := a.lerp(b, float(k) / float(steps))
+			var c := _cell_at(pos)
+			for oy in [-1, 0, 1]:
+				for ox in [-1, 0, 1]:
+					var cc := c + Vector2i(ox, oy)
+					if not _in_bounds(cc):
+						continue
+					_trail[cc] = true
+					if not ground:
+						continue
+					# Only ground the walk invents belongs to the walk: the camp
+					# trail crosses island 1's east spit to reach Station 1, and
+					# relabelling those cells island 0 would dress the spit with
+					# the camp's props.
+					if not _land.has(cc):
+						_island_of[cc] = isl
+					_land[cc] = true
+
+
+func _stamp_towers() -> void:
 	for k in _tower_anchors():
 		var base: Vector2 = _anchors[k] + _tower_lift(k)
 		var bc := _cell_at(base)
@@ -678,23 +712,31 @@ func _build_path() -> void:
 			k += 1
 	_build_camp(_anchors[0])
 	_build_gate(_anchors[k])
-	_build_barricade()
-	_post_knight()
+	_build_barricades()
 
 
-## The boulder line, and the gap in it the knight fills. Laid across the walk from
-## Station 1's monastery to its first circle, cell by cell out to the sea on both
-## sides, so there is no way round it and exactly one way through.
+## One gate per `GATES` entry, each posted in whatever state this run has already
+## earned. Built last, because a gate needs the stations standing (for the decor
+## keep-outs it checks) and the finished `_anchors`.
+func _build_barricades() -> void:
+	_barricades.clear()
+	var towers := _tower_anchors()
+	for spec: Dictionary in BARRICADES:
+		var g := _build_barricade(spec, int(towers[int(spec.st)]) + int(spec.step))
+		_barricades.append(g)
+		_post_guard(g)
+
+
+## The boulder line and the gap in it the guard fills, laid across the walk from
+## stop `ai` to the next one along, cell by cell out to land's end on both sides,
+## so there is no way round it and exactly one way through.
 ##
-## Objects rather than terrain: the rocks are what the player reads, and the same
-## `_solid` rect per cell is what stops them. The line is laid on every build,
-## briefed or not -- only the knight in its gap comes and goes.
-##
-## ponytail: one hard-coded barricade, for Station 1. If a later station ever wants
-## one, take the anchor pair as an argument and call it once per station.
-func _build_barricade() -> void:
-	var a: Vector2 = _anchors[1]
-	var b: Vector2 = _anchors[2]
+## Objects rather than terrain: the rocks are what the player reads, and one
+## `_solid` rect per cell is what stops them. The line is laid on every build, open
+## or not -- only the guard in its gap comes and goes.
+func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
+	var a: Vector2 = _anchors[ai]
+	var b: Vector2 = _anchors[ai + 1]
 	var dir := (b - a).normalized()
 	# Whole cells, square to the grid, or the rects leave diagonal slips between
 	# them: across the walk is the other axis, whichever one that is.
@@ -704,12 +746,20 @@ func _build_barricade() -> void:
 	# one-tile wall can be stepped clean over in a single frame after a hitch.
 	var size := (Vector2(2, 1) if step == Vector2i(0, 1) else Vector2(1, 2)) * TILE
 	# The gap runs from `mid` outward for BARRICADE_GAP cells; the rocks start on
-	# either side of it and run to the sea.
-	var mid := _cell_at(a.lerp(b, BARRICADE_T))
+	# either side of it and run to the water.
+	var mid := _cell_at(a.lerp(b, float(spec.t)))
 	var last := BARRICADE_GAP - 1
-	_knight_post = _cell_mid(mid) + Vector2(step) * (float(last) * 0.5 * TILE)
-	_knight_wall = _cells_rect(mid, step, 0, last, size)
-	_barricade.clear()
+	var g := {
+		"st": int(spec.st),
+		"opens": String(spec.opens),
+		"post": _cell_mid(mid) + Vector2(step) * (float(last) * 0.5 * TILE),
+		"wall": _cells_rect(mid, step, 0, last, size),
+		"rocks": [] as Array[Rect2],
+		"stand": Vector2.ZERO,
+		"guard": null,
+		"sign": null,
+		"open": false,
+	}
 	for run in [[-1, -1], [last + 1, 1]]:
 		var n: int = run[0]
 		while true:
@@ -717,64 +767,86 @@ func _build_barricade() -> void:
 			if not _land.has(c):
 				break
 			var rect := _cells_rect(c, step, 0, 0, size)
-			_barricade.append(rect)
+			(g.rocks as Array).append(rect)
 			_solid.append(rect)
 			# Round-robin off the cell so the wall is not four of the same stone.
 			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
 					% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
 			n += int(run[1])
-	_knight_stand = _knight_rest()
+	g.stand = _guard_rest(g)
 	# Nothing grows in the gap, along the walk he takes out of it, or where he ends
 	# up standing -- a tree in any of the three reads as him shoving through a wood.
 	# The extra headroom is because he is base-anchored and stands ~90px tall, so a
 	# trunk a clear cell above him still draws down over his head. Reserved here,
 	# before `_build_decor()` runs, which is also what makes it the same clear
-	# ground on a restart that has already briefed.
-	_station_rects.append(Rect2(_knight_post, Vector2.ZERO).expand(_knight_stand)
+	# ground on a restart that has already opened this gate.
+	_station_rects.append(Rect2(g.post as Vector2, Vector2.ZERO).expand(g.stand as Vector2)
 			.grow_individual(TILE * 1.5, TILE * 2.5, TILE * 1.5, TILE * 1.5))
 	# Keep the decor pass clear of the rubble on both sides. Touching it is not
 	# enough: a loose boulder alongside the line reads as part of the wall and
 	# walking through that one is the bug it looks like, and one tile is not
 	# enough either -- a pine two cells off still reads as standing in the line.
-	if not _barricade.is_empty():
-		var span: Rect2 = _barricade[0]
-		for r in _barricade:
+	var rocks: Array = g.rocks
+	if not rocks.is_empty():
+		var span: Rect2 = rocks[0]
+		for r in rocks:
 			span = span.merge(r)
 		_station_rects.append(span.grow(TILE * 2.0))
+	return g
 
 
 ## The rect covering the cells `lo` to `hi` steps of `step` away from `c`, each cell
 ## being `size` (already deeper along the walk than one tile). Shared so the
-## knight's plug and the rocks either side of it line up exactly.
+## guard's plug and the rocks either side of it line up exactly.
 func _cells_rect(c: Vector2i, step: Vector2i, lo: int, hi: int, size: Vector2) -> Rect2:
 	var from := _cell_mid(c) + Vector2(step) * (float(lo) * TILE) - size * 0.5
 	var to := _cell_mid(c) + Vector2(step) * (float(hi) * TILE) + size * 0.5
 	return Rect2(from, to - from)
 
 
-## ponytail: one hard-coded blocker, for Station 1. If a later station ever wants
-## one, lift post+wall into a per-station array alongside `_tower_anchors()`.
-func _post_knight() -> void:
-	# A restart mid-run keeps whatever it had already briefed. He is not a wall any
+## Has this run already earned its way past `g`?
+func _barricade_is_due(g: Dictionary) -> bool:
+	if String(g.opens) == "brief":
+		return Game.towers_entered[int(g.st)]
+	return Game.items_done >= _items_through(int(g.st) - 1)
+
+
+func _post_guard(g: Dictionary) -> void:
+	# A restart mid-run keeps whatever it had already earned. He is not a wall any
 	# more, but he is still the station's man, so he stands where he stepped aside
-	# to -- posted as scenery, never as `_knight`, which means "the blocker".
-	if Game.towers_entered[0]:
-		_spawn_knight(_knight_stand)
+	# to -- and the gate is marked open, which is what "no blocker" means here.
+	if _barricade_is_due(g):
+		g.open = true
+		g.guard = _spawn_guard(int(g.st), g.stand as Vector2)
 		return
-	_solid.append(_knight_wall)
-	_knight = _spawn_knight(_knight_post)
+	_solid.append(g.wall as Rect2)
+	g.guard = _spawn_guard(int(g.st), g.post as Vector2)
+	# A gate that waits on a station being cleared needs to say so -- the player
+	# meets it a whole island away from the circles that open it. A briefing gate
+	# does not: its station is standing right there.
+	if String(g.opens) == "clear":
+		var l := Art.label("Clear Station %d to pass" % int(g.st), 13,
+				Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
+		l.position = (g.post as Vector2) + Vector2(-170, -110)
+		l.size = Vector2(340, 20)
+		# Drawn over the buildings rather than y-sorted behind them, like the
+		# causeway signage it replaces.
+		l.z_index = 3
+		Art.shadow(l)
+		world.add_child(l)
+		g.sign = l
 
 
 ## Idle and walk on the one node, so standing him down is a change of animation
 ## while the tween carries him. Same base anchoring `Art.anim_sprite()` uses.
-func _spawn_knight(at: Vector2) -> AnimatedSprite2D:
+func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 	var k := AnimatedSprite2D.new()
 	k.sprite_frames = Art.anim_spriteframes({
-		"idle": [KNIGHT_SHEET, 5.0, true],
-		"walk": [KNIGHT_WALK_SHEET, 9.0, true],
+		"idle": ["res://assets/units/%s/Warrior_Idle.png" % LIVERY[st], 5.0, true],
+		"walk": ["res://assets/units/%s/Warrior_Run.png" % LIVERY[st], 9.0, true],
 	})
 	k.position = at
-	k.scale = Vector2(KNIGHT_SCALE, KNIGHT_SCALE)
+	k.scale = Vector2(GUARD_SCALE, GUARD_SCALE)
 	var f: Texture2D = k.sprite_frames.get_frame_texture("idle", 0)
 	if f != null:
 		k.offset = Vector2(0, -f.get_height() * 0.5)
@@ -785,45 +857,82 @@ func _spawn_knight(at: Vector2) -> AnimatedSprite2D:
 	return k
 
 
-## Where the briefing will send him: open ground in the yard between his post and
-## the station, off the road so he is not standing in the walk, and clear of the
-## rocks, the buildings and the signage. Searched rather than authored, so retuning
-## `BARRICADE_T` or moving the station does not strand him in a wall. Called once,
-## from `_build_barricade()`, and cached in `_knight_stand`.
-func _knight_rest() -> Vector2:
-	var door: Vector2 = _anchors[1]
-	var dir := (door - _knight_post).normalized()
+## Where opening the gate will send him: open ground between his post and his own
+## station's tower, off the road so he is not standing in the walk, and clear of
+## the rocks, the buildings and the signage. Searched rather than authored, so
+## retuning a gate's `t` or moving a station cannot strand him in a wall. Called
+## once, from `_build_barricade()`, and kept on the barricade as `stand`.
+func _guard_rest(g: Dictionary) -> Vector2:
+	var post: Vector2 = g.post
+	var home: Vector2 = _anchors[_tower_anchors()[int(g.st)]]
+	var dir := (home - post).normalized()
 	var perp := dir.orthogonal()
-	# Toward the station, then off to one side -- inland side first, since the
-	# seaward one is a strip of beach that props already keep off.
-	for along: int in [3, 2, 4]:
-		for across: int in [2, -2, 3, -3]:
-			var at: Vector2 = _knight_post + dir * (float(along) * TILE) \
-					+ perp * (float(across) * TILE)
-			var c := _cell_at(at)
-			if _is_walkable(at) and not _trail.has(c) and not _near_station(c):
-				return at
+	# Out along the walk toward his station, nearest first, then off to one side --
+	# inland side first, since the seaward one is a strip of beach that props keep
+	# off anyway. A guard posted mid-bridge has to go the whole way to the far
+	# shore before there is anywhere to stand, which is why this runs to `reach`
+	# rather than a couple of cells.
+	var reach := int(post.distance_to(home) / TILE)
+	# Two passes. The first asks that his whole body clears the keep-outs -- he is
+	# ~90px across and as tall again, and a spot that clears one by a pixel still
+	# plants him over the station's signage. The second settles for the cell he
+	# stands on, which is what a crowded landing can afford.
+	for strict: bool in [true, false]:
+		# Furthest first, so he ends up beside his own station rather than hovering
+		# at the wall he just stopped holding.
+		for along: int in range(maxi(reach, 3), 1, -1):
+			for across: int in [2, -2, 3, -3, 4, -4]:
+				var at: Vector2 = post + dir * (float(along) * TILE) \
+						+ perp * (float(across) * TILE)
+				var c := _cell_at(at)
+				if not _is_walkable(at) or _trail.has(c):
+					continue
+				var body := Rect2(at - Vector2(44.0, 90.0), Vector2(88.0, 90.0))
+				if strict:
+					if _clear_of_stations(body):
+						return at
+				# The loose pass gives up the decor keep-outs but never the
+				# signage: standing in a flower bed is fine, standing across the
+				# station's own name is not.
+				elif not _near_station(c) and _clear_of_signs(body):
+					return at
 	# Nothing open: at least get out of the gap.
-	return _knight_post + dir * (3.0 * TILE)
+	return post + dir * (3.0 * TILE)
 
 
-## The briefing stands him down. His wall goes the moment it starts, so the player
-## can walk on while he is still moving -- and he walks, rather than fading out:
-## the gate was a man, and a man who has let you past is still standing there.
-func _dismiss_knight() -> void:
-	if _knight == null or not is_instance_valid(_knight):
+## Whatever the gate was waiting for has happened. The wall goes the moment it
+## does, so the player can walk on while the guard is still moving -- and he walks,
+## rather than fading out: the gate was a man, and a man who has let you past is
+## still standing there.
+func _open_barricade(g: Dictionary) -> void:
+	if bool(g.open):
 		return
-	_solid.erase(_knight_wall)
-	var k := _knight
-	_knight = null
-	# Facing the way he is about to go -- the sheet's own direction is east.
-	k.scale.x = KNIGHT_SCALE * (1.0 if _knight_stand.x >= k.position.x else -1.0)
+	g.open = true
+	_solid.erase(g.wall as Rect2)
+	if g.sign != null and is_instance_valid(g.sign):
+		(g.sign as Node).queue_free()
+		g.sign = null
+	if String(g.opens) == "clear":
+		_flash_tip("The guard stands aside! Cross to Station %d." % (int(g.st) + 1))
+	var k: AnimatedSprite2D = g.guard
+	if k == null or not is_instance_valid(k):
+		return
+	var to: Vector2 = g.stand
+	# Facing the way he is about to go -- the sheets' own direction is east.
+	k.scale.x = GUARD_SCALE * (1.0 if to.x >= k.position.x else -1.0)
 	k.play("walk")
 	var tw := k.create_tween()
-	tw.tween_property(k, "position", _knight_stand, 1.2).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(k, "position", to, 1.2).set_ease(Tween.EASE_IN_OUT)
 	tw.tween_callback(func() -> void:
 		if is_instance_valid(k):
 			k.play("idle"))
+
+
+## Called wherever progress is made, like `_refresh_causeways()` beside it.
+func _refresh_barricades() -> void:
+	for g: Dictionary in _barricades:
+		if not bool(g.open) and _barricade_is_due(g):
+			_open_barricade(g)
 
 
 func _build_camp(at: Vector2) -> void:
@@ -1020,6 +1129,24 @@ func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 ## A station is now a building, a board off its left side and a keeper off its
 ## right, so a single radius either lets trees land on the board or blanks out
 ## half the island. Each station keeps its own box instead.
+## Same keep-out set as `_near_station()`, for something with a footprint rather
+## than a cell -- a guard looking for somewhere to stand that is not on top of a
+## building, its houses or its signage.
+func _clear_of_stations(r: Rect2) -> bool:
+	return _clear_of(r, _station_rects)
+
+
+func _clear_of_signs(r: Rect2) -> bool:
+	return _clear_of(r, _sign_rects)
+
+
+static func _clear_of(r: Rect2, boxes: Array) -> bool:
+	for b in boxes:
+		if (b as Rect2).intersects(r):
+			return false
+	return true
+
+
 func _near_station(c: Vector2i) -> bool:
 	var p := Vector2(c.x * TILE + TILE / 2, c.y * TILE + TILE / 2)
 	for r in _station_rects:
@@ -1030,6 +1157,10 @@ func _near_station(c: Vector2i) -> bool:
 
 # --- Stations ---------------------------------------------------------------
 var _station_rects: Array = []   # keep-out boxes for decor
+## The signage boxes on their own as well. Decor treats them like any other
+## keep-out, but a guard looking for somewhere to stand has to clear them with his
+## whole body or he ends up printed across the station's name.
+var _sign_rects: Array[Rect2] = []
 
 
 ## A station is a small outpost, not a lone building: its keep, two houses of the
@@ -1078,7 +1209,9 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOW
 	# Over the doorstep on the path: above the lifted roof it is 200px up, which
 	# is off-screen the moment the player stands on the path below it.
 	var sign_y := -30.0
-	_station_rects.append(Rect2(at + Vector2(-100.0, sign_y), Vector2(200.0, 44.0)))
+	var sign_box := Rect2(at + Vector2(-100.0, sign_y), Vector2(200.0, 44.0))
+	_station_rects.append(sign_box)
+	_sign_rects.append(sign_box)
 	var title := Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
 	title.position = Vector2(-100, sign_y)
 	title.size = Vector2(200, 20)
@@ -1873,8 +2006,7 @@ func close_overlay() -> void:
 		_refresh_hud()
 		_refresh_circles()
 		_refresh_causeways()
-		if Game.towers_entered[0]:
-			_dismiss_knight()
+		_refresh_barricades()
 	# Clearing the board no longer ends the run on its own -- the Victory Gate
 	# does, and walking to it is the last step of the player flow.
 
