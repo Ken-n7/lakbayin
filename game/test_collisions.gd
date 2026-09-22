@@ -96,6 +96,27 @@ func _initialize() -> void:
 		var mid: Vector2 = screen._cell_mid(cw.cells[cw.cells.size() / 2])
 		assert(not screen._is_walkable(mid), "causeway %d is walkable before its station" % i)
 
+	# --- The knight in the neck --------------------------------------------
+	# The camp crossing is a land bridge, so the first gate is not terrain that
+	# rises but a body standing in the one place the geography is narrow. Same
+	# proof either way: walk the ground and see where you can get to.
+	assert(screen._knight != null, "no knight posted on a fresh run")
+	assert(not screen._is_walkable(screen._knight_wall.get_center()),
+			"the knight is not solid")
+	assert(screen._clear_of_anchors(screen._knight_wall),
+			"the knight's wall swallows a stop on the board")
+	# ...and the door he is guarding has to stay usable from the bridge side, or
+	# the briefing that dismisses him can never happen.
+	var door: Vector2 = screen._anchors[1]
+	assert(screen._is_walkable(door), "Tower 1's doorstep is inside the knight's wall")
+	var held := _reachable(screen)
+	assert(held.has(Vector2i(floori(door.x / screen.TILE), floori(door.y / screen.TILE))),
+			"Tower 1 is unreachable from camp, so it can never be briefed")
+	_assert_islands(screen, G, -1)
+
+	screen._dismiss_knight()
+	assert(screen._is_walkable(screen._knight_wall.get_center()),
+			"the knight's wall outlived him")
 	_assert_islands(screen, G, 0)
 	screen.open_causeway(0)
 	assert(screen._is_walkable(screen._cell_mid(screen._causeways[0].cells[0])),
@@ -104,11 +125,13 @@ func _initialize() -> void:
 	screen.open_causeway(1)
 	_assert_islands(screen, G, 2)
 
-	# ...and it opens on its own the moment the station runs out of circles.
+	# ...and each gate lifts on its own: the knight on the Station 1 briefing, the
+	# causeways the moment their station runs out of circles.
 	var fresh: Control = load("res://scripts/AdventureScreen.gd").new()
 	root.add_child(fresh)
 	G.begin_adventure(600)
 	fresh.setup({})
+	assert(fresh._knight != null, "knight missing before the briefing")
 	assert(not bool(fresh._causeways[0].open), "causeway 0 open at circle 0")
 	for n in G.ITEMS_PER_STATION[0]:
 		G.mark_correct()
@@ -116,24 +139,42 @@ func _initialize() -> void:
 	assert(bool(fresh._causeways[0].open), "causeway 0 shut after Station 1 was cleared")
 	assert(not bool(fresh._causeways[1].open), "causeway 1 opened one station early")
 
+	# A restart mid-run keeps what it had already briefed, so it never posts him.
+	var briefed: Control = load("res://scripts/AdventureScreen.gd").new()
+	root.add_child(briefed)
+	G.begin_adventure(600)
+	G.towers_entered[0] = true
+	briefed.setup({})
+	assert(briefed._knight == null, "knight re-posted on a run that was already briefed")
+	assert(briefed._is_walkable(briefed._knight_wall.get_center()),
+			"the neck is walled on a run that was already briefed")
+
 	print("collisions ok")
 	quit()
 
 
-## Every circle of a station the player has reached must be walkable-to from the
-## base camp, and every circle beyond the next shut causeway must not be.
+## `opened` is how many causeways have risen, or -1 while the knight still holds the
+## neck. Station `st`'s circles are walkable-to from the base camp exactly when
+## `opened >= st`; the gate needs both causeways. Tower 1 is the exception and the
+## point of the layout: it stands on the headland this side of the knight, so it is
+## reachable from the very first step while Towers 2 and 3 are not.
 func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 	var reach := _reachable(screen)
 	for n in G.TOTAL_ITEMS:
 		var st: int = G.station_of_item(n)
 		var pos: Vector2 = (screen._circles[n] as Node2D).position
 		var cell := Vector2i(floori(pos.x / screen.TILE), floori(pos.y / screen.TILE))
-		if st <= opened:
+		if opened >= st:
 			assert(reach.has(cell),
 					"circle %d (station %d) unreachable with %d causeway(s) open" % [n + 1, st + 1, opened])
 		else:
 			assert(not reach.has(cell),
 					"circle %d (station %d) reachable with only %d causeway(s) open" % [n + 1, st + 1, opened])
+	for st in 3:
+		var tp: Vector2 = (screen._station_nodes[st] as Node2D).position
+		var tcell := Vector2i(floori(tp.x / screen.TILE), floori(tp.y / screen.TILE))
+		assert(reach.has(tcell) == (st == 0 or opened >= st),
+				"Tower %d reachability wrong with %d causeway(s) open" % [st + 1, opened])
 	var gate: Vector2 = (screen._gate as Node2D).position
 	var gcell := Vector2i(floori(gate.x / screen.TILE), floori(gate.y / screen.TILE))
 	assert(reach.has(gcell) == (opened >= 2),
