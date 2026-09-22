@@ -1,7 +1,8 @@
 extends Node
-## The on-screen d-pad: a TouchScreenButton feeds a real InputMap action, so
-## this pokes the buttons through the viewport and checks the hero actually
-## walks. Run with:  godot --headless res://scripts/tests/touch_test.tscn
+## The on-screen joystick and buttons: touch/drag events pushed through the
+## viewport should feed the same InputMap actions the keyboard does, and the
+## hero should actually walk. Run with:
+##   godot --headless res://scripts/tests/touch_test.tscn
 
 var failures := 0
 var checks := 0
@@ -23,6 +24,14 @@ func touch(at: Vector2, pressed: bool) -> void:
 	ev.index = 0
 	ev.position = at
 	ev.pressed = pressed
+	get_viewport().push_input(ev, true)
+
+
+## Same finger (index 0) sliding, for the joystick's knob.
+func drag(at: Vector2) -> void:
+	var ev := InputEventScreenDrag.new()
+	ev.index = 0
+	ev.position = at
 	get_viewport().push_input(ev, true)
 
 
@@ -81,21 +90,35 @@ func _ready() -> void:
 	check("start hint gone", _map._start_hint == null)
 
 	var start: Vector2 = _map.player.position
-	touch(Vector2(34, 273), true)   # left arrow
+	touch(Vector2(80, 273), true)   # spawns the floating stick right here
+	await frames(2)
+	drag(Vector2(34, 273))          # drag to full deflection, due left
 	await frames(10)
-	check("left arrow presses the action", Input.is_action_pressed("move_left"))
+	check("dragging the stick presses the action", Input.is_action_pressed("move_left"))
+	check("full deflection reads full strength",
+			is_equal_approx(Input.get_action_strength("move_left"), 1.0),
+			str(Input.get_action_strength("move_left")))
 	check("hero walks left", _map.player.position.x < start.x - 1.0,
 			"%s -> %s" % [start, _map.player.position])
 	touch(Vector2(34, 273), false)
 	await frames(2)
 	check("release stops the action", not Input.is_action_pressed("move_left"))
 
-	# A miss must stay a miss: the gap between the arrows is not a button.
+	# A tap and release with no drag between them applies no strength -- the
+	# stick spawned right there (still inside the left-half zone) but never
+	# moved off its own centre.
 	var idle: Vector2 = _map.player.position
 	touch(Vector2(300, 180), true)
 	await frames(6)
-	check("empty map is not a d-pad", _map.player.position.is_equal_approx(idle))
+	check("a tap with no drag applies no strength", _map.player.position.is_equal_approx(idle))
 	touch(Vector2(300, 180), false)
+	await frames(2)
+
+	# A touch outside the zone (clear of GO and MENU too) never spawns a stick.
+	touch(Vector2(400, 150), true)
+	await frames(6)
+	check("a touch outside the zone does nothing", _map.player.position.is_equal_approx(idle))
+	touch(Vector2(400, 150), false)
 	await frames(2)
 
 	# GO on a station doorstep opens the quiz, and the pad gets out of the way.

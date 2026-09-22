@@ -104,6 +104,7 @@ var _hud_layer: CanvasLayer
 var _ui_layer: CanvasLayer
 
 var _touch_pad: Node2D = null
+var _joystick: Node2D = null
 var _overlay: Control = null
 var _paused := false
 var _flash_active := false
@@ -1233,7 +1234,7 @@ func _build_hud() -> void:
 	_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_layer.add_child(_prompt)
 
-	var keys := ("arrows — move   ·   GO — enter   ·   MENU / back — pause" if Game.touch
+	var keys := ("joystick — move   ·   GO — enter   ·   MENU / back — pause" if Game.touch
 			else "WASD / arrows — move   ·   E — interact   ·   Esc — menu")
 	var hint_bar: Label = Art.label(keys, 12,
 			Color(1, 1, 1, 0.75), HORIZONTAL_ALIGNMENT_CENTER)
@@ -1280,10 +1281,11 @@ func _build_hud() -> void:
 
 
 # --- Touch controls ---------------------------------------------------------
-## TouchScreenButton is the only input node that sees more than one finger:
-## mouse emulation only ever reports the first touch, so a d-pad made of
-## Buttons could not walk and interact at the same time. Each button feeds a
-## real InputMap action, so `_process` and `_unhandled_input` stay untouched.
+## The stick is a raw-touch Node2D (its own finger index, like TouchScreenButton
+## tracks), and GO/MENU stay TouchScreenButtons -- both read real touch rather
+## than mouse-emulated, so steering and pressing GO work on separate fingers at
+## once. Each feeds a real InputMap action (the stick with analog strength), so
+## `_process` and `_unhandled_input` stay untouched.
 func _build_touch_pad() -> void:
 	if not Game.touch:
 		return
@@ -1291,9 +1293,8 @@ func _build_touch_pad() -> void:
 	_hud_layer.add_child(_touch_pad)
 	# Kept a thumb's width off the bottom edge: that strip is Android's
 	# swipe-up-home gesture zone, immersive mode or not.
-	for spec in [["move_up", "▲", Vector2(80, 228)], ["move_down", "▼", Vector2(80, 318)],
-			["move_left", "◀", Vector2(34, 273)], ["move_right", "▶", Vector2(126, 273)]]:
-		_touch_btn(spec[0], spec[1], spec[2], 0.38, 15, false)
+	_joystick = preload("res://scripts/Joystick.gd").new()
+	_touch_pad.add_child(_joystick)
 	_touch_btn("interact", "GO", Vector2(574, 290), 0.52, 20, false)
 	_touch_btn("pause", "MENU", Vector2(606, 74), 0.34, 11, true)
 
@@ -1305,7 +1306,7 @@ func _touch_btn(action: String, text: String, center: Vector2, s: float, font: i
 	b.texture_normal = Art.tex(skin % [col, "Regular"])
 	b.texture_pressed = Art.tex(skin % [col, "Pressed"])
 	b.action = action
-	b.passby_press = true   # sliding a thumb across the d-pad turns
+	b.passby_press = true   # a thumb sliding onto GO/MENU still presses it
 	# The art is 128px drawn from the node's origin, so the hit circle is its
 	# own centre at full size and rides `scale` down with the sprite.
 	var circle := CircleShape2D.new()
@@ -1325,11 +1326,14 @@ func _touch_btn(action: String, text: String, center: Vector2, s: float, font: i
 	_touch_pad.add_child(l)
 
 
-## Hiding a TouchScreenButton releases its action, so a held direction never
-## survives into a quiz or the pause menu.
+## Hiding a TouchScreenButton releases its action on its own; the stick is a
+## plain Node2D, so a held drag needs the same release told explicitly, or it
+## would survive into a quiz or the pause menu.
 func _set_pad(on: bool) -> void:
 	if _touch_pad != null:
 		_touch_pad.visible = on
+	if not on and _joystick != null:
+		_joystick.release()
 
 
 func _flash_tip(text: String) -> void:
