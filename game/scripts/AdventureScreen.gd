@@ -103,6 +103,7 @@ const CAUSEWAY_HALF := 1
 ## 0.3 scale. He is a wall, not a trigger: the briefing sends him away, and until
 ## then he is the one gap in `_build_barricade()`'s line of boulders.
 const KNIGHT_SHEET := "res://assets/units/Blue/Warrior_Idle.png"
+const KNIGHT_WALK_SHEET := "res://assets/units/Blue/Warrior_Run.png"
 const KNIGHT_SCALE := 0.9
 ## The boulder line: a wall of rocks laid cell by cell straight across island 1,
 ## sea to sea, between the monastery and Station 1's first circle. Objects, not
@@ -145,7 +146,7 @@ var _trail := {}      # Vector2i -> true, the road corridor: decor keeps off it
 var _taken := {}      # Vector2i -> true, cells a prop already stands on
 var _causeways: Array = []   # [{cells, open, props, sign}] -- one per island seam
 var _solid: Array[Rect2] = []  # building base walls, in world px
-var _knight: Node2D = null     # null once dismissed, or never posted on a restart
+var _knight: AnimatedSprite2D = null  # null once dismissed, or never posted
 var _knight_post := Vector2.ZERO
 var _knight_stand := Vector2.ZERO  # where he steps aside to once briefed
 var _knight_wall := Rect2()
@@ -723,19 +724,23 @@ func _build_barricade() -> void:
 					% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
 			n += int(run[1])
 	_knight_stand = _knight_rest()
-	# His spot has to stay clear too, or the decor pass plants a tree in it and he
-	# steps down into a bush. Reserved here, before `_build_decor()` runs, which is
-	# also what makes it the same spot on a restart that has already briefed.
-	_station_rects.append(Rect2(_knight_stand - Vector2(TILE, TILE * 1.5),
-			Vector2(TILE * 2.0, TILE * 2.0)))
-	# Keep the decor pass a full tile clear of the rubble. Touching it is not
-	# enough: a loose boulder alongside the line reads as part of the wall, and
-	# walking through that one is the bug it looks like.
+	# Nothing grows in the gap, along the walk he takes out of it, or where he ends
+	# up standing -- a tree in any of the three reads as him shoving through a wood.
+	# The extra headroom is because he is base-anchored and stands ~90px tall, so a
+	# trunk a clear cell above him still draws down over his head. Reserved here,
+	# before `_build_decor()` runs, which is also what makes it the same clear
+	# ground on a restart that has already briefed.
+	_station_rects.append(Rect2(_knight_post, Vector2.ZERO).expand(_knight_stand)
+			.grow_individual(TILE * 1.5, TILE * 2.5, TILE * 1.5, TILE * 1.5))
+	# Keep the decor pass clear of the rubble on both sides. Touching it is not
+	# enough: a loose boulder alongside the line reads as part of the wall and
+	# walking through that one is the bug it looks like, and one tile is not
+	# enough either -- a pine two cells off still reads as standing in the line.
 	if not _barricade.is_empty():
 		var span: Rect2 = _barricade[0]
 		for r in _barricade:
 			span = span.merge(r)
-		_station_rects.append(span.grow(TILE))
+		_station_rects.append(span.grow(TILE * 2.0))
 
 
 ## The rect covering the cells `lo` to `hi` steps of `step` away from `c`, each cell
@@ -760,10 +765,23 @@ func _post_knight() -> void:
 	_knight = _spawn_knight(_knight_post)
 
 
-func _spawn_knight(at: Vector2) -> Node2D:
-	var k := Art.anim_sprite(world, KNIGHT_SHEET, at, KNIGHT_SCALE, 5.0)
+## Idle and walk on the one node, so standing him down is a change of animation
+## while the tween carries him. Same base anchoring `Art.anim_sprite()` uses.
+func _spawn_knight(at: Vector2) -> AnimatedSprite2D:
+	var k := AnimatedSprite2D.new()
+	k.sprite_frames = Art.anim_spriteframes({
+		"idle": [KNIGHT_SHEET, 5.0, true],
+		"walk": [KNIGHT_WALK_SHEET, 9.0, true],
+	})
+	k.position = at
+	k.scale = Vector2(KNIGHT_SCALE, KNIGHT_SCALE)
+	var f: Texture2D = k.sprite_frames.get_frame_texture("idle", 0)
+	if f != null:
+		k.offset = Vector2(0, -f.get_height() * 0.5)
+	k.play("idle")
 	# Over the grass like the outpost guards, who are decoration at the same depth.
 	k.z_index = 1
+	world.add_child(k)
 	return k
 
 
@@ -798,8 +816,14 @@ func _dismiss_knight() -> void:
 	_solid.erase(_knight_wall)
 	var k := _knight
 	_knight = null
+	# Facing the way he is about to go -- the sheet's own direction is east.
+	k.scale.x = KNIGHT_SCALE * (1.0 if _knight_stand.x >= k.position.x else -1.0)
+	k.play("walk")
 	var tw := k.create_tween()
 	tw.tween_property(k, "position", _knight_stand, 1.2).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_callback(func() -> void:
+		if is_instance_valid(k):
+			k.play("idle"))
 
 
 func _build_camp(at: Vector2) -> void:

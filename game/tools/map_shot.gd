@@ -21,8 +21,9 @@ const SHOTS := [
 	{"name": "station1", "at": Vector2(0.70, 0.79), "zoom": 1.0},
 	{"name": "barricade", "at": Vector2(0.665, 0.775), "zoom": 0.75},
 	{"name": "camp_bridge", "at": Vector2(0.86, 0.82), "zoom": 0.75},
-	{"name": "barricade_open", "at": Vector2(0.665, 0.775), "zoom": 0.75,
-			"dismiss": true, "hold": 120},
+	{"name": "barricade_walking", "at": Vector2(0.665, 0.775), "zoom": 0.75,
+			"dismiss": true, "hold": 30},
+	{"name": "barricade_open", "at": Vector2(0.665, 0.775), "zoom": 0.75, "hold": 120},
 ]
 
 var _screen: Control
