@@ -188,6 +188,34 @@ func _initialize() -> void:
 	# The line is scenery, not a gate: it is laid on every build, open or not.
 	_assert_line(briefed, briefed._barricades[0])
 
+	# --- The dev drawer's Skip Station --------------------------------------
+	# It is the shortcut the later islands are tested through, so it has to leave
+	# the board in exactly the state playing the questions would: each skip banks
+	# one station and opens what that station's progress opens, and nothing ahead
+	# of it. Proved the same way as everything else here -- by walking the ground.
+	var rig: Control = load("res://scripts/AdventureScreen.gd").new()
+	root.add_child(rig)
+	G.begin_adventure(600)
+	rig.setup({})
+	assert(rig._dev != null, "no dev drawer on a debug build")
+	_assert_islands(rig, G, -1)
+	for st in 3:
+		rig._dev._skip_station()
+		assert(G.items_done == _items_through(G, st),
+				"skipping station %d left %d items done" % [st + 1, G.items_done])
+		assert(bool(G.completed_stations[st]), "station %d was not banked" % (st + 1))
+		# One skip lifts two rungs on the first station: it both briefs the tower
+		# (which stands its own guard down) and empties the circles (which stands
+		# the next one down). After that each skip opens the one gate ahead of it,
+		# and the last skip has nothing left to open.
+		_assert_islands(rig, G, mini(st + 1, 2))
+	assert(G.items_done == G.TOTAL_ITEMS,
+			"three skips left %d of %d items" % [G.items_done, G.TOTAL_ITEMS])
+	assert(rig._can_enter_gate(), "the Victory Gate stayed shut after three skips")
+	# ...and it is not a way past the end of the board.
+	rig._dev._skip_station()
+	assert(G.items_done == G.TOTAL_ITEMS, "skipping a cleared board ran past the end")
+
 	print("collisions ok")
 	quit()
 
@@ -218,6 +246,16 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 	var gcell := Vector2i(floori(gate.x / screen.TILE), floori(gate.y / screen.TILE))
 	assert(reach.has(gcell) == (opened >= 2),
 			"victory gate reachability wrong with %d causeway(s) open" % opened)
+
+
+## Circles resolved by the time station `st` is done -- the same running total
+## `AdventureScreen._items_through()` walks, spelled here so the test does not
+## lean on the thing it is checking.
+static func _items_through(G: Node, st: int) -> int:
+	var n := 0
+	for i in st + 1:
+		n += G.ITEMS_PER_STATION[i]
+	return n
 
 
 static func _cell(screen: Control, at: Vector2) -> Vector2i:

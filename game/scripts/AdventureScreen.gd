@@ -189,6 +189,11 @@ var _intro_tw: Tween = null
 var _start_hint: Label = null   # "Tap anywhere to start" -- freed once it does
 var _card: Control = null       # the tapped circle's info card
 var _hint_bar: Label = null     # the controls crib, hidden while the board is frozen
+var _dev: Control = null        # the cheat drawer, on debug builds only
+## Dev knobs the drawer drives: a walk-speed multiplier, and the flag that stops
+## `_process()` dragging the camera back to the hero while the board is framed.
+var _speed_mult := 1.0
+var _dev_aerial := false
 var _hero_scale := UNIT_SCALE   # live-tunable via [ / ], DevTools.key_step()
 
 
@@ -1433,7 +1438,8 @@ func _process(delta: float) -> void:
 		return
 	if _paused or _frozen or not Game.adventure_active:
 		return
-	_cam.position = player.position
+	if not _dev_aerial:
+		_cam.position = player.position
 	var dir := Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_up", "move_down"))
@@ -1444,7 +1450,7 @@ func _process(delta: float) -> void:
 		# One axis at a time, so a diagonal into a wall slides along it rather
 		# than stopping dead. Buildings only became real walls once the
 		# footprint stopped being rounded to tile centres.
-		var step := dir * PLAYER_SPEED * delta
+		var step := dir * PLAYER_SPEED * _speed_mult * delta
 		player.position.x += step.x
 		if not _is_walkable(player.position):
 			player.position.x -= step.x
@@ -1825,6 +1831,12 @@ func _build_hud() -> void:
 	_gem_bar.add_theme_stylebox_override("fill", fill)
 	gemrow.add_child(_gem_bar)
 	_build_touch_pad()
+	# The cheat drawer, and only where cheating is free: a release export never
+	# builds the node, so there is nothing in it to reach.
+	if OS.is_debug_build():
+		_dev = preload("res://scripts/DevDrawer.gd").new()
+		_ui_layer.add_child(_dev)
+		_dev.setup(self)
 
 
 # --- Touch controls ---------------------------------------------------------
@@ -1871,6 +1883,12 @@ func _touch_btn(action: String, text: String, center: Vector2, s: float, font: i
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Art.shadow(l)
 	_touch_pad.add_child(l)
+
+
+## The drawer stays out of the way of anything that wants the whole screen.
+func _close_dev() -> void:
+	if _dev != null and is_instance_valid(_dev):
+		_dev.close()
 
 
 ## Hiding a TouchScreenButton releases its action on its own; the stick is a
@@ -1950,6 +1968,7 @@ func _toggle_pause() -> void:
 		return
 	_paused = true
 	_close_card()
+	_close_dev()
 	_set_pad(false)
 	var menu := Ui.panel(Vector2(300, 250), "Paused")
 	menu.position = Vector2(170, 46)
@@ -1987,6 +2006,7 @@ func _leave_pause(menu: Control, screen: String, drop: String) -> void:
 func _show_overlay(overlay: Control) -> void:
 	_overlay = overlay
 	_close_card()
+	_close_dev()
 	_set_pad(false)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.focus_mode = Control.FOCUS_ALL
