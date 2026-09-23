@@ -1,36 +1,8 @@
-extends Node
+extends TestCase
 ## Headless smoke test for the question generator, gems economy and leaderboard.
-## Run with:  godot --headless res://tests/smoke_test.tscn
+## Run with:  godot --headless res://scripts/tests/smoke_test.tscn
 ## Exits nonzero if any check fails.
 
-var failures := 0
-var checks := 0
-
-var _save_backup: PackedByteArray = []
-
-
-func check(name: String, condition: bool, detail := "") -> void:
-	checks += 1
-	if condition:
-		print("  ok    ", name)
-	else:
-		failures += 1
-		print("  FAIL  ", name, "  ", detail)
-
-
-func _backup_save() -> void:
-	var path := Game.SAVE_PATH
-	if FileAccess.file_exists(path):
-		var f := FileAccess.open(path, FileAccess.READ)
-		_save_backup = f.get_buffer(f.get_length())
-		f.close()
-
-
-func _restore_save() -> void:
-	if _save_backup.size() > 0:
-		var f := FileAccess.open(Game.SAVE_PATH, FileAccess.WRITE)
-		f.store_buffer(_save_backup)
-		f.close()
 
 
 func _count_name(rows: Array, name: String) -> int:
@@ -44,16 +16,14 @@ func _count_name(rows: Array, name: String) -> int:
 func _ready() -> void:
 	seed(20240913)   # deterministic generator output for repeatable runs
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_backup_save()
+	backup_save()
 	_t_generator()
 	_t_scoring()
 	_t_perfect_bonus()
 	_t_skip_and_penalty()
 	_t_leaderboard()
-	_restore_save()
-	var verdict := "PASS" if failures == 0 else "FAIL"
-	print("---- %s ---- %d checks, %d failures" % [verdict, checks, failures])
-	get_tree().quit(0 if failures == 0 else 1)
+	completed = true
+	finish("SMOKE")
 
 
 func _t_generator() -> void:

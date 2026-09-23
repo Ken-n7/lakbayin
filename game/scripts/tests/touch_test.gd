@@ -1,21 +1,10 @@
-extends Node
+extends TestCase
 ## The on-screen joystick and buttons: touch/drag events pushed through the
 ## viewport should feed the same InputMap actions the keyboard does, and the
 ## hero should actually walk. Run with:
 ##   godot --headless res://scripts/tests/touch_test.tscn
 
-var failures := 0
-var checks := 0
 var _map: Node = null
-
-
-func check(name: String, condition: bool, detail := "") -> void:
-	checks += 1
-	if condition:
-		print("  ok    ", name)
-	else:
-		failures += 1
-		print("  FAIL  ", name, "  ", detail)
 
 
 ## Viewport coordinates: the pad is laid out in the 640x360 design space.
@@ -135,6 +124,5 @@ func _ready() -> void:
 	check("pad back after the quiz", _map.hud.pad.visible)
 
 	Game.abandon_adventure()
-	print("---- TOUCH %s ---- %d checks, %d failures" %
-			["PASS" if failures == 0 else "FAIL", checks, failures])
-	get_tree().quit(1 if failures > 0 else 0)
+	completed = true
+	finish("TOUCH")

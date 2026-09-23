@@ -6,6 +6,30 @@ extends Control
 ## they resolve strictly in order. WASD/arrows move the hero; E (or Space/Enter)
 ## enters the tower you stand at, answers the circle you stand on, or walks
 ## through the gate once all of Game.TOTAL_ITEMS are cleared.
+##
+## This screen owns the walk and the play -- gating, targeting, input, the
+## camera, the quiz handoff. It builds nothing itself: `map/MapBuilder.gd`
+## lays the ground and works out where every stop is, `map/Stations.gd` puts
+## the buildings up, `map/Barricades.gd` the fences and their guards,
+## `map/Decor.gd` everything growing, and they all write into one
+## `map/MapGrid.gd`. `AdventureHud.gd` owns everything drawn over the top.
+## Every knob any of them reads is in `config/MapCfg.gd`.
+##
+## **What the dev drawer, the tools and the headless suites reach for.** This
+## is a deliberate surface, not an accident -- it used to be thirty private
+## members, which is what made the file unsafe to touch:
+##
+##   grid, builder, stations, barricades, decor, hud   the six above
+##   world, player, main                               the scene
+##   setup(), go_back(), skip_intro(), close_overlay() the screen's own API
+##   _circles                                          the PathCircle nodes
+##   _can_enter_tower/_can_answer/_can_enter_gate      the gating predicates
+##   _try_enter_station/_try_answer_circle/            pressing E at a stop,
+##       _try_enter_gate                               without a real keypress
+##   _refresh_circles()                                after progress is made
+##
+## `tools/board_dump.gd` reads most of it, which is what proves a refactor here
+## moved nothing: take a dump before and after and diff them.
 
 var main: Control
 

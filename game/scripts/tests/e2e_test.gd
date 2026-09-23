@@ -1,55 +1,25 @@
-extends Node
+extends TestCase
 ## E2E: drives the real UI — title → hero select → adventure map → tower
 ## briefing → one circle per item → Victory Gate → summary → leaderboard/learn —
 ## then restores the saved profile.
 ## Run with:  godot --headless res://scripts/tests/e2e_test.tscn
 
-var failures := 0
-var checks := 0
-var _save_backup: PackedByteArray = []
 var _main_scene: Node = null
 var _pname := ""
 var _tname := ""
 
-func check(name: String, condition: bool, detail := "") -> void:
-	checks += 1
-	if condition:
-		print("  ok    ", name)
-	else:
-		failures += 1
-		print("  FAIL  ", name, "  ", detail)
-
-
-func _backup_save() -> void:
-	var path := Game.SAVE_PATH
-	if FileAccess.file_exists(path):
-		var f := FileAccess.open(path, FileAccess.READ)
-		_save_backup = f.get_buffer(f.get_length())
-		f.close()
-
-
-func _restore_save() -> void:
-	if _save_backup.size() > 0:
-		var f := FileAccess.open(Game.SAVE_PATH, FileAccess.WRITE)
-		f.store_buffer(_save_backup)
-		f.close()
-	Game.player_name = _pname
-	Game.team_name = _tname
-
-
 func _ready() -> void:
 	seed(20260921)
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_backup_save()
+	backup_save()
 	_pname = Game.player_name
 	_tname = Game.team_name
 	Game.player_name = ""
 	Game.team_name = ""
 	await _run()
-	_restore_save()
-	var verdict := "PASS" if failures == 0 else "FAIL"
-	print("---- E2E %s ---- %d checks, %d failures" % [verdict, checks, failures])
-	get_tree().quit(0 if failures == 0 else 1)
+	Game.player_name = _pname
+	Game.team_name = _tname
+	finish("E2E")
 
 
 func _screen() -> Node:
@@ -527,3 +497,6 @@ func _run() -> void:
 	_click(learn, "Back")
 	await _wait(3)
 	check("learn back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	# The last line of _run(): anything that aborts the coroutine early leaves
+	# this unset and `finish()` fails the suite.
+	completed = true
