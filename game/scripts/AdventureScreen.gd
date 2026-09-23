@@ -74,10 +74,17 @@ const TRAILS := [
 	# Island 1: Station 1's eight circles, starting west of the boulder line that
 	# `_build_barricade()` draws between them and the monastery.
 	[Vector2(0.585, 0.780), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
-	 Vector2(0.10, 0.83), Vector2(0.16, 0.69), Vector2(0.40, 0.65),
-	 Vector2(0.38, 0.60)],
-	[Vector2(0.31, 0.39), Vector2(0.12, 0.35), Vector2(0.12, 0.22),
-	 Vector2(0.25, 0.16), Vector2(0.40, 0.23)],
+	 Vector2(0.10, 0.83), Vector2(0.16, 0.70), Vector2(0.33, 0.665),
+	 Vector2(0.17, 0.635)],
+	# Island 2, west to east. It used to land in the south-east and loop back on
+	# itself to reach the seam, which left nowhere to put a gate: a line square
+	# across that walk always stranded the last circle on the station's side of
+	# it (checked every column), and the one cut that worked ran through a
+	# circle's own doorstep. Landing in the south-west and running away east gives
+	# the same shape island 1 has -- station, gate, circles -- and the seam to
+	# island 3 is where the walk ends anyway.
+	[Vector2(0.175, 0.355), Vector2(0.28, 0.185), Vector2(0.39, 0.29),
+	 Vector2(0.45, 0.24)],
 	[Vector2(0.60, 0.23), Vector2(0.75, 0.16), Vector2(0.89, 0.22),
 	 Vector2(0.88, 0.34), Vector2(0.70, 0.38)],
 ]
@@ -110,19 +117,18 @@ const BRIDGED_SEAMS := [0, 1]
 ## -- the same Warrior sheets `_build_outpost()` gives its little guards, at three
 ## times their 0.3 scale. A guard is a wall, not a trigger.
 ##
-## `st` is the station the gate belongs to: his livery, the tower he steps aside
-## toward, and what stands him down --
-##   `brief` -- that station's own briefing. Gate 0 holds the road out of Station
-##              1's monastery, so the board cannot be walked before the first
-##              briefing has happened.
-##   `clear` -- the station before it running out of circles. Gate 1 holds the far
-##              end of the land bridge onto Station 2's island, which is the job
-##              that causeway used to do.
-## The line stands between the stop `step` past that station's tower and the next
-## one along, `t` of the way from the first to the second.
+## One rule, every station: **his own station's briefing stands him down.** So the
+## line always stands between that station's tower and its first circle -- walk up,
+## take the briefing, and the way to the circles opens. `st` is the station (his
+## livery too, and the tower he steps aside toward) and `t` how far along that
+## stretch the line stands.
+##
+## What keeps the walk in order is not the guards, then, but `_can_enter_tower()`:
+## a station only opens its briefing while the current item belongs to it. Reaching
+## Station 2's door early gets you nothing but the view.
 const BARRICADES := [
-	{"st": 0, "step": 0, "opens": "brief", "t": 0.55},
-	{"st": 1, "step": -1, "opens": "clear", "t": 0.60},
+	{"st": 0, "t": 0.55},
+	{"st": 1, "t": 0.55},
 ]
 const GUARD_SCALE := 0.9
 ## A boulder line is laid cell by cell straight across the walk, land's end to
@@ -727,7 +733,7 @@ func _build_barricades() -> void:
 	_barricades.clear()
 	var towers := _tower_anchors()
 	for spec: Dictionary in BARRICADES:
-		var g := _build_barricade(spec, int(towers[int(spec.st)]) + int(spec.step))
+		var g := _build_barricade(spec, int(towers[int(spec.st)]))
 		_barricades.append(g)
 		_post_guard(g)
 
@@ -756,13 +762,11 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 	var last := BARRICADE_GAP - 1
 	var g := {
 		"st": int(spec.st),
-		"opens": String(spec.opens),
 		"post": _cell_mid(mid) + Vector2(step) * (float(last) * 0.5 * TILE),
 		"wall": _cells_rect(mid, step, 0, last, size),
 		"rocks": [] as Array[Rect2],
 		"stand": Vector2.ZERO,
 		"guard": null,
-		"sign": null,
 		"open": false,
 	}
 	for run in [[-1, -1], [last + 1, 1]]:
@@ -809,11 +813,9 @@ func _cells_rect(c: Vector2i, step: Vector2i, lo: int, hi: int, size: Vector2) -
 	return Rect2(from, to - from)
 
 
-## Has this run already earned its way past `g`?
+## Has this run already earned its way past `g`? One rule: the briefing.
 func _barricade_is_due(g: Dictionary) -> bool:
-	if String(g.opens) == "brief":
-		return Game.towers_entered[int(g.st)]
-	return Game.items_done >= _items_through(int(g.st) - 1)
+	return Game.towers_entered[int(g.st)]
 
 
 func _post_guard(g: Dictionary) -> void:
@@ -826,20 +828,6 @@ func _post_guard(g: Dictionary) -> void:
 		return
 	_solid.append(g.wall as Rect2)
 	g.guard = _spawn_guard(int(g.st), g.post as Vector2)
-	# A gate that waits on a station being cleared needs to say so -- the player
-	# meets it a whole island away from the circles that open it. A briefing gate
-	# does not: its station is standing right there.
-	if String(g.opens) == "clear":
-		var l := Art.label("Clear Station %d to pass" % int(g.st), 13,
-				Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-		l.position = (g.post as Vector2) + Vector2(-170, -110)
-		l.size = Vector2(340, 20)
-		# Drawn over the buildings rather than y-sorted behind them, like the
-		# causeway signage it replaces.
-		l.z_index = 3
-		Art.shadow(l)
-		world.add_child(l)
-		g.sign = l
 
 
 ## Idle and walk on the one node, so standing him down is a change of animation
@@ -914,11 +902,6 @@ func _open_barricade(g: Dictionary) -> void:
 		return
 	g.open = true
 	_solid.erase(g.wall as Rect2)
-	if g.sign != null and is_instance_valid(g.sign):
-		(g.sign as Node).queue_free()
-		g.sign = null
-	if String(g.opens) == "clear":
-		_flash_tip("The guard stands aside! Cross to Station %d." % (int(g.st) + 1))
 	var k: AnimatedSprite2D = g.guard
 	if k == null or not is_instance_valid(k):
 		return
@@ -1213,7 +1196,11 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOW
 	# World-space text, so size 14 is 28px on screen after the 2x upscale.
 	# Over the doorstep on the path: above the lifted roof it is 200px up, which
 	# is off-screen the moment the player stands on the path below it.
-	var sign_y := -30.0
+	#
+	# A keep that stepped sideways rather than up is the exception: its houses sit
+	# at the doorstep's own height and print themselves across the line. Below the
+	# outpost is the clear ground there -- past the guards, who stand 30px down.
+	var sign_y := -30.0 if lift.y < 0.0 else 46.0
 	var sign_box := Rect2(at + Vector2(-100.0, sign_y), Vector2(200.0, 44.0))
 	_station_rects.append(sign_box)
 	_sign_rects.append(sign_box)

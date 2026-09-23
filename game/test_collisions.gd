@@ -159,17 +159,27 @@ func _initialize() -> void:
 	G.begin_adventure(600)
 	fresh.setup({})
 	assert(not bool(fresh._barricades[0].open), "station 1's guard gone before the briefing")
-	assert(not bool(fresh._barricades[1].open), "station 2's guard gone at circle 0")
+	assert(not bool(fresh._barricades[1].open), "station 2's guard gone before its briefing")
 	assert(not bool(fresh._causeways[0].open), "causeway open at circle 0")
+	# A guard waits on his own station's briefing and nothing else -- clearing the
+	# station before his does not move him.
 	for n in G.ITEMS_PER_STATION[0]:
 		G.mark_correct()
 	fresh._refresh_barricades()
 	fresh._refresh_causeways()
-	assert(bool(fresh._barricades[1].open),
-			"station 2's guard held after Station 1 was cleared")
 	assert(not bool(fresh._barricades[0].open),
 			"station 1's guard stood down on circles rather than on its briefing")
+	assert(not bool(fresh._barricades[1].open),
+			"station 2's guard stood down before his own briefing")
 	assert(not bool(fresh._causeways[0].open), "causeway opened one station early")
+	# ...and the causeway is the one that does wait on circles, a station later.
+	G.towers_entered[1] = true
+	for n in G.ITEMS_PER_STATION[1]:
+		G.mark_correct()
+	fresh._refresh_barricades()
+	fresh._refresh_causeways()
+	assert(bool(fresh._barricades[1].open), "station 2's guard held after its briefing")
+	assert(bool(fresh._causeways[0].open), "causeway shut after Station 2 was cleared")
 
 	# A restart mid-run keeps what it had already earned: the guard is not a wall
 	# any more, but he is still standing there, beside his station.
@@ -204,11 +214,11 @@ func _initialize() -> void:
 		assert(G.items_done == _items_through(G, st),
 				"skipping station %d left %d items done" % [st + 1, G.items_done])
 		assert(bool(G.completed_stations[st]), "station %d was not banked" % (st + 1))
-		# One skip lifts two rungs on the first station: it both briefs the tower
-		# (which stands its own guard down) and empties the circles (which stands
-		# the next one down). After that each skip opens the one gate ahead of it,
-		# and the last skip has nothing left to open.
-		_assert_islands(rig, G, mini(st + 1, 2))
+		# A skip briefs the tower, which stands that station's own guard down, and
+		# empties its circles, which is what the causeway waits on. So skipping
+		# Station 1 opens one gate, skipping Station 2 opens its guard AND the
+		# causeway behind it, and the last skip has nothing left to open.
+		_assert_islands(rig, G, [0, 2, 2][st])
 	assert(G.items_done == G.TOTAL_ITEMS,
 			"three skips left %d of %d items" % [G.items_done, G.TOTAL_ITEMS])
 	assert(rig._can_enter_gate(), "the Victory Gate stayed shut after three skips")
@@ -218,6 +228,10 @@ func _initialize() -> void:
 
 	print("collisions ok")
 	quit()
+
+
+## The rung of `opened` at which each station's doorstep becomes walkable-to.
+const TOWER_OPENS_AT := [-1, 0, 2]
 
 
 ## `opened` is how many causeways have risen, or -1 while the knight still holds the
@@ -240,8 +254,13 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 	for st in 3:
 		var tp: Vector2 = (screen._station_nodes[st] as Node2D).position
 		var tcell := Vector2i(floori(tp.x / screen.TILE), floori(tp.y / screen.TILE))
-		assert(reach.has(tcell) == (st == 0 or opened >= st),
-				"Tower %d reachability wrong with %d causeway(s) open" % [st + 1, opened])
+		# Every station stands on the near side of its own guard -- you have to
+		# reach a station to be briefed by it, which is what moves him. So a tower
+		# waits on whatever gate is in front of it, not on its own: Station 1 is
+		# open from the first step, Station 2 is over the bridge that leaves past
+		# Station 1's knight, and Station 3 is across the causeway.
+		assert(reach.has(tcell) == (opened >= TOWER_OPENS_AT[st]),
+				"Tower %d reachability wrong with %d gate(s) open" % [st + 1, opened])
 	var gate: Vector2 = (screen._gate as Node2D).position
 	var gcell := Vector2i(floori(gate.x / screen.TILE), floori(gate.y / screen.TILE))
 	assert(reach.has(gcell) == (opened >= 2),
