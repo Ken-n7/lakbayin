@@ -23,20 +23,20 @@ func _initialize() -> void:
 		var wall: Rect2 = (screen._station_nodes[i] as Node2D).get_meta("wall")
 		var mid_y: float = wall.get_center().y
 
-		assert(not screen._is_walkable(wall.get_center()),
+		assert(not screen.grid.is_walkable(wall.get_center()),
 				"station %d: centre of the walls is walkable" % i)
-		assert(not screen._is_walkable(Vector2(wall.position.x + 1.0, mid_y)),
+		assert(not screen.grid.is_walkable(Vector2(wall.position.x + 1.0, mid_y)),
 				"station %d: left wall leaks" % i)
-		assert(not screen._is_walkable(Vector2(wall.end.x - 1.0, mid_y)),
+		assert(not screen.grid.is_walkable(Vector2(wall.end.x - 1.0, mid_y)),
 				"station %d: right wall leaks" % i)
 		# The tower steps off the path -- up on a lane, sideways on a bend -- so the
 		# wall is centred on the building, not on the doorstep.
-		assert(not screen._is_walkable(Vector2(wall.get_center().x, wall.position.y + 1.0)),
+		assert(not screen.grid.is_walkable(Vector2(wall.get_center().x, wall.position.y + 1.0)),
 				"station %d: back wall leaks" % i)
 
 		# The doorstep -- the station node's own spot -- must stay open, or
 		# INTERACT_RADIUS can never be satisfied and the quiz is unreachable.
-		assert(screen._is_walkable(at),
+		assert(screen.grid.is_walkable(at),
 				"station %d: doorstep is walled in, quiz unreachable" % i)
 		assert(at.distance_to(screen._station_nodes[i].position) < MapCfg.INTERACT_RADIUS)
 
@@ -52,9 +52,9 @@ func _initialize() -> void:
 		var pos: Vector2 = (circles[n] as Node2D).position
 		assert(not seen.has(pos), "circle %d shares a spot with another" % n)
 		seen[pos] = true
-		assert(screen._is_walkable(pos), "circle %d stands on unwalkable ground" % n)
+		assert(screen.grid.is_walkable(pos), "circle %d stands on unwalkable ground" % n)
 	assert(screen._gate != null, "no victory gate")
-	assert(screen._is_walkable(screen._gate.position), "the gate is not walkable")
+	assert(screen.grid.is_walkable(screen._gate.position), "the gate is not walkable")
 
 	# Strictly sequential: nothing is answerable until the tower is briefed, then
 	# only the one circle the player is actually on.
@@ -99,24 +99,24 @@ func _initialize() -> void:
 		var who: int = int(g.st) + 1
 		assert(not bool(g.open), "station %d's barricade starts open" % who)
 		assert(g.guard != null, "station %d has no guard on a fresh run" % who)
-		assert(not screen._is_walkable((g.wall as Rect2).get_center()),
+		assert(not screen.grid.is_walkable((g.wall as Rect2).get_center()),
 				"station %d's guard is not solid" % who)
-		assert(screen._clear_of_anchors(g.wall),
+		assert(screen.grid.clear_of_anchors(g.wall),
 				"station %d's wall swallows a stop on the board" % who)
 		_assert_line(screen, g)
 		# He steps aside rather than vanishing, so the spot has to be real ground:
 		# open, off the road, and not back inside the rocks he was standing in.
 		var rest: Vector2 = g.stand
-		assert(screen._is_walkable(rest), "station %d's guard steps into a wall" % who)
-		assert(not screen._trail.has(_cell(screen, rest)),
+		assert(screen.grid.is_walkable(rest), "station %d's guard steps into a wall" % who)
+		assert(not screen.grid.trail.has(_cell(screen, rest)),
 				"station %d's guard steps down onto the road" % who)
 		assert(rest.distance_to(g.post as Vector2) > MapCfg.TILE,
 				"station %d's guard steps down into the gap he was plugging" % who)
 
 	# Station 1's door has to stay usable from the bridge side, or the briefing
 	# that stands its guard down can never happen.
-	var door: Vector2 = screen._anchors[1]
-	assert(screen._is_walkable(door), "Station 1's doorstep is inside the wall")
+	var door: Vector2 = screen.grid.anchors[1]
+	assert(screen.grid.is_walkable(door), "Station 1's doorstep is inside the wall")
 	var held := _reachable(screen)
 	assert(held.has(_cell(screen, door)),
 			"Station 1 is unreachable from camp, so it can never be briefed")
@@ -128,7 +128,7 @@ func _initialize() -> void:
 	for st in 3:
 		var g: Dictionary = screen._barricades[st]
 		screen._open_barricade(g)
-		assert(screen._is_walkable((g.wall as Rect2).get_center()),
+		assert(screen.grid.is_walkable((g.wall as Rect2).get_center()),
 				"station %d's wall outlived its guard" % (st + 1))
 		_assert_line(screen, g)
 		_assert_islands(screen, G, st)
@@ -163,7 +163,7 @@ func _initialize() -> void:
 	briefed.setup({})
 	assert(bool(briefed._barricades[0].open),
 			"station 1's guard re-posted on a run that was already briefed")
-	assert(briefed._is_walkable((briefed._barricades[0].wall as Rect2).get_center()),
+	assert(briefed.grid.is_walkable((briefed._barricades[0].wall as Rect2).get_center()),
 			"the gap is walled on a run that was already briefed")
 	assert(briefed._barricades[0].guard != null,
 			"the briefed guard vanished instead of standing aside")
@@ -266,19 +266,19 @@ func _assert_line(screen: Control, g: Dictionary) -> void:
 	var in_the_sea := 0
 	for r in rocks:
 		var rock: Rect2 = r
-		assert(not screen._is_walkable(rock.get_center()),
+		assert(not screen.grid.is_walkable(rock.get_center()),
 				"a boulder at %s is not solid" % rock.get_center())
-		assert(screen._clear_of_anchors(rock),
+		assert(screen.grid.clear_of_anchors(rock),
 				"a boulder at %s swallows a stop on the board" % rock.get_center())
 		# The cell the boulder was laid on, back out of the wall that stands on it.
-		var cell: Vector2i = screen._cell_at(rock.get_center()
-				+ Vector2(0.0, screen.ROCK_WALL.y * 0.5 + screen.ROCK_WALL_BASE))
+		var cell: Vector2i = MapGrid.cell_at(rock.get_center()
+				+ Vector2(0.0, MapCfg.ROCK_WALL.y * 0.5 + MapCfg.ROCK_WALL_BASE))
 		# `Art.sprite()` draws a boulder upward from its cell, so a wall centred on
 		# the cell blocks a tile of open grass *below* the stone -- the bump into
 		# nothing that made this fence feel unfinished. The wall stands on the art.
-		assert(rock.end.y <= screen._cell_mid(cell).y,
+		assert(rock.end.y <= MapGrid.cell_mid(cell).y,
 				"the wall at %s sits below its boulder" % rock.get_center())
-		if not screen._land.has(cell):
+		if not screen.grid.land.has(cell):
 			in_the_sea += 1
 	# Which leaves the cell at each arm's end -- the stone's own foot -- open, and
 	# that foot is the way round the whole fence. So each arm takes one more step,
@@ -289,7 +289,7 @@ func _assert_line(screen: Control, g: Dictionary) -> void:
 
 ## Cells walkable from the base camp, by flood fill over cell centres.
 func _reachable(screen: Control) -> Dictionary:
-	var start: Vector2 = screen._anchors[0]
+	var start: Vector2 = screen.grid.anchors[0]
 	var seen := {}
 	var queue: Array[Vector2i] = [Vector2i(floori(start.x / MapCfg.TILE), floori(start.y / MapCfg.TILE))]
 	seen[queue[0]] = true
@@ -297,9 +297,9 @@ func _reachable(screen: Control) -> Dictionary:
 		var c: Vector2i = queue.pop_back()
 		for d in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
 			var nc: Vector2i = c + d
-			if seen.has(nc) or not screen._in_bounds(nc):
+			if seen.has(nc) or not MapGrid.in_bounds(nc):
 				continue
-			if not screen._is_walkable(screen._cell_mid(nc)):
+			if not screen.grid.is_walkable(MapGrid.cell_mid(nc)):
 				continue
 			seen[nc] = true
 			queue.append(nc)

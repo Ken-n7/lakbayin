@@ -203,7 +203,7 @@ func _show_walls() -> void:
 	var n := Node2D.new()
 	n.z_index = 5
 	n.draw.connect(func() -> void:
-		for r: Rect2 in _adv._solid:
+		for r: Rect2 in _adv.grid.solid:
 			n.draw_rect(r, Color(1.0, 0.25, 0.25, 0.25))
 			n.draw_rect(r, Color(1.0, 0.4, 0.4, 0.85), false, 1.0))
 	_adv.world.add_child(n)

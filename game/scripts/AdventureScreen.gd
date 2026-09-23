@@ -15,17 +15,12 @@ var grass_layer: TileMapLayer
 var water_layer: TileMapLayer
 var player: Node2D
 
-var _land := {}       # Vector2i -> true
-var _beach := {}      # Vector2i -> true
-var _island_of := {}  # Vector2i -> island index, for the per-island props pass
-var _trail := {}      # Vector2i -> true, the road corridor: decor keeps off it
-var _taken := {}      # Vector2i -> true, cells a prop already stands on
-var _solid: Array[Rect2] = []  # building base walls, in world px
+## Every cell and every box on the board. See `map/MapGrid.gd`.
+var grid := MapGrid.new()
 var _barricades: Array[Dictionary] = []  # one per BARRICADES entry; see `_build_barricade()`
 var _station_nodes: Array = []
 var _station_locks: Array = []
 var _circles: Array = []        # Game.TOTAL_ITEMS PathCircle nodes, path order
-var _anchors: Array = []        # base camp, 3 towers, Game.TOTAL_ITEMS circles, gate -- in walk order
 var _gate: Node2D = null
 var _cam: Camera2D
 var _prompt: Label
@@ -69,7 +64,7 @@ func setup(_data: Dictionary) -> void:
 	world = Node2D.new()
 	add_child(world)
 	world.y_sort_enabled = true
-	_anchors = _path_anchors()
+	grid.anchors = _path_anchors()
 	_build_terrain()
 	_build_island()
 	_build_path()
@@ -106,61 +101,21 @@ func _build_terrain() -> void:
 			water_layer.set_cell(Vector2i(gx, gy), 0, Vector2i(0, 0))
 	grass_layer = Art.terrain_layer(MapCfg.TILEMAP_COLOR, MapCfg.TILE)
 	world.add_child(grass_layer)
+	grid.grass = grass_layer
 	world.set_meta("grass", grass_layer)
 	world.set_meta("tile", MapCfg.TILE)
-
-
-# --- Island shapes ----------------------------------------------------------
-## Normalized map coords to world px, and back to a cell.
-static func _norm(p: Vector2) -> Vector2:
-	return Vector2(p.x * MapCfg.WORLD_W * MapCfg.TILE, p.y * MapCfg.WORLD_H * MapCfg.TILE)
-
-
-static func _cell_at(pos: Vector2) -> Vector2i:
-	return Vector2i(floori(pos.x / MapCfg.TILE), floori(pos.y / MapCfg.TILE))
-
-
-static func _cell_mid(c: Vector2i) -> Vector2:
-	return Vector2(c.x * MapCfg.TILE + MapCfg.TILE / 2, c.y * MapCfg.TILE + MapCfg.TILE / 2)
-
-
-static func _in_bounds(c: Vector2i) -> bool:
-	return c.x >= 0 and c.y >= 0 and c.x < MapCfg.WORLD_W and c.y < MapCfg.WORLD_H
-
-
-## Which island a cell belongs to, or -1 for open water. The radial wobble is what
-## keeps the coastlines ragged -- a bare ellipse reads as a pond, not an island.
-func _island_index(cell: Vector2i) -> int:
-	var px := (float(cell.x) + 0.5) / float(MapCfg.WORLD_W)
-	var py := (float(cell.y) + 0.5) / float(MapCfg.WORLD_H)
-	for i in MapCfg.ISLANDS.size():
-		var isl: Dictionary = MapCfg.ISLANDS[i]
-		var c: Vector2 = isl.c
-		var r: Vector2 = isl.r
-		var dx := (px - c.x) / r.x
-		var dy := (py - c.y) / r.y
-		var d := sqrt(dx * dx + dy * dy)
-		if d > MapCfg.COAST_REJECT:
-			continue
-		var ang := atan2(dy, dx)
-		var edge := MapCfg.COAST_BASE \
-				+ MapCfg.COAST_WAVE1.x * sin(ang * MapCfg.COAST_WAVE1.y + float(isl.wobble)) \
-				+ MapCfg.COAST_WAVE2.x * cos(ang * MapCfg.COAST_WAVE2.y + MapCfg.COAST_WAVE2_PHASE)
-		if d < edge:
-			return i
-	return -1
 
 
 func _build_island() -> void:
 	for y in MapCfg.WORLD_H:
 		for x in MapCfg.WORLD_W:
 			var cell := Vector2i(x, y)
-			var i := _island_index(cell)
+			var i := MapGrid.island_index(cell)
 			if i >= 0:
-				_land[cell] = true
-				_island_of[cell] = i
+				grid.land[cell] = true
+				grid.island_of[cell] = i
 	_stamp_path()
-	_retile(_land.keys())
+	_retile(grid.land.keys())
 
 
 ## Paint (or erase) a set of cells and their four neighbours from the current land
@@ -171,44 +126,24 @@ func _retile(cells: Array) -> void:
 	for c in cells:
 		todo[c] = true
 		for d in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
-			if _in_bounds(c + d):
+			if MapGrid.in_bounds(c + d):
 				todo[c + d] = true
 	for c in todo:
-		if not _land.has(c):
+		if not grid.land.has(c):
 			grass_layer.erase_cell(c)
-			_beach.erase(c)
+			grid.beach.erase(c)
 			continue
-		var up: bool = _land.has(c + Vector2i(0, -1))
-		var down: bool = _land.has(c + Vector2i(0, 1))
-		var left: bool = _land.has(c + Vector2i(-1, 0))
-		var right: bool = _land.has(c + Vector2i(1, 0))
+		var up: bool = grid.land.has(c + Vector2i(0, -1))
+		var down: bool = grid.land.has(c + Vector2i(0, 1))
+		var left: bool = grid.land.has(c + Vector2i(-1, 0))
+		var right: bool = grid.land.has(c + Vector2i(1, 0))
 		if up and down and left and right:
-			_beach.erase(c)
+			grid.beach.erase(c)
 		else:
-			_beach[c] = true
+			grid.beach[c] = true
 		# Cols 0-3 are the foam-outlined land-meets-water set, so the shoreline
 		# is baked into the tile itself and reads the same on all four sides.
 		grass_layer.set_cell(c, 0, Art.autotile(left, right, up, down))
-
-
-func _is_walkable(pos: Vector2) -> bool:
-	for r in _solid:
-		if r.has_point(pos):
-			return false
-	var cell := Vector2i(floori(pos.x / MapCfg.TILE), floori(pos.y / MapCfg.TILE))
-	return grass_layer.get_cell_source_id(cell) != -1
-
-
-## Nearest land walking inward from a normalized spot, for props that must not
-## end up in the sea.
-func _first_land(nx: float, ny: float, toward: Vector2) -> Vector2:
-	for tries in MapCfg.LAND_SEARCH_TRIES:
-		var c := Vector2i(floori(nx * MapCfg.WORLD_W), floori(ny * MapCfg.WORLD_H))
-		if _land.has(c):
-			return _cell_mid(c)
-		nx = lerpf(nx, toward.x, MapCfg.LAND_SEARCH_STEP)
-		ny = lerpf(ny, toward.y, MapCfg.LAND_SEARCH_STEP)
-	return _norm(MapCfg.ISLANDS[0].c)
 
 
 # --- The trails -------------------------------------------------------------
@@ -237,7 +172,7 @@ func _stops_on(i: int) -> int:
 static func _space_along(way: Array, stops: int) -> Array:
 	var pts: Array[Vector2] = []
 	for p in way:
-		pts.append(_norm(p))
+		pts.append(MapGrid.norm(p))
 	var segs: Array[float] = []
 	var total := 0.0
 	for i in pts.size() - 1:
@@ -299,15 +234,15 @@ func _tower_anchors() -> Array:
 ## covers the next circle -- and its footprint is axis-aligned, so on a vertical
 ## bend "up" would put the wall right across the path.
 func _tower_lift(k: int) -> Vector2:
-	var a: Vector2 = _anchors[maxi(k - 1, 0)]
-	var b: Vector2 = _anchors[mini(k + 1, _anchors.size() - 1)]
+	var a: Vector2 = grid.anchors[maxi(k - 1, 0)]
+	var b: Vector2 = grid.anchors[mini(k + 1, grid.anchors.size() - 1)]
 	var dir := (b - a).normalized()
 	if absf(dir.x) >= absf(dir.y):
 		return Vector2(0, -MapCfg.TOWER_LIFT)
 	# Outward from its own island's centre -- against the world centre it would
 	# step the middle island's tower into the sea.
-	var mid := _norm(MapCfg.ISLANDS[_island_of_anchor(k)].c)
-	return Vector2(signf(_anchors[k].x - mid.x) * MapCfg.TOWER_LIFT, 0)
+	var mid := MapGrid.norm(MapCfg.ISLANDS[_island_of_anchor(k)].c)
+	return Vector2(signf(grid.anchors[k].x - mid.x) * MapCfg.TOWER_LIFT, 0)
 
 
 ## Same direction logic for a question circle's tower, but much closer in: the
@@ -321,13 +256,13 @@ func _tower_lift(k: int) -> Vector2:
 ## `PathCircle.WALL_WIDTH_FRAC` trims it to the base) or the wall reaches back
 ## over the doorstep.
 func _circle_lift(k: int) -> Vector2:
-	var a: Vector2 = _anchors[maxi(k - 1, 0)]
-	var b: Vector2 = _anchors[mini(k + 1, _anchors.size() - 1)]
+	var a: Vector2 = grid.anchors[maxi(k - 1, 0)]
+	var b: Vector2 = grid.anchors[mini(k + 1, grid.anchors.size() - 1)]
 	var dir := (b - a).normalized()
 	if absf(dir.x) >= absf(dir.y):
 		return Vector2(0, -MapCfg.CIRCLE_LIFT)
-	var mid := _norm(MapCfg.ISLANDS[_island_of_anchor(k)].c)
-	return Vector2(signf(_anchors[k].x - mid.x) * MapCfg.CIRCLE_SIDE_LIFT, 0)
+	var mid := MapGrid.norm(MapCfg.ISLANDS[_island_of_anchor(k)].c)
+	return Vector2(signf(grid.anchors[k].x - mid.x) * MapCfg.CIRCLE_SIDE_LIFT, 0)
 
 
 ## The path is authored, the island is generated, so the two can disagree: force
@@ -350,46 +285,46 @@ func _stamp_path() -> void:
 	_stamp_towers()
 
 
-## Land (three cells wide) under a polyline, and the corridor recorded in `_trail`
+## Land (three cells wide) under a polyline, and the corridor recorded in `grid.trail`
 ## either way: `_build_decor()` plants nothing in it, which is what makes the walk
 ## read as a road through the trees rather than a line of towers lost in them.
 func _stamp_way(way: Array, isl: int, ground: bool) -> void:
 	for i in way.size() - 1:
-		var a := _norm(way[i])
-		var b := _norm(way[i + 1])
+		var a := MapGrid.norm(way[i])
+		var b := MapGrid.norm(way[i + 1])
 		var steps := maxi(int(a.distance_to(b) / MapCfg.STAMP_STEP), 1)
 		for k in steps + 1:
 			var pos := a.lerp(b, float(k) / float(steps))
-			var c := _cell_at(pos)
+			var c := MapGrid.cell_at(pos)
 			for oy: int in MapCfg.STAMP_RING:
 				for ox: int in MapCfg.STAMP_RING:
 					var cc := c + Vector2i(ox, oy)
-					if not _in_bounds(cc):
+					if not MapGrid.in_bounds(cc):
 						continue
-					_trail[cc] = true
+					grid.trail[cc] = true
 					if not ground:
 						continue
 					# Only ground the walk invents belongs to the walk: the camp
 					# trail crosses island 1's east spit to reach Station 1, and
 					# relabelling those cells island 0 would dress the spit with
 					# the camp's props.
-					if not _land.has(cc):
-						_island_of[cc] = isl
-					_land[cc] = true
+					if not grid.land.has(cc):
+						grid.island_of[cc] = isl
+					grid.land[cc] = true
 
 
 func _stamp_towers() -> void:
 	for k in _tower_anchors():
-		var base: Vector2 = _anchors[k] + _tower_lift(k)
-		var bc := _cell_at(base)
+		var base: Vector2 = grid.anchors[k] + _tower_lift(k)
+		var bc := MapGrid.cell_at(base)
 		var isl := _island_of_anchor(k)
 		for oy in range(MapCfg.TOWER_PAD_Y.x, MapCfg.TOWER_PAD_Y.y):
 			for ox in range(MapCfg.TOWER_PAD_X.x, MapCfg.TOWER_PAD_X.y):
 				var cc := bc + Vector2i(ox, oy)
-				if _in_bounds(cc):
-					if not _land.has(cc):
-						_island_of[cc] = isl
-					_land[cc] = true
+				if MapGrid.in_bounds(cc):
+					if not grid.land.has(cc):
+						grid.island_of[cc] = isl
+					grid.land[cc] = true
 
 
 func _build_path() -> void:
@@ -397,7 +332,7 @@ func _build_path() -> void:
 	var k := 1                       # anchor 0 is the base camp
 	for st in Game.ITEMS_PER_STATION.size():
 		var meta := QuestionGen.station_meta(st)
-		_make_station(st, _anchors[k], meta.accent, _tower_lift(k))
+		_make_station(st, grid.anchors[k], meta.accent, _tower_lift(k))
 		k += 1
 		# Every circle is a tower in its station's livery -- native colors, no
 		# tint -- so size the decor keep-out box off it too.
@@ -407,32 +342,32 @@ func _build_path() -> void:
 		var cbh := ctex.region.size.y * PathCircle.TOWER_SCALE
 		for _i in Game.ITEMS_PER_STATION[st]:
 			var c: Node2D = PathCircle.new()
-			c.position = _anchors[k]
+			c.position = grid.anchors[k]
 			world.add_child(c)
 			var lift := _circle_lift(k)
 			c.setup(_circles.size(), building, lift, world)
 			# The middle of the drawn building, for anything aiming at what the
 			# player can see rather than at the anchor it steps off of. Same
 			# `set_meta` channel `_make_station` uses for its wall.
-			c.set_meta("tower_mid", _anchors[k] + lift - Vector2(0, cbh * 0.5))
+			c.set_meta("tower_mid", grid.anchors[k] + lift - Vector2(0, cbh * 0.5))
 			_circles.append(c)
 			# The wall PathCircle computed is local to the anchor; place it in
 			# world space and keep decor off the lifted tower's real footprint.
 			var w: Rect2 = c.wall
-			w.position += _anchors[k]
-			_solid.append(w)
-			_station_rects.append(Rect2(
-					_anchors[k] + lift - Vector2(chw + MapCfg.TILE * 0.5, cbh),
+			w.position += grid.anchors[k]
+			grid.solid.append(w)
+			grid.station_rects.append(Rect2(
+					grid.anchors[k] + lift - Vector2(chw + MapCfg.TILE * 0.5, cbh),
 					Vector2(chw * 2.0 + MapCfg.TILE, cbh + MapCfg.TILE * 0.5)))
 			k += 1
-	_build_camp(_anchors[0])
-	_build_gate(_anchors[k])
+	_build_camp(grid.anchors[0])
+	_build_gate(grid.anchors[k])
 	_build_barricades()
 
 
 ## One gate per `GATES` entry, each posted in whatever state this run has already
 ## earned. Built last, because a gate needs the stations standing (for the decor
-## keep-outs it checks) and the finished `_anchors`.
+## keep-outs it checks) and the finished `grid.anchors`.
 func _build_barricades() -> void:
 	_barricades.clear()
 	var towers := _tower_anchors()
@@ -447,11 +382,11 @@ func _build_barricades() -> void:
 ## so there is no way round it and exactly one way through.
 ##
 ## Objects rather than terrain: the rocks are what the player reads, and one
-## `_solid` rect per cell is what stops them. The line is laid on every build, open
+## `grid.solid` rect per cell is what stops them. The line is laid on every build, open
 ## or not -- only the guard in its gap comes and goes.
 func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
-	var a: Vector2 = _anchors[ai]          # the station's doorstep
-	var b: Vector2 = _anchors[ai + 1]      # its first circle: the way out
+	var a: Vector2 = grid.anchors[ai]          # the station's doorstep
+	var b: Vector2 = grid.anchors[ai + 1]      # its first circle: the way out
 	var g := {
 		"st": int(spec.st),
 		"post": Vector2.ZERO,
@@ -471,7 +406,7 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 	# trunk a clear cell above him still draws down over his head. Reserved here,
 	# before `_build_decor()` runs, which is also what makes it the same clear
 	# ground on a restart that has already opened this gate.
-	_station_rects.append(Rect2(g.post as Vector2, Vector2.ZERO).expand(g.stand as Vector2)
+	grid.station_rects.append(Rect2(g.post as Vector2, Vector2.ZERO).expand(g.stand as Vector2)
 			.grow_individual(MapCfg.GUARD_CLEARING.x, MapCfg.GUARD_CLEARING.y,
 					MapCfg.GUARD_CLEARING.z, MapCfg.GUARD_CLEARING.w))
 	# Keep the decor pass clear of the rubble on both sides. Touching it is not
@@ -483,7 +418,7 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 		var span: Rect2 = rocks[0]
 		for r in rocks:
 			span = span.merge(r)
-		_station_rects.append(span.grow(MapCfg.RUBBLE_CLEARING))
+		grid.station_rects.append(span.grow(MapCfg.RUBBLE_CLEARING))
 	return g
 
 
@@ -511,41 +446,35 @@ func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float
 	for side: float in [1.0, -1.0]:
 		var n := 0
 		while true:
-			var c := _cell_at(a + Vector2.from_angle(bearing + side * float(n) * da) * r)
+			var c := MapGrid.cell_at(a + Vector2.from_angle(bearing + side * float(n) * da) * r)
 			n += 1
 			if seen.has(c):
 				continue
-			if not _land.has(c):
+			if not grid.land.has(c):
 				# The arm has run out of island. A boulder's wall stands on the
 				# boulder, which leaves the boulder's own cell -- the ground at
 				# its foot -- open, and at the end of an arm that foot is the way
 				# round the whole fence. So the fence takes one more step, into
 				# the shallows: the last stone stands in the water with its wall
 				# over the beach behind it, and the arm ends where the map does.
-				if _in_bounds(c):
-					_lay_rock(g, c, _rock_wall(c))
+				if MapGrid.in_bounds(c):
+					_lay_rock(g, c, MapGrid.rock_wall(c))
 				break
 			seen[c] = true
-			var rect := _rock_wall(c)
-			if stretch.has_point(_cell_mid(c)):
+			var rect := MapGrid.rock_wall(c)
+			if stretch.has_point(MapGrid.cell_mid(c)):
 				wall = wall.merge(rect)   # the guard's own stretch of it
 			else:
 				_lay_rock(g, c, rect)
 	g.wall = wall
 
 
-## A boulder's wall, standing on the boulder. See `ROCK_WALL`.
-func _rock_wall(c: Vector2i) -> Rect2:
-	return Rect2(_cell_mid(c) - Vector2(MapCfg.ROCK_WALL.x * 0.5, MapCfg.ROCK_WALL.y + MapCfg.ROCK_WALL_BASE), MapCfg.ROCK_WALL)
-
-
-## One boulder, and the rect that makes it a wall.
 func _lay_rock(g: Dictionary, c: Vector2i, rect: Rect2) -> void:
 	(g.rocks as Array).append(rect)
-	_solid.append(rect)
+	grid.solid.append(rect)
 	# Round-robin off the cell so the wall is not four of the same stone.
 	Art.sprite(world, Art.tex(MapCfg.ROCK_SHEET % (1 + posmod(c.x + c.y, MapCfg.ROCK_VARIANTS))),
-			_cell_mid(c), MapCfg.ROCK_SCALE)
+			MapGrid.cell_mid(c), MapCfg.ROCK_SCALE)
 
 
 ## Has this run already earned its way past `g`? One rule: the briefing.
@@ -562,7 +491,7 @@ func _post_guard(g: Dictionary) -> void:
 		g.guard = _spawn_guard(int(g.st), g.stand as Vector2)
 		_face(g, g.stand as Vector2)
 		return
-	_solid.append(g.wall as Rect2)
+	grid.solid.append(g.wall as Rect2)
 	# `offset` moves the man and nothing else. The gap, the stretch of wall that
 	# plugs it and the ground kept clear around it are all the bearing's, measured
 	# off the post itself -- this is only where in his own gap he is drawn, and
@@ -596,7 +525,7 @@ func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 ## anyone reaches his wall from, because reaching the station is what opens it.
 ## The sheets' own direction is east, so a station west of him flips the sprite.
 func _face(g: Dictionary, from: Vector2) -> void:
-	var home: Vector2 = _anchors[_tower_anchors()[int(g.st)]]
+	var home: Vector2 = grid.anchors[_tower_anchors()[int(g.st)]]
 	(g.guard as AnimatedSprite2D).scale.x = MapCfg.GUARD_SCALE * (1.0 if home.x >= from.x else -1.0)
 
 
@@ -608,7 +537,7 @@ func _face(g: Dictionary, from: Vector2) -> void:
 ## it is no lie. Searched rather than authored, so retuning a gate or moving a
 ## station cannot strand him. Called once, from `_build_barricade()`.
 func _guard_rest(g: Dictionary) -> Vector2:
-	var home: Vector2 = _anchors[_tower_anchors()[int(g.st)]]
+	var home: Vector2 = grid.anchors[_tower_anchors()[int(g.st)]]
 	var post: Vector2 = g.post
 	# An authored `rest` is asked for first, and the same question is put to it as
 	# to anywhere else -- can he stand there. So it steers the search instead of
@@ -616,18 +545,18 @@ func _guard_rest(g: Dictionary) -> Vector2:
 	# one that has not rather than planting him in the rubble.
 	var want: Vector2 = g.rest
 	if want != Vector2.ZERO:
-		for c in _rings(_cell_at(post + want), int(MapCfg.GUARD_REST_RINGS[0])):
-			var at := _cell_mid(c)
+		for c in MapGrid.rings(MapGrid.cell_at(post + want), int(MapCfg.GUARD_REST_RINGS[0])):
+			var at := MapGrid.cell_mid(c)
 			if _stands_clear(g, at):
 				return at
 	var inside := post.distance_to(home)
-	for c in _rings(_cell_at(home), int(MapCfg.GUARD_REST_RINGS[1])):
-		var at := _cell_mid(c)
+	for c in MapGrid.rings(MapGrid.cell_at(home), int(MapCfg.GUARD_REST_RINGS[1])):
+		var at := MapGrid.cell_mid(c)
 		if at.distance_to(home) <= inside and _stands_clear(g, at):
 			return at
 	for centre: Vector2 in [home, post]:
-		for c in _rings(_cell_at(centre), int(MapCfg.GUARD_REST_RINGS[2])):
-			var at := _cell_mid(c)
+		for c in MapGrid.rings(MapGrid.cell_at(centre), int(MapCfg.GUARD_REST_RINGS[2])):
+			var at := MapGrid.cell_mid(c)
 			if _stands_clear(g, at):
 				return at
 	# Nothing open at all: at least get out of the gap.
@@ -638,16 +567,16 @@ func _guard_rest(g: Dictionary) -> Vector2:
 ## One box for all of it, because the question is the same each time -- "is he
 ## clear of that" -- and he is about two cells across and two high.
 func _stands_clear(g: Dictionary, at: Vector2) -> bool:
-	var c := _cell_at(at)
-	if not _is_walkable(at) or _trail.has(c):
+	var c := MapGrid.cell_at(at)
+	if not grid.is_walkable(at) or grid.trail.has(c):
 		return false
 	var body := Rect2(MapCfg.GUARD_BODY.position + at, MapCfg.GUARD_BODY.size)
 	# The rubble gets his body plus a little below his feet: a boulder's wall is
 	# the stone and stops above the cell it stands on, and the y-sort draws a
 	# stone in the cell below him over his boots.
-	if not _clear_of(body.grow_individual(0.0, 0.0, 0.0, MapCfg.GUARD_FOOT_SLACK), g.rocks as Array):
+	if not MapGrid.clear_of(body.grow_individual(0.0, 0.0, 0.0, MapCfg.GUARD_FOOT_SLACK), g.rocks as Array):
 		return false
-	return _clear_of_signs(body) and _clear_of_buildings(body)
+	return grid.clear_of_signs(body) and grid.clear_of_buildings(body)
 
 
 ## Whatever the gate was waiting for has happened. The wall goes the moment it
@@ -658,7 +587,7 @@ func _open_barricade(g: Dictionary) -> void:
 	if bool(g.open):
 		return
 	g.open = true
-	_solid.erase(g.wall as Rect2)
+	grid.solid.erase(g.wall as Rect2)
 	var k: AnimatedSprite2D = g.guard
 	if k == null or not is_instance_valid(k):
 		return
@@ -692,7 +621,7 @@ func _build_camp(at: Vector2) -> void:
 	l.size = Vector2(140, 20)
 	Art.shadow(l)
 	world.add_child(l)
-	_station_rects.append(Rect2(MapCfg.CAMP_KEEPOUT.position + at, MapCfg.CAMP_KEEPOUT.size))
+	grid.station_rects.append(Rect2(MapCfg.CAMP_KEEPOUT.position + at, MapCfg.CAMP_KEEPOUT.size))
 
 
 ## The end of the whole player flow: walking up and interacting ends the
@@ -727,7 +656,7 @@ func _build_gate(at: Vector2) -> void:
 	Art.shadow(l)
 	_gate.add_child(l)
 	var hw := bsize.x * 0.5 * MapCfg.BUILDING_SCALE
-	_station_rects.append(Rect2(
+	grid.station_rects.append(Rect2(
 			Vector2(at.x - (hw + MapCfg.TILE), at.y - (bh + MapCfg.TILE)),
 			Vector2(hw * 2.0 + MapCfg.TILE * 2.0, bh + MapCfg.TILE * 2.0)))
 
@@ -753,7 +682,7 @@ func _build_decor() -> void:
 		while placed < int(mix.count) and tries < int(mix.count) * MapCfg.DECOR_TRIES:
 			tries += 1
 			var c := Vector2i(rng.randi_range(1, MapCfg.WORLD_W - 2), rng.randi_range(1, MapCfg.WORLD_H - 2))
-			if not _plantable(c, isl):
+			if not grid.plantable(c, isl):
 				continue
 			placed += _plant_patch(rng, c, _roll_kind(rng, mix), isl)
 		for _k in int(mix.sheep):
@@ -763,9 +692,9 @@ func _build_decor() -> void:
 		var c: Vector2 = MapCfg.ISLANDS[isl].c
 		var r: Vector2 = MapCfg.ISLANDS[isl].r
 		for side in [-1.0, 1.0]:
-			var wrp := _norm(Vector2(c.x + side * (r.x + MapCfg.WATER_ROCK_OUT),
+			var wrp := MapGrid.norm(Vector2(c.x + side * (r.x + MapCfg.WATER_ROCK_OUT),
 					c.y + MapCfg.WATER_ROCK_DOWN))
-			if _in_bounds(_cell_at(wrp)) and not _is_walkable(wrp):
+			if MapGrid.in_bounds(MapGrid.cell_at(wrp)) and not grid.is_walkable(wrp):
 				Art.anim_sprite(world, MapCfg.WATER_ROCK_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS),
 						wrp, MapCfg.WATER_ROCK_SCALE, MapCfg.WATER_ROCK_FPS)
 
@@ -784,52 +713,24 @@ func _roll_kind(rng: RandomNumberGenerator, mix: Dictionary) -> String:
 	return "loot"
 
 
-## Ground a prop may stand on: this island's, inland of the shore, off the road,
-## off the stations and not already occupied. Everything that makes the board read
-## as a place rather than as noise is this one predicate.
-func _plantable(c: Vector2i, isl: int) -> bool:
-	if _taken.has(c) or _trail.has(c):
-		return false
-	if not _land.has(c) or _beach.has(c):
-		return false
-	if int(_island_of.get(c, -1)) != isl:
-		return false
-	return not _near_station(c)
-
-
-## Grow a patch of `kind` out from `c`, centre first then ring by ring, and return
-## how many actually took. The skipped cells are the point: a patch with no holes
-## in it reads as a hedge, not as a wood.
 func _plant_patch(rng: RandomNumberGenerator, c: Vector2i, kind: String, isl: int) -> int:
 	var want := rng.randi_range(1, int(MapCfg.PATCH[kind]))
 	var n := 0
-	for cc in _rings(c, MapCfg.PATCH_RADIUS):
+	for cc in MapGrid.rings(c, MapCfg.PATCH_RADIUS):
 		if n >= want:
 			break
-		if not _plantable(cc, isl):
+		if not grid.plantable(cc, isl):
 			continue
 		if cc != c and rng.randf() < MapCfg.PATCH_HOLE:
 			continue
-		_taken[cc] = true
+		grid.taken[cc] = true
 		_plant(rng, cc, kind)
 		n += 1
 	return n
 
 
-## `c`, then the cells one step out, then two, ... out to `radius`.
-static func _rings(c: Vector2i, radius: int) -> Array[Vector2i]:
-	var out: Array[Vector2i] = [c]
-	for r in range(1, radius + 1):
-		for dy in range(-r, r + 1):
-			for dx in range(-r, r + 1):
-				if maxi(absi(dx), absi(dy)) == r:
-					out.append(c + Vector2i(dx, dy))
-	return out
-
-
-## One prop of `kind`, base-anchored on the cell.
 func _plant(rng: RandomNumberGenerator, c: Vector2i, kind: String) -> void:
-	var p := _cell_mid(c)
+	var p := MapGrid.cell_mid(c)
 	match kind:
 		"tree":
 			var fl := 1.0 if rng.randf() < MapCfg.TREE_FLIP else -1.0
@@ -866,56 +767,16 @@ func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 	var c: Vector2 = MapCfg.ISLANDS[isl].c
 	var r: Vector2 = MapCfg.ISLANDS[isl].r
 	var spread := MapCfg.SHEEP_SPREAD
-	sheep.position = _first_land(
+	sheep.position = grid.first_land(
 			c.x + rng.randf_range(-spread, spread) * r.x,
 			c.y + rng.randf_range(-spread, spread) * r.y, c)
 	return sheep
 
 
-## A station is now a building, a board off its left side and a keeper off its
-## right, so a single radius either lets trees land on the board or blanks out
-## half the island. Each station keeps its own box instead.
-## Same keep-out set as `_near_station()`, for something with a footprint rather
-## than a cell -- a guard looking for somewhere to stand that is not on top of a
-## building, its houses or its signage.
-## The buildings themselves, without the tile of breathing room `_station_rects`
-## carries for the decor pass -- a tree may not grow beside a keep, but a man may
-## perfectly well stand there.
-func _clear_of_buildings(r: Rect2) -> bool:
-	for b in _station_rects:
-		var box := (b as Rect2).grow(-MapCfg.TILE)
-		# A box that was only the margin has nothing left to stand clear of, and
-		# Rect2 will not take a negative size.
-		if box.size.x > 0.0 and box.size.y > 0.0 and box.intersects(r):
-			return false
-	return true
-
-
-func _clear_of_signs(r: Rect2) -> bool:
-	return _clear_of(r, _sign_rects)
-
-
-static func _clear_of(r: Rect2, boxes: Array) -> bool:
-	for b in boxes:
-		if (b as Rect2).intersects(r):
-			return false
-	return true
-
-
-func _near_station(c: Vector2i) -> bool:
-	var p := Vector2(c.x * MapCfg.TILE + MapCfg.TILE / 2, c.y * MapCfg.TILE + MapCfg.TILE / 2)
-	for r in _station_rects:
-		if (r as Rect2).has_point(p):
-			return true
-	return false
-
-
 # --- Stations ---------------------------------------------------------------
-var _station_rects: Array = []   # keep-out boxes for decor
 ## The signage boxes on their own as well. Decor treats them like any other
 ## keep-out, but a guard looking for somewhere to stand has to clear them with his
 ## whole body or he ends up printed across the station's name.
-var _sign_rects: Array[Rect2] = []
 
 
 ## A station is a small outpost, not a lone building: its keep, two houses of the
@@ -947,13 +808,13 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -Map
 	var base := at + lift
 	var wall := Rect2(base.x - hw, base.y - bh * MapCfg.WALL_HEIGHT_FRAC,
 			hw * 2.0, bh * MapCfg.WALL_HEIGHT_FRAC)
-	_solid.append(wall)
+	grid.solid.append(wall)
 	# The test reads the wall off the station itself: the outpost's houses append
-	# walls too, so `_solid[i]` is no longer "station i".
+	# walls too, so `grid.solid[i]` is no longer "station i".
 	st.set_meta("wall", wall)
 	_build_outpost(i, base, hw)
 	# Keep decor off the building itself, plus a tile of breathing room.
-	_station_rects.append(Rect2(
+	grid.station_rects.append(Rect2(
 			Vector2(base.x - (hw + MapCfg.TILE), base.y - (bh + MapCfg.TILE)),
 			Vector2(hw * 2.0 + MapCfg.TILE * 2.0, bh + MapCfg.TILE * 2.0)))
 	# ...and off the signage below it, which is wider than any of the buildings
@@ -970,8 +831,8 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -Map
 	# outpost is the clear ground there -- past the guards, who stand 30px down.
 	var sign_y := MapCfg.SIGN_Y_UP if lift.y < 0.0 else MapCfg.SIGN_Y_DOWN
 	var sign_box := Rect2(at + Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y), MapCfg.SIGN_BOX)
-	_station_rects.append(sign_box)
-	_sign_rects.append(sign_box)
+	grid.station_rects.append(sign_box)
+	grid.sign_rects.append(sign_box)
 	var title := Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
 	title.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y)
 	title.size = Vector2(MapCfg.SIGN_BOX.x, 20)
@@ -990,19 +851,6 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -Map
 
 
 
-## Nothing the player has to stand on may end up inside a wall. The disc's own
-## radius plus a margin, against every stop on the board.
-func _clear_of_anchors(rect: Rect2) -> bool:
-	var r := rect.grow(MapCfg.ANCHOR_CLEARANCE)
-	for a in _anchors:
-		if r.has_point(a):
-			return false
-	return true
-
-
-## Two houses either side of the keep and two guards on the doorstep. Houses are
-## real walls; guards are decoration and stay walk-through, so they can stand near
-## the path without blocking the trail.
 func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
 	var col: String = MapCfg.LIVERY[i]
 	var rng := RandomNumberGenerator.new()
@@ -1023,7 +871,7 @@ func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
 			at = base + Vector2(side * (keep_hw + hw + MapCfg.HOUSE_GAP + push), MapCfg.HOUSE_DROP)
 			wall = Rect2(at.x - hw, at.y - bh * MapCfg.HOUSE_WALL_FRAC,
 					hw * 2.0, bh * MapCfg.HOUSE_WALL_FRAC)
-			if _clear_of_anchors(wall) and _land.has(_cell_at(at)):
+			if grid.clear_of_anchors(wall) and grid.land.has(MapGrid.cell_at(at)):
 				ok = true
 				break
 		if not ok:
@@ -1034,8 +882,8 @@ func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
 		spr.position = at
 		spr.offset = Vector2(0, -size.y * 0.5)
 		world.add_child(spr)
-		_solid.append(wall)
-		_station_rects.append(Rect2(
+		grid.solid.append(wall)
+		grid.station_rects.append(Rect2(
 				Vector2(at.x - (hw + MapCfg.TILE), at.y - (bh + MapCfg.TILE)),
 				Vector2(hw * 2.0 + MapCfg.TILE * 2.0, bh + MapCfg.TILE * 2.0)))
 	# Idle guards: the unit sheets are 8-frame strips with transparent gutters, so
@@ -1050,7 +898,7 @@ func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
 
 func _spawn_player() -> void:
 	player = Node2D.new()
-	player.position = _anchors[0]
+	player.position = grid.anchors[0]
 	var shade := Sprite2D.new()
 	shade.texture = Art.tex(MapCfg.SHADOW_SHEET)
 	shade.scale = Vector2(MapCfg.HERO_SHADOW_SCALE, MapCfg.HERO_SHADOW_SCALE)
@@ -1209,10 +1057,10 @@ func _process(delta: float) -> void:
 		# footprint stopped being rounded to tile centres.
 		var step := dir * MapCfg.PLAYER_SPEED * _speed_mult * delta
 		player.position.x += step.x
-		if not _is_walkable(player.position):
+		if not grid.is_walkable(player.position):
 			player.position.x -= step.x
 		player.position.y += step.y
-		if not _is_walkable(player.position):
+		if not grid.is_walkable(player.position):
 			player.position.y -= step.y
 		var face := _facing(dir)
 		if spr.animation != face or not spr.is_playing():

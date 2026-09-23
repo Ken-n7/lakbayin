@@ -46,20 +46,20 @@ func _initialize() -> void:
 		# feet, which reads as standing in the wall even when he is a cell clear.
 		var body := Rect2(MapCfg.GUARD_BODY.position + at, MapCfg.GUARD_BODY.size)
 		var why := ""
-		if not _s._clear_of(body.grow_individual(0.0, 0.0, 0.0, 24.0), g.rocks as Array):
+		if not MapGrid.clear_of(body.grow_individual(0.0, 0.0, 0.0, 24.0), g.rocks as Array):
 			why = "rests on its own fence"
-		elif _s._trail.has(_s._cell_at(at)):
+		elif _s.grid.trail.has(MapGrid.cell_at(at)):
 			why = "rests on the road"
-		elif not _s._is_walkable(at):
+		elif not _s.grid.is_walkable(at):
 			why = "rests off the island"
 		# Everything this station's own briefing has already earned is open; its gate
 		# alone is shut, which is the board the moment the player walks up to it.
 		for j in st:
-			_s._solid.erase(_s._barricades[j].wall as Rect2)
+			_s.grid.solid.erase(_s._barricades[j].wall as Rect2)
 		var seen := _flood()
-		if not seen.has(_s._cell_at(_s._anchors[towers[st]])):
+		if not seen.has(MapGrid.cell_at(_s.grid.anchors[towers[st]])):
 			why = "fences the player out of its own door"
-		elif seen.has(_s._cell_at(_s._anchors[towers[st] + 1])):
+		elif seen.has(MapGrid.cell_at(_s.grid.anchors[towers[st] + 1])):
 			why = "leaves its first circle open"
 		if why.is_empty():
 			print("%s: post %s -> rest %s, gate holds" % [name, g.post, at])
@@ -77,14 +77,14 @@ func _initialize() -> void:
 
 ## Every cell you can walk to from the base camp, given whatever is in `_solid`.
 func _flood() -> Dictionary:
-	var start: Vector2i = _s._cell_at(_s._anchors[0])
+	var start: Vector2i = MapGrid.cell_at(_s.grid.anchors[0])
 	var seen := {start: true}
 	var q: Array[Vector2i] = [start]
 	while not q.is_empty():
 		var c: Vector2i = q.pop_back()
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = c + d
-			if seen.has(n) or not _s._in_bounds(n) or not _s._is_walkable(_s._cell_mid(n)):
+			if seen.has(n) or not MapGrid.in_bounds(n) or not _s.grid.is_walkable(MapGrid.cell_mid(n)):
 				continue
 			seen[n] = true
 			q.append(n)

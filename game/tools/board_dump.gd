@@ -26,8 +26,8 @@ func _initialize() -> void:
 	var L: Array[String] = []
 
 	L.append("# anchors")
-	for k in screen._anchors.size():
-		L.append("anchor %02d %s" % [k, _v(screen._anchors[k])])
+	for k in screen.grid.anchors.size():
+		L.append("anchor %02d %s" % [k, _v(screen.grid.anchors[k])])
 
 	L.append("# stations")
 	for i in screen._station_nodes.size():
@@ -49,21 +49,21 @@ func _initialize() -> void:
 			L.append("barricade %d %s = %s" % [i, key, _any(g[key])])
 
 	L.append("# walls")
-	for line in _sorted(screen._solid.map(func(r): return _r(r))):
+	for line in _sorted(screen.grid.solid.map(func(r): return _r(r))):
 		L.append("wall %s" % line)
 
 	L.append("# keep-outs")
-	for line in _sorted(screen._station_rects.map(func(r): return _r(r))):
+	for line in _sorted(screen.grid.station_rects.map(func(r): return _r(r))):
 		L.append("keepout %s" % line)
-	for line in _sorted(screen._sign_rects.map(func(r): return _r(r))):
+	for line in _sorted(screen.grid.sign_rects.map(func(r): return _r(r))):
 		L.append("sign %s" % line)
 
 	L.append("# cells")
-	L.append("land %d %s" % [screen._land.size(), _cells(screen._land)])
-	L.append("beach %d %s" % [screen._beach.size(), _cells(screen._beach)])
-	L.append("trail %d %s" % [screen._trail.size(), _cells(screen._trail)])
-	L.append("taken %d %s" % [screen._taken.size(), _cells(screen._taken)])
-	L.append("island_of %d %s" % [screen._island_of.size(), _cells(screen._island_of)])
+	L.append("land %d %s" % [screen.grid.land.size(), _cells(screen.grid.land)])
+	L.append("beach %d %s" % [screen.grid.beach.size(), _cells(screen.grid.beach)])
+	L.append("trail %d %s" % [screen.grid.trail.size(), _cells(screen.grid.trail)])
+	L.append("taken %d %s" % [screen.grid.taken.size(), _cells(screen.grid.taken)])
+	L.append("island_of %d %s" % [screen.grid.island_of.size(), _cells(screen.grid.island_of)])
 
 	L.append("# scene")
 	var nodes: Array[String] = []

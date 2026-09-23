@@ -219,13 +219,14 @@ func _run() -> void:
 	print("== 3. adventure map ==")
 	var adv := _map()
 	check("reached adventure", adv.has_method("_try_enter_station"))
-	check("island cells", int(adv.get("_land").size()) > 700, str(adv.get("_land").size()))
+	var land: Dictionary = adv.get("grid").land
+	check("island cells", land.size() > 700, str(land.size()))
 	check("three stations", (adv.get("_station_nodes") as Array).size() == 3)
 	check("all circles built", (adv.get("_circles") as Array).size() == Game.TOTAL_ITEMS,
 			str((adv.get("_circles") as Array).size()))
 	check("victory gate built", adv.get("_gate") != null)
 	check("player spawned", adv.get("player") != null and adv.get("player").get_child_count() > 0)
-	check("player starts at base camp", (adv.get("player") as Node2D).position == (adv.get("_anchors") as Array)[0])
+	check("player starts at base camp", (adv.get("player") as Node2D).position == (adv.get("grid").anchors as Array)[0])
 	check("world y-sorted", (adv.get("world") as Node2D).y_sort_enabled)
 	check("grass meta set", (adv.get("world") as Node2D).has_meta("grass"))
 	check("intro collapsed, clock running", not Game.clock_paused)
