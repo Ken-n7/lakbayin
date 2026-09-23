@@ -71,7 +71,7 @@ func _submit() -> void:
 		# unknown address alike, which is the behaviour we want -- pass it on.
 		_say(err)
 		return
-	main.open("home")
+	main.open("admin" if Net.role == "admin" else "home")
 
 
 func _busy(on: bool) -> void:

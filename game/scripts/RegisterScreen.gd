@@ -79,7 +79,8 @@ func _submit() -> void:
 		_msg.text = err
 		return
 	# Registered and signed in: straight to the character pick, per §2.
-	main.open("hero")
+	# An admin never plays, so there is no character to pick.
+	main.open("admin" if Net.role == "admin" else "hero")
 
 
 func go_back() -> void:

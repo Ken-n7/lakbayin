@@ -182,22 +182,10 @@ func _build_header() -> void:
 ## The four tabs the mockups show. Home is the tab you are on, so it only
 ## re-opens this screen; the other three are the screens that already exist.
 func _build_tabs() -> void:
-	var bar := HBoxContainer.new()
-	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 6)
-	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bar.offset_left = COL_W + INSET * 2
-	bar.offset_right = -INSET
-	bar.offset_top = -(INSET + 34)
-	bar.offset_bottom = -INSET
-	add_child(bar)
-
-	for spec in [["Home", "home"], ["Start Adventure", ""],
-			["Leaderboard", "board"], ["Learn", "learn"]]:
-		var b := Ui.button(spec[0], 104, 30, Ui.SMALL if spec[1] != "" else Ui.SMALL_RED)
-		var dest: String = spec[1]
-		b.pressed.connect(func() -> void: main.open(dest if dest != "" else _adventure_route()))
-		bar.add_child(b)
+	Ui.tab_bar(self, [["Home", "home"], ["Start Adventure", ""],
+			["Leaderboard", "board"], ["Learn", "learn"]],
+		func(route: String) -> void: main.open(route if route != "" else _adventure_route()),
+		COL_W + INSET * 2, INSET)
 
 
 ## Team name comes before the map, but a player with no character yet has to
