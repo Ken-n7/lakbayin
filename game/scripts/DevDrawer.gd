@@ -130,7 +130,6 @@ func _skip_station() -> void:
 	Game.finish_station(st)
 	_adv._refresh_hud()
 	_adv._refresh_circles()
-	_adv._refresh_causeways()
 	_adv._refresh_barricades()
 	_adv._flash_tip("Station %d skipped." % (st + 1))
 
@@ -169,13 +168,11 @@ func _aerial() -> void:
 	_mark("_aerial", _adv._dev_aerial)
 
 
-## Stand every guard down and raise every causeway, without touching question
-## progress -- for walking the board rather than for testing the gating.
+## Stand every guard down, without touching question progress -- for walking the
+## board rather than for testing the gating.
 func _open_gates() -> void:
 	for g: Dictionary in _adv._barricades:
 		_adv._open_barricade(g)
-	for i in _adv._causeways.size():
-		_adv.open_causeway(i)
 	_adv._flash_tip("All crossings open.")
 
 

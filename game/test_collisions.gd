@@ -87,25 +87,15 @@ func _initialize() -> void:
 	# Flood-fill from the base camp over walkable ground. This is what actually
 	# proves a gate: a flag can be checked, but only reachability shows that the
 	# next island cannot be reached by walking around the obstacle.
+	#
+	# Every crossing is a land bridge now, so every gate is a body in a wall of
+	# rocks -- two of them straight across the walk, one a fence curved right round
+	# the station it guards. The proof does not care which: walk the ground and see
+	# where you can get to.
 	G.begin_adventure(600)
-	assert(screen._causeways.size() == 1,
-			"expected 1 causeway, got %d" % screen._causeways.size())
-	for i in screen._causeways.size():
-		var cw: Dictionary = screen._causeways[i]
-		assert(not cw.cells.is_empty(), "causeway %d found no water to cross" % i)
-		assert(not bool(cw.open), "causeway %d starts open" % i)
-		var mid: Vector2 = screen._cell_mid(cw.cells[cw.cells.size() / 2])
-		assert(not screen._is_walkable(mid), "causeway %d is walkable before its station" % i)
-
-	# --- The guards in the boulder lines ------------------------------------
-	# Two of the three crossings are land bridges, so their gate is not terrain
-	# that rises but a wall of rocks with a body in its one gap. Same proof
-	# either way: walk the ground and see where you can get to.
-	assert(screen._barricades.size() == 2,
-			"expected 2 barricades, got %d" % screen._barricades.size())
-	var b0: Dictionary = screen._barricades[0]
-	var b1: Dictionary = screen._barricades[1]
-	for g: Dictionary in [b0, b1]:
+	assert(screen._barricades.size() == 3,
+			"expected 3 barricades, got %d" % screen._barricades.size())
+	for g: Dictionary in screen._barricades:
 		var who: int = int(g.st) + 1
 		assert(not bool(g.open), "station %d's barricade starts open" % who)
 		assert(g.guard != null, "station %d has no guard on a fresh run" % who)
@@ -130,56 +120,39 @@ func _initialize() -> void:
 	var held := _reachable(screen)
 	assert(held.has(_cell(screen, door)),
 			"Station 1 is unreachable from camp, so it can never be briefed")
-	# Which is the whole point: with the guards in their gaps, nothing past either
-	# line is walkable-to, and `_assert_islands()` is what proves it.
+	# Which is the whole point: with the guards in their gaps, nothing past any of
+	# the three is walkable-to, and `_assert_islands()` is what proves it.
 	_assert_islands(screen, G, -1)
 
-	screen._open_barricade(b0)
-	assert(screen._is_walkable((b0.wall as Rect2).get_center()),
-			"station 1's wall outlived its guard")
-	# He goes, the rocks do not -- only his gap opens.
-	_assert_line(screen, b0)
-	_assert_islands(screen, G, 0)
+	# Each one opens in turn, and the rocks stay -- only the gap does.
+	for st in 3:
+		var g: Dictionary = screen._barricades[st]
+		screen._open_barricade(g)
+		assert(screen._is_walkable((g.wall as Rect2).get_center()),
+				"station %d's wall outlived its guard" % (st + 1))
+		_assert_line(screen, g)
+		_assert_islands(screen, G, st)
 
-	screen._open_barricade(b1)
-	assert(screen._is_walkable((b1.wall as Rect2).get_center()),
-			"station 2's wall outlived its guard")
-	_assert_line(screen, b1)
-	_assert_islands(screen, G, 1)
-
-	screen.open_causeway(0)
-	assert(screen._is_walkable(screen._cell_mid(screen._causeways[0].cells[0])),
-			"the causeway stayed water after it opened")
-	_assert_islands(screen, G, 2)
-
-	# ...and each gate lifts on its own: Station 1's guard on its briefing,
-	# Station 2's and the causeway when the station before them runs out of circles.
+	# ...and each one waits on its own station's briefing and nothing else:
+	# clearing the station before his does not move him.
 	var fresh: Control = load("res://scripts/AdventureScreen.gd").new()
 	root.add_child(fresh)
 	G.begin_adventure(600)
 	fresh.setup({})
-	assert(not bool(fresh._barricades[0].open), "station 1's guard gone before the briefing")
-	assert(not bool(fresh._barricades[1].open), "station 2's guard gone before its briefing")
-	assert(not bool(fresh._causeways[0].open), "causeway open at circle 0")
-	# A guard waits on his own station's briefing and nothing else -- clearing the
-	# station before his does not move him.
+	for st in 3:
+		assert(not bool(fresh._barricades[st].open),
+				"station %d's guard gone before its briefing" % (st + 1))
 	for n in G.ITEMS_PER_STATION[0]:
 		G.mark_correct()
 	fresh._refresh_barricades()
-	fresh._refresh_causeways()
-	assert(not bool(fresh._barricades[0].open),
-			"station 1's guard stood down on circles rather than on its briefing")
-	assert(not bool(fresh._barricades[1].open),
-			"station 2's guard stood down before his own briefing")
-	assert(not bool(fresh._causeways[0].open), "causeway opened one station early")
-	# ...and the causeway is the one that does wait on circles, a station later.
+	for st in 3:
+		assert(not bool(fresh._barricades[st].open),
+				"station %d's guard stood down on circles, not on its briefing" % (st + 1))
 	G.towers_entered[1] = true
-	for n in G.ITEMS_PER_STATION[1]:
-		G.mark_correct()
 	fresh._refresh_barricades()
-	fresh._refresh_causeways()
 	assert(bool(fresh._barricades[1].open), "station 2's guard held after its briefing")
-	assert(bool(fresh._causeways[0].open), "causeway shut after Station 2 was cleared")
+	assert(not bool(fresh._barricades[2].open),
+			"station 3's guard moved on Station 2's briefing")
 
 	# A restart mid-run keeps what it had already earned: the guard is not a wall
 	# any more, but he is still standing there, beside his station.
@@ -194,7 +167,9 @@ func _initialize() -> void:
 			"the gap is walled on a run that was already briefed")
 	assert(briefed._barricades[0].guard != null,
 			"the briefed guard vanished instead of standing aside")
-	assert(not bool(briefed._barricades[1].open), "station 2's guard gone on a briefed restart")
+	for st in [1, 2]:
+		assert(not bool(briefed._barricades[st].open),
+				"station %d's guard gone on a briefed restart" % (st + 1))
 	# The line is scenery, not a gate: it is laid on every build, open or not.
 	_assert_line(briefed, briefed._barricades[0])
 
@@ -215,10 +190,8 @@ func _initialize() -> void:
 				"skipping station %d left %d items done" % [st + 1, G.items_done])
 		assert(bool(G.completed_stations[st]), "station %d was not banked" % (st + 1))
 		# A skip briefs the tower, which stands that station's own guard down, and
-		# empties its circles, which is what the causeway waits on. So skipping
-		# Station 1 opens one gate, skipping Station 2 opens its guard AND the
-		# causeway behind it, and the last skip has nothing left to open.
-		_assert_islands(rig, G, [0, 2, 2][st])
+		# empties its circles. One gate per skip, in order.
+		_assert_islands(rig, G, st)
 	assert(G.items_done == G.TOTAL_ITEMS,
 			"three skips left %d of %d items" % [G.items_done, G.TOTAL_ITEMS])
 	assert(rig._can_enter_gate(), "the Victory Gate stayed shut after three skips")
@@ -231,14 +204,13 @@ func _initialize() -> void:
 
 
 ## The rung of `opened` at which each station's doorstep becomes walkable-to.
-const TOWER_OPENS_AT := [-1, 0, 2]
+const TOWER_OPENS_AT := [-1, 0, 1]
 
 
-## `opened` is how many causeways have risen, or -1 while the knight still holds the
-## neck. Station `st`'s circles are walkable-to from the base camp exactly when
-## `opened >= st`; the gate needs both causeways. Tower 1 is the exception and the
-## point of the layout: it stands on the headland this side of the knight, so it is
-## reachable from the very first step while Towers 2 and 3 are not.
+## `opened` is how many guards have stood down, or -1 while all three still hold.
+## Station `st`'s circles are walkable-to from the base camp exactly when
+## `opened >= st`, and the Victory Gate once the last guard has moved -- it stands
+## past Station 3's wall with its circles.
 func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 	var reach := _reachable(screen)
 	for n in G.TOTAL_ITEMS:
@@ -247,10 +219,10 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 		var cell := Vector2i(floori(pos.x / screen.TILE), floori(pos.y / screen.TILE))
 		if opened >= st:
 			assert(reach.has(cell),
-					"circle %d (station %d) unreachable with %d causeway(s) open" % [n + 1, st + 1, opened])
+					"circle %d (station %d) unreachable with %d guard(s) stood down" % [n + 1, st + 1, opened])
 		else:
 			assert(not reach.has(cell),
-					"circle %d (station %d) reachable with only %d causeway(s) open" % [n + 1, st + 1, opened])
+					"circle %d (station %d) reachable with only %d guard(s) stood down" % [n + 1, st + 1, opened])
 	for st in 3:
 		var tp: Vector2 = (screen._station_nodes[st] as Node2D).position
 		var tcell := Vector2i(floori(tp.x / screen.TILE), floori(tp.y / screen.TILE))
@@ -258,13 +230,13 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 		# reach a station to be briefed by it, which is what moves him. So a tower
 		# waits on whatever gate is in front of it, not on its own: Station 1 is
 		# open from the first step, Station 2 is over the bridge that leaves past
-		# Station 1's knight, and Station 3 is across the causeway.
+		# Station 1's knight, and Station 3 over the one past Station 2's.
 		assert(reach.has(tcell) == (opened >= TOWER_OPENS_AT[st]),
 				"Tower %d reachability wrong with %d gate(s) open" % [st + 1, opened])
 	var gate: Vector2 = (screen._gate as Node2D).position
 	var gcell := Vector2i(floori(gate.x / screen.TILE), floori(gate.y / screen.TILE))
 	assert(reach.has(gcell) == (opened >= 2),
-			"victory gate reachability wrong with %d causeway(s) open" % opened)
+			"victory gate reachability wrong with %d guard(s) stood down" % opened)
 
 
 ## Circles resolved by the time station `st` is done -- the same running total

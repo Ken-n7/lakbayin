@@ -24,6 +24,8 @@ const SHOTS := [
 	{"name": "dev_drawer", "at": Vector2(0.70, 0.79), "zoom": 0.75, "drawer": true},
 	{"name": "island2_bridge", "at": Vector2(0.345, 0.48), "zoom": 0.6},
 	{"name": "island2", "at": Vector2(0.27, 0.28), "zoom": 0.5},
+	{"name": "island3", "at": Vector2(0.74, 0.27), "zoom": 0.5},
+	{"name": "island3_gate", "at": Vector2(0.625, 0.235), "zoom": 0.8},
 	{"name": "island2_open", "at": Vector2(0.30, 0.375), "zoom": 0.65,
 			"dismiss": true, "hold": 120},
 	{"name": "barricade_walking", "at": Vector2(0.665, 0.775), "zoom": 0.75,

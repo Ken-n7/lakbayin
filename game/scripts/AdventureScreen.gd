@@ -62,7 +62,7 @@ const ISLANDS := [
 ]
 
 ## One authored trail per island, in normalized world coords. Each is a serpentine
-## that fills its island and ends near the causeway mouth, so the walk flows from
+## that fills its island and ends near the next crossing, so the walk flows from
 ## one island into the next. `_stamp_path()` guarantees land under all of it.
 const TRAILS := [
 	# The camp: the fire, then Station 1. Its anchor is across the channel on
@@ -99,17 +99,17 @@ const ISLAND_PROPS := [
 	{"tree": 0.08, "stump": 0.20, "rock": 0.80, "count": 60, "sheep": 0},
 ]
 
-## Half-width of a causeway, in cells: 1 gives a three-tile crossing, wide enough
-## to walk without the shoreline tiles pinching it shut.
-const CAUSEWAY_HALF := 1
-
-## Seams crossed by a **land bridge** rather than by a causeway that rises. Seam
-## `i` is the water between island `i` and island `i + 1`. The walk simply carries
-## on over it and `_stamp_path()` lays ground under the corridor, so the crossing
-## is there from the first step -- and a gate holds it instead of the tide.
-## Seam 0 (camp -> Station 1) falls out of trail 0, which spans it; seam 1 is
-## stamped between trail 1's end and trail 2's start. Seam 2 is still a causeway.
-const BRIDGED_SEAMS := [0, 1]
+## Every seam is crossed by a **land bridge**. Seam `i` is the water between island
+## `i` and island `i + 1`: the walk simply carries on over it and `_stamp_path()`
+## lays ground under the corridor, so every crossing is there from the first step
+## and a guard holds it rather than the tide. Seam 0 (camp -> Station 1) falls out
+## of trail 0, which spans it; the rest are stamped between one trail's end and the
+## next one's start.
+##
+## Kept as a list rather than assumed, because it is what `_stamp_path()` asks --
+## take a seam out of it and that crossing goes back to being open water with no
+## way over, which is a loud enough failure to find at once.
+const BRIDGED_SEAMS := [0, 1, 2]
 
 ## The gates: a line of boulders across the walk with a giant guard in its one gap
 ## -- the same Warrior sheets `_build_outpost()` gives its little guards, at three
@@ -131,6 +131,7 @@ const BRIDGED_SEAMS := [0, 1]
 const BARRICADES := [
 	{"st": 0, "t": 0.55},
 	{"st": 1, "arc": 7.0},
+	{"st": 2, "t": 0.45},
 ]
 const GUARD_SCALE := 0.9
 ## A boulder line is laid cell by cell straight across the walk, land's end to
@@ -168,7 +169,6 @@ var _beach := {}      # Vector2i -> true
 var _island_of := {}  # Vector2i -> island index, for the per-island props pass
 var _trail := {}      # Vector2i -> true, the road corridor: decor keeps off it
 var _taken := {}      # Vector2i -> true, cells a prop already stands on
-var _causeways: Array = []   # [{cells, open, props, sign}] -- one per island seam
 var _solid: Array[Rect2] = []  # building base walls, in world px
 var _barricades: Array[Dictionary] = []  # one per BARRICADES entry; see `_build_barricade()`
 var _station_nodes: Array = []
@@ -222,7 +222,6 @@ func setup(_data: Dictionary) -> void:
 	_build_terrain()
 	_build_island()
 	_build_path()
-	_dress_causeways()
 	_build_decor()
 	_spawn_player()
 	Game.time_changed.connect(_on_time)
@@ -231,7 +230,6 @@ func setup(_data: Dictionary) -> void:
 	_refresh_hud()
 	_refresh_circles()
 	# A restart mid-run keeps whatever it had already opened.
-	_refresh_causeways()
 	_refresh_barricades()
 	_start_intro()
 
@@ -345,14 +343,12 @@ func _build_island() -> void:
 				_land[cell] = true
 				_island_of[cell] = i
 	_stamp_path()
-	_causeways = _find_causeways()
 	_retile(_land.keys())
 
 
 ## Paint (or erase) a set of cells and their four neighbours from the current land
-## set. Runs over the whole island at build time, and over one causeway's cells
-## when it rises -- the shoreline either side of the new ground has to be repainted
-## or the foam still says "water here".
+## set. Runs over the whole island at build time -- the shoreline either side of
+## new ground has to be repainted or the foam still says "water here".
 func _retile(cells: Array) -> void:
 	var todo := {}
 	for c in cells:
@@ -378,117 +374,6 @@ func _retile(cells: Array) -> void:
 		grass_layer.set_cell(c, 0, _autotile(left, right, up, down))
 
 
-# --- Causeways: the gate between stations -----------------------------------
-## Each causeway is the stretch of water along the line between two island
-## centres: the shortest crossing, and the only one, because everything either
-## side of it is sea -- one boulder on open ground can be walked around, a channel
-## cannot, so the sequential rule is enforced by the geography rather than by a
-## flag the player never sees. (A whole LINE of boulders, land's end to land's end,
-## cannot be walked around either: that is what `_build_barricade()` lays down, and
-## is what holds the bridged seams, where there is no channel to use.)
-##
-## `BRIDGED_SEAMS` are skipped -- those crossings are land bridges `_stamp_path()`
-## lays under the walk, held by a gate. Without the skip this would lay a second
-## crossing alongside each bridge, along the line between the two island centres.
-## Each entry carries its own `seam`, so the rest of the file stays right however
-## many are skipped: seam `i` leads into island `i + 1`, and rises when station
-## `i - 1` runs out of circles.
-func _find_causeways() -> Array:
-	var out: Array = []
-	for i in range(ISLANDS.size() - 1):
-		if BRIDGED_SEAMS.has(i):
-			continue
-		var a := _norm(ISLANDS[i].c)
-		var b := _norm(ISLANDS[i + 1].c)
-		var perp := (b - a).normalized().orthogonal()
-		var steps := maxi(int(a.distance_to(b) / (TILE * 0.5)), 1)
-		var cells: Array[Vector2i] = []
-		for k in steps + 1:
-			var p := a.lerp(b, float(k) / float(steps))
-			if _land.has(_cell_at(p)):
-				continue
-			for wi in range(-CAUSEWAY_HALF, CAUSEWAY_HALF + 1):
-				var cc := _cell_at(p + perp * (float(wi) * TILE))
-				if _in_bounds(cc) and not _land.has(cc) and not cells.has(cc):
-					cells.append(cc)
-		out.append({"seam": i, "cells": cells, "open": false, "props": [], "sign": null})
-	return out
-
-
-## Stones just under the surface plus a sign on the near shore: the crossing is
-## visible, and named, long before it is walkable.
-func _dress_causeways() -> void:
-	for i in _causeways.size():
-		var cw: Dictionary = _causeways[i]
-		if cw.cells.is_empty():
-			continue
-		for k in cw.cells.size():
-			if k % 3 != 0:
-				continue
-			var spr := Art.anim_sprite(world,
-					"res://assets/terrain/decorations/Water Rocks_0%d.png" % (1 + k % 4),
-					_cell_mid(cw.cells[k]), 1.1, 4.0)
-			spr.modulate = Color(0.75, 0.85, 0.95, 0.75)
-			cw.props.append(spr)
-		var l := Art.label("Clear Station %d to raise the causeway" % int(cw.seam), 13,
-				Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-		# High over the crossing, not just off the shore, and drawn over the
-		# buildings rather than y-sorted behind them: a tower standing near a
-		# causeway mouth otherwise prints its own signage across this line.
-		l.position = _cell_mid(cw.cells[0]) + Vector2(-170, -96)
-		l.size = Vector2(340, 20)
-		l.z_index = 3
-		Art.shadow(l)
-		world.add_child(l)
-		cw.sign = l
-
-
-## A causeway on seam `s` leads to station `s`, so it rises the moment station
-## `s - 1` has no circles left. Called after every resolved item.
-func _refresh_causeways() -> void:
-	for i in _causeways.size():
-		var cw: Dictionary = _causeways[i]
-		if not bool(cw.open) and Game.items_done >= _items_through(int(cw.seam) - 1):
-			open_causeway(i)
-
-
-## Circles resolved by the time station `st` is finished -- the same running total
-## `_tower_anchors()` walks.
-static func _items_through(st: int) -> int:
-	var n := 0
-	for i in st + 1:
-		n += Game.ITEMS_PER_STATION[i]
-	return n
-
-
-func open_causeway(i: int) -> void:
-	var cw: Dictionary = _causeways[i]
-	if bool(cw.open):
-		return
-	cw.open = true
-	for c in cw.cells:
-		_land[c] = true
-		# It belongs to the island it leads to, so that island's props keep off it.
-		_island_of[c] = int(cw.seam) + 1
-	_retile(cw.cells)
-	# The same stones, now dry: what rises reads as a stone causeway rather than
-	# grass climbing out of the sea.
-	for pr in cw.props:
-		if is_instance_valid(pr):
-			create_tween().tween_property(pr, "modulate", Color.WHITE, 0.5)
-	if cw.sign != null and is_instance_valid(cw.sign):
-		(cw.sign as Node).queue_free()
-		cw.sign = null
-	if not cw.cells.is_empty():
-		var mid := _cell_mid(cw.cells[cw.cells.size() / 2])
-		var puff := Art.anim_sprite(world, "res://assets/fx/Dust_01.png", mid, 1.2, 12.0)
-		# The dust sheet loops, so it has to be told when to stop being dust.
-		var done := create_tween()
-		done.tween_interval(0.9)
-		done.tween_callback(puff.queue_free)
-	_flash_tip("The causeway rises! Cross to Station %d." % (int(cw.seam) + 1))
-
-
 func _is_walkable(pos: Vector2) -> bool:
 	for r in _solid:
 		if r.has_point(pos):
@@ -511,7 +396,7 @@ func _first_land(nx: float, ny: float, toward: Vector2) -> Vector2:
 
 # --- The trails -------------------------------------------------------------
 ## How many stops each TRAIL carries -- not each island. The camp's trail holds the
-## base camp and Station 1, whose briefing raises the causeway out of camp; the
+## base camp and Station 1, whose briefing opens the road out of camp; the
 ## crossing between them is the land bridge, so the trail spans two islands and
 ## Station 1 stands on island 1's ground. Trail `i` then holds station `i - 1`'s
 ## circles, and stations 2 and 3 keep their own towers. The last one also holds the
@@ -639,8 +524,8 @@ func _stamp_path() -> void:
 			continue
 		# The hop on to the next trail is walk as well, so it is road for the decor
 		# pass either way. It is only *ground* where that seam is bridged -- on an
-		# unbridged one the causeway is what rises there later, and stamping would
-		# hand the player the crossing for free.
+		# unbridged one there would be nothing to walk on, which is what makes a
+		# seam left out of BRIDGED_SEAMS fail loudly rather than quietly.
 		var next: Array = TRAILS[t + 1]
 		_stamp_way([way[way.size() - 1], next[0]], t + 1, BRIDGED_SEAMS.has(t))
 	# The towers step off the path, so their ground has to be stamped as well or
@@ -971,7 +856,7 @@ func _open_barricade(g: Dictionary) -> void:
 			k.play("idle"))
 
 
-## Called wherever progress is made, like `_refresh_causeways()` beside it.
+## Called wherever progress is made: setup, and every overlay that closes.
 func _refresh_barricades() -> void:
 	for g: Dictionary in _barricades:
 		if not bool(g.open) and _barricade_is_due(g):
@@ -2067,7 +1952,6 @@ func close_overlay() -> void:
 		_set_pad(true)
 		_refresh_hud()
 		_refresh_circles()
-		_refresh_causeways()
 		_refresh_barricades()
 	# Clearing the board no longer ends the run on its own -- the Victory Gate
 	# does, and walking to it is the last step of the player flow.
