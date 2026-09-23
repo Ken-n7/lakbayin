@@ -133,13 +133,13 @@ const BRIDGED_SEAMS := [0, 1, 2]
 const BARRICADES := [
 	# Radius picked so the gap lands on the cell the old straight line put him on:
 	# the knight has not moved, the wall around him has curved.
-	{"st": 0, "arc": 8.5},
-	{"st": 1, "arc": 7.0},
+	{"st": 0, "arc": 8.0, "offset": Vector2(0, -20)},
+	{"st": 1, "arc": 7.0, "offset": Vector2(0, -25)},
 	# Island 3's station stands at the island's west end with the whole board east
 	# of it, so its fence is a small one: the gap where the road leaves, one rock
 	# above it holding the north shore, and the long arm curving down and away to
 	# the lower-left edge, well clear of the Victory Gate.
-	{"st": 2, "arc": 5.0, "shift": 2.0},
+	{"st": 2, "arc": 5.0, "shift": 2.0, "offset": Vector2(0, -10), "rest": Vector2(-165, -50)},
 ]
 const GUARD_SCALE := 0.9
 ## A fence is laid cell by cell round its station, shore to shore. Objects, not
@@ -671,6 +671,8 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 		"stand": Vector2.ZERO,
 		"guard": null,
 		"open": false,
+		"offset": spec.get("offset", Vector2.ZERO),
+		"rest": spec.get("rest", Vector2.ZERO),
 	}
 	_lay_arc(g, a, b, float(spec.arc), float(spec.get("shift", 0.0)))
 	g.stand = _guard_rest(g)
@@ -762,17 +764,19 @@ func _barricade_is_due(g: Dictionary) -> bool:
 
 
 func _post_guard(g: Dictionary) -> void:
+	var off := g.get("offset", Vector2.ZERO) as Vector2
 	# A restart mid-run keeps whatever it had already earned. He is not a wall any
 	# more, but he is still the station's man, so he stands where he stepped aside
 	# to -- and the gate is marked open, which is what "no blocker" means here.
 	if _barricade_is_due(g):
 		g.open = true
-		g.guard = _spawn_guard(int(g.st), g.stand as Vector2)
-		_face(g, g.stand as Vector2)
+		var stood := (g.stand as Vector2) + off + (g.get("rest", Vector2.ZERO) as Vector2)
+		g.guard = _spawn_guard(int(g.st), stood)
+		_face(g, stood)
 		return
 	_solid.append(g.wall as Rect2)
-	g.guard = _spawn_guard(int(g.st), g.post as Vector2)
-	_face(g, g.post as Vector2)
+	g.guard = _spawn_guard(int(g.st), (g.post as Vector2) + off)
+	_face(g, (g.post as Vector2) + off)
 
 
 ## Idle and walk on the one node, so standing him down is a change of animation
@@ -855,7 +859,7 @@ func _open_barricade(g: Dictionary) -> void:
 	var k: AnimatedSprite2D = g.guard
 	if k == null or not is_instance_valid(k):
 		return
-	var to: Vector2 = g.stand
+	var to: Vector2 = (g.stand as Vector2) + (g.get("offset", Vector2.ZERO) as Vector2) + (g.get("rest", Vector2.ZERO) as Vector2)
 	# Facing the way he is about to go -- the sheets' own direction is east.
 	k.scale.x = GUARD_SCALE * (1.0 if to.x >= k.position.x else -1.0)
 	k.play("walk")
