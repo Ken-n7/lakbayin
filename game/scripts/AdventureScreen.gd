@@ -58,7 +58,13 @@ const ISLANDS := [
 	{"c": Vector2(0.925, 0.800), "r": Vector2(0.058, 0.135), "wobble": 0.6},
 	{"c": Vector2(0.415, 0.765), "r": Vector2(0.365, 0.225), "wobble": 1.7},
 	{"c": Vector2(0.260, 0.270), "r": Vector2(0.215, 0.175), "wobble": 3.1},
-	{"c": Vector2(0.740, 0.270), "r": Vector2(0.215, 0.175), "wobble": 5.3},
+	# Island 3 carries a station, its circles, a fence and the Victory Gate, which is
+	# more than its first size could hold -- the fence had shrunk to clear the shore and
+	# the keep's left house stood in the water. `c.y` and `r.y` move together so the
+	# north coast stays where it was and only the south shore travels, ~4 cells down
+	# into open sea. Island 1 is still a clear channel below it; close that and the two
+	# merge, and `_island_index()` hands the overlap to island 1 and its forest.
+	{"c": Vector2(0.740, 0.307), "r": Vector2(0.215, 0.212), "wobble": 5.3},
 ]
 
 ## One authored trail per island, in normalized world coords. Each is a serpentine
@@ -83,7 +89,11 @@ const TRAILS := [
 	# the corner the station sits in; see `BARRICADES`.
 	[Vector2(0.325, 0.395), Vector2(0.12, 0.35), Vector2(0.12, 0.22),
 	 Vector2(0.25, 0.16), Vector2(0.40, 0.23)],
-	[Vector2(0.60, 0.23), Vector2(0.75, 0.16), Vector2(0.89, 0.22),
+	# Station 3 starts this walk, so its first point is where the keep stands. East of
+	# the old 0.60, which put the left house of the outpost over the water -- but only
+	# just, and not by eye: how far east it may go is fixed by its fence. See
+	# `BARRICADES`.
+	[Vector2(0.61, 0.23), Vector2(0.75, 0.16), Vector2(0.89, 0.22),
 	 Vector2(0.88, 0.34), Vector2(0.70, 0.38)],
 ]
 
@@ -130,16 +140,52 @@ const BRIDGED_SEAMS := [0, 1, 2]
 ## stands in a corner or at an end of its island, where a line either has nowhere
 ## to go or strands a stop on the wrong side of itself -- and because a wall that
 ## bows away from the station reads as one from the yard inside it.
+##
+## `offset` nudges the guard within his own gap, and only him: the fence, the gap
+## and the wall that plugs it stay on the bearing, so this is framing rather than
+## geometry. `rest` is where he should step aside to when the gate opens, measured
+## from his post, and it is a wish rather than a decree -- the nearest ground he
+## actually fits on wins, so a spot that has since grown a boulder stands him
+## beside it instead of on it. Both default to zero.
 const BARRICADES := [
 	# Radius picked so the gap lands on the cell the old straight line put him on:
 	# the knight has not moved, the wall around him has curved.
 	{"st": 0, "arc": 8.0, "offset": Vector2(0, -20)},
 	{"st": 1, "arc": 7.0, "offset": Vector2(0, -25)},
-	# Island 3's station stands at the island's west end with the whole board east
-	# of it, so its fence is a small one: the gap where the road leaves, one rock
-	# above it holding the north shore, and the long arm curving down and away to
-	# the lower-left edge, well clear of the Victory Gate.
-	{"st": 2, "arc": 5.0, "shift": 2.0, "offset": Vector2(0, -10), "rest": Vector2(-165, -50)},
+	# TODO: station 3's keep, its knight and its boulders all want another pass. Each
+	# is sitting at a compromise the geometry forced, not at what was wanted:
+	#
+	#   keep     - asked to move 0.03 east to clear the water, got 0.01. The left
+	#              house is off the shore, but only just.
+	#   knight   - wanted down-left of his post, which is the road and then the
+	#              station's signboard, so he stands through the gap instead. Moving
+	#              the signage, or the gap itself (`shift`), is what would free it.
+	#   boulders - `arc 6.0` is the floor that still seals the west shore and the
+	#              ceiling before the fence reaches the Victory Gate. There is no
+	#              room either side of it while the keep stands where it does.
+	#
+	# They are one problem, not three: the keep's x sets the fence's radius, and the
+	# radius plus the signage is what leaves the knight nowhere on his own side. Move
+	# the signboard or re-cut the gap and all three loosen at once.
+	#
+	# This one's radius is not a free choice, and the island growing south is what
+	# made that bite. A fence only gates while both its arms run out of island: the
+	# west arm has to reach the west shore, or it carries on round, crosses the land
+	# bridge the player arrives by, and closes the arc round the station -- gate
+	# between the player and the briefing, circles loose outside it. The shore by the
+	# bridge sits at x 0.548, so the arm reaches it only while
+	#
+	#     arc >= (station x - 0.548) * W
+	#
+	# -- 6.0 cells at x 0.61. Moving the keep further east costs a bigger fence
+	# (0.63 needs 8.0), and by then the arc has swung out over the Victory Gate. That
+	# pair of limits is why the keep moved 0.01 east and not the 0.03 it was offered.
+	# `tools/check_guards.gd` walks the board and fails if this ever stops holding.
+	{"st": 2, "arc": 6.0, "shift": 2.0, "offset": Vector2(0, -10),
+			# Due west of his post is the road, and below that the station's own
+			# signboard, so there is no standing aside on the keep's side of this
+			# gate: he steps out through the gap and holds the north shoulder of it.
+			"rest": Vector2(192, -32)},
 ]
 const GUARD_SCALE := 0.9
 ## A fence is laid cell by cell round its station, shore to shore. Objects, not
@@ -160,6 +206,10 @@ const ROCK_SCALE := 1.2
 ## at one gate rounded to three at the next -- which is how the red knight came to
 ## have a stride of bare grass over his head with the wall still in it.
 const GUARD_REACH := Rect2(-35.0, -42.0, 70.0, 59.0)
+## The knight himself, as a box round his boots: about two cells across and two
+## high, base-anchored like everything else. What `_stands_clear()` asks its
+## questions of, and what `tools/check_guards.gd` re-asks them of afterwards.
+const GUARD_BODY := Rect2(-34.0, -64.0, 68.0, 64.0)
 ## A boulder's wall, like a building's, is the foot of what you can see and not
 ## the cell it was laid on. `Art.sprite()` base-anchors a 64px stone, so the
 ## stone is drawn a whole texture-height *above* its cell: a box centred on the
@@ -764,19 +814,22 @@ func _barricade_is_due(g: Dictionary) -> bool:
 
 
 func _post_guard(g: Dictionary) -> void:
-	var off := g.get("offset", Vector2.ZERO) as Vector2
 	# A restart mid-run keeps whatever it had already earned. He is not a wall any
 	# more, but he is still the station's man, so he stands where he stepped aside
 	# to -- and the gate is marked open, which is what "no blocker" means here.
 	if _barricade_is_due(g):
 		g.open = true
-		var stood := (g.stand as Vector2) + off + (g.get("rest", Vector2.ZERO) as Vector2)
-		g.guard = _spawn_guard(int(g.st), stood)
-		_face(g, stood)
+		g.guard = _spawn_guard(int(g.st), g.stand as Vector2)
+		_face(g, g.stand as Vector2)
 		return
 	_solid.append(g.wall as Rect2)
-	g.guard = _spawn_guard(int(g.st), (g.post as Vector2) + off)
-	_face(g, (g.post as Vector2) + off)
+	# `offset` moves the man and nothing else. The gap, the stretch of wall that
+	# plugs it and the ground kept clear around it are all the bearing's, measured
+	# off the post itself -- this is only where in his own gap he is drawn, and
+	# folding it back into the post laid a boulder at his boots.
+	var at := (g.post as Vector2) + (g.offset as Vector2)
+	g.guard = _spawn_guard(int(g.st), at)
+	_face(g, at)
 
 
 ## Idle and walk on the one node, so standing him down is a change of animation
@@ -817,6 +870,16 @@ func _face(g: Dictionary, from: Vector2) -> void:
 func _guard_rest(g: Dictionary) -> Vector2:
 	var home: Vector2 = _anchors[_tower_anchors()[int(g.st)]]
 	var post: Vector2 = g.post
+	# An authored `rest` is asked for first, and the same question is put to it as
+	# to anywhere else -- can he stand there. So it steers the search instead of
+	# overriding it, and a spot that has since grown a boulder gives up the nearest
+	# one that has not rather than planting him in the rubble.
+	var want: Vector2 = g.rest
+	if want != Vector2.ZERO:
+		for c in _rings(_cell_at(post + want), 4):
+			var at := _cell_mid(c)
+			if _stands_clear(g, at):
+				return at
 	var inside := post.distance_to(home)
 	for c in _rings(_cell_at(home), 8):
 		var at := _cell_mid(c)
@@ -838,7 +901,7 @@ func _stands_clear(g: Dictionary, at: Vector2) -> bool:
 	var c := _cell_at(at)
 	if not _is_walkable(at) or _trail.has(c):
 		return false
-	var body := Rect2(at - Vector2(34.0, 64.0), Vector2(68.0, 64.0))
+	var body := Rect2(GUARD_BODY.position + at, GUARD_BODY.size)
 	# The rubble gets his body plus a little below his feet: a boulder's wall is
 	# the stone and stops above the cell it stands on, and the y-sort draws a
 	# stone in the cell below him over his boots.
@@ -859,15 +922,19 @@ func _open_barricade(g: Dictionary) -> void:
 	var k: AnimatedSprite2D = g.guard
 	if k == null or not is_instance_valid(k):
 		return
-	var to: Vector2 = (g.stand as Vector2) + (g.get("offset", Vector2.ZERO) as Vector2) + (g.get("rest", Vector2.ZERO) as Vector2)
+	var to: Vector2 = g.stand
 	# Facing the way he is about to go -- the sheets' own direction is east.
 	k.scale.x = GUARD_SCALE * (1.0 if to.x >= k.position.x else -1.0)
 	k.play("walk")
 	var tw := k.create_tween()
 	tw.tween_property(k, "position", to, 1.2).set_ease(Tween.EASE_IN_OUT)
+	# Arriving, he turns back to face his station, which is where `_post_guard()`
+	# leaves him on a restart. Without this the walk's own direction sticks, and
+	# the same knight faced two ways depending on whether you saw him step aside.
 	tw.tween_callback(func() -> void:
 		if is_instance_valid(k):
-			k.play("idle"))
+			k.play("idle")
+			_face(g, to))
 
 
 ## Called wherever progress is made: setup, and every overlay that closes.
