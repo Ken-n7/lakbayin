@@ -131,7 +131,11 @@ const BRIDGED_SEAMS := [0, 1, 2]
 const BARRICADES := [
 	{"st": 0, "t": 0.55},
 	{"st": 1, "arc": 7.0},
-	{"st": 2, "t": 0.45},
+	# Island 3's station stands at the island's west end with the whole board east
+	# of it, so its fence is a small one: the gap where the road leaves, one rock
+	# above it holding the north shore, and the long arm curving down and away to
+	# the lower-left edge, well clear of the Victory Gate.
+	{"st": 2, "arc": 5.0},
 ]
 const GUARD_SCALE := 0.9
 ## A boulder line is laid cell by cell straight across the walk, land's end to
@@ -765,9 +769,11 @@ func _post_guard(g: Dictionary) -> void:
 	if _barricade_is_due(g):
 		g.open = true
 		g.guard = _spawn_guard(int(g.st), g.stand as Vector2)
+		_face(g, g.stand as Vector2)
 		return
 	_solid.append(g.wall as Rect2)
 	g.guard = _spawn_guard(int(g.st), g.post as Vector2)
+	_face(g, g.post as Vector2)
 
 
 ## Idle and walk on the one node, so standing him down is a change of animation
@@ -790,47 +796,52 @@ func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 	return k
 
 
-## Where opening the gate will send him: open ground between his post and his own
-## station's tower, off the road so he is not standing in the walk, and clear of
-## the rocks, the buildings and the signage. Searched rather than authored, so
-## retuning a gate's `t` or moving a station cannot strand him in a wall. Called
-## once, from `_build_barricade()`, and kept on the barricade as `stand`.
-func _guard_rest(g: Dictionary) -> Vector2:
-	var post: Vector2 = g.post
+## Face him back down the road, toward his own station: that is the only side
+## anyone reaches his wall from, because reaching the station is what opens it.
+## The sheets' own direction is east, so a station west of him flips the sprite.
+func _face(g: Dictionary, from: Vector2) -> void:
 	var home: Vector2 = _anchors[_tower_anchors()[int(g.st)]]
-	var dir := (home - post).normalized()
-	var perp := dir.orthogonal()
-	# Out along the walk toward his station, nearest first, then off to one side --
-	# inland side first, since the seaward one is a strip of beach that props keep
-	# off anyway. A guard posted mid-bridge has to go the whole way to the far
-	# shore before there is anywhere to stand, which is why this runs to `reach`
-	# rather than a couple of cells.
-	var reach := int(post.distance_to(home) / TILE)
-	# Two passes. The first asks that his whole body clears the keep-outs -- he is
-	# ~90px across and as tall again, and a spot that clears one by a pixel still
-	# plants him over the station's signage. The second settles for the cell he
-	# stands on, which is what a crowded landing can afford.
-	for strict: bool in [true, false]:
-		# Furthest first, so he ends up beside his own station rather than hovering
-		# at the wall he just stopped holding.
-		for along: int in range(maxi(reach, 3), 1, -1):
-			for across: int in [2, -2, 3, -3, 4, -4]:
-				var at: Vector2 = post + dir * (float(along) * TILE) \
-						+ perp * (float(across) * TILE)
-				var c := _cell_at(at)
-				if not _is_walkable(at) or _trail.has(c):
-					continue
-				var body := Rect2(at - Vector2(44.0, 90.0), Vector2(88.0, 90.0))
-				if strict:
-					if _clear_of_stations(body):
-						return at
-				# The loose pass gives up the decor keep-outs but never the
-				# signage: standing in a flower bed is fine, standing across the
-				# station's own name is not.
-				elif not _near_station(c) and _clear_of_signs(body):
-					return at
-	# Nothing open: at least get out of the gap.
-	return post + dir * (3.0 * TILE)
+	(g.guard as AnimatedSprite2D).scale.x = GUARD_SCALE * (1.0 if home.x >= from.x else -1.0)
+
+
+## Where opening the gate will send him: open ground beside his own station, on
+## his own side of the wall if there is room for him there. Often there is not --
+## a yard with an outpost, a road and a wall of rocks in it fills up fast, and
+## island 2's is half sea besides -- so it widens to anywhere near the station,
+## then to anywhere just off the gap. By then the gate is open and standing past
+## it is no lie. Searched rather than authored, so retuning a gate or moving a
+## station cannot strand him. Called once, from `_build_barricade()`.
+func _guard_rest(g: Dictionary) -> Vector2:
+	var home: Vector2 = _anchors[_tower_anchors()[int(g.st)]]
+	var post: Vector2 = g.post
+	var inside := post.distance_to(home)
+	for c in _rings(_cell_at(home), 8):
+		var at := _cell_mid(c)
+		if at.distance_to(home) <= inside and _stands_clear(g, at):
+			return at
+	for centre: Vector2 in [home, post]:
+		for c in _rings(_cell_at(centre), 8):
+			var at := _cell_mid(c)
+			if _stands_clear(g, at):
+				return at
+	# Nothing open at all: at least get out of the gap.
+	return post + (home - post).normalized() * (3.0 * TILE)
+
+
+## Ground a man his size can stand on: nothing under him, nothing drawn over him.
+## One box for all of it, because the question is the same each time -- "is he
+## clear of that" -- and he is about two cells across and two high.
+func _stands_clear(g: Dictionary, at: Vector2) -> bool:
+	var c := _cell_at(at)
+	if not _is_walkable(at) or _trail.has(c):
+		return false
+	var body := Rect2(at - Vector2(34.0, 64.0), Vector2(68.0, 64.0))
+	# The rubble gets his body plus a little below his feet: a rock is a 48px rect
+	# but a 64px sprite rising off its own cell, and the y-sort draws one in the
+	# cell below him over his boots.
+	if not _clear_of(body.grow_individual(0.0, 0.0, 0.0, 24.0), g.rocks as Array):
+		return false
+	return _clear_of_signs(body) and _clear_of_buildings(body)
 
 
 ## Whatever the gate was waiting for has happened. The wall goes the moment it
@@ -1060,8 +1071,17 @@ func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 ## Same keep-out set as `_near_station()`, for something with a footprint rather
 ## than a cell -- a guard looking for somewhere to stand that is not on top of a
 ## building, its houses or its signage.
-func _clear_of_stations(r: Rect2) -> bool:
-	return _clear_of(r, _station_rects)
+## The buildings themselves, without the tile of breathing room `_station_rects`
+## carries for the decor pass -- a tree may not grow beside a keep, but a man may
+## perfectly well stand there.
+func _clear_of_buildings(r: Rect2) -> bool:
+	for b in _station_rects:
+		var box := (b as Rect2).grow(-TILE)
+		# A box that was only the margin has nothing left to stand clear of, and
+		# Rect2 will not take a negative size.
+		if box.size.x > 0.0 and box.size.y > 0.0 and box.intersects(r):
+			return false
+	return true
 
 
 func _clear_of_signs(r: Rect2) -> bool:
