@@ -13,20 +13,20 @@ func _hail() -> String:
 
 
 func _sub() -> String:
-	return "Monitor student progress, manage activities, and support learners."
+	return "Run the session."
+
+
+func _tagline() -> String:
+	return ""
 
 
 func _entries() -> Array:
 	return [
 		["Game Controls", "controls", Ui.RED],
 		["Question Management", "questions", Ui.SMALL],
-		["Leaderboard", "board", Ui.SMALL_RED],
+		["Leaderboard", "board", Ui.SMALL],
 		["Feedback", "feedback", Ui.SMALL],
 	]
-
-
-func _footer() -> String:
-	return "Teacher: %s" % (Net.username if Net.signed_in() else "— not signed in —")
 
 
 ## A teacher never picked a character.
@@ -47,9 +47,9 @@ func _after_menu(col: VBoxContainer) -> void:
 	if not is_instance_valid(line):
 		return   # the teacher moved on while the request was in flight
 	if short == "":
-		line.text = "Bank ready: %d / %d / %d items." % [
+		line.text = "Bank ready — %d / %d / %d" % [
 			Game.ITEMS_PER_STATION[0], Game.ITEMS_PER_STATION[1], Game.ITEMS_PER_STATION[2]]
 		line.add_theme_color_override("font_color", Pal.GOLD)
 	else:
-		line.text = "Bank incomplete — " + short
+		line.text = "Bank short — see Question Management"
 		line.add_theme_color_override("font_color", Pal.WRONG)

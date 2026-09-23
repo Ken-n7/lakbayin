@@ -43,6 +43,7 @@ func _ready() -> void:
 func _audit(screen: String, root: Control) -> void:
 	var hits: Array[String] = []
 	_walk(root, hits)
+	_overlaps(root, hits)
 	if hits.is_empty():
 		print("  ok    %s" % screen)
 		return
@@ -50,6 +51,40 @@ func _audit(screen: String, root: Control) -> void:
 	for h in hits:
 		print("          " + h)
 	_bad += hits.size()
+
+
+## Two things drawn on top of each other. Everything fitting the canvas is not
+## the same as everything being readable -- the admin column's last button sat
+## squarely on the footer and every measurement here still passed.
+func _overlaps(root: Control, hits: Array[String]) -> void:
+	var leaves: Array[Control] = []
+	_collect(root, leaves)
+	for i in leaves.size():
+		for j in range(i + 1, leaves.size()):
+			var a := leaves[i]
+			var b := leaves[j]
+			# Text is allowed to sit inside its own button.
+			if a.is_ancestor_of(b) or b.is_ancestor_of(a):
+				continue
+			var r := a.get_global_rect().intersection(b.get_global_rect())
+			if r.size.x > 2.0 and r.size.y > 2.0:
+				hits.append("%s %s overlaps %s %s by %dx%d" % [
+					a.get_class(), _name_of(a), b.get_class(), _name_of(b),
+					int(r.size.x), int(r.size.y)])
+
+
+## Buttons and labels only: panels, scrims and containers are meant to sit
+## under things, and reporting those is noise that hides the real collisions.
+func _collect(node: Node, out: Array[Control]) -> void:
+	for child in node.get_children():
+		if child is ScrollContainer:
+			continue
+		if (child is Button or child is Label or child is LineEdit) \
+				and (child as Control).visible:
+			var c := child as Control
+			if c.get_global_rect().size.x > 0.0:
+				out.append(c)
+		_collect(child, out)
 
 
 ## Only leaves and sized boxes are worth reporting: a container that overflows

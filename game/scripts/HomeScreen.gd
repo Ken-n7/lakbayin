@@ -50,13 +50,19 @@ func _sub() -> String:
 	return "Every problem is a new adventure waiting to be solved."
 
 
+## The player's strapline. The admin column has no room for it once the
+## mockup's longer heading has wrapped.
+func _tagline() -> String:
+	return "Explore.  Solve.  Conquer."
+
+
 ## [label, route, button kind]; an empty route means "work it out" via
 ## `_adventure_route()`.
 func _entries() -> Array:
 	var has_profile := Game.player_name != ""
 	var out: Array = [
 		["Continue Quest" if has_profile else "Start Adventure", "", Ui.RED],
-		["Leaderboard", "board", Ui.SMALL_RED],
+		["Leaderboard", "board", Ui.SMALL],
 		["Learn", "learn", Ui.SMALL],
 	]
 	# The only route back to the character picker once a hero is saved.
@@ -73,11 +79,6 @@ func _show_portrait() -> bool:
 ## Hook for anything a subclass wants under the buttons.
 func _after_menu(_col: VBoxContainer) -> void:
 	pass
-
-
-func _footer() -> String:
-	return "Adventurer: %s" % (Game.player_name if Game.player_name != ""
-		else "— no profile yet —")
 
 
 # --- Scene ------------------------------------------------------------------
@@ -259,16 +260,24 @@ func _build_menu() -> void:
 	add_child(col)
 
 	var tl := Art.label("NumXventure", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
+	tl.custom_minimum_size = Vector2(COL_W, 0)
 	Art.shadow(tl, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(tl)
 
-	col.add_child(Art.label("Explore.  Solve.  Conquer.", Pal.SMALL, Pal.GOLD,
-			HORIZONTAL_ALIGNMENT_CENTER))
+	if _tagline() != "":
+		var tag := Art.label(_tagline(), Pal.SMALL, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		tag.custom_minimum_size = Vector2(COL_W, 0)
+		col.add_child(tag)
 
 	# The mockup's welcome copy, word for word -- §1 treats the PDFs as a
 	# wording contract even though the art is ours.
 	var hail := Art.label(_hail(), Pal.H2, Pal.PARCHMENT,
 			HORIZONTAL_ALIGNMENT_CENTER)
+	# Wrapped and pinned to the column width. Without this a longer heading --
+	# the admin's -- sets the VBox's minimum width, and every button in it
+	# stretches to match: 400px against Home's 186.
+	hail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hail.custom_minimum_size = Vector2(COL_W, 0)
 	Art.shadow(hail, Pal.SHADOW, 2, 0)
 	col.add_child(hail)
 	var sub := Art.label(_sub(),
@@ -302,14 +311,10 @@ func go_back() -> void:
 	get_tree().quit()
 
 
+## Only the version. The name used to live down here too, from before there
+## were accounts -- now the header carries it, and the second copy was wide
+## enough to sit under the last button in the column.
 func _build_footer() -> void:
-	var who := Art.label(_footer(), 12, Color(1, 1, 1, 0.85))
-	who.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	who.offset_left = INSET
-	who.offset_top = -(INSET + 16)
-	who.offset_bottom = -INSET
-	add_child(who)
-
 	var ver := Art.label("v%s" % ProjectSettings.get_setting("application/config/version", ""),
 			12, Color(1, 1, 1, 0.5), HORIZONTAL_ALIGNMENT_RIGHT)
 	ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
