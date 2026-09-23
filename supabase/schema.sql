@@ -119,14 +119,23 @@ create table if not exists public.members (
 -- 4. Question bank ----------------------------------------------------------
 -- Empty is fine: QuestionGen still fills any station short of active items.
 create table if not exists public.questions (
-  id       uuid primary key default gen_random_uuid(),
-  station  int  not null check (station between 1 and 3),
-  prompt   text not null,
-  answer   text not null,
-  hint     text not null default '',
-  feedback text not null default '' check (char_length(feedback) <= 300),
-  active   boolean not null default true
+  id         uuid primary key default gen_random_uuid(),
+  station    int  not null check (station between 1 and 3),
+  prompt     text not null,
+  answer     text not null,
+  hint       text not null default '',
+  feedback   text not null default '' check (char_length(feedback) <= 300),
+  active     boolean not null default true,
+  -- Authoring order IS play order: the teacher's first question for a station
+  -- is its first circle. Ordering by `id` looked deterministic and was not --
+  -- a uuid sorts arbitrarily, so the class met the questions shuffled.
+  created_at timestamptz not null default now()
 );
+
+-- `create table if not exists` skips an existing table, so this is how the
+-- column reaches a project made before it existed.
+alter table public.questions add column if not exists
+  created_at timestamptz not null default now();
 
 -- 5. Leaderboard ------------------------------------------------------------
 create or replace view public.team_scores with (security_invoker = on) as

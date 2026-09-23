@@ -68,6 +68,15 @@ const HERO_SCALE_STEP := 0.1
 const HERO_SCALE_RANGE := Vector2(0.5, 3.0)
 
 
+## The admin's questions for this run. A failure is reported, not swallowed:
+## a silent fall back to the generator is exactly the substitution SPECS §10
+## Phase 3 forbids, and the teacher would never know it happened.
+func _load_bank() -> void:
+	var err: String = await QuestionStore.load_bank()
+	if err != "" and is_instance_valid(hud):
+		hud.flash("Could not load the question bank — " + err)
+
+
 func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# A bare Control defaults to MOUSE_FILTER_STOP, which swallows every click or
@@ -77,6 +86,9 @@ func setup(_data: Dictionary) -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud = AdventureHud.new(self)
 	hud.build()
+	# Fetched once, while the board builds and the aerial view holds -- long
+	# before the hero can reach a circle, so the wait costs nobody anything.
+	_load_bank()
 	if not Game.adventure_active:
 		Game.begin_adventure()
 	world = Node2D.new()

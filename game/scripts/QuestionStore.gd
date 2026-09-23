@@ -16,9 +16,9 @@ const PATH := "/rest/v1/questions"
 ## `station` 1-3, or 0 for the whole bank. Inactive rows come back too: the
 ## admin has to see what is switched off in order to switch it on.
 static func fetch(station := 0) -> Dictionary:
-	var q := PATH + "?select=*&order=station,id"
+	var q := PATH + "?select=*&order=station,created_at,id"
 	if station > 0:
-		q = PATH + "?select=*&station=eq.%d&order=id" % station
+		q = PATH + "?select=*&station=eq.%d&order=created_at,id" % station
 	var r: Dictionary = await Net.rest(HTTPClient.METHOD_GET, q)
 	return {"error": r.error, "rows": r.data if r.data is Array else []}
 
@@ -102,3 +102,59 @@ static func seed(station: int) -> Dictionary:
 		if added.error != "":
 			return added
 	return {"error": "", "rows": []}
+
+
+# --- The bank in hand -------------------------------------------------------
+## Lives here and not on `Game`, because `Game` is loaded directly by
+## `test_rules.gd` with `--script`, which registers no autoloads -- naming
+## `Net` there compiles fine in the game and hangs the suite.
+## The admin's authored questions for this run, station index -> rows. Empty
+## when there is no backend, which is how an offline dev run and the headless
+## suites still get questions at all.
+static var bank := {}
+
+
+## Pull the bank once per adventure rather than per item: forty round trips on
+## a classroom connection is forty chances to stall mid-question.
+static func load_bank() -> String:
+	bank = {}
+	if not Net.configured() or not Net.signed_in():
+		return ""
+	var got: Dictionary = await fetch()
+	if got.error != "":
+		return got.error
+	for row: Dictionary in got.rows:
+		if not row.get("active", false):
+			continue
+		var idx: int = int(row.get("station", 0)) - 1
+		if idx < 0 or idx >= Game.ITEMS_PER_STATION.size():
+			continue
+		if not bank.has(idx):
+			bank[idx] = []
+		bank[idx].append(row)
+	return ""
+
+
+## The item a circle asks. An authored question when the bank has one, the
+## generator when it does not -- which offline is every time, and online is
+## never, because Start Game refuses to begin on a short station.
+##
+## Over-supply takes the first N in authoring order, so the teacher's first
+## question is the first circle and every team answers the same items.
+static func item_for(station_index: int, item_index: int) -> Dictionary:
+	var rows: Array = bank.get(station_index, [])
+	if item_index < rows.size():
+		var q: Dictionary = rows[item_index]
+		return {
+			"prompt": str(q.get("prompt", "")),
+			"answer": str(q.get("answer", "")),
+			"hint": str(q.get("hint", "")),
+			# The admin's feedback is the rule reminder on a wrong answer; that
+			# is what the Feedback screen writes it for. Falls back to the hint
+			# so a question with no feedback still says something useful.
+			"rule": str(q.get("feedback", "")) if str(q.get("feedback", "")) != ""
+				else str(q.get("hint", "")),
+		}
+	var gen: Dictionary = QuestionGen.item_for_station(station_index, item_index)
+	gen["answer"] = str(gen.get("answer", ""))
+	return gen

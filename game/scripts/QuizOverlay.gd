@@ -17,7 +17,9 @@ var intro_only := false      # the tower briefing card, no question
 var phase := Phase.INTRO
 var item_index := 0
 var current: Dictionary = {}
-var answer := 0
+## The expected answer as text: authored questions are free text, and the
+## generator's integers are stringified to match.
+var answer := ""
 var meta: Dictionary = {}
 
 var _panel: VBoxContainer
@@ -182,7 +184,7 @@ func _next_question() -> void:
 	Game.begin_item()
 	var total: int = Game.ITEMS_PER_STATION[station_index]
 	item_index = Game.item_in_station(Game.items_done)
-	current = QuestionGen.item_for_station(station_index, item_index)
+	current = QuestionStore.item_for(station_index, item_index)
 	answer = current.answer
 	_q_index.text = "Item %d / %d" % [item_index + 1, total]
 	_q_prompt.text = current.prompt
@@ -197,16 +199,29 @@ func _submit() -> void:
 	if phase != Phase.QUESTION:
 		return
 	var t := _input.text.strip_edges()
-	if not t.is_valid_int():
-		_flash_trouble("Type a whole number first")
+	if t.is_empty():
+		_flash_trouble("Type your answer first")
 		return
-	var ok := int(t) == answer
+	var ok := _matches(t, str(answer))
 	if ok:
 		Game.mark_correct()
 		_show_result(true)
 	else:
 		Game.mark_wrong()
 		_show_result(false)
+
+
+## Authored answers are free text, so "-2", "-2 " and "−2" (the minus sign the
+## ± button types) all have to count. Numbers compare as numbers so that "07"
+## and "7" agree; anything else compares as trimmed, case-folded text.
+func _matches(typed: String, want: String) -> bool:
+	var a := typed.strip_edges().replace("\u2212", "-")
+	var b := want.strip_edges().replace("\u2212", "-")
+	if a.is_valid_int() and b.is_valid_int():
+		return a.to_int() == b.to_int()
+	if a.is_valid_float() and b.is_valid_float():
+		return is_equal_approx(a.to_float(), b.to_float())
+	return a.to_lower() == b.to_lower()
 
 
 func _show_result(correct: bool) -> void:
@@ -225,7 +240,7 @@ func _show_result(correct: bool) -> void:
 		_result_title.add_theme_color_override("font_color", Pal.WRONG)
 		_delta_label.text = "%d gems" % Game.GEM_WRONG
 		_delta_label.add_theme_color_override("font_color", Pal.WRONG)
-		_result_rule.text = "Correct answer: %d\n%s" % [answer, current.rule]
+		_result_rule.text = "Correct answer: %s\n%s" % [str(answer), current.rule]
 	_continue_btn.grab_focus()
 
 
