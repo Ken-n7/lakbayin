@@ -63,7 +63,7 @@ func setup(_data: Dictionary) -> void:
 	_msg.custom_minimum_size = Vector2(560, 0)
 	box.add_child(_msg)
 
-	var back := Ui.button("Back", 200, 28, Ui.SMALL)
+	var back := Ui.button("Back", 200, 24, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 

@@ -15,7 +15,9 @@ const TREE := "res://assets/terrain/decorations/Tree1.png"
 
 const INSET := 16      # safe-area gutter, ~5% of the 360px canvas height
 const COL_W := 186     # menu column width
-const BTN_H := 40      # 40 x the ~3x phone upscale is ~120 physical px
+const BTN_H := 30      # 30 x the ~3x phone upscale is ~90 physical px, still a
+                       # comfortable touch target; 40 did not leave room for the
+                       # welcome copy and five buttons above the tab bar
 const TILE := 32       # world px per cell; art is 64px drawn at 0.5
 const W := 21          # 21 x 32 = 672, over-covers the 640 viewport
 const H := 12          # 12 x 32 = 384, over-covers 360
@@ -220,7 +222,7 @@ func _build_menu() -> void:
 	col.offset_left = INSET
 	col.offset_right = INSET + COL_W
 	col.custom_minimum_size = Vector2(COL_W, 0)
-	col.add_theme_constant_override("separation", 6)
+	col.add_theme_constant_override("separation", 4)
 	add_child(col)
 
 	var tl := Art.label("NumXventure", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)

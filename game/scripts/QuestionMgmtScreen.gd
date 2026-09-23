@@ -56,7 +56,7 @@ func setup(_data: Dictionary) -> void:
 
 	_build_add_form(box)
 
-	var back := Ui.button("Back", 200, 28, Ui.SMALL)
+	var back := Ui.button("Back", 200, 24, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 

@@ -89,7 +89,12 @@ static func panel(s: Vector2, title := "", title_col: Color = Pal.TITLE) -> Pane
 	pc.custom_minimum_size = s
 	pc.add_theme_stylebox_override("panel", Art.panel(PAPER, Vector2(8, 4), 0.3))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
+	# 4, not 8. Four pixels a row is nothing to look at and 32px across an
+	# eight-row form, which is the difference between a Back button on the
+	# canvas and one below it. Button heights are not the lever they look
+	# like: Ui.button's nine-patch has a ~31px floor, so asking for 24 gets
+	# 31 and the gaps are the only give in a full form.
+	box.add_theme_constant_override("separation", 4)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pc.add_child(box)
 	if title != "":
@@ -111,8 +116,15 @@ static func panel(s: Vector2, title := "", title_col: Color = Pal.TITLE) -> Pane
 static func screen_panel(parent: Node, s: Vector2, title := "",
 		title_col: Color = Pal.TITLE) -> VBoxContainer:
 	var pc := panel(s, title, title_col)
-	pc.position = ((Pal.CANVAS - s) * 0.5).floor()
-	parent.add_child(pc)
+	# Centred by a container, not by arithmetic. The old line positioned the
+	# panel from its *declared* size while the box grew to fit its contents, so
+	# every screen whose content ran past that guess hung off the bottom of the
+	# canvas -- by 47px on the login form, and a button nobody could tap.
+	var centre := CenterContainer.new()
+	centre.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(centre)
+	centre.add_child(pc)
 	return pc.get_child(0) as VBoxContainer
 
 
@@ -137,6 +149,9 @@ static func tab_bar(parent: Node, tabs: Array, on_pick: Callable,
 	for spec: Array in tabs:
 		var route: String = spec[1]
 		var b := button(spec[0], w, 30, SMALL if route != "" else SMALL_RED)
+		# Without this a Button's minimum size grows to fit its text, so
+		# "Question Management" pushed the whole bar off the right edge.
+		b.clip_text = true
 		b.pressed.connect(func() -> void: on_pick.call(route))
 		bar.add_child(b)
 	return bar
@@ -156,7 +171,10 @@ static func dim(parent: Node) -> ColorRect:
 static func scroll(parent: Node, h: float) -> ScrollContainer:
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# `h` is a cap, not a suggestion. With SIZE_EXPAND_FILL the box grew to its
+	# contents inside a panel that has no height of its own, so a scroll region
+	# scrolled nothing and pushed everything below it off the canvas instead.
+	sc.size_flags_vertical = Control.SIZE_FILL
 	sc.custom_minimum_size = Vector2(0, h)
 	sc.add_theme_constant_override("scrollbar_margin", 0)
 	parent.add_child(sc)

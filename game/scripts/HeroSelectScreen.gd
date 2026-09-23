@@ -57,7 +57,12 @@ func _build() -> void:
 	# no colour or class to combine, the sprite IS the choice.
 	# A CenterContainer, because SIZE_SHRINK_CENTER on the grid itself leaves it
 	# hugging the left edge of the scroll.
+	# The grid is four rows of eight and simply does not fit under the name
+	# field and above the button, whatever the swatches are scaled to. It
+	# scrolls instead -- the alternative is a Begin Adventure nobody can reach.
+	var grid_scroll := Ui.scroll(box, 96)
 	var grid_center := CenterContainer.new()
+	grid_center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var grid := GridContainer.new()
 	grid.columns = 8
 	grid_center.add_child(grid)
@@ -73,7 +78,7 @@ func _build() -> void:
 		b.pressed.connect(_pick_hero.bind(id))
 		_hero_buttons[id] = b
 		grid.add_child(b)
-	box.add_child(grid_center)
+	grid_scroll.add_child(grid_center)
 
 	var start := Ui.button("Begin Adventure", 210, 52, Ui.RED)
 	start.pressed.connect(_begin)
