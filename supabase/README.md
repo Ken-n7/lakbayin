@@ -63,9 +63,20 @@ For a dev run, export them:
     export SUPABASE_URL=https://<ref>.supabase.co
     export SUPABASE_ANON_KEY=eyJ...
 
-For a build, put them in `project.godot` as
-`numxventure/supabase/url` and `numxventure/supabase/anon_key`.
-`Supabase.gd` reads the environment first and falls back to those.
+**This project keeps them in `project.godot`** under `[numxventure]`, because
+the anon key ships inside every APK regardless — anyone who can install the app
+can read it, so keeping it out of git protects nothing while making editor
+launches behave differently from builds. RLS is the actual guard.
+
+The environment still wins over the settings, so a dev run can point at a
+different project without editing anything.
+
+The one real exposure is that **signup is open**: anyone with the key can
+create accounts, admin ones included. Close it once the class roster exists —
+Authentication → Providers → Email → **Disable signup**.
+
+The `service_role` key is a different matter and must never go in
+`project.godot`, the repo, or an APK.
 
 ## 5. Make yourself an admin
 

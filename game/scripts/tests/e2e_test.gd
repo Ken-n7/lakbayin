@@ -176,10 +176,21 @@ func _run() -> void:
 	add_child(_main_scene)
 	await _wait(4)
 
-	print("== 1. splash -> title ==")
+	print("== 1. splash -> sign in -> home ==")
 	check("booted to splash", _script_of(_screen(), "res://scripts/SplashScreen.gd"))
 	check("splash shows the tagline", _find_label(_screen(), "Explore.") != null)
 	_screen().call("skip")
+	await _wait(3)
+	# With keys in project.godot the backend is always configured, so a launch
+	# lands on the login form -- which is the point, and what a phone does.
+	# This suite is offline by design: it asserts the gate, then steps over it
+	# rather than signing in, because a suite that needs the network is a suite
+	# that fails on a train.
+	check("a fresh launch asks you to sign in",
+		_script_of(_screen(), "res://scripts/LoginScreen.gd"))
+	check("login offers a way to register", _find_button(_screen(), "Create Account") != null)
+	check("login offers recovery", _find_button(_screen(), "Forgot Password") != null)
+	_main_scene.call("open", "home")
 	await _wait(3)
 	check("splash routes to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("start button present", _find_button(_screen(), "Start New Journey") != null)
