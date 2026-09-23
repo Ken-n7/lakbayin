@@ -38,6 +38,48 @@ func setup(_data: Dictionary) -> void:
 	_build_footer()
 
 
+# --- What a subclass changes ------------------------------------------------
+## The admin dashboard is this screen with different words and different
+## destinations, so it inherits the island, the header and the footer and
+## overrides only these four. Anything else and the two drift apart.
+func _hail() -> String:
+	return "Welcome, Adventurer!"
+
+
+func _sub() -> String:
+	return "Every problem is a new adventure waiting to be solved."
+
+
+## [label, route, button kind]; an empty route means "work it out" via
+## `_adventure_route()`.
+func _entries() -> Array:
+	var has_profile := Game.player_name != ""
+	var out: Array = [
+		["Continue Quest" if has_profile else "Start Adventure", "", Ui.RED],
+		["Leaderboard", "board", Ui.SMALL_RED],
+		["Learn", "learn", Ui.SMALL],
+	]
+	# The only route back to the character picker once a hero is saved.
+	if has_profile:
+		out.insert(1, ["Change Character", "hero", Ui.SMALL])
+	return out
+
+
+## A teacher never picked a character, so there is no portrait to stand there.
+func _show_portrait() -> bool:
+	return true
+
+
+## Hook for anything a subclass wants under the buttons.
+func _after_menu(_col: VBoxContainer) -> void:
+	pass
+
+
+func _footer() -> String:
+	return "Adventurer: %s" % (Game.player_name if Game.player_name != ""
+		else "— no profile yet —")
+
+
 # --- Scene ------------------------------------------------------------------
 ## The island is a fixed composition, not a procedural map: every prop is placed
 ## by hand so the castle stays the focal point and the menu column always has
@@ -141,22 +183,24 @@ func _build_hero() -> void:
 func _build_header() -> void:
 	if not Net.signed_in():
 		return
-	# The chosen character stands beside the name, per the mockup's header.
-	var wrap := Control.new()
-	wrap.custom_minimum_size = Vector2(28, 28)
-	wrap.clip_contents = true
-	wrap.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	wrap.offset_left = -(INSET + 86 + 30)
-	wrap.offset_right = -(INSET + 86 + 2)
-	wrap.offset_top = INSET + 2
-	wrap.offset_bottom = INSET + 30
-	var face := AnimatedSprite2D.new()
-	face.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id), 1.0)
-	face.animation = "right"
-	face.scale = Vector2(1.4, 1.4)
-	face.position = Vector2(14, 20)
-	wrap.add_child(face)
-	add_child(wrap)
+	# The chosen character stands beside the name, per the mockup's header --
+	# for a player. A teacher never picked one, so the name sits alone.
+	if _show_portrait():
+		var wrap := Control.new()
+		wrap.custom_minimum_size = Vector2(28, 28)
+		wrap.clip_contents = true
+		wrap.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		wrap.offset_left = -(INSET + 86 + 30)
+		wrap.offset_right = -(INSET + 86 + 2)
+		wrap.offset_top = INSET + 2
+		wrap.offset_bottom = INSET + 30
+		var face := AnimatedSprite2D.new()
+		face.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id), 1.0)
+		face.animation = "right"
+		face.scale = Vector2(1.4, 1.4)
+		face.position = Vector2(14, 20)
+		wrap.add_child(face)
+		add_child(wrap)
 
 	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
 	who.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
@@ -223,11 +267,11 @@ func _build_menu() -> void:
 
 	# The mockup's welcome copy, word for word -- §1 treats the PDFs as a
 	# wording contract even though the art is ours.
-	var hail := Art.label("Welcome, Adventurer!", Pal.H2, Pal.PARCHMENT,
+	var hail := Art.label(_hail(), Pal.H2, Pal.PARCHMENT,
 			HORIZONTAL_ALIGNMENT_CENTER)
 	Art.shadow(hail, Pal.SHADOW, 2, 0)
 	col.add_child(hail)
-	var sub := Art.label("Every problem is a new adventure waiting to be solved.",
+	var sub := Art.label(_sub(),
 			Pal.TINY, Pal.WHITE_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sub.custom_minimum_size = Vector2(COL_W, 0)
@@ -243,23 +287,14 @@ func _build_menu() -> void:
 	# destinations, two of them listed twice. The column wins: this is a
 	# landscape phone, where height is the scarce axis and a bottom bar spends
 	# it on something the side already does.
-	var has_profile := Game.player_name != ""
-	var entries: Array = [
-		["Continue Quest" if has_profile else "Start Adventure", "", Ui.RED],
-		["Leaderboard", "board", Ui.SMALL_RED],
-		["Learn", "learn", Ui.SMALL],
-	]
-	# The only route back to the character picker once a hero is saved.
-	if has_profile:
-		entries.insert(1, ["Change Character", "hero", Ui.SMALL])
-
-	for spec: Array in entries:
+	for spec: Array in _entries():
 		var b := Ui.button(spec[0], COL_W, BTN_H, spec[2])
 		b.clip_text = true
 		var route: String = spec[1]
 		b.pressed.connect(func() -> void:
 			main.open(route if route != "" else _adventure_route()))
 		col.add_child(b)
+	_after_menu(col)
 
 
 ## Back on the home screen is the way out of the app.
@@ -268,9 +303,7 @@ func go_back() -> void:
 
 
 func _build_footer() -> void:
-	var who := Art.label(
-		"Adventurer: %s" % (Game.player_name if Game.player_name != "" else "— no profile yet —"),
-		12, Color(1, 1, 1, 0.85))
+	var who := Art.label(_footer(), 12, Color(1, 1, 1, 0.85))
 	who.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	who.offset_left = INSET
 	who.offset_top = -(INSET + 16)
