@@ -160,11 +160,11 @@ const BARRICADES := [
 	# problem, and `arc` is bounded below by the west shore and above by the
 	# Victory Gate. See SPECS.md "Known compromises"; `tools/check_guards.gd`
 	# fails if it stops holding.
-	{"st": 2, "arc": 6.0, "shift": 2.0, "offset": Vector2(0, -10),
+	{"st": 2, "arc": 6.0, "shift": 2.0, "offset": Vector2(0, -30),
 			# Due west of his post is the road, and below that the station's own
 			# signboard, so there is no standing aside on the keep's side of this
 			# gate: he steps out through the gap and holds the north shoulder of it.
-			"rest": Vector2(192, -32)},
+			"rest": Vector2(-192, -32)},
 ]
 const GUARD_SCALE := 0.9
 ## A fence is laid cell by cell round its station, shore to shore. Objects, not
