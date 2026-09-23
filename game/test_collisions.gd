@@ -281,9 +281,11 @@ static func _cell(screen: Control, at: Vector2) -> Vector2i:
 	return Vector2i(floori(at.x / screen.TILE), floori(at.y / screen.TILE))
 
 
-## One barricade's boulder line: every rock solid and clear of the board, and both
-## ends of the line running off the land -- if either end stopped short there would
-## be a way round it and the guard would be decoration.
+## One barricade's boulders: every rock solid, and none of them swallowing a stop
+## on the board. That the fence actually *seals* is not checked here and cannot
+## usefully be -- one is a straight line across the walk and the other a curve
+## right round a station, and "does it hold" has the same answer for both:
+## `_assert_islands()` walks the ground from the base camp and sees where it gets.
 func _assert_line(screen: Control, g: Dictionary) -> void:
 	var rocks: Array = g.rocks
 	var who: int = int(g.st) + 1
@@ -294,22 +296,6 @@ func _assert_line(screen: Control, g: Dictionary) -> void:
 				"a boulder at %s is not solid" % (r as Rect2).get_center())
 		assert(screen._clear_of_anchors(r),
 				"a boulder at %s swallows a stop on the board" % (r as Rect2).get_center())
-	# The rocks are laid outward from the gap in both directions until they run out
-	# of land, so the ends are the two extremes along the line's own axis.
-	var axis := 0 if absf(rocks[0].position.x - rocks[rocks.size() - 1].position.x) \
-			> absf(rocks[0].position.y - rocks[rocks.size() - 1].position.y) else 1
-	var lo: Rect2 = rocks[0]
-	var hi: Rect2 = rocks[0]
-	for r in rocks:
-		if (r as Rect2).get_center()[axis] < lo.get_center()[axis]:
-			lo = r
-		if (r as Rect2).get_center()[axis] > hi.get_center()[axis]:
-			hi = r
-	for spec in [[lo, -1.0], [hi, 1.0]]:
-		var beyond: Vector2 = (spec[0] as Rect2).get_center()
-		beyond[axis] += float(spec[1]) * screen.TILE
-		assert(not screen._land.has(_cell(screen, beyond)),
-				"station %d's line stops on dry land at %s -- walk around it" % [who, beyond])
 
 
 ## Cells walkable from the base camp, by flood fill over cell centres.

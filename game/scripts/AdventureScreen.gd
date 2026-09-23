@@ -74,17 +74,15 @@ const TRAILS := [
 	# Island 1: Station 1's eight circles, starting west of the boulder line that
 	# `_build_barricade()` draws between them and the monastery.
 	[Vector2(0.585, 0.780), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
-	 Vector2(0.10, 0.83), Vector2(0.16, 0.70), Vector2(0.33, 0.665),
-	 Vector2(0.17, 0.635)],
-	# Island 2, west to east. It used to land in the south-east and loop back on
-	# itself to reach the seam, which left nowhere to put a gate: a line square
-	# across that walk always stranded the last circle on the station's side of
-	# it (checked every column), and the one cut that worked ran through a
-	# circle's own doorstep. Landing in the south-west and running away east gives
-	# the same shape island 1 has -- station, gate, circles -- and the seam to
-	# island 3 is where the walk ends anyway.
-	[Vector2(0.175, 0.355), Vector2(0.28, 0.185), Vector2(0.39, 0.29),
-	 Vector2(0.45, 0.24)],
+	 Vector2(0.10, 0.83), Vector2(0.16, 0.69), Vector2(0.40, 0.65),
+	 Vector2(0.38, 0.60)],
+	# Island 2: the bridge lands in the south-east corner, where Station 2 stands,
+	# and the walk loops west, north and back east to the seam. Nothing square
+	# across that walk can gate it -- it doubles back, so a line always leaves the
+	# last circle on the station's side. What does gate it is a fence drawn *round*
+	# the corner the station sits in; see `BARRICADES`.
+	[Vector2(0.325, 0.395), Vector2(0.12, 0.35), Vector2(0.12, 0.22),
+	 Vector2(0.25, 0.16), Vector2(0.40, 0.23)],
 	[Vector2(0.60, 0.23), Vector2(0.75, 0.16), Vector2(0.89, 0.22),
 	 Vector2(0.88, 0.34), Vector2(0.70, 0.38)],
 ]
@@ -126,9 +124,13 @@ const BRIDGED_SEAMS := [0, 1]
 ## What keeps the walk in order is not the guards, then, but `_can_enter_tower()`:
 ## a station only opens its briefing while the current item belongs to it. Reaching
 ## Station 2's door early gets you nothing but the view.
+## `t` draws a straight line that far along the stretch from the station to its
+## first circle. `arc` instead swings a fence of that radius, in cells, right
+## round the station -- for a station that sits in a corner of its island, where a
+## straight line has nowhere to go.
 const BARRICADES := [
 	{"st": 0, "t": 0.55},
-	{"st": 1, "t": 0.55},
+	{"st": 1, "arc": 7.0},
 ]
 const GUARD_SCALE := 0.9
 ## A boulder line is laid cell by cell straight across the walk, land's end to
@@ -746,42 +748,21 @@ func _build_barricades() -> void:
 ## `_solid` rect per cell is what stops them. The line is laid on every build, open
 ## or not -- only the guard in its gap comes and goes.
 func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
-	var a: Vector2 = _anchors[ai]
-	var b: Vector2 = _anchors[ai + 1]
-	var dir := (b - a).normalized()
-	# Whole cells, square to the grid, or the rects leave diagonal slips between
-	# them: across the walk is the other axis, whichever one that is.
-	var step := Vector2i(0, 1) if absf(dir.x) >= absf(dir.y) else Vector2i(1, 0)
-	# Each cell of the line is two cells deep along the walk, one across. Two deep
-	# because `_is_walkable()` is a point test against the player's position, and a
-	# one-tile wall can be stepped clean over in a single frame after a hitch.
-	var size := (Vector2(2, 1) if step == Vector2i(0, 1) else Vector2(1, 2)) * TILE
-	# The gap runs from `mid` outward for BARRICADE_GAP cells; the rocks start on
-	# either side of it and run to the water.
-	var mid := _cell_at(a.lerp(b, float(spec.t)))
-	var last := BARRICADE_GAP - 1
+	var a: Vector2 = _anchors[ai]          # the station's doorstep
+	var b: Vector2 = _anchors[ai + 1]      # its first circle: the way out
 	var g := {
 		"st": int(spec.st),
-		"post": _cell_mid(mid) + Vector2(step) * (float(last) * 0.5 * TILE),
-		"wall": _cells_rect(mid, step, 0, last, size),
+		"post": Vector2.ZERO,
+		"wall": Rect2(),
 		"rocks": [] as Array[Rect2],
 		"stand": Vector2.ZERO,
 		"guard": null,
 		"open": false,
 	}
-	for run in [[-1, -1], [last + 1, 1]]:
-		var n: int = run[0]
-		while true:
-			var c := mid + step * n
-			if not _land.has(c):
-				break
-			var rect := _cells_rect(c, step, 0, 0, size)
-			(g.rocks as Array).append(rect)
-			_solid.append(rect)
-			# Round-robin off the cell so the wall is not four of the same stone.
-			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
-					% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
-			n += int(run[1])
+	if spec.has("arc"):
+		_lay_arc(g, a, b, float(spec.arc))
+	else:
+		_lay_line(g, a, b, float(spec.t))
 	g.stand = _guard_rest(g)
 	# Nothing grows in the gap, along the walk he takes out of it, or where he ends
 	# up standing -- a tree in any of the three reads as him shoving through a wood.
@@ -802,6 +783,80 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 			span = span.merge(r)
 		_station_rects.append(span.grow(TILE * 2.0))
 	return g
+
+
+## A straight line square across the walk, `t` of the way from the station to its
+## first circle, laid cell by cell out to land's end on both sides.
+func _lay_line(g: Dictionary, a: Vector2, b: Vector2, t: float) -> void:
+	var dir := (b - a).normalized()
+	# Whole cells, square to the grid, or the rects leave diagonal slips between
+	# them: across the walk is the other axis, whichever one that is.
+	var step := Vector2i(0, 1) if absf(dir.x) >= absf(dir.y) else Vector2i(1, 0)
+	# Each cell of the line is two cells deep along the walk, one across. Two deep
+	# because `_is_walkable()` is a point test against the player's position, and a
+	# one-tile wall can be stepped clean over in a single frame after a hitch.
+	var size := (Vector2(2, 1) if step == Vector2i(0, 1) else Vector2(1, 2)) * TILE
+	# The gap runs from `mid` outward for BARRICADE_GAP cells; the rocks start on
+	# either side of it and run to the water.
+	var mid := _cell_at(a.lerp(b, t))
+	var last := BARRICADE_GAP - 1
+	g.post = _cell_mid(mid) + Vector2(step) * (float(last) * 0.5 * TILE)
+	g.wall = _cells_rect(mid, step, 0, last, size)
+	for run in [[-1, -1], [last + 1, 1]]:
+		var n: int = run[0]
+		while true:
+			var c := mid + step * n
+			if not _land.has(c):
+				break
+			_lay_rock(g, c, _cells_rect(c, step, 0, 0, size))
+			n += int(run[1])
+
+
+## A fence swung right round the station at `radius` cells, from land's end on one
+## side of it to land's end on the other, with the gap on the bearing the walk
+## leaves by. This is the gate for a station standing in a corner of its island:
+## island 2's walk doubles back on itself, so a line square across it always
+## leaves the last circle on the station's side -- but a fence around the corner
+## has the whole island outside it.
+##
+## Each cell's rect is a tile and a half square, so neighbours overlap however the
+## curve steps and there is no diagonal slip between two of them.
+func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float) -> void:
+	var r := radius * TILE
+	var bearing := (b - a).angle()
+	var size := Vector2(TILE, TILE) * 1.5
+	# Half a cell of arc per step, so the walk round never skips a cell.
+	var da := TILE * 0.5 / r
+	var gap_arc := float(BARRICADE_GAP) * TILE * 0.5
+	g.post = a + Vector2.from_angle(bearing) * r
+	var seen := {}
+	var wall := Rect2(g.post as Vector2, Vector2.ZERO)
+	for side in [1.0, -1.0]:
+		var n := 0
+		while true:
+			var arc := float(n) * TILE * 0.5
+			var c := _cell_at(a + Vector2.from_angle(bearing + side * float(n) * da) * r)
+			n += 1
+			if seen.has(c):
+				continue
+			if not _land.has(c):
+				break
+			seen[c] = true
+			var rect := Rect2(_cell_mid(c) - size * 0.5, size)
+			if arc <= gap_arc:
+				wall = wall.merge(rect)   # the guard's own stretch of it
+			else:
+				_lay_rock(g, c, rect)
+	g.wall = wall
+
+
+## One boulder, and the rect that makes it a wall.
+func _lay_rock(g: Dictionary, c: Vector2i, rect: Rect2) -> void:
+	(g.rocks as Array).append(rect)
+	_solid.append(rect)
+	# Round-robin off the cell so the wall is not four of the same stone.
+	Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
+			% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
 
 
 ## The rect covering the cells `lo` to `hi` steps of `step` away from `c`, each cell
