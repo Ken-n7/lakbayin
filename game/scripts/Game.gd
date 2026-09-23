@@ -32,14 +32,6 @@ const SAVE_PATH := "user://numxventure.cfg"
 
 # --- Palette (sampled from the pack) ---------------------------------------
 
-# --- Rivals -----------------------------------------------------------------
-## Fixed rival adventuring parties, so the leaderboard is meaningful offline.
-const RIVALS := [
-	{"name": "Math Mavericks", "gems": 480},
-	{"name": "Number Ninjas", "gems": 440},
-	{"name": "Problem Solvers", "gems": 400},
-	{"name": "Logic Legends", "gems": 340},
-]
 
 var gems := START_GEMS
 var correct := 0
@@ -340,12 +332,12 @@ func save_profile() -> void:
 	cfg.save(SAVE_PATH)
 
 
+## The offline board: this machine's own runs, best score per team name. The
+## four invented rival parties are gone -- they sat above real students on a
+## board the client reads as a result.
 func _register_leaderboard(entry_name: String, entry_gems: int) -> void:
-	# One row per name, or the fixed rivals pile up again on every save.
 	var best: Dictionary = {}
 	for row in leaderboard:
-		best[row.name] = maxi(int(row.gems), int(best.get(row.name, 0)))
-	for row in RIVALS:
 		best[row.name] = maxi(int(row.gems), int(best.get(row.name, 0)))
 	if entry_name != "":
 		best[entry_name] = entry_gems   # this run replaces the player's old row

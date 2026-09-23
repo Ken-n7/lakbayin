@@ -41,7 +41,9 @@ func _init() -> void:
 	assert(G.gems == before, "no -25 when every station is done: %d -> %d" % [before, G.gems])
 	assert(G.last_run.finished_all == true)
 
-	# Fix #6: rivals must not pile up across saved runs.
+	# One row per team, however many runs are saved. The four invented rival
+	# parties are gone -- a board the client reads as a result should not be
+	# padded with teams that never played.
 	G.player_name = "Ken"
 	for run in 3:
 		G._register_leaderboard("Ken", 200 + run)
@@ -49,7 +51,9 @@ func _init() -> void:
 	for row in G.leaderboard:
 		assert(not seen.has(row.name), "duplicate leaderboard row: %s" % row.name)
 		seen[row.name] = true
-	assert(seen.has("Ken") and seen.has("Math Mavericks"), "player and rivals both listed")
+	assert(seen.has("Ken"), "the player's own run is listed")
+	assert(G.leaderboard.size() == 1, "only real runs: %d rows" % G.leaderboard.size())
+	assert(int(G.leaderboard[0].gems) == 202, "best run kept: %d" % int(G.leaderboard[0].gems))
 
 	# Fix #8: no item should demand five-digit arithmetic.
 	var QG := load("res://scripts/QuestionGen.gd")

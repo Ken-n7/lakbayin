@@ -83,7 +83,25 @@ func _ready() -> void:
 	_check("no scoring while paused",
 		"" if while_paused.error != "" else "the answer was accepted")
 
+	# --- The board a teacher reads ----------------------------------------
 	await Net.sign_in(_admin_email, "letmein123")
+	var teams: Array = await Board.teams(_session)
+	_check("the team board has the team",
+		"" if teams.size() == 1 and str(teams[0].get("name", "")) == "Score Test"
+		else "got %s" % str(teams))
+	_check("team gems are the sum of its members",
+		"" if int(teams[0].get("gems", -1)) == 45 else "got %s" % teams[0].get("gems"))
+
+	var players: Array = await Board.players(_session)
+	_check("the player board has the player", "" if players.size() == 1
+		else "got %d rows" % players.size())
+	_check("it carries correct responses",
+		"" if int(players[0].correct) == 1 else "got %s" % players[0].correct)
+	# The number a spectating teacher actually reads.
+	_check("it knows how long they have been idle",
+		"" if int(players[0].idle_s) >= 0 and int(players[0].idle_s) < 600
+		else "idle_s was %s" % players[0].idle_s)
+
 	await Net.rest(HTTPClient.METHOD_DELETE, "/rest/v1/sessions?id=eq." + _session)
 	print("---- SCORES %s ----" % ("PASS" if _failures == 0 else "FAIL"))
 	get_tree().quit(1 if _failures > 0 else 0)

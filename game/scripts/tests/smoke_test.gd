@@ -99,7 +99,16 @@ func _t_skip_and_penalty() -> void:
 
 func _t_leaderboard() -> void:
 	print("== leaderboard ==")
+	Game.team_name = "First Team"
 	Game.begin_adventure(300)
+	Game.mark_correct()
+	Game.end_adventure()
+	# Two runs under different team names: one row each, best first. It used to
+	# take two rows for granted because four invented rival teams padded the
+	# board -- they are gone, so the test makes its own.
+	Game.team_name = "Second Team"
+	Game.begin_adventure(300)
+	Game.mark_correct()
 	Game.mark_correct()
 	Game.end_adventure()
 	var rows := Game.leaderboard
