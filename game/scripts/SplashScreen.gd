@@ -74,10 +74,17 @@ func skip() -> void:
 	_done = true
 	# Sign in first -- unless there is no backend to sign in to, which is how
 	# the headless suites and an offline dev run still reach the game.
-	if Net.configured() and not Net.signed_in():
+	if not Net.configured():
+		main.open("home")
+		return
+	# An app stays signed in. Trade the stored refresh token for a new access
+	# token before deciding, so a returning student never sees the form.
+	if not Net.signed_in():
+		await Net.restore_session()
+	if not Net.signed_in():
 		main.open("login")
 	else:
-		main.open("home")
+		main.open("admin" if Net.role == "admin" else "home")
 
 
 func go_back() -> void:

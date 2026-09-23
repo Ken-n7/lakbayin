@@ -18,8 +18,15 @@ extends Node
 ## row level security in `supabase/schema.sql` is what actually guards the data.
 ## The *service role* key is not, and never belongs in this file or the repo.
 
+## Where the refresh token lives between launches.
+const SESSION_PATH := "user://session.cfg"
+
 var url: String
 var anon_key: String
+## Kept so a launch can trade it for a new access token instead of asking a
+## classroom of students to type their passwords again. Access tokens expire
+## after about an hour; this one does not, until sign-out.
+var refresh_token := ""
 var access_token := ""
 var user_id := ""
 ## Filled from `public.profiles` on every successful sign-in, so a screen never
@@ -135,9 +142,27 @@ func signed_in() -> bool:
 	return access_token != ""
 
 
+## Signing back in after a restart, with no password. Returns "" on success,
+## or why not -- "no saved session" being the ordinary answer on a fresh
+## install, not an error worth showing anybody.
+func restore_session() -> String:
+	if signed_in():
+		return ""
+	var cfg := ConfigFile.new()
+	if cfg.load(SESSION_PATH) != OK:
+		return "no saved session"
+	var saved := str(cfg.get_value("auth", "refresh_token", ""))
+	if saved == "":
+		return "no saved session"
+	return await _finish(await _call(HTTPClient.METHOD_POST,
+		"/auth/v1/token?grant_type=refresh_token", {"refresh_token": saved}))
+
+
 func sign_out() -> void:
 	if is_instance_valid(_realtime):
 		_realtime.close_socket()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SESSION_PATH))
+	refresh_token = ""
 	access_token = ""
 	user_id = ""
 	username = ""
@@ -177,7 +202,7 @@ func _finish(reply: Dictionary) -> String:
 	return ""
 
 
-func _call(method: int, path: String, body: Variant) -> Dictionary:
+func _call(method: int, path: String, body: Variant, retry := true) -> Dictionary:
 	if not configured():
 		return {"error": "Supabase is not configured -- see supabase/README.md", "data": null}
 	if not is_inside_tree():
@@ -197,6 +222,17 @@ func _call(method: int, path: String, body: Variant) -> Dictionary:
 	var code: int = res[1]
 	var text := (res[3] as PackedByteArray).get_string_from_utf8()
 	var parsed: Variant = JSON.parse_string(text)
+	# An hour into a session the access token expires. Renew once and repeat
+	# the call rather than showing a student an error for the clock ticking.
+	if code == 401 and retry and refresh_token != "" and not path.begins_with("/auth/v1/token"):
+		var renewed: Dictionary = await _call(HTTPClient.METHOD_POST,
+			"/auth/v1/token?grant_type=refresh_token", {"refresh_token": refresh_token}, false)
+		if renewed.error == "" and renewed.data is Dictionary:
+			access_token = (renewed.data as Dictionary).get("access_token", access_token)
+			refresh_token = (renewed.data as Dictionary).get("refresh_token", refresh_token)
+			_save_session()
+			return await _call(method, path, body, false)
+
 	if code < 200 or code >= 300:
 		# GoTrue says `msg`, PostgREST says `message`. Neither is always there.
 		var msg := "HTTP %d" % code
@@ -213,12 +249,22 @@ func _remember(reply: Dictionary) -> String:
 	var d: Variant = reply.data
 	if d is Dictionary:
 		access_token = d.get("access_token", "")
+		refresh_token = d.get("refresh_token", refresh_token)
 		var user: Variant = d.get("user")
 		if user is Dictionary:
 			user_id = user.get("id", "")
 	if access_token.is_empty():
 		return "Check your email for the code."
+	_save_session()
 	return ""
+
+
+func _save_session() -> void:
+	if refresh_token == "":
+		return
+	var cfg := ConfigFile.new()
+	cfg.set_value("auth", "refresh_token", refresh_token)
+	cfg.save(SESSION_PATH)
 
 
 func _conf(env: String, setting: String) -> String:

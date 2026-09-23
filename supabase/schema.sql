@@ -137,6 +137,102 @@ create table if not exists public.questions (
 alter table public.questions add column if not exists
   created_at timestamptz not null default now();
 
+-- 4b. Scoring, server side ---------------------------------------------------
+-- The client may not write its own score (SPECS §10 Phase 4). Every gem change
+-- goes through one of these, which run as the owner and therefore past RLS.
+--
+-- Each one checks three things the client cannot be trusted with: that the
+-- caller is in that session, that the session is actually running, and what
+-- the arithmetic comes to. The values live in one place here and in
+-- `Game.GEM_*`; they are the client's rules restated where they cannot be
+-- edited by a phone.
+
+alter table public.members add column if not exists
+  updated_at timestamptz not null default now();
+
+create or replace function public.apply_answer(p_session uuid, p_correct boolean)
+returns public.members
+language plpgsql security definer set search_path = '' as $$
+declare
+  row public.members;
+begin
+  if not exists (select 1 from public.sessions
+                 where id = p_session and state = 'running') then
+    raise exception 'the adventure is not running';
+  end if;
+  update public.members
+     set gems       = greatest(gems + case when p_correct then 10 else -5 end, 0),
+         correct    = correct + case when p_correct then 1 else 0 end,
+         items_done = items_done + 1,
+         updated_at = now()
+   where session_id = p_session and profile_id = auth.uid()
+  returning * into row;
+  if row is null then
+    raise exception 'you are not in this adventure';
+  end if;
+  return row;
+end $$;
+
+create or replace function public.spend_hint(p_session uuid)
+returns public.members
+language plpgsql security definer set search_path = '' as $$
+declare
+  row public.members;
+begin
+  if not exists (select 1 from public.sessions
+                 where id = p_session and state = 'running') then
+    raise exception 'the adventure is not running';
+  end if;
+  update public.members
+     set gems = greatest(gems - 5, 0), updated_at = now()
+   where session_id = p_session and profile_id = auth.uid()
+  returning * into row;
+  return row;
+end $$;
+
+create or replace function public.skip_item(p_session uuid)
+returns public.members
+language plpgsql security definer set search_path = '' as $$
+declare
+  row public.members;
+begin
+  if not exists (select 1 from public.sessions
+                 where id = p_session and state = 'running') then
+    raise exception 'the adventure is not running';
+  end if;
+  update public.members
+     set gems = greatest(gems - 15, 0), items_done = items_done + 1,
+         updated_at = now()
+   where session_id = p_session and profile_id = auth.uid()
+  returning * into row;
+  return row;
+end $$;
+
+-- ponytail: gems clamp at 0, so elimination can never fire. That clamp is
+-- deliberate until Q2 comes back -- the client has not said whether an
+-- eliminated player stops playing or keeps answering at zero, and guessing
+-- wrong here costs a team 50 gems. Remove `greatest(..., 0)` when it is
+-- answered, and Phase 5 takes the -50 from there.
+
+create or replace function public.finish_station(p_session uuid, p_perfect boolean)
+returns public.members
+language plpgsql security definer set search_path = '' as $$
+declare
+  row public.members;
+begin
+  update public.members
+     set gems = gems + case when p_perfect then 10 else 0 end,
+         updated_at = now()
+   where session_id = p_session and profile_id = auth.uid()
+  returning * into row;
+  return row;
+end $$;
+
+grant execute on function public.apply_answer(uuid, boolean) to authenticated;
+grant execute on function public.spend_hint(uuid) to authenticated;
+grant execute on function public.skip_item(uuid) to authenticated;
+grant execute on function public.finish_station(uuid, boolean) to authenticated;
+
 -- 5. Leaderboard ------------------------------------------------------------
 create or replace view public.team_scores with (security_invoker = on) as
   select t.session_id, t.id as team_id, t.name,
@@ -193,12 +289,14 @@ create policy admin_questions on public.questions for all to authenticated
 create policy join_team on public.members for insert to authenticated
   with check (profile_id = auth.uid());
 
--- ponytail: a player can still write their own gems, which trusts the client's
--- arithmetic -- the one thing SPECS §10 Phase 4 says not to do. The fix is a
--- `security definer` rpc (apply_answer / spend_hint / skip_item) that does the
--- sum in Postgres, after which this policy drops to `finished` and `hero` only.
+-- A player owns their own row, but NOT its score: RLS cannot restrict columns,
+-- so the column privileges do it. Everything to do with gems is writable only
+-- by the `security definer` functions above, which run as the owner.
 create policy own_member on public.members for update to authenticated
   using (profile_id = auth.uid()) with check (profile_id = auth.uid());
+
+revoke update on public.members from authenticated;
+grant update (team_id) on public.members to authenticated;
 
 -- 7. Realtime ---------------------------------------------------------------
 -- Why Supabase and not plain REST: the pause and the live leaderboard arrive

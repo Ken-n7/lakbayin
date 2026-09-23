@@ -84,6 +84,24 @@ func _ready() -> void:
 	_check("unknown username cannot be told from a wrong password",
 		"" if unknown == wrong else "'%s' vs '%s'" % [unknown, wrong])
 
+	# An app stays signed in: a restart trades the stored refresh token for a
+	# new access token, and forty students do not type passwords twice.
+	# Sign in first -- the checks above deliberately end signed out.
+	_check("sign in before the restart test", await Net.sign_in(email, pw))
+	# A restart keeps nothing in memory; only the file survives.
+	Net.access_token = ""
+	Net.refresh_token = ""
+	Net.username = ""
+	_check("a restart has no access token", "" if not Net.signed_in() else "still signed in")
+	_check("the stored session restores", await Net.restore_session())
+	_check("and it knows who you are",
+		"" if Net.username == "sc" + stamp else "got '%s'" % Net.username)
+
+	# Signing out really ends it -- the file goes with the tokens.
+	Net.sign_out()
+	_check("sign out forgets the session",
+		"" if (await Net.restore_session()) != "" else "a signed-out app restored itself")
+
 	print("---- AUTH SCREENS %s ----" % ("PASS" if _failures == 0 else "FAIL"))
 	get_tree().quit(1 if _failures > 0 else 0)
 

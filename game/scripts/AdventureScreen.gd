@@ -87,9 +87,33 @@ func _sync_session() -> void:
 	Game.apply_session(live.session)
 	_apply_session_state()
 
+	# The server owns the arithmetic; the local sum was only ever so the result
+	# overlay does not wait on a round trip.
+	Game.scored.connect(_on_scored)
+
 	var rt: Realtime = Net.realtime()
 	rt.changed.connect(_on_session_row)
 	rt.watch("sessions", "id=eq." + str(live.session.get("id", "")))
+
+
+## Forward a scoring event to the function that owns it, then take the
+## server's number back. Usually identical; when it is not, this is where a
+## phone that got out of step comes back into line.
+func _on_scored(kind: String, flag: bool) -> void:
+	if Game.session_id == "":
+		return
+	var reply: Dictionary
+	match kind:
+		"answer": reply = await Scores.apply_answer(Game.session_id, flag)
+		"hint": reply = await Scores.spend_hint(Game.session_id)
+		"skip": reply = await Scores.skip_item(Game.session_id)
+		"station": reply = await Scores.finish_station(Game.session_id, flag)
+	if reply.error != "" or (reply.row as Dictionary).is_empty():
+		return
+	var server_gems: int = int((reply.row as Dictionary).get("gems", Game.gems))
+	if server_gems != Game.gems:
+		Game.gems = server_gems
+		Game.gems_changed.emit(Game.gems)
 
 
 func _on_session_row(table: String, _type: String, record: Dictionary) -> void:

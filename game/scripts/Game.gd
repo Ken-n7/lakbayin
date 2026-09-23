@@ -116,6 +116,8 @@ func _ready() -> void:
 
 ## The state of the admin's session, "" when playing offline.
 var session_state := ""
+## The session the score belongs to, "" when playing offline.
+var session_id := ""
 
 
 ## The server owns the clock (SPECS §3: "durungan an ira pag-answer dapat").
@@ -142,8 +144,18 @@ func apply_session(row: Dictionary) -> void:
 			time_left = duration_seconds
 			clock_paused = true
 	session_state = state
+	session_id = str(row.get("id", session_id))
 	time_changed.emit(int(ceilf(time_left)))
 	session_state_changed.emit(state)
+
+
+## Something happened that changes the score. Whoever is online listens and
+## forwards it; `Game` itself never names the backend, because `test_rules.gd`
+## loads this file with `--script`, which registers no autoloads -- naming
+## `Net` here hangs a suite instead of failing it.
+##
+## `kind` is answer / hint / skip / station; `flag` is correct, or perfect.
+signal scored(kind: String, flag: bool)
 
 
 func _process(delta: float) -> void:
@@ -262,6 +274,7 @@ func spend_hint() -> bool:
 	station_used_hint = true
 	hints_used += 1
 	_apply(GEM_HINT)
+	scored.emit("hint", false)
 	return true
 
 
@@ -274,12 +287,14 @@ func mark_wrong() -> void:
 	items_done += 1
 	station_flawed = true
 	_apply(GEM_WRONG)
+	scored.emit("answer", false)
 
 
 func mark_correct() -> void:
 	correct += 1
 	items_done += 1
 	_apply(GEM_CORRECT)
+	scored.emit("answer", true)
 
 
 func mark_skipped() -> void:
@@ -287,6 +302,7 @@ func mark_skipped() -> void:
 	items_done += 1
 	station_flawed = true
 	_apply(GEM_SKIP)
+	scored.emit("skip", false)
 
 
 ## Call after finishing a station's last item.
@@ -295,6 +311,7 @@ func finish_station(station_index: int) -> int:
 	if not station_flawed and not station_used_hint:
 		bonus = GEM_PERFECT_BONUS
 		_apply(bonus)
+	scored.emit("station", bonus > 0)
 	completed_stations[station_index] = true
 	perfect_stations[station_index] = bonus > 0
 	station_flawed = false
