@@ -130,7 +130,7 @@ func _skip_station() -> void:
 	Game.finish_station(st)
 	_adv._refresh_hud()
 	_adv._refresh_circles()
-	_adv._refresh_barricades()
+	_adv.barricades.refresh()
 	_adv._flash_tip("Station %d skipped." % (st + 1))
 
 
@@ -140,10 +140,10 @@ func _skip_station() -> void:
 func _teleport() -> void:
 	var to: Vector2
 	if Game.items_done >= Game.TOTAL_ITEMS:
-		to = (_adv._gate as Node2D).position
+		to = (_adv.stations.gate as Node2D).position
 	else:
 		var st := Game.station_of_item(Game.items_done)
-		to = ((_adv._station_nodes[st] as Node2D).position if not Game.towers_entered[st]
+		to = ((_adv.stations.nodes[st] as Node2D).position if not Game.towers_entered[st]
 				else (_adv._circles[Game.items_done] as Node2D).position)
 	_adv.player.position = to
 	_adv._cam.position = to
@@ -171,8 +171,8 @@ func _aerial() -> void:
 ## Stand every guard down, without touching question progress -- for walking the
 ## board rather than for testing the gating.
 func _open_gates() -> void:
-	for g: Dictionary in _adv._barricades:
-		_adv._open_barricade(g)
+	for g: Dictionary in _adv.barricades.list:
+		_adv.barricades.open(g)
 	_adv._flash_tip("All crossings open.")
 
 

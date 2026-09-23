@@ -131,7 +131,7 @@ func _map() -> Node:
 
 ## The tower hands out the station briefing card and nothing else.
 func _enter_tower(adv: Node, s: int) -> void:
-	(adv.get("player") as Node2D).position = (adv.get("_station_nodes")[s] as Node2D).position
+	(adv.get("player") as Node2D).position = (adv.get("stations").nodes[s] as Node2D).position
 	adv.call("_try_enter_station")
 	await _wait(2)
 	var ov: Node = adv.get("_overlay")
@@ -221,10 +221,10 @@ func _run() -> void:
 	check("reached adventure", adv.has_method("_try_enter_station"))
 	var land: Dictionary = adv.get("grid").land
 	check("island cells", land.size() > 700, str(land.size()))
-	check("three stations", (adv.get("_station_nodes") as Array).size() == 3)
+	check("three stations", (adv.get("stations").nodes as Array).size() == 3)
 	check("all circles built", (adv.get("_circles") as Array).size() == Game.TOTAL_ITEMS,
 			str((adv.get("_circles") as Array).size()))
-	check("victory gate built", adv.get("_gate") != null)
+	check("victory gate built", adv.get("stations").gate != null)
 	check("player spawned", adv.get("player") != null and adv.get("player").get_child_count() > 0)
 	check("player starts at base camp", (adv.get("player") as Node2D).position == (adv.get("grid").anchors as Array)[0])
 	check("world y-sorted", (adv.get("world") as Node2D).y_sort_enabled)
@@ -232,7 +232,7 @@ func _run() -> void:
 	check("intro collapsed, clock running", not Game.clock_paused)
 
 	# No circle answers before its tower briefing, and the gate is shut.
-	var stations: Array = adv.get("_station_nodes")
+	var stations: Array = adv.get("stations").nodes
 	var player: Node2D = adv.get("player")
 	check("circle 1 locked before the briefing", not bool(adv.call("_can_answer", 0)))
 	check("gate shut at the start", not bool(adv.call("_can_enter_gate")))
@@ -475,7 +475,7 @@ func _run() -> void:
 	check("all stations locked", (Game.completed_stations as Array) == [false, false, false])
 	check("no circles resolved", Game.items_done == 0, str(Game.items_done))
 	player = adv.get("player") as Node2D
-	stations = adv.get("_station_nodes") as Array
+	stations = adv.get("stations").nodes as Array
 	var p0: Vector2 = (stations[0] as Node2D).position
 	var p1: Vector2 = (stations[1] as Node2D).position
 	var p2: Vector2 = (stations[2] as Node2D).position
@@ -493,7 +493,7 @@ func _run() -> void:
 	check("board cleared but the run is still live", Game.adventure_active)
 
 	# The Victory Gate is the end of the player flow (SPECS Q6): it scores the run.
-	var gate: Node2D = adv.get("_gate")
+	var gate: Node2D = adv.get("stations").gate
 	check("gate now open", bool(adv.call("_can_enter_gate")))
 	player.position = gate.position
 	adv.call("_try_enter_gate")

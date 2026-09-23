@@ -30,8 +30,8 @@ func _initialize() -> void:
 		L.append("anchor %02d %s" % [k, _v(screen.grid.anchors[k])])
 
 	L.append("# stations")
-	for i in screen._station_nodes.size():
-		var n: Node2D = screen._station_nodes[i]
+	for i in screen.stations.nodes.size():
+		var n: Node2D = screen.stations.nodes[i]
 		L.append("station %d at %s wall %s" % [i, _v(n.position), _r(n.get_meta("wall"))])
 
 	L.append("# circles")
@@ -40,11 +40,11 @@ func _initialize() -> void:
 		L.append("circle %02d at %s wall %s state %s" % [i, _v(c.position), _r(c.wall), c.state])
 
 	L.append("# gate")
-	L.append("gate at %s" % _v(screen._gate.position))
+	L.append("gate at %s" % _v(screen.stations.gate.position))
 
 	L.append("# barricades")
-	for i in screen._barricades.size():
-		var g: Dictionary = screen._barricades[i]
+	for i in screen.barricades.list.size():
+		var g: Dictionary = screen.barricades.list[i]
 		for key in _sorted_keys(g):
 			L.append("barricade %d %s = %s" % [i, key, _any(g[key])])
 
@@ -72,8 +72,8 @@ func _initialize() -> void:
 		L.append("node %s" % line)
 
 	L.append("# tiles")
-	L.append("grass %s" % _tiles(screen.grass_layer))
-	L.append("water %s" % _tiles(screen.water_layer))
+	L.append("grass %s" % _tiles(screen.builder.grass))
+	L.append("water %s" % _tiles(screen.builder.water))
 
 	var f := FileAccess.open(out_path, FileAccess.WRITE)
 	if f == null:

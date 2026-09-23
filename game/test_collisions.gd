@@ -17,10 +17,10 @@ func _initialize() -> void:
 	screen.setup({})
 
 	for i in 3:
-		var at: Vector2 = screen._station_nodes[i].position
+		var at: Vector2 = screen.stations.nodes[i].position
 		# Off the station itself, not `_solid[i]`: the outpost's houses append walls
 		# too, so the array is no longer one entry per station.
-		var wall: Rect2 = (screen._station_nodes[i] as Node2D).get_meta("wall")
+		var wall: Rect2 = (screen.stations.nodes[i] as Node2D).get_meta("wall")
 		var mid_y: float = wall.get_center().y
 
 		assert(not screen.grid.is_walkable(wall.get_center()),
@@ -38,7 +38,7 @@ func _initialize() -> void:
 		# INTERACT_RADIUS can never be satisfied and the quiz is unreachable.
 		assert(screen.grid.is_walkable(at),
 				"station %d: doorstep is walled in, quiz unreachable" % i)
-		assert(at.distance_to(screen._station_nodes[i].position) < MapCfg.INTERACT_RADIUS)
+		assert(at.distance_to(screen.stations.nodes[i].position) < MapCfg.INTERACT_RADIUS)
 
 		# The walls span the sprite, so no side is thinner than the art.
 		assert(wall.size.x > MapCfg.TILE, "station %d: walls thinner than a tile" % i)
@@ -53,8 +53,8 @@ func _initialize() -> void:
 		assert(not seen.has(pos), "circle %d shares a spot with another" % n)
 		seen[pos] = true
 		assert(screen.grid.is_walkable(pos), "circle %d stands on unwalkable ground" % n)
-	assert(screen._gate != null, "no victory gate")
-	assert(screen.grid.is_walkable(screen._gate.position), "the gate is not walkable")
+	assert(screen.stations.gate != null, "no victory gate")
+	assert(screen.grid.is_walkable(screen.stations.gate.position), "the gate is not walkable")
 
 	# Strictly sequential: nothing is answerable until the tower is briefed, then
 	# only the one circle the player is actually on.
@@ -93,9 +93,9 @@ func _initialize() -> void:
 	# the station it guards. The proof does not care which: walk the ground and see
 	# where you can get to.
 	G.begin_adventure(600)
-	assert(screen._barricades.size() == 3,
-			"expected 3 barricades, got %d" % screen._barricades.size())
-	for g: Dictionary in screen._barricades:
+	assert(screen.barricades.list.size() == 3,
+			"expected 3 barricades, got %d" % screen.barricades.list.size())
+	for g: Dictionary in screen.barricades.list:
 		var who: int = int(g.st) + 1
 		assert(not bool(g.open), "station %d's barricade starts open" % who)
 		assert(g.guard != null, "station %d has no guard on a fresh run" % who)
@@ -126,8 +126,8 @@ func _initialize() -> void:
 
 	# Each one opens in turn, and the rocks stay -- only the gap does.
 	for st in 3:
-		var g: Dictionary = screen._barricades[st]
-		screen._open_barricade(g)
+		var g: Dictionary = screen.barricades.list[st]
+		screen.barricades.open(g)
 		assert(screen.grid.is_walkable((g.wall as Rect2).get_center()),
 				"station %d's wall outlived its guard" % (st + 1))
 		_assert_line(screen, g)
@@ -140,18 +140,18 @@ func _initialize() -> void:
 	G.begin_adventure(600)
 	fresh.setup({})
 	for st in 3:
-		assert(not bool(fresh._barricades[st].open),
+		assert(not bool(fresh.barricades.list[st].open),
 				"station %d's guard gone before its briefing" % (st + 1))
 	for n in G.ITEMS_PER_STATION[0]:
 		G.mark_correct()
-	fresh._refresh_barricades()
+	fresh.barricades.refresh()
 	for st in 3:
-		assert(not bool(fresh._barricades[st].open),
+		assert(not bool(fresh.barricades.list[st].open),
 				"station %d's guard stood down on circles, not on its briefing" % (st + 1))
 	G.towers_entered[1] = true
-	fresh._refresh_barricades()
-	assert(bool(fresh._barricades[1].open), "station 2's guard held after its briefing")
-	assert(not bool(fresh._barricades[2].open),
+	fresh.barricades.refresh()
+	assert(bool(fresh.barricades.list[1].open), "station 2's guard held after its briefing")
+	assert(not bool(fresh.barricades.list[2].open),
 			"station 3's guard moved on Station 2's briefing")
 
 	# A restart mid-run keeps what it had already earned: the guard is not a wall
@@ -161,17 +161,17 @@ func _initialize() -> void:
 	G.begin_adventure(600)
 	G.towers_entered[0] = true
 	briefed.setup({})
-	assert(bool(briefed._barricades[0].open),
+	assert(bool(briefed.barricades.list[0].open),
 			"station 1's guard re-posted on a run that was already briefed")
-	assert(briefed.grid.is_walkable((briefed._barricades[0].wall as Rect2).get_center()),
+	assert(briefed.grid.is_walkable((briefed.barricades.list[0].wall as Rect2).get_center()),
 			"the gap is walled on a run that was already briefed")
-	assert(briefed._barricades[0].guard != null,
+	assert(briefed.barricades.list[0].guard != null,
 			"the briefed guard vanished instead of standing aside")
 	for st in [1, 2]:
-		assert(not bool(briefed._barricades[st].open),
+		assert(not bool(briefed.barricades.list[st].open),
 				"station %d's guard gone on a briefed restart" % (st + 1))
 	# The line is scenery, not a gate: it is laid on every build, open or not.
-	_assert_line(briefed, briefed._barricades[0])
+	_assert_line(briefed, briefed.barricades.list[0])
 
 	# --- The dev drawer's Skip Station --------------------------------------
 	# It is the shortcut the later islands are tested through, so it has to leave
@@ -224,7 +224,7 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 			assert(not reach.has(cell),
 					"circle %d (station %d) reachable with only %d guard(s) stood down" % [n + 1, st + 1, opened])
 	for st in 3:
-		var tp: Vector2 = (screen._station_nodes[st] as Node2D).position
+		var tp: Vector2 = (screen.stations.nodes[st] as Node2D).position
 		var tcell := Vector2i(floori(tp.x / MapCfg.TILE), floori(tp.y / MapCfg.TILE))
 		# Every station stands on the near side of its own guard -- you have to
 		# reach a station to be briefed by it, which is what moves him. So a tower
@@ -233,7 +233,7 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 		# Station 1's knight, and Station 3 over the one past Station 2's.
 		assert(reach.has(tcell) == (opened >= TOWER_OPENS_AT[st]),
 				"Tower %d reachability wrong with %d gate(s) open" % [st + 1, opened])
-	var gate: Vector2 = (screen._gate as Node2D).position
+	var gate: Vector2 = (screen.stations.gate as Node2D).position
 	var gcell := Vector2i(floori(gate.x / MapCfg.TILE), floori(gate.y / MapCfg.TILE))
 	assert(reach.has(gcell) == (opened >= 2),
 			"victory gate reachability wrong with %d guard(s) stood down" % opened)

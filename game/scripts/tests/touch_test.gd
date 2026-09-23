@@ -122,7 +122,7 @@ func _ready() -> void:
 	await frames(2)
 
 	# GO on a station doorstep opens the quiz, and the pad gets out of the way.
-	_map.player.position = _map._station_nodes[0].position
+	_map.player.position = _map.stations.nodes[0].position
 	await frames(2)
 	touch(Vector2(574, 290), true)
 	await frames(4)

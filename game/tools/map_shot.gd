@@ -76,8 +76,8 @@ func _process(_delta: float) -> bool:
 			_screen._dev.toggle()
 			_hold = maxi(_hold, 30)
 		if bool(shot.get("dismiss", false)):
-			for g: Dictionary in _screen._barricades:
-				_screen._open_barricade(g)
+			for g: Dictionary in _screen.barricades.list:
+				_screen.barricades.open(g)
 		_armed = true
 		return false
 	if _hold > 0:

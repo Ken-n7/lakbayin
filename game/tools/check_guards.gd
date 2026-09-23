@@ -36,9 +36,9 @@ func _initialize() -> void:
 	root.add_child(_s)
 	_s.setup({})
 	var bad := 0
-	var towers: Array = _s._tower_anchors()
-	for st in (_s._barricades as Array).size():
-		var g: Dictionary = _s._barricades[st]
+	var towers: Array = _s.builder.tower_anchors()
+	for st in (_s.barricades.list as Array).size():
+		var g: Dictionary = _s.barricades.list[st]
 		var at: Vector2 = g.stand
 		var name := "station %d" % (int(g.st) + 1)
 		# His body plus a little below his boots, the same slack `_stands_clear()`
@@ -55,7 +55,7 @@ func _initialize() -> void:
 		# Everything this station's own briefing has already earned is open; its gate
 		# alone is shut, which is the board the moment the player walks up to it.
 		for j in st:
-			_s.grid.solid.erase(_s._barricades[j].wall as Rect2)
+			_s.grid.solid.erase(_s.barricades.list[j].wall as Rect2)
 		var seen := _flood()
 		if not seen.has(MapGrid.cell_at(_s.grid.anchors[towers[st]])):
 			why = "fences the player out of its own door"
@@ -68,7 +68,7 @@ func _initialize() -> void:
 		printerr("%s %s: %s" % [name, why, at])
 	if bad > 0:
 		printerr("check_guards: %d of %d gates wrong"
-				% [bad, (_s._barricades as Array).size()])
+				% [bad, (_s.barricades.list as Array).size()])
 		quit(1)
 		return
 	print("check_guards: every knight has somewhere to stand, every gate holds")
