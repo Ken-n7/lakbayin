@@ -7,6 +7,8 @@ signal gems_changed(gems: int)
 signal time_changed(seconds_left: int)
 signal adventure_started
 signal adventure_ended(result: Dictionary)
+## lobby / running / paused / ended, as the admin's session row says.
+signal session_state_changed(state: String)
 
 # --- Gems scoring rules (from the NumXventure design) -----------------------
 const START_GEMS := 50
@@ -110,6 +112,38 @@ func _ready() -> void:
 			or "--touch" in OS.get_cmdline_user_args())
 	_setup_input()
 	load_profile()
+
+
+## The state of the admin's session, "" when playing offline.
+var session_state := ""
+
+
+## The server owns the clock (SPECS §3: "durungan an ira pag-answer dapat").
+## `ends_at` is the deadline while running and `remaining_s` is what was banked
+## at a pause; the local tick in `_process` only fills the gaps between
+## updates, so a phone that joins late or sleeps still agrees with the room.
+func apply_session(row: Dictionary) -> void:
+	var state := str(row.get("state", ""))
+	duration_seconds = float(int(row.get("duration_s", 600)))
+	match state:
+		"running":
+			var ends := Time.get_unix_time_from_datetime_string(str(row.get("ends_at", "")))
+			time_left = maxf(0.0, float(ends) - Time.get_unix_time_from_system())
+			clock_paused = false
+		"paused":
+			# What the pause banked, not what this phone had counted to.
+			time_left = float(int(row.get("remaining_s", 0)))
+			clock_paused = true
+		"ended":
+			time_left = 0.0
+			clock_paused = true
+		_:
+			# lobby: the board is up, the clock has not started.
+			time_left = duration_seconds
+			clock_paused = true
+	session_state = state
+	time_changed.emit(int(ceilf(time_left)))
+	session_state_changed.emit(state)
 
 
 func _process(delta: float) -> void:

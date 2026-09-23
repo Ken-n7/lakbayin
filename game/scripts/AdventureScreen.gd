@@ -53,7 +53,9 @@ var _cam: Camera2D
 var _bang: Label = null         # the "!" over the hero when something is in reach
 
 var _overlay: Control = null
-var _frozen := false            # the aerial POV before the adventure starts
+var _frozen := false                    # the aerial POV before the adventure starts
+## Online, only the admin's Start Game releases the board.
+var _wait_for_admin := false
 var _intro_tw: Tween = null
 var _start_hint: Label = null   # "Tap anywhere to start" -- freed once it does
 var _card: Control = null       # the tapped circle's info card
@@ -66,6 +68,58 @@ var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable with [ and ], see _nudge_h
 ## roam over while you pick a number by eye.
 const HERO_SCALE_STEP := 0.1
 const HERO_SCALE_RANGE := Vector2(0.5, 3.0)
+
+
+## The admin owns the clock. Online, the board waits for their Start Game
+## rather than for a tap, their pause reaches every phone at once, and the
+## countdown is read off the session row instead of a local timer -- SPECS §3,
+## "durungan an ira pag-answer dapat".
+##
+## With no backend none of this happens and the tap-to-start stand-in remains,
+## which is what an offline dev run and the headless suites use.
+func _sync_session() -> void:
+	if not (Net.configured() and Net.signed_in()):
+		return
+	var live: Dictionary = await Teams.live_session()
+	if live.error != "" or not is_instance_valid(self):
+		return
+	_wait_for_admin = true
+	Game.apply_session(live.session)
+	_apply_session_state()
+
+	var rt: Realtime = Net.realtime()
+	rt.changed.connect(_on_session_row)
+	rt.watch("sessions", "id=eq." + str(live.session.get("id", "")))
+
+
+func _on_session_row(table: String, _type: String, record: Dictionary) -> void:
+	if table != "sessions" or not is_instance_valid(self):
+		return
+	Game.apply_session(record)
+	_apply_session_state()
+
+
+## One place deciding what the session's state means on the board.
+func _apply_session_state() -> void:
+	match Game.session_state:
+		"running":
+			hud.paused = false
+			if _frozen:
+				_swoop()
+			else:
+				hud.set_prompt("")
+		"paused":
+			# `hud.paused` is what stops the hero walking; the clock is already
+			# stopped by `apply_session`.
+			hud.paused = true
+			hud.set_prompt("Paused by your teacher")
+		"ended":
+			hud.paused = true
+			hud.set_prompt("Time is up")
+		_:
+			hud.paused = true
+			if is_instance_valid(_start_hint):
+				_start_hint.text = "Waiting for your teacher to start"
 
 
 ## The admin's questions for this run. A failure is reported, not swallowed:
@@ -89,6 +143,7 @@ func setup(_data: Dictionary) -> void:
 	# Fetched once, while the board builds and the aerial view holds -- long
 	# before the hero can reach a circle, so the wait costs nobody anything.
 	_load_bank()
+	_sync_session()
 	if not Game.adventure_active:
 		Game.begin_adventure()
 	world = Node2D.new()
@@ -257,7 +312,8 @@ func _start_intro() -> void:
 	# The controls crib goes with the joystick -- there is nothing to drive yet.
 	hud.set_crib(false)
 	# Right under the prompt, lower centre -- nothing sits on the board itself.
-	_start_hint = Art.label("Tap anywhere to start", 13, Color(1, 1, 1, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
+	_start_hint = Art.label("Waiting for your teacher to start" if _wait_for_admin
+			else "Tap anywhere to start", 13, Color(1, 1, 1, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	_start_hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_start_hint.offset_top = -74.0
 	_start_hint.offset_bottom = -50.0
@@ -470,8 +526,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed))
 	if _frozen:
 		# Any tap, click or interact press starts the adventure -- nothing to
-		# inspect yet, the whole board is the thing being looked at.
-		if tap or event.is_action_pressed("interact"):
+		# inspect yet, the whole board is the thing being looked at. Online
+		# it is the admin's Start Game that does this, and a student tapping
+		# their way in early would be the one thing the shared clock forbids.
+		if not _wait_for_admin and (tap or event.is_action_pressed("interact")):
 			_swoop()
 		return
 	if tap:

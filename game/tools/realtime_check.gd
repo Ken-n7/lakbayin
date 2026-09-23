@@ -63,6 +63,29 @@ func _ready() -> void:
 			"" if str((first.record as Dictionary).get("state", "")) == "running"
 			else "got '%s'" % str((first.record as Dictionary).get("state", "")))
 
+	# --- The clock a player would read -------------------------------------
+	# Start / pause / resume, applied through Game the way a phone does it.
+	var ends := Time.get_datetime_string_from_unix_time(
+		int(Time.get_unix_time_from_system()) + 300) + "Z"
+	var started: Dictionary = await Net.rest(HTTPClient.METHOD_PATCH,
+		"/rest/v1/sessions?id=eq." + sid,
+		{"state": "running", "ends_at": ends, "remaining_s": null})
+	_check("admin starts the game", started.error)
+	Game.apply_session(started.data[0] if started.data is Array \
+		and not (started.data as Array).is_empty() else {})
+	_check("the clock is running", "" if not Game.clock_paused else "still paused")
+	_check("it reads the deadline, not the duration",
+		"" if absf(Game.time_left - 300.0) < 5.0 else "%f left" % Game.time_left)
+
+	var paused: Dictionary = await Net.rest(HTTPClient.METHOD_PATCH,
+		"/rest/v1/sessions?id=eq." + sid, {"state": "paused", "remaining_s": 111})
+	_check("admin pauses", paused.error)
+	Game.apply_session(paused.data[0] if paused.data is Array \
+		and not (paused.data as Array).is_empty() else {})
+	_check("pause stops the clock", "" if Game.clock_paused else "still running")
+	_check("pause hands back what it banked",
+		"" if is_equal_approx(Game.time_left, 111.0) else "%f left" % Game.time_left)
+
 	rt.close_socket()
 	await Net.rest(HTTPClient.METHOD_DELETE, "/rest/v1/sessions?id=eq." + sid)
 	print("---- REALTIME %s ----" % ("PASS" if _failures == 0 else "FAIL"))

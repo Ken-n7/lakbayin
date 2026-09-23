@@ -85,5 +85,36 @@ func _init() -> void:
 	assert(rib.region == Rect2(30, 148, 98, 103), "ribbon cell (0,1) cropped clean, got %s" % rib.region)
 	print("ribbon cell: %s" % rib.region)
 
+	# --- The shared clock ---------------------------------------------------
+	# The admin's session row is what the clock reads, so it is worth pinning
+	# down offline: these are the four states a phone can arrive into.
+	var now := int(Time.get_unix_time_from_system())
+	var deadline := Time.get_datetime_string_from_unix_time(now + 300) + "Z"
+
+	G.apply_session({"state": "lobby", "duration_s": 600})
+	assert(G.clock_paused, "lobby does not run the clock")
+	assert(is_equal_approx(G.time_left, 600.0), "lobby shows the full duration: %f" % G.time_left)
+
+	G.apply_session({"state": "running", "duration_s": 600, "ends_at": deadline})
+	assert(not G.clock_paused, "running releases the clock")
+	assert(absf(G.time_left - 300.0) < 3.0,
+		"running reads the deadline, not the duration: %f" % G.time_left)
+
+	# A pause hands back what it banked -- not what this phone had counted to,
+	# which is the whole reason the number lives on the server.
+	G.apply_session({"state": "paused", "duration_s": 600, "remaining_s": 123})
+	assert(G.clock_paused, "paused stops the clock")
+	assert(is_equal_approx(G.time_left, 123.0), "paused reads remaining_s: %f" % G.time_left)
+
+	G.apply_session({"state": "ended", "duration_s": 600})
+	assert(G.clock_paused and G.time_left == 0.0, "ended is zero and stopped")
+	assert(G.session_state == "ended", "state recorded")
+
+	# A phone joining after the deadline gets zero, never a negative countdown.
+	G.apply_session({"state": "running", "duration_s": 600,
+		"ends_at": Time.get_datetime_string_from_unix_time(now - 60) + "Z"})
+	assert(G.time_left == 0.0, "a passed deadline clamps at zero: %f" % G.time_left)
+	print("clock: lobby / running / paused / ended all read the session")
+
 	print("test_rules: all assertions passed")
 	quit()

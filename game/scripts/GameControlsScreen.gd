@@ -205,14 +205,16 @@ func _set_state(want: String, is_start: bool) -> void:
 			str(_session.get("ends_at", ""))) if _session.get("ends_at") != null else 0.0
 		fields["remaining_s"] = maxi(int(ends - now), 0)
 	elif is_start:
+		# No `use_space`: that writes "2026-09-23 15:06:13", and the clock has
+		# to round-trip through `Time.get_unix_time_from_datetime_string()`.
 		fields["ends_at"] = Time.get_datetime_string_from_unix_time(
-			int(now) + _seconds(), true) + "Z"
+			int(now) + _seconds()) + "Z"
 		fields["remaining_s"] = null
 	else:
 		# Resume: hand back exactly what the pause banked.
 		var left: int = int(_session.get("remaining_s", _seconds()))
 		fields["ends_at"] = Time.get_datetime_string_from_unix_time(
-			int(now) + left, true) + "Z"
+			int(now) + left) + "Z"
 		fields["remaining_s"] = null
 
 	var done: Dictionary = await _patch(fields)
