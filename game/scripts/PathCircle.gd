@@ -51,7 +51,7 @@ func setup(circle_index: int, building_path: String, lift: Vector2, world: Node2
 
 	# The item number, floating above the roof. One constant color in every
 	# state; it just disappears once the item is done.
-	_label = Art.label(str(index + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
+	_label = Art.label(str(index + 1), Pal.LABEL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
 	_label.position = Vector2(lift.x - 20.0, lift.y - bh - 24.0)
 	_label.size = Vector2(40, 20)
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER

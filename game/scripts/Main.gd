@@ -46,7 +46,7 @@ func _notification(what: int) -> void:
 
 ## Cheap fade between screens so pops and flashes are softer.
 func fade() -> void:
-	const FADE_COLOR := Color(0.10, 0.08, 0.13, 0.0)
+	const FADE_COLOR := Color(Pal.BG, 0.0)
 	var shade := ColorRect.new()
 	shade.color = FADE_COLOR
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

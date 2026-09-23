@@ -18,7 +18,7 @@ func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var back := ColorRect.new()
-	back.color = Color(0.10, 0.08, 0.13)
+	back.color = Pal.BG
 	back.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(back)
 
@@ -28,10 +28,10 @@ func setup(_data: Dictionary) -> void:
 	col.add_theme_constant_override("separation", 10)
 	add_child(col)
 
-	var logo := Art.label("NumXventure", 44, Game.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
+	var logo := Art.label("NumXventure", Pal.LOGO, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
 	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(logo)
-	col.add_child(Art.label("Explore.  Solve.  Conquer.", 18, Game.GOLD,
+	col.add_child(Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD,
 			HORIZONTAL_ALIGNMENT_CENTER))
 
 	var pad := Control.new()
@@ -45,11 +45,11 @@ func setup(_data: Dictionary) -> void:
 	col.add_child(track)
 
 	_bar = ColorRect.new()
-	_bar.color = Game.GOLD
+	_bar.color = Pal.GOLD
 	_bar.size = Vector2(0, BAR_H)
 	track.add_child(_bar)
 
-	col.add_child(Art.label("Loading...", 15, Color(1, 1, 1, 0.7),
+	col.add_child(Art.label("Loading...", Pal.BODY, Color(1, 1, 1, 0.7),
 			HORIZONTAL_ALIGNMENT_CENTER))
 
 	var tw := create_tween()

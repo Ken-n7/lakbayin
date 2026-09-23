@@ -54,10 +54,7 @@ func setup(_data: Dictionary) -> void:
 
 
 func _ready() -> void:
-	var dim := ColorRect.new()
-	dim.color = Color(0.06, 0.05, 0.09, 0.85)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(dim)
+	Ui.dim(self)
 	Game.time_changed.connect(_on_time)
 	Game.gems_changed.connect(_on_gems)
 
@@ -68,33 +65,30 @@ func _exit_tree() -> void:
 
 
 func _build() -> void:
-	var panel := Ui.panel(Vector2(560, 300), meta.title)
-	panel.position = Vector2(40, 26)
-	add_child(panel)
-	_panel = panel.get_child(0) as VBoxContainer
+	_panel = Ui.screen_panel(self, Vector2(560, 300), meta.title)
 	_panel.alignment = BoxContainer.ALIGNMENT_CENTER
 	_panel.add_theme_constant_override("separation", 7)
 
 	var hud := HBoxContainer.new()
 	hud.add_theme_constant_override("separation", 26)
-	_gems_row = Art.label("Gems: %d" % Game.gems, 13, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER)
-	_time_row = Art.label("Time: %02d:%02d" % [int(Game.time_left) / 60, int(Game.time_left) % 60],
-			13, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER)
+	_gems_row = Art.label("Gems: %d" % Game.gems, Pal.SMALL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	_time_row = Art.label("Time: %s" % Ui.mmss(int(Game.time_left)),
+			13, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
 	hud.add_child(_gems_row)
 	hud.add_child(_time_row)
 	_panel.add_child(hud)
 
-	_q_index = Art.label("", 13, Color("8a6a3a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_q_index = Art.label("", Pal.SMALL, Pal.WOOD, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_q_index)
 
-	_q_prompt = Art.label("", 30, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_q_prompt = Art.label("", 30, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_q_prompt)
 
 	# Built here, right after the "MISSION" heading, and just shown/hidden by
 	# `_layout()` -- `_show_intro()` used to `add_child` a fresh label instead,
 	# which always lands at the END of the VBox (after Continue, already a
 	# child from here), rendering the welcome paragraph below the button.
-	_mission_text = Art.label("", 15, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_mission_text = Art.label("", Pal.BODY, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_mission_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_mission_text.custom_minimum_size = Vector2(520, 0)
 	_panel.add_child(_mission_text)
@@ -108,7 +102,7 @@ func _build() -> void:
 	_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER_DECIMAL
 	_input.text_changed.connect(_filter_input)
 	_input.text_submitted.connect(func(_t: String) -> void: _submit())
-	var go_lbl := Art.label("=", 24, Color("2a201a"))
+	var go_lbl := Art.label("=", 24, Pal.INK)
 	var img := Art.texrect("res://assets/ui/Icon_03.png", 28, 28)
 	inrow.add_child(go_lbl)
 	inrow.add_child(_input)
@@ -121,7 +115,7 @@ func _build() -> void:
 	_inrow = inrow
 	_panel.add_child(inrow)
 
-	_hint_text = Art.label("", 13, Color("3a5a8c"), HORIZONTAL_ALIGNMENT_CENTER)
+	_hint_text = Art.label("", Pal.SMALL, Pal.INFO, HORIZONTAL_ALIGNMENT_CENTER)
 	_hint_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint_text.custom_minimum_size = Vector2(500, 0)
 	_panel.add_child(_hint_text)
@@ -147,11 +141,11 @@ func _build() -> void:
 	_panel.add_child(action)
 
 	# Feedback sub-panel (hidden until a result is shown)
-	_result_title = Art.label("", 26, Color("3f7a1e"), HORIZONTAL_ALIGNMENT_CENTER)
+	_result_title = Art.label("", Pal.H1, Pal.CORRECT, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_result_title)
-	_delta_label = Art.label("", 18, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER)
+	_delta_label = Art.label("", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_delta_label)
-	_result_rule = Art.label("", 14, Color("2a201a"), HORIZONTAL_ALIGNMENT_CENTER)
+	_result_rule = Art.label("", Pal.LABEL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_result_rule.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_result_rule.custom_minimum_size = Vector2(520, 0)
 	_panel.add_child(_result_rule)
@@ -221,16 +215,16 @@ func _show_result(correct: bool) -> void:
 	_continue_btn.text = "Continue"
 	if correct:
 		_result_title.text = "CORRECT!  You got it!"
-		_result_title.add_theme_color_override("font_color", Color("3f7a1e"))
+		_result_title.add_theme_color_override("font_color", Pal.CORRECT)
 		_delta_label.text = "+%d gems" % Game.GEM_CORRECT
-		_delta_label.add_theme_color_override("font_color", Color("e09a1f"))
+		_delta_label.add_theme_color_override("font_color", Pal.AMBER)
 		_result_rule.text = current.hint
 		_burst()
 	else:
 		_result_title.text = "Almost there!  Keep trying!"
-		_result_title.add_theme_color_override("font_color", Color("b03a1e"))
+		_result_title.add_theme_color_override("font_color", Pal.WRONG)
 		_delta_label.text = "%d gems" % Game.GEM_WRONG
-		_delta_label.add_theme_color_override("font_color", Color("b03a1e"))
+		_delta_label.add_theme_color_override("font_color", Pal.WRONG)
 		_result_rule.text = "Correct answer: %d\n%s" % [answer, current.rule]
 	_continue_btn.grab_focus()
 
@@ -261,9 +255,9 @@ func _show_complete() -> void:
 	_layout()
 	_continue_btn.text = "Return to Map"
 	_result_title.text = "Station complete!"
-	_result_title.add_theme_color_override("font_color", Color("e09a1f"))
+	_result_title.add_theme_color_override("font_color", Pal.AMBER)
 	_delta_label.text = "Perfect run! +%d bonus gems" % bonus if bonus > 0 else "All %d items finished" % Game.ITEMS_PER_STATION[station_index]
-	_delta_label.add_theme_color_override("font_color", Color("3f7a1e") if bonus > 0 else Color("2a201a"))
+	_delta_label.add_theme_color_override("font_color", Pal.CORRECT if bonus > 0 else Pal.INK)
 	_result_rule.text = "Return to the map and seek the next station."
 	if bonus > 0:
 		_burst()
@@ -297,7 +291,7 @@ func _skip() -> void:
 
 func _on_time(sec: int) -> void:
 	if is_instance_valid(_time_row):
-		_time_row.text = "Time: %02d:%02d" % [sec / 60, sec % 60]
+		_time_row.text = "Time: %s" % Ui.mmss(sec)
 
 
 func _on_gems(g: int) -> void:

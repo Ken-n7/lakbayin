@@ -12,23 +12,10 @@ func setup(_data: Dictionary) -> void:
 
 
 func _build() -> void:
-	var dim := ColorRect.new()
-	dim.color = Color(0.10, 0.07, 0.12, 0.9)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(dim)
-
-	var panel := Ui.panel(Vector2(560, 330), "Team Ranking")
-	panel.position = Vector2(40, 15)
-	add_child(panel)
-	var box: VBoxContainer = panel.get_child(0) as VBoxContainer
+	Ui.dim(self)
+	var box := Ui.screen_panel(self, Vector2(560, 330), "Team Ranking")
 	box.add_theme_constant_override("separation", 6)
-
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(0, 165)
-	scroll.add_theme_constant_override("scrollbar_margin", 0)
-	box.add_child(scroll)
+	var scroll := Ui.scroll(box, 165)
 
 	var list := VBoxContainer.new()
 	list.add_theme_constant_override("separation", 4)
@@ -53,7 +40,7 @@ func _build() -> void:
 		var gems := _cell(str(row.gems), 12, int(row.gems))
 		if _row_is_me(row):
 			for c in [rank, name, gems]:
-				c.add_theme_color_override("font_color", Color("1c5b8c"))
+				c.add_theme_color_override("font_color", Pal.INFO_DEEP)
 				c.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.6))
 		line.add_child(rank)
 		line.add_child(name)
@@ -61,20 +48,17 @@ func _build() -> void:
 		list.add_child(line)
 
 	var note := Art.label("Gems reset to %d for every adventure. Finish all stations to avoid the −%d penalty." %
-			[Game.START_GEMS, -(Game.GEM_TEAM_FINISH_PENALTY)], 12, Color("5a4630"), HORIZONTAL_ALIGNMENT_CENTER)
+			[Game.START_GEMS, -(Game.GEM_TEAM_FINISH_PENALTY)], Pal.TINY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(note)
 
 	var back := Ui.button("Back", 110, 44, Ui.RED)
 	back.pressed.connect(func() -> void: main.open("title"))
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(back)
-	box.add_child(row)
+	Ui.centre_row(box, back)
 
 
 func _cell(text: String, weight: int, color: int = -1) -> Label:
-	var l := Art.label(text, 15,
-			Color("2a201a") if color < 0 else _gem_color(color), HORIZONTAL_ALIGNMENT_LEFT)
+	var l := Art.label(text, Pal.BODY,
+			Pal.INK if color < 0 else _gem_color(color), HORIZONTAL_ALIGNMENT_LEFT)
 	l.custom_minimum_size = Vector2(0, 24)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.size_flags_stretch_ratio = weight
@@ -82,13 +66,13 @@ func _cell(text: String, weight: int, color: int = -1) -> Label:
 
 
 func _row_is_me(row: Dictionary) -> bool:
-	var me := Game.team_name if Game.team_name != "" else Game.player_name
+	var me := Game.me()
 	return str(row.name) == me
 
 
 func _gem_color(g: int) -> Color:
 	if g >= 450:
-		return Color("e09a1f")
+		return Pal.AMBER
 	if g >= 300:
-		return Color("b9831a")
-	return Color("8a6a3a")
+		return Pal.GOLD_DIM
+	return Pal.WOOD

@@ -29,8 +29,6 @@ const HERO_COUNT := 32
 const SAVE_PATH := "user://numxventure.cfg"
 
 # --- Palette (sampled from the pack) ---------------------------------------
-const PARCHMENT := Color("f1e2bd")
-const GOLD := Color("f4b93e")
 
 # --- Rivals -----------------------------------------------------------------
 ## Fixed rival adventuring parties, so the leaderboard is meaningful offline.
@@ -170,9 +168,16 @@ func end_adventure() -> void:
 		gems_changed.emit(gems)
 		result.gems = gems
 	last_run = result
-	_register_leaderboard(team_name if team_name != "" else player_name, gems)
+	_register_leaderboard(me(), gems)
 	save_profile()
 	adventure_ended.emit(result)
+
+
+## Who this run scores as: the team if one was joined, else the player. The
+## client's winner is always a team, so this is the leaderboard's row key and
+## the name the summary highlights.
+func me() -> String:
+	return team_name if team_name != "" else player_name
 
 
 # --- Circle progress --------------------------------------------------------

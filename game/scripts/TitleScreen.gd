@@ -8,11 +8,6 @@ extends Control
 ## within INSET of an edge, which is where a landscape notch and the Android
 ## gesture bar live.
 
-# ponytail: TitleScreen preloads AdventureScreen for two static helpers.
-# If a third screen ever needs them, move _make_layer/_autotile to Art.gd
-# (already class_name'd) rather than growing this dependency.
-const Adv := preload("res://scripts/AdventureScreen.gd")
-
 const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
 const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
 const CASTLE := "res://assets/buildings/Red_Castle.png"
@@ -49,7 +44,7 @@ func _build_scene() -> void:
 	_world.y_sort_enabled = true
 	add_child(_world)
 
-	var water: TileMapLayer = Adv._make_layer(WATER_BG, [Vector2i(0, 0)])
+	var water: TileMapLayer = Art.terrain_layer(WATER_BG, TILE, [Vector2i(0, 0)])
 	# The raw tile is a pale teal (#47aba9); multiply it toward a deeper sea blue
 	# so the grass reads against it and the menu gradient has something to sit on.
 	water.modulate = Color(0.70, 0.68, 1.0)
@@ -58,7 +53,7 @@ func _build_scene() -> void:
 		for x in W:
 			water.set_cell(Vector2i(x, y), 0, Vector2i(0, 0))
 
-	var grass: TileMapLayer = Adv._make_layer(TILEMAP_COLOR)
+	var grass: TileMapLayer = Art.terrain_layer(TILEMAP_COLOR, TILE)
 	_world.add_child(grass)
 	for y in H:
 		for x in W:
@@ -66,7 +61,7 @@ func _build_scene() -> void:
 			if _is_land(c):
 				_land[c] = true
 	for cell in _land:
-		grass.set_cell(cell, 0, Adv._autotile(
+		grass.set_cell(cell, 0, Art.autotile(
 				_land.has(cell + Vector2i(-1, 0)), _land.has(cell + Vector2i(1, 0)),
 				_land.has(cell + Vector2i(0, -1)), _land.has(cell + Vector2i(0, 1))))
 
@@ -74,7 +69,7 @@ func _build_scene() -> void:
 	_build_hero()
 
 	var vignette := ColorRect.new()
-	vignette.color = Color(0.10, 0.08, 0.13, 0.28)
+	vignette.color = Color(Pal.BG, 0.28)
 	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(vignette)
@@ -166,11 +161,11 @@ func _build_menu() -> void:
 	col.add_theme_constant_override("separation", 6)
 	add_child(col)
 
-	var tl := Art.label("NumXventure", 27, Game.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
+	var tl := Art.label("NumXventure", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
 	Art.shadow(tl, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(tl)
 
-	col.add_child(Art.label("Explore.  Solve.  Conquer.", 13, Game.GOLD,
+	col.add_child(Art.label("Explore.  Solve.  Conquer.", Pal.SMALL, Pal.GOLD,
 			HORIZONTAL_ALIGNMENT_CENTER))
 
 	var pad := Control.new()

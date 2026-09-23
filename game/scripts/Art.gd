@@ -360,3 +360,47 @@ static func toast(l: Label, msg: String, hold := 1.0, back := "", done := Callab
 		l.modulate.a = 1.0
 		if done.is_valid():
 			done.call())
+
+
+# --- Terrain ----------------------------------------------------------------
+## The tileset's own tile size. Layers keep the art at native size and scale
+## the layer instead, so a cell is `tile` world px and the pixels are never
+## resampled.
+const SHEET_TILE := 64
+
+
+## Tiles keep their native 64px size and the layer is scaled down instead, so
+## one cell is TILE world px. At the 2x viewport upscale that lands 1:1 on
+## screen -- the art is never resampled.
+static func terrain_layer(tex_path: String, tile: int, coords: Array = []) -> TileMapLayer:
+	var region := Vector2i(SHEET_TILE, SHEET_TILE)
+	var src := TileSetAtlasSource.new()
+	src.texture = tex(tex_path)
+	src.texture_region_size = region
+	if coords.is_empty():
+		var cols := int(tex(tex_path).get_width() / region.x)
+		var rows := int(tex(tex_path).get_height() / region.y)
+		for ty in rows:
+			for tx in cols:
+				src.create_tile(Vector2i(tx, ty))
+	else:
+		for c in coords:
+			src.create_tile(c)
+	var ts := TileSet.new()
+	ts.tile_size = region
+	ts.add_source(src, 0)
+	var layer := TileMapLayer.new()
+	layer.tile_set = ts
+	layer.scale = Vector2.ONE * (float(tile) / float(SHEET_TILE))
+	return layer
+
+
+## Tilemap_color1.png is a 16-state match-sides autotile set: the column is
+## chosen by the left/right neighbours and the row by top/bottom. Derived by
+## probing each tile's edges -- see the plan's mapping table.
+##   c0 R-only  c1 R+L  c2 L-only  c3 neither
+##   r0 B-only  r1 T+B  r2 T-only  r3 neither
+static func autotile(left: bool, right: bool, up: bool, down: bool, cliff := false) -> Vector2i:
+	var col := 0 if (right and not left) else (1 if (right and left) else (2 if left else 3))
+	var row := 0 if (down and not up) else (1 if (up and down) else (2 if up else 3))
+	return Vector2i(col + (5 if cliff else 0), row)

@@ -21,23 +21,11 @@ func setup(_data: Dictionary) -> void:
 
 
 func _build() -> void:
-	var dim := ColorRect.new()
-	dim.color = Color(0.10, 0.07, 0.12, 0.88)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(dim)
-
-	var panel := Ui.panel(Vector2(560, 330), "Create your adventurer")
-	panel.position = Vector2(40, 15)
-	add_child(panel)
-	var outer: VBoxContainer = panel.get_child(0) as VBoxContainer
+	Ui.dim(self)
+	var outer := Ui.screen_panel(self, Vector2(560, 330), "Create your adventurer")
 	outer.alignment = BoxContainer.ALIGNMENT_CENTER
 	outer.add_theme_constant_override("separation", 6)
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(0, 205)
-	scroll.add_theme_constant_override("scrollbar_margin", 0)
-	outer.add_child(scroll)
+	var scroll := Ui.scroll(outer, 205)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 10)
@@ -66,7 +54,7 @@ func _build() -> void:
 
 	box.add_child(_preview_row())
 
-	box.add_child(Art.label("Hero", 16, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER))
+	box.add_child(Art.label("Hero", 16, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER))
 	# 32 characters, 8 per row. Each button is just the sheet's standing frame:
 	# no colour or class to combine, the sprite IS the choice.
 	# A CenterContainer, because SIZE_SHRINK_CENTER on the grid itself leaves it
@@ -89,12 +77,12 @@ func _build() -> void:
 		grid.add_child(b)
 	box.add_child(grid_center)
 
-	box.add_child(Art.label("Adventure length", 16, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER))
+	box.add_child(Art.label("Adventure length", 16, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER))
 	var dur_row := HBoxContainer.new()
 	dur_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	dur_row.add_theme_constant_override("separation", 8)
 	for d in Game.DURATION_CHOICES:
-		var label := "5 min" if d == 300 else ("10 min" if d == 600 else "15 min")
+		var label := "%d min" % (d / 60)
 		var b := Ui.button(label, 82, 34, Ui.SMALL_RED if d != 600 else Ui.SMALL)
 		b.pressed.connect(_pick_duration.bind(d))
 		_duration_buttons[d] = b
@@ -106,10 +94,7 @@ func _build() -> void:
 	box.add_child(start)
 	var back := Ui.button("Back", 70, 34, Ui.SMALL)
 	back.pressed.connect(func() -> void: main.open("title"))
-	var back_row := HBoxContainer.new()
-	back_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	back_row.add_child(back)
-	box.add_child(back_row)
+	Ui.centre_row(box, back)
 
 	_pick_hero(Game.hero_id)
 	_pick_duration(Game.duration_seconds)
@@ -147,7 +132,7 @@ func _swatch_style(selected: bool) -> StyleBox:
 		return StyleBoxEmpty.new()
 	var ring := StyleBoxFlat.new()
 	ring.bg_color = Color(1, 1, 1, 0.16)
-	ring.border_color = Color("ffe9a8")
+	ring.border_color = Pal.CREAM
 	ring.set_border_width_all(2)
 	return ring
 
@@ -155,7 +140,7 @@ func _swatch_style(selected: bool) -> StyleBox:
 func _pick_duration(sec: int) -> void:
 	_duration = sec
 	for k in _duration_buttons:
-		_duration_buttons[k].add_theme_color_override("font_color", Color(1, 1, 1, 0.96) if k != sec else Color("ffe9a8"))
+		_duration_buttons[k].add_theme_color_override("font_color", Pal.WHITE_STRONG if k != sec else Pal.CREAM)
 
 
 func _begin() -> void:
