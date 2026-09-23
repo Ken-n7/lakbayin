@@ -15,7 +15,7 @@ const TREE := "res://assets/terrain/decorations/Tree1.png"
 
 const INSET := 16      # safe-area gutter, ~5% of the 360px canvas height
 const COL_W := 186     # menu column width
-const BTN_H := 30      # 30 x the ~3x phone upscale is ~90 physical px, still a
+const BTN_H := Ui.H      # 30 x the ~3x phone upscale is ~90 physical px, still a
                        # comfortable touch target; 40 did not leave room for the
                        # welcome copy and five buttons above the tab bar
 const TILE := 32       # world px per cell; art is 64px drawn at 0.5
@@ -211,7 +211,7 @@ func _build_header() -> void:
 	Art.shadow(who, Pal.SHADOW, 2, 0)
 	add_child(who)
 
-	var out := Ui.button("Log Out", 76, 28, Ui.SMALL_RED)
+	var out := Ui.button("Log Out", 76, Ui.H, Ui.SMALL_RED)
 	out.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	out.offset_left = -(INSET + 76)
 	out.offset_right = -INSET

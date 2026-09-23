@@ -35,12 +35,12 @@ func setup(_data: Dictionary) -> void:
 	picker.alignment = BoxContainer.ALIGNMENT_CENTER
 	picker.add_theme_constant_override("separation", 6)
 	for st in [1, 2, 3]:
-		var b := Ui.button("Station %d" % st, 110, 26, Ui.SMALL)
+		var b := Ui.button("Station %d" % st, Ui.W_MED, Ui.H, Ui.SMALL)
 		b.pressed.connect(func() -> void:
 			_station = st
 			_refresh())
 		picker.add_child(b)
-	var seed_btn := Ui.button("Use Sample Questions", 170, 26, Ui.SMALL_RED)
+	var seed_btn := Ui.button("Use Sample Questions", Ui.W_WIDE, Ui.H, Ui.SMALL_RED)
 	seed_btn.pressed.connect(_seed)
 	picker.add_child(seed_btn)
 	box.add_child(picker)
@@ -56,7 +56,7 @@ func setup(_data: Dictionary) -> void:
 
 	_build_add_form(box)
 
-	var back := Ui.button("Back", 200, 24, Ui.SMALL)
+	var back := Ui.button("Back", Ui.W_WIDE, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 
@@ -69,7 +69,7 @@ func _build_add_form(box: VBoxContainer) -> void:
 	_prompt = Ui.line_edit("Enter Question", 220, 26)
 	_hint = Ui.line_edit("Enter Hint", 170, 26)
 	_answer = Ui.line_edit("Enter Answer", 100, 26)
-	var add := Ui.button("Add", 70, 26)
+	var add := Ui.button("Add", Ui.W_TINY, Ui.H, Ui.RED)
 	add.pressed.connect(_add)
 	for c: Control in [_prompt, _hint, _answer, add]:
 		row.add_child(c)
@@ -112,15 +112,15 @@ func _row(q: Dictionary) -> Control:
 	row.add_child(text)
 
 	var id: String = str(q.get("id", ""))
-	var set_btn := Ui.button("Unset" if on else "Set", 66, 24, Ui.SMALL)
+	var set_btn := Ui.button("Unset" if on else "Set", Ui.W_TINY, Ui.H, Ui.SMALL)
 	set_btn.pressed.connect(func() -> void: _apply(await QuestionStore.set_active(id, not on)))
 	row.add_child(set_btn)
 
-	var edit := Ui.button("Edit", 60, 24, Ui.SMALL)
+	var edit := Ui.button("Edit", Ui.W_TINY, Ui.H, Ui.SMALL)
 	edit.pressed.connect(func() -> void: _load_into_form(q))
 	row.add_child(edit)
 
-	var del := Ui.button("Delete", 70, 24, Ui.SMALL_RED)
+	var del := Ui.button("Delete", Ui.W_TINY, Ui.H, Ui.SMALL_RED)
 	del.pressed.connect(func() -> void: _apply(await QuestionStore.remove(id)))
 	row.add_child(del)
 	return row

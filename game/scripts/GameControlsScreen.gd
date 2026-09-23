@@ -54,7 +54,7 @@ func setup(_data: Dictionary) -> void:
 	_teams_box = VBoxContainer.new()
 	_teams_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_teams_box)
-	var add_team := Ui.button("Add Team", 120, 26, Ui.SMALL)
+	var add_team := Ui.button("Add Team", Ui.W_MED, Ui.H, Ui.SMALL)
 	add_team.pressed.connect(_add_team)
 	Ui.centre_row(right, add_team)
 
@@ -63,7 +63,7 @@ func setup(_data: Dictionary) -> void:
 	_msg.custom_minimum_size = Vector2(560, 0)
 	box.add_child(_msg)
 
-	var back := Ui.button("Back", 200, 24, Ui.SMALL)
+	var back := Ui.button("Back", Ui.W_WIDE, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 
@@ -76,19 +76,19 @@ func _build_duration(col: VBoxContainer) -> void:
 	row.add_theme_constant_override("separation", 4)
 	_time_label = Art.label("", Pal.BODY, Pal.INK)
 	for spec in [["−", -1, 0], ["+", 1, 0]]:
-		var b := Ui.button(spec[0], 30, 26, Ui.SMALL)
+		var b := Ui.button(spec[0], Ui.H, Ui.H, Ui.SMALL)
 		var step: int = spec[1]
 		b.pressed.connect(func() -> void: _bump(step, 0))
 		row.add_child(b)
 	row.add_child(_time_label)
 	for spec2 in [["−", 0, -5], ["+", 0, 5]]:
-		var b2 := Ui.button(spec2[0], 30, 26, Ui.SMALL)
+		var b2 := Ui.button(spec2[0], Ui.H, Ui.H, Ui.SMALL)
 		var step2: int = spec2[2]
 		b2.pressed.connect(func() -> void: _bump(0, step2))
 		row.add_child(b2)
 	col.add_child(row)
 
-	var apply := Ui.button("Apply Time", 160, 28, Ui.SMALL)
+	var apply := Ui.button("Apply Time", Ui.W_WIDE, Ui.H, Ui.SMALL)
 	apply.pressed.connect(_apply_time)
 	col.add_child(apply)
 	_show_time()
@@ -112,7 +112,7 @@ func _build_buttons(col: VBoxContainer) -> void:
 	col.add_child(_state_label)
 	for spec in [["Start Game", "running", Ui.BLUE], ["Pause Game", "paused", Ui.SMALL],
 			["Resume", "running", Ui.SMALL]]:
-		var b := Ui.button(spec[0], 200, 30, spec[2])
+		var b := Ui.button(spec[0], Ui.W_WIDE, Ui.H, spec[2])
 		var want: String = spec[1]
 		var is_start: bool = spec[0] == "Start Game"
 		b.pressed.connect(func() -> void: _set_state(want, is_start))
@@ -237,7 +237,7 @@ func _load_teams() -> void:
 		row.add_child(Art.label(str(t.get("name", "")), Pal.SMALL, Pal.INK))
 		# "Joined Members:" stays empty until Phase 4 gives players a way in.
 		row.add_child(Art.label("  Joined: 0", Pal.TINY, Pal.INK_MUTED))
-		var del := Ui.button("×", 26, 22, Ui.SMALL_RED)
+		var del := Ui.button("×", Ui.H, Ui.H, Ui.SMALL_RED)
 		var id: String = str(t.get("id", ""))
 		del.pressed.connect(func() -> void:
 			await Net.rest(HTTPClient.METHOD_DELETE, TEAMS + "?id=eq." + id)

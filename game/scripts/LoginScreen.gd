@@ -32,7 +32,7 @@ func setup(_data: Dictionary) -> void:
 	_email.keep_editing_on_text_submit = true
 	_pass = Ui.field(box, "Password", "at least 8 characters", true)
 
-	var show := Ui.button("Show", 70, 26, Ui.SMALL)
+	var show := Ui.button("Show", Ui.W_TINY, Ui.H, Ui.SMALL)
 	show.toggle_mode = true
 	show.toggled.connect(func(on: bool) -> void: _pass.secret = not on)
 	Ui.centre_row(box, show)
@@ -40,7 +40,7 @@ func setup(_data: Dictionary) -> void:
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_msg)
 
-	_go = Ui.button("Sign In", 300, 36)
+	_go = Ui.button("Sign In", 300, Ui.H, Ui.RED)
 	Ui.centre_row(box, _go)
 	_go.pressed.connect(_submit)
 	_pass.text_submitted.connect(func(_t: String) -> void: _submit())
@@ -48,8 +48,8 @@ func setup(_data: Dictionary) -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 8)
-	var reg := Ui.button("Create Account", 146, 30, Ui.SMALL)
-	var forgot := Ui.button("Forgot Password", 146, 30, Ui.SMALL_RED)
+	var reg := Ui.button("Create Account", 146, Ui.H, Ui.SMALL)
+	var forgot := Ui.button("Forgot Password", 146, Ui.H, Ui.SMALL_RED)
 	reg.pressed.connect(func() -> void: main.open("register"))
 	forgot.pressed.connect(func() -> void: main.open("reset", {"email": _email.text}))
 	row.add_child(reg)

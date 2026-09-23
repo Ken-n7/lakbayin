@@ -34,11 +34,11 @@ func setup(_data: Dictionary) -> void:
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_msg)
 
-	var go := Ui.button("Ready!", 300, 36)
+	var go := Ui.button("Ready!", 300, Ui.H, Ui.RED)
 	go.pressed.connect(_begin)
 	Ui.centre_row(box, go)
 
-	var back := Ui.button("Back", 300, 28, Ui.SMALL)
+	var back := Ui.button("Back", 300, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 	_team.grab_focus()

@@ -29,7 +29,7 @@ func setup(data: Dictionary) -> void:
 	_email = Ui.field(box, "Email", "you@example.com")
 	_email.text = data.get("email", "")   # carried over from the login form
 
-	_send = Ui.button("Email Me a Code", 300, 26, Ui.SMALL_RED)
+	_send = Ui.button("Email Me a Code", 300, Ui.H, Ui.SMALL_RED)
 	_send.pressed.connect(_request)
 	Ui.centre_row(box, _send)
 
@@ -41,11 +41,11 @@ func setup(data: Dictionary) -> void:
 	_msg.custom_minimum_size = Vector2(320, 0)
 	box.add_child(_msg)
 
-	_save = Ui.button("Set New Password", 300, 30)
+	_save = Ui.button("Set New Password", 300, Ui.H, Ui.RED)
 	_save.pressed.connect(_apply)
 	Ui.centre_row(box, _save)
 
-	var back := Ui.button("Back to Sign In", 300, 22, Ui.SMALL)
+	var back := Ui.button("Back to Sign In", 300, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 

@@ -52,11 +52,11 @@ func setup(_data: Dictionary) -> void:
 	_msg = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_msg)
 
-	var save := Ui.button("SAVE FEEDBACK", 220, 28)
+	var save := Ui.button("SAVE FEEDBACK", Ui.W_WIDE, Ui.H, Ui.RED)
 	save.pressed.connect(_save)
 	Ui.centre_row(box, save)
 
-	var back := Ui.button("Back", 220, 22, Ui.SMALL)
+	var back := Ui.button("Back", Ui.W_WIDE, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 

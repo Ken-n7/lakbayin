@@ -51,7 +51,7 @@ func _build() -> void:
 			[Game.START_GEMS, -(Game.GEM_TEAM_FINISH_PENALTY)], Pal.TINY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(note)
 
-	var back := Ui.button("Back", 110, 44, Ui.RED)
+	var back := Ui.button("Back", Ui.W_WIDE, Ui.H, Ui.RED)
 	back.pressed.connect(func() -> void: main.open("home"))
 	Ui.centre_row(box, back)
 

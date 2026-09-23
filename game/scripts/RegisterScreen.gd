@@ -30,7 +30,7 @@ func setup(_data: Dictionary) -> void:
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
-	var show := Ui.button("Show", 70, 22, Ui.SMALL)
+	var show := Ui.button("Show", Ui.W_TINY, Ui.H, Ui.SMALL)
 	show.toggle_mode = true
 	show.toggled.connect(func(on: bool) -> void: _pass.secret = not on)
 	row.add_child(show)
@@ -45,11 +45,11 @@ func setup(_data: Dictionary) -> void:
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_msg)
 
-	_go = Ui.button("Register", 300, 30)
+	_go = Ui.button("Register", 300, Ui.H, Ui.RED)
 	Ui.centre_row(box, _go)
 	_go.pressed.connect(_submit)
 
-	var back := Ui.button("Back to Sign In", 300, 24, Ui.SMALL)
+	var back := Ui.button("Back to Sign In", 300, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
 	_email.grab_focus()

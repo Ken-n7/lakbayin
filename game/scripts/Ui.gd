@@ -14,6 +14,16 @@ const KINDS := [
 ]
 const PAPER := "res://assets/ui/RegularPaper.png"
 
+## One button height, everywhere. Not a preference: the nine-patch these
+## buttons are cut from has a ~31px minimum, so every screen that asked for
+## 22, 24, 26 or 28 got 31 and only the *spacing* around them differed. The
+## admin screens looked unstyled next to Home for exactly that reason.
+const H := 32
+## The three widths worth having: a column entry, an inline action, a chip.
+const W_WIDE := 186
+const W_MED := 120
+const W_TINY := 70
+
 ## How a button's nine-patch is sliced -- the same three numbers at all four
 ## states, so a button never changes shape when it is pressed or disabled.
 const BTN_SLICE := Vector2(8, 1)
