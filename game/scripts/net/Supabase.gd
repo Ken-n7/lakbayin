@@ -28,6 +28,7 @@ var username := ""
 var role := ""
 
 var _http: HTTPRequest
+var _realtime: Realtime
 
 
 func _init() -> void:
@@ -120,11 +121,23 @@ func change_password(new_password: String) -> String:
 	return reply.error
 
 
+## The realtime socket, made on first use and kept as a child of this node.
+## Nothing opens one until something asks to watch a table.
+func realtime() -> Realtime:
+	if _realtime == null or not is_instance_valid(_realtime):
+		_realtime = Realtime.new()
+		_realtime.name = "Realtime"
+		add_child(_realtime)
+	return _realtime
+
+
 func signed_in() -> bool:
 	return access_token != ""
 
 
 func sign_out() -> void:
+	if is_instance_valid(_realtime):
+		_realtime.close_socket()
 	access_token = ""
 	user_id = ""
 	username = ""
