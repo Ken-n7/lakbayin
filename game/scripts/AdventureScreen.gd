@@ -6,7 +6,6 @@ extends Control
 ## they resolve strictly in order. WASD/arrows move the hero; E (or Space/Enter)
 ## enters the tower you stand at, answers the circle you stand on, or walks
 ## through the gate once all of Game.TOTAL_ITEMS are cleared.
-const DevTools := preload("res://scripts/DevTools.gd")
 
 var main: Control
 
@@ -38,7 +37,11 @@ var _card: Control = null       # the tapped circle's info card
 ## `_process()` dragging the camera back to the hero while the board is framed.
 var _speed_mult := 1.0
 var _dev_aerial := false
-var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable via [ / ], DevTools.key_step()
+var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable with [ and ], see _nudge_hero_scale()
+## How much one press of [ or ] moves the hero's scale, and the range it may
+## roam over while you pick a number by eye.
+const HERO_SCALE_STEP := 0.1
+const HERO_SCALE_RANGE := Vector2(0.5, 3.0)
 
 
 func setup(_data: Dictionary) -> void:
@@ -373,32 +376,44 @@ func _can_act_on(target: Dictionary) -> bool:
 	return false
 
 
-func _prompt_for(target: Dictionary) -> String:
-	var go := "Tap GO" if Game.touch else "Press E / Space / Enter"
-	var ready := _can_act_on(target)
+## Why pressing E / GO on `target` would not work right now. Empty means it
+## would. The one place that decides: the line under your feet and the toast you
+## get for pressing anyway both come from here, so they cannot drift apart --
+## they used to be the same three-case ladder written twice, in two wordings.
+func _gate_reason(target: Dictionary) -> String:
+	if _can_act_on(target):
+		return ""
 	match target.get("kind", ""):
 		"tower":
 			var i: int = target.index
-			if ready:
-				return "%s — enter Station %d" % [go, i + 1]
 			if Game.items_done >= Game.TOTAL_ITEMS:
-				return "Every circle cleared — head for the Victory Gate"
+				return "Every circle is cleared — head for the Victory Gate"
 			if Game.towers_entered[i]:
-				return "Station %d briefing done — follow the circles" % (i + 1)
+				return "Station %d is briefed — answer its circles" % (i + 1)
 			return "Complete Station %d first" % (Game.station_of_item(Game.items_done) + 1)
 		"circle":
 			var n: int = target.index
-			if ready:
-				return "%s — Answer Quest!" % go
 			if n < Game.items_done:
-				return "Circle %d cleared" % (n + 1)
+				return "Circle %d is already cleared" % (n + 1)
 			if not Game.towers_entered[Game.station_of_item(n)]:
 				return "Enter Station %d first" % (Game.station_of_item(n) + 1)
 			return "Answer circle %d first" % (Game.items_done + 1)
 		"gate":
-			if ready:
-				return "%s — enter the Victory Gate" % go
 			return "Conquer all %d circles first" % Game.TOTAL_ITEMS
+	return ""
+
+
+func _prompt_for(target: Dictionary) -> String:
+	var kind := str(target.get("kind", ""))
+	if kind == "":
+		return ""
+	if not _can_act_on(target):
+		return _gate_reason(target)
+	var go := "Tap GO" if Game.touch else "Press E / Space / Enter"
+	match kind:
+		"tower": return "%s — enter Station %d" % [go, int(target.index) + 1]
+		"circle": return "%s — Answer Quest!" % go
+		"gate": return "%s — enter the Victory Gate" % go
 	return ""
 
 
@@ -427,10 +442,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		_tap_at((event as InputEventWithModifiers).position if event is InputEventMouseButton
 				else (event as InputEventScreenTouch).position)
 		return
-	var scale_step := DevTools.key_step(event, KEY_BRACKETLEFT, KEY_BRACKETRIGHT, 0.1)
-	if scale_step != 0.0:
-		_nudge_hero_scale(scale_step)
-		return
+	# Dev sizing knob: [ shrinks the hero, ] grows him, and the toast prints the
+	# number to bake into MapCfg.UNIT_SCALE.
+	if event is InputEventKey and (event as InputEventKey).pressed:
+		match (event as InputEventKey).keycode:
+			KEY_BRACKETLEFT:
+				_nudge_hero_scale(-HERO_SCALE_STEP)
+				return
+			KEY_BRACKETRIGHT:
+				_nudge_hero_scale(HERO_SCALE_STEP)
+				return
 	if event.is_action_pressed("interact"):
 		_interact()
 	elif event.is_action_pressed("pause"):
@@ -441,10 +462,10 @@ func _unhandled_input(event: InputEvent) -> void:
 ## back into UNIT_SCALE once something looks right. Rescales in place, so it is
 ## visible mid-walk without a restart.
 func _nudge_hero_scale(delta: float) -> void:
-	_hero_scale = clampf(_hero_scale + delta, 0.5, 3.0)
+	_hero_scale = clampf(_hero_scale + delta, HERO_SCALE_RANGE.x, HERO_SCALE_RANGE.y)
 	var spr: AnimatedSprite2D = player.get_node("Spr")
 	spr.scale = Vector2(_hero_scale, _hero_scale)
-	hud.flash("Hero scale: %.1f  (was MapCfg.UNIT_SCALE = %.1f)" % [_hero_scale, MapCfg.UNIT_SCALE])
+	hud.flash("Hero scale: %.1f  (MapCfg.UNIT_SCALE is %.1f)" % [_hero_scale, MapCfg.UNIT_SCALE])
 
 
 ## Tap-to-inspect. `self` is a canvas item under the camera, so the viewport's
@@ -511,60 +532,58 @@ func _show_circle_card(n: int) -> void:
 
 
 func _interact() -> void:
-	match _nearest_target().get("kind", ""):
-		"tower": _try_enter_station()
-		"circle": _try_answer_circle()
-		"gate": _try_enter_gate()
+	_act_on(_nearest_target())
 
 
+## Do the thing, or say why not. Every way of asking -- E, GO, the tap card's
+## Answer Quest! -- lands here, so a blocked press always gets the same sentence
+## the prompt line was already showing.
+func _act_on(target: Dictionary) -> void:
+	var kind := str(target.get("kind", ""))
+	if kind == "" or int(target.get("index", -1)) < 0:
+		return
+	var why := _gate_reason(target)
+	if why != "":
+		hud.flash(why + "!")
+		return
+	match kind:
+		"tower":
+			Game.current_station = int(target.index)
+			_open_quiz(Game.current_station, true)
+		"circle":
+			Game.current_station = Game.station_of_item(int(target.index))
+			_open_quiz(Game.current_station, false)
+		"gate":
+			Game.end_adventure()
+
+
+## The briefing card (`intro_only`) or one question. Same overlay either way.
+func _open_quiz(station: int, intro_only: bool) -> void:
+	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
+	quiz.adventure = self
+	quiz.station_index = station
+	quiz.intro_only = intro_only
+	_show_overlay(quiz)
+
+
+# The three below are how everything other than `_interact()` reaches `_act_on`:
+# the tap card, and the headless suites, which teleport the hero onto a stop and
+# then press. Each names the kind it means rather than asking what is nearest.
 ## The tower briefing: the station intro card, and nothing else. Its circles are
 ## what ask the questions.
 func _try_enter_station() -> void:
-	var i := _nearest_of(stations.nodes)
-	if i < 0:
-		return
-	if not _can_enter_tower(i):
-		if Game.items_done >= Game.TOTAL_ITEMS:
-			hud.flash("Every circle is cleared — head for the Victory Gate!")
-		elif Game.towers_entered[i]:
-			hud.flash("Station %d is briefed — answer its circles!" % (i + 1))
-		else:
-			hud.flash("Complete Station %d first!" % (Game.station_of_item(Game.items_done) + 1))
-		return
-	Game.current_station = i
-	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
-	quiz.adventure = self
-	quiz.station_index = i
-	quiz.intro_only = true
-	_show_overlay(quiz)
+	_act_on({"kind": "tower", "index": _nearest_of(stations.nodes)})
 
 
 func _try_answer_circle() -> void:
-	var n := _nearest_of(_circles)
-	if n < 0:
-		return
-	if not _can_answer(n):
-		if n < Game.items_done:
-			hud.flash("Circle %d is already cleared!" % (n + 1))
-		elif not Game.towers_entered[Game.station_of_item(n)]:
-			hud.flash("Enter Station %d first!" % (Game.station_of_item(n) + 1))
-		else:
-			hud.flash("Answer circle %d first!" % (Game.items_done + 1))
-		return
-	Game.current_station = Game.station_of_item(n)
-	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
-	quiz.adventure = self
-	quiz.station_index = Game.current_station
-	_show_overlay(quiz)
+	_act_on({"kind": "circle", "index": _nearest_of(_circles)})
 
 
 func _try_enter_gate() -> void:
-	if stations.gate == null or stations.gate.position.distance_to(player.position) >= MapCfg.INTERACT_RADIUS:
+	if stations.gate == null \
+			or stations.gate.position.distance_to(player.position) >= MapCfg.INTERACT_RADIUS:
 		return
-	if not _can_enter_gate():
-		hud.flash("Conquer all %d circles first!" % Game.TOTAL_ITEMS)
-		return
-	Game.end_adventure()
+	_act_on({"kind": "gate", "index": 0})
 
 
 func _refresh_circles() -> void:

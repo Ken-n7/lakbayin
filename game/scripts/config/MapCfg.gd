@@ -23,8 +23,8 @@ const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
 const WORLD_W := 96
 const WORLD_H := 54
 
-# The Super Retro World sheets are 16x20; scale picked by eye with DevTools'
-# live [ / ] tuner (see `_unhandled_input`) against the tileset's 64px cells.
+# The Super Retro World sheets are 16x20; scale picked by eye against the
+# tileset's 64px cells with the [ and ] tuner (AdventureScreen._nudge_hero_scale).
 const UNIT_SCALE := 1.4
 # Buildings are the tileset's own 64px art, so they take the tileset's scale.
 const BUILDING_SCALE := 0.5
