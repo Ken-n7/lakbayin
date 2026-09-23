@@ -241,8 +241,10 @@ func _refresh_state() -> void:
 func _load_teams() -> void:
 	if _session.is_empty():
 		return
+	var sid: String = str(_session.get("id", ""))
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		TEAMS + "?select=id,name&session_id=eq." + str(_session.get("id", "")) + "&order=name")
+		TEAMS + "?select=id,name&session_id=eq." + sid + "&order=name")
+	var joined: Dictionary = await Teams.roster(sid)
 	if not is_instance_valid(_teams_box):
 		return
 	for c in _teams_box.get_children():
@@ -253,11 +255,17 @@ func _load_teams() -> void:
 	for t: Dictionary in (got.data if got.data is Array else []):
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 4)
-		row.add_child(Art.label(str(t.get("name", "")), Pal.SMALL, Pal.INK))
-		# "Joined Members:" stays empty until Phase 4 gives players a way in.
-		row.add_child(Art.label("  Joined: 0", Pal.TINY, Pal.INK_MUTED))
-		var del := Ui.button("×", Ui.H, Ui.H, Ui.SMALL_RED)
 		var id: String = str(t.get("id", ""))
+		row.add_child(Art.label(str(t.get("name", "")), Pal.SMALL, Pal.INK))
+		var names: Array = joined.get(id, [])
+		# "Joined Members:" from the mockup. The names matter more than the
+		# count -- a teacher reads this to find who has not joined yet.
+		var who := Art.label("  " + (", ".join(names) if not names.is_empty() else "—"),
+				Pal.TINY, Pal.INK_MUTED)
+		who.clip_text = true
+		who.custom_minimum_size = Vector2(120, 0)
+		row.add_child(who)
+		var del := Ui.button("×", Ui.H, Ui.H, Ui.SMALL_RED)
 		del.pressed.connect(func() -> void:
 			await Net.rest(HTTPClient.METHOD_DELETE, TEAMS + "?id=eq." + id)
 			_load_teams())

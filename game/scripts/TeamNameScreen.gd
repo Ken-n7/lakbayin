@@ -3,9 +3,12 @@ extends Control
 ## "Start Adventure -> enter Team Name -> Ready!", split out of hero select.
 ##
 ## The team name is also the join code (SPECS §3): the admin generates the
-## names in Game Controls and each player types the one they were given. Until
-## Phase 4 there is nobody to check it against, so it is recorded and carried
-## into the run as it always was.
+## names in Game Controls and each player types the one they were given, and a
+## name that is not one of them is refused.
+##
+## With no backend there is nobody to check against, so the name is recorded
+## and the run starts as it always did -- which is how an offline dev run and
+## the headless suites still reach the map.
 
 const PANEL := Vector2(360, 230)
 
@@ -13,6 +16,7 @@ var main: Control
 
 var _team: LineEdit
 var _msg: Label
+var _go: Button
 
 
 func setup(_data: Dictionary) -> void:
@@ -34,9 +38,9 @@ func setup(_data: Dictionary) -> void:
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_msg)
 
-	var go := Ui.button("Ready!", 300, Ui.H, Ui.RED)
-	go.pressed.connect(_begin)
-	Ui.centre_row(box, go)
+	_go = Ui.button("Ready!", 300, Ui.H, Ui.RED)
+	_go.pressed.connect(_begin)
+	Ui.centre_row(box, _go)
 
 	var back := Ui.button("Back", 300, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
@@ -47,12 +51,31 @@ func setup(_data: Dictionary) -> void:
 func _begin() -> void:
 	var name := _team.text.strip_edges()
 	if name.is_empty():
-		_msg.text = "Enter a team name."
+		_say("Enter a team name.", Pal.WRONG)
 		return
+
+	if Net.configured() and Net.signed_in():
+		_busy(true)
+		var err: String = await Teams.join(name)
+		_busy(false)
+		if err != "":
+			_say(err, Pal.WRONG)
+			return
+
 	Game.team_name = name
 	Game.save_profile()
 	Game.begin_adventure(int(Game.duration_seconds))
 	main.open("adventure")
+
+
+func _busy(on: bool) -> void:
+	_go.disabled = on
+	_go.text = "Joining..." if on else "Ready!"
+
+
+func _say(text: String, col: Color) -> void:
+	_msg.text = text
+	_msg.add_theme_color_override("font_color", col)
 
 
 func go_back() -> void:

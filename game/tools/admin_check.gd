@@ -11,6 +11,8 @@ extends Node
 
 var _failures := 0
 var _made: Array[String] = []
+var _sessions: Array[String] = []
+var _admin_email := ""
 
 
 func _ready() -> void:
@@ -21,9 +23,10 @@ func _ready() -> void:
 		return
 
 	var stamp := str(int(Time.get_unix_time_from_system()))
+	_admin_email = "admin-" + stamp + "@numxventure-test.dev"
 	# Anyone may register as an admin, no approval -- SPECS §2, client's rule.
 	_check("register an admin", await Net.sign_up(
-		"admin-" + stamp + "@numxventure-test.dev", "ad" + stamp, "letmein123", "admin"))
+		_admin_email, "ad" + stamp, "letmein123", "admin"))
 	_check("role really is admin", "" if Net.role == "admin" else "got '%s'" % Net.role)
 
 	# A question the teacher authored.
@@ -107,17 +110,72 @@ func _ready() -> void:
 	# An unset question is not in the pool, however many are authored.
 	_check("unset it", (await QuestionStore.set_active(authored[2], false)).error)
 	_check("reload", await QuestionStore.load_bank())
+	var still_in := 0
+	for q: Dictionary in QuestionStore.bank.get(1, []):
+		if authored.has(str(q.get("id", ""))):
+			still_in += 1
 	_check("an unset question leaves the pool",
-		"" if QuestionStore.bank.get(1, []).size() == 2 else "pool held %d" % QuestionStore.bank.get(1, []).size())
+		"" if still_in == 2 else "%d of this run's 3 still in the pool" % still_in)
+
+	# --- Joining a team, the way a student does ---------------------------
+	# Still signed in as the admin: make a session and two teams.
+	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/sessions",
+		{"admin_id": Net.user_id, "duration_s": 600})
+	_check("admin creates a session", made.error)
+	var sid: String = str(made.data[0].get("id", "")) if made.data is Array \
+		and not (made.data as Array).is_empty() else ""
+	_sessions.append(sid)
+
+	for tname in ["Math Mavericks", "Number Ninjas"]:
+		var t: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/teams",
+			{"session_id": sid, "name": tname})
+		_check("admin adds team %s" % tname, t.error)
+
+	# Now be a student.
+	var pstamp := stamp + "p"
+	_check("register a player", await Net.sign_up(
+		"player-" + pstamp + "@numxventure-test.dev", "pl" + pstamp, "letmein123", "player"))
+
+	_check("a name nobody was given is refused",
+		"" if (await Teams.join("Not A Team")) != "" else "the join was allowed")
+	_check("the team name joins", await Teams.join("Math Mavericks"))
+	# Typed as the student would, not as the teacher wrote it.
+	_check("joining is not case-sensitive", await Teams.join("math mavericks"))
+
+	var roster: Dictionary = await Teams.roster(sid)
+	var total := 0
+	for team_id: String in roster:
+		total += (roster[team_id] as Array).size()
+	_check("roster shows one member, not two",
+		"" if total == 1 else "roster held %d" % total)
+	_check("roster names the player",
+		"" if str(roster.values()[0][0]).begins_with("pl") else "got %s" % str(roster.values()))
+
+	# Switching teams moves the membership rather than adding a second.
+	_check("switch team", await Teams.join("Number Ninjas"))
+	var after_switch: Dictionary = await Teams.roster(sid)
+	var total2 := 0
+	for team_id2: String in after_switch:
+		total2 += (after_switch[team_id2] as Array).size()
+	_check("still one membership after switching",
+		"" if total2 == 1 else "roster held %d" % total2)
 
 	await _cleanup()
 	print("---- ADMIN %s ----" % ("PASS" if _failures == 0 else "FAIL"))
 	get_tree().quit(1 if _failures > 0 else 0)
 
 
+## Signs back in as the admin first. The last half of this check runs as a
+## student, and a student may not delete questions or sessions -- RLS refused
+## every delete silently and the test rows stayed in the teacher's bank.
 func _cleanup() -> void:
+	if _admin_email != "":
+		await Net.sign_in(_admin_email, "letmein123")
 	for id in _made:
 		await QuestionStore.remove(id)
+	# Deleting the session cascades its teams and members away with it.
+	for sid in _sessions:
+		await Net.rest(HTTPClient.METHOD_DELETE, "/rest/v1/sessions?id=eq." + sid)
 
 
 func _check(name: String, err: String) -> void:
