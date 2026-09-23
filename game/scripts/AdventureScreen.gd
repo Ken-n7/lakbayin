@@ -135,7 +135,7 @@ const BARRICADES := [
 	# of it, so its fence is a small one: the gap where the road leaves, one rock
 	# above it holding the north shore, and the long arm curving down and away to
 	# the lower-left edge, well clear of the Victory Gate.
-	{"st": 2, "arc": 5.0},
+	{"st": 2, "arc": 5.0, "shift": 2.0},
 ]
 const GUARD_SCALE := 0.9
 ## A boulder line is laid cell by cell straight across the walk, land's end to
@@ -649,7 +649,7 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 		"open": false,
 	}
 	if spec.has("arc"):
-		_lay_arc(g, a, b, float(spec.arc))
+		_lay_arc(g, a, b, float(spec.arc), float(spec.get("shift", 0.0)))
 	else:
 		_lay_line(g, a, b, float(spec.t))
 	g.stand = _guard_rest(g)
@@ -710,9 +710,12 @@ func _lay_line(g: Dictionary, a: Vector2, b: Vector2, t: float) -> void:
 ##
 ## Each cell's rect is a tile and a half square, so neighbours overlap however the
 ## curve steps and there is no diagonal slip between two of them.
-func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float) -> void:
+func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float) -> void:
 	var r := radius * TILE
-	var bearing := (b - a).angle()
+	# The gap sits on the bearing the walk leaves by, give or take `shift` cells of
+	# arc -- clockwise is downward on screen. It is only where the guard stands;
+	# the way out is open wherever it is, since nothing draws the road.
+	var bearing := (b - a).angle() + shift * TILE / r
 	var size := Vector2(TILE, TILE) * 1.5
 	# Half a cell of arc per step, so the walk round never skips a cell.
 	var da := TILE * 0.5 / r
