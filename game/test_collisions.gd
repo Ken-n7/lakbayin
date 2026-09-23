@@ -38,10 +38,10 @@ func _initialize() -> void:
 		# INTERACT_RADIUS can never be satisfied and the quiz is unreachable.
 		assert(screen._is_walkable(at),
 				"station %d: doorstep is walled in, quiz unreachable" % i)
-		assert(at.distance_to(screen._station_nodes[i].position) < screen.INTERACT_RADIUS)
+		assert(at.distance_to(screen._station_nodes[i].position) < MapCfg.INTERACT_RADIUS)
 
 		# The walls span the sprite, so no side is thinner than the art.
-		assert(wall.size.x > screen.TILE, "station %d: walls thinner than a tile" % i)
+		assert(wall.size.x > MapCfg.TILE, "station %d: walls thinner than a tile" % i)
 
 	# --- The board path (Phase 1) ------------------------------------------
 	var circles: Array = screen._circles
@@ -110,7 +110,7 @@ func _initialize() -> void:
 		assert(screen._is_walkable(rest), "station %d's guard steps into a wall" % who)
 		assert(not screen._trail.has(_cell(screen, rest)),
 				"station %d's guard steps down onto the road" % who)
-		assert(rest.distance_to(g.post as Vector2) > screen.TILE,
+		assert(rest.distance_to(g.post as Vector2) > MapCfg.TILE,
 				"station %d's guard steps down into the gap he was plugging" % who)
 
 	# Station 1's door has to stay usable from the bridge side, or the briefing
@@ -216,7 +216,7 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 	for n in G.TOTAL_ITEMS:
 		var st: int = G.station_of_item(n)
 		var pos: Vector2 = (screen._circles[n] as Node2D).position
-		var cell := Vector2i(floori(pos.x / screen.TILE), floori(pos.y / screen.TILE))
+		var cell := Vector2i(floori(pos.x / MapCfg.TILE), floori(pos.y / MapCfg.TILE))
 		if opened >= st:
 			assert(reach.has(cell),
 					"circle %d (station %d) unreachable with %d guard(s) stood down" % [n + 1, st + 1, opened])
@@ -225,7 +225,7 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 					"circle %d (station %d) reachable with only %d guard(s) stood down" % [n + 1, st + 1, opened])
 	for st in 3:
 		var tp: Vector2 = (screen._station_nodes[st] as Node2D).position
-		var tcell := Vector2i(floori(tp.x / screen.TILE), floori(tp.y / screen.TILE))
+		var tcell := Vector2i(floori(tp.x / MapCfg.TILE), floori(tp.y / MapCfg.TILE))
 		# Every station stands on the near side of its own guard -- you have to
 		# reach a station to be briefed by it, which is what moves him. So a tower
 		# waits on whatever gate is in front of it, not on its own: Station 1 is
@@ -234,7 +234,7 @@ func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 		assert(reach.has(tcell) == (opened >= TOWER_OPENS_AT[st]),
 				"Tower %d reachability wrong with %d gate(s) open" % [st + 1, opened])
 	var gate: Vector2 = (screen._gate as Node2D).position
-	var gcell := Vector2i(floori(gate.x / screen.TILE), floori(gate.y / screen.TILE))
+	var gcell := Vector2i(floori(gate.x / MapCfg.TILE), floori(gate.y / MapCfg.TILE))
 	assert(reach.has(gcell) == (opened >= 2),
 			"victory gate reachability wrong with %d guard(s) stood down" % opened)
 
@@ -250,7 +250,7 @@ static func _items_through(G: Node, st: int) -> int:
 
 
 static func _cell(screen: Control, at: Vector2) -> Vector2i:
-	return Vector2i(floori(at.x / screen.TILE), floori(at.y / screen.TILE))
+	return Vector2i(floori(at.x / MapCfg.TILE), floori(at.y / MapCfg.TILE))
 
 
 ## One barricade's boulders: every rock solid, and none of them swallowing a stop
@@ -291,7 +291,7 @@ func _assert_line(screen: Control, g: Dictionary) -> void:
 func _reachable(screen: Control) -> Dictionary:
 	var start: Vector2 = screen._anchors[0]
 	var seen := {}
-	var queue: Array[Vector2i] = [Vector2i(floori(start.x / screen.TILE), floori(start.y / screen.TILE))]
+	var queue: Array[Vector2i] = [Vector2i(floori(start.x / MapCfg.TILE), floori(start.y / MapCfg.TILE))]
 	seen[queue[0]] = true
 	while not queue.is_empty():
 		var c: Vector2i = queue.pop_back()

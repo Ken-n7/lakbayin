@@ -159,9 +159,9 @@ func _aerial() -> void:
 		_adv._clamp_cam(false)
 		var z: float = _adv._aerial_zoom()
 		cam.zoom = Vector2(z, z)
-		cam.position = Vector2(_adv.W * _adv.TILE, _adv.H * _adv.TILE) * 0.5
+		cam.position = Vector2(MapCfg.WORLD_W * MapCfg.TILE, MapCfg.WORLD_H * MapCfg.TILE) * 0.5
 	else:
-		cam.zoom = Vector2(_adv.PLAY_ZOOM, _adv.PLAY_ZOOM)
+		cam.zoom = Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM)
 		_adv._clamp_cam(true)
 		cam.position = _adv.player.position
 		cam.position_smoothing_enabled = true

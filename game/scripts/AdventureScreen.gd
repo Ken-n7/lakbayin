@@ -6,232 +6,6 @@ extends Control
 ## they resolve strictly in order. WASD/arrows move the hero; E (or Space/Enter)
 ## enters the tower you stand at, answers the circle you stand on, or walks
 ## through the gate once all of Game.TOTAL_ITEMS are cleared.
-
-const TILE := 32        # world px per cell; art is 64px drawn at 0.5
-
-const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
-const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
-
-## Three islands over open water. The world is deliberately much larger than the
-## 640x360 canvas -- the board needs room for forty circles to read as a walk
-## rather than a dotted line. Tuning knobs, not fixed truths.
-const W := 96
-const H := 54
-
-# The Super Retro World sheets are 16x20; scale picked by eye with DevTools'
-# live [ / ] tuner (see `_unhandled_input`) against the tileset's 64px cells.
-const UNIT_SCALE := 1.4
-# Buildings are the tileset's own 64px art, so they take the tileset's scale.
-const BUILDING_SCALE := 0.5
-## Each station's keep -- one building per station, each its own kind, so the
-## three stations do not read as the same outpost three times.
-const BUILDINGS := [
-	"res://assets/buildings/Blue_Monastery.png",
-	"res://assets/buildings/Yellow_Archery.png",
-	"res://assets/buildings/Red_Barracks.png",
-]
-## The walk-up towers on the circles. Every circle is a tower -- the keep is what
-## tells the stations apart, the towers are what tell a stop from a keep -- so it
-## is the same art in the station's own livery, no tint.
-const CIRCLE_BUILDINGS := [
-	"res://assets/buildings/Blue_Tower.png",
-	"res://assets/buildings/Yellow_Tower.png",
-	"res://assets/buildings/Red_Tower.png",
-]
-## The Victory Gate's building -- the only castle-scale asset in the red livery,
-## and nothing else on the board is that big.
-const GATE_BUILDING := "res://assets/buildings/Red_Castle.png"
-const PLAYER_SPEED := 150.0
-const INTERACT_RADIUS := 42.0
-## Half a circle tower, near enough: every circle is the same tower, 92px tall
-## drawn, so this reaches the whole body from its middle. Tap reach only -- walking
-## up to a tower is still `INTERACT_RADIUS` against the anchor it stands beside.
-const TOWER_TAP_REACH := 46.0
-
-## Four islands, as normalized centre + radii. `wobble` only shifts the coastline
-## noise so they do not come out as the same shape rotated. Island 0 is the camp,
-## bottom right; island 1 beside it is the big one, carrying Station 1 and its
-## eight circles. The walk runs right to left along the bottom, then up and back
-## across the top: camp -> island 1 -> island 2 -> island 3 and the Victory Gate.
-const ISLANDS := [
-	{"c": Vector2(0.925, 0.800), "r": Vector2(0.058, 0.135), "wobble": 0.6},
-	{"c": Vector2(0.415, 0.765), "r": Vector2(0.365, 0.225), "wobble": 1.7},
-	{"c": Vector2(0.260, 0.270), "r": Vector2(0.215, 0.175), "wobble": 3.1},
-	# Island 3 carries a station, its circles, a fence and the Victory Gate, which is
-	# more than its first size could hold -- the fence had shrunk to clear the shore and
-	# the keep's left house stood in the water. `c.y` and `r.y` move together so the
-	# north coast stays where it was and only the south shore travels, ~4 cells down
-	# into open sea. Island 1 is still a clear channel below it; close that and the two
-	# merge, and `_island_index()` hands the overlap to island 1 and its forest.
-	{"c": Vector2(0.740, 0.307), "r": Vector2(0.215, 0.212), "wobble": 5.3},
-]
-
-## One authored trail per island, in normalized world coords. Each is a serpentine
-## that fills its island and ends near the next crossing, so the walk flows from
-## one island into the next. `_stamp_path()` guarantees land under all of it.
-const TRAILS := [
-	# The camp: the fire, then Station 1. Its anchor is across the channel on
-	# island 1 -- the trail runs over open water to get there, so `_stamp_path()`
-	# lays the land bridge under the walk. The monastery itself stands on island
-	# ground, well clear of the shore, which is the point of the crossing being
-	# the trail's and not the building's problem.
-	[Vector2(0.955, 0.855), Vector2(0.720, 0.800)],
-	# Island 1: Station 1's eight circles, starting west of the boulder line that
-	# `_build_barricade()` draws between them and the monastery.
-	[Vector2(0.585, 0.780), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
-	 Vector2(0.10, 0.83), Vector2(0.16, 0.69), Vector2(0.40, 0.65),
-	 Vector2(0.38, 0.60)],
-	# Island 2: the bridge lands in the south-east corner, where Station 2 stands,
-	# and the walk loops west, north and back east to the seam. Nothing square
-	# across that walk can gate it -- it doubles back, so a line always leaves the
-	# last circle on the station's side. What does gate it is a fence drawn *round*
-	# the corner the station sits in; see `BARRICADES`.
-	[Vector2(0.325, 0.395), Vector2(0.12, 0.35), Vector2(0.12, 0.22),
-	 Vector2(0.25, 0.16), Vector2(0.40, 0.23)],
-	# Station 3 starts this walk, so its first point is where the keep stands. East of
-	# the old 0.60, which put the left house of the outpost over the water -- but only
-	# just, and not by eye: how far east it may go is fixed by its fence. See
-	# `BARRICADES`.
-	[Vector2(0.61, 0.23), Vector2(0.75, 0.16), Vector2(0.89, 0.22),
-	 Vector2(0.88, 0.34), Vector2(0.70, 0.38)],
-]
-
-## Each island gets its own dressing, so the stations do not read as the same field
-## three times: a thin camp clearing, a wooded starter valley, a stony quarry, a
-## bare highland. Cumulative thresholds for the one weighted roll in `_build_decor()`,
-## and `count` is props, not patches -- since they arrive in clumps the counts are
-## higher than they were when every roll dropped one prop on its own.
-const ISLAND_PROPS := [
-	{"tree": 0.55, "stump": 0.70, "rock": 0.88, "count": 14, "sheep": 1},
-	{"tree": 0.60, "stump": 0.70, "rock": 0.86, "count": 140, "sheep": 3},
-	{"tree": 0.22, "stump": 0.46, "rock": 0.90, "count": 70, "sheep": 1},
-	{"tree": 0.08, "stump": 0.20, "rock": 0.80, "count": 60, "sheep": 0},
-]
-
-## Every seam is crossed by a **land bridge**. Seam `i` is the water between island
-## `i` and island `i + 1`: the walk simply carries on over it and `_stamp_path()`
-## lays ground under the corridor, so every crossing is there from the first step
-## and a guard holds it rather than the tide. Seam 0 (camp -> Station 1) falls out
-## of trail 0, which spans it; the rest are stamped between one trail's end and the
-## next one's start.
-##
-## Kept as a list rather than assumed, because it is what `_stamp_path()` asks --
-## take a seam out of it and that crossing goes back to being open water with no
-## way over, which is a loud enough failure to find at once.
-const BRIDGED_SEAMS := [0, 1, 2]
-
-## The gates: a line of boulders across the walk with a giant guard in its one gap
-## -- the same Warrior sheets `_build_outpost()` gives its little guards, at three
-## times their 0.3 scale. A guard is a wall, not a trigger.
-##
-## One rule, every station: **his own station's briefing stands him down.** So the
-## line always stands between that station's tower and its first circle -- walk up,
-## take the briefing, and the way to the circles opens. `st` is the station (his
-## livery too, and the tower he steps aside toward) and `t` how far along that
-## stretch the line stands.
-##
-## What keeps the walk in order is not the guards, then, but `_can_enter_tower()`:
-## a station only opens its briefing while the current item belongs to it. Reaching
-## Station 2's door early gets you nothing but the view.
-## Each is a fence of `arc` cells' radius swung right round its station, with the
-## gap on the bearing the walk leaves by, `shift` cells of arc along the curve
-## from it. A fence rather than a line across the walk because every station
-## stands in a corner or at an end of its island, where a line either has nowhere
-## to go or strands a stop on the wrong side of itself -- and because a wall that
-## bows away from the station reads as one from the yard inside it.
-##
-## `offset` nudges the guard within his own gap, and only him: the fence, the gap
-## and the wall that plugs it stay on the bearing, so this is framing rather than
-## geometry. `rest` is where he should step aside to when the gate opens, measured
-## from his post, and it is a wish rather than a decree -- the nearest ground he
-## actually fits on wins, so a spot that has since grown a boulder stands him
-## beside it instead of on it. Both default to zero.
-const BARRICADES := [
-	# Radius picked so the gap lands on the cell the old straight line put him on:
-	# the knight has not moved, the wall around him has curved.
-	{"st": 0, "arc": 8.0, "offset": Vector2(0, -20)},
-	{"st": 1, "arc": 7.0, "offset": Vector2(0, -25)},
-	# TODO: station 3's keep, its knight and its boulders all want another pass. Each
-	# is sitting at a compromise the geometry forced, not at what was wanted:
-	#
-	#   keep     - asked to move 0.03 east to clear the water, got 0.01. The left
-	#              house is off the shore, but only just.
-	#   knight   - wanted down-left of his post, which is the road and then the
-	#              station's signboard, so he stands through the gap instead. Moving
-	#              the signage, or the gap itself (`shift`), is what would free it.
-	#   boulders - `arc 6.0` is the floor that still seals the west shore and the
-	#              ceiling before the fence reaches the Victory Gate. There is no
-	#              room either side of it while the keep stands where it does.
-	#
-	# They are one problem, not three: the keep's x sets the fence's radius, and the
-	# radius plus the signage is what leaves the knight nowhere on his own side. Move
-	# the signboard or re-cut the gap and all three loosen at once.
-	#
-	# This one's radius is not a free choice, and the island growing south is what
-	# made that bite. A fence only gates while both its arms run out of island: the
-	# west arm has to reach the west shore, or it carries on round, crosses the land
-	# bridge the player arrives by, and closes the arc round the station -- gate
-	# between the player and the briefing, circles loose outside it. The shore by the
-	# bridge sits at x 0.548, so the arm reaches it only while
-	#
-	#     arc >= (station x - 0.548) * W
-	#
-	# -- 6.0 cells at x 0.61. Moving the keep further east costs a bigger fence
-	# (0.63 needs 8.0), and by then the arc has swung out over the Victory Gate. That
-	# pair of limits is why the keep moved 0.01 east and not the 0.03 it was offered.
-	# `tools/check_guards.gd` walks the board and fails if this ever stops holding.
-	{"st": 2, "arc": 6.0, "shift": 2.0, "offset": Vector2(0, -10),
-			# Due west of his post is the road, and below that the station's own
-			# signboard, so there is no standing aside on the keep's side of this
-			# gate: he steps out through the gap and holds the north shoulder of it.
-			"rest": Vector2(192, -32)},
-]
-const GUARD_SCALE := 0.9
-## A fence is laid cell by cell round its station, shore to shore. Objects, not
-## terrain -- the old three-tile neck had to be stamped because `_island_index()`
-## gives a shore ten cells wide, and a line of rocks just plugs whatever is there.
-## `ROCK_SCALE` is big enough that neighbouring stones touch even where the curve
-## steps diagonally and their cells are a cell and a half apart: below that the
-## fence reads as scattered pebbles with walls between them.
-const ROCK_SCALE := 1.2
-## The stretch of fence the guard stands in for, as a box round his boots: his
-## shoulders either side, his chest above, and just enough below to keep the cell
-## he stands on. He is base-anchored like everything else here, so all of him is
-## drawn *upward* -- measured evenly round him, the slack landed under his boots,
-## which is the one shape a fence can take that reads as a way through.
-##
-## Against each cell's **middle**, not along the arc. A post sits wherever the
-## bearing puts it inside its own cell, so an arc length that rounded to two cells
-## at one gate rounded to three at the next -- which is how the red knight came to
-## have a stride of bare grass over his head with the wall still in it.
-const GUARD_REACH := Rect2(-35.0, -42.0, 70.0, 59.0)
-## The knight himself, as a box round his boots: about two cells across and two
-## high, base-anchored like everything else. What `_stands_clear()` asks its
-## questions of, and what `tools/check_guards.gd` re-asks them of afterwards.
-const GUARD_BODY := Rect2(-34.0, -64.0, 68.0, 64.0)
-## A boulder's wall, like a building's, is the foot of what you can see and not
-## the cell it was laid on. `Art.sprite()` base-anchors a 64px stone, so the
-## stone is drawn a whole texture-height *above* its cell: a box centred on the
-## cell blocked a tile of open grass below the rock and left the rock's own top
-## walkable -- the bump into nothing the wall gave off. 1.5 cells across so
-## neighbours still overlap however the curve steps, 1.25 down from a quarter
-## cell above the base, which lands inside all four Rock sheets' pixels.
-const ROCK_WALL := Vector2(TILE * 1.5, TILE * 1.25)
-const ROCK_WALL_BASE := TILE * 0.25
-
-## Towers stand beside the path, not on it: their walls are up to 150px wide and
-## would otherwise swallow the next circle along. `_tower_lift()` picks the side.
-const TOWER_LIFT := 56.0
-## A question circle's tower stands at its own doorstep, close enough that the
-## glowing "answer here" ring reads as the tower's entrance. See `_circle_lift()`
-## for why stepping sideways needs more room than stepping up.
-const CIRCLE_LIFT := 26.0
-const CIRCLE_SIDE_LIFT := 40.0
-## How close the play camera sits. 1.0 is the crispest -- the art is never
-## resampled -- but shows only a screenful of a world this size; 0.75 trades a
-## little sharpness for a third more trail in view. Try both on the device.
-const PLAY_ZOOM := 0.75
-
 const DevTools := preload("res://scripts/DevTools.gd")
 
 var main: Control
@@ -279,7 +53,7 @@ var _dev: Control = null        # the cheat drawer, on debug builds only
 ## `_process()` dragging the camera back to the hero while the board is framed.
 var _speed_mult := 1.0
 var _dev_aerial := false
-var _hero_scale := UNIT_SCALE   # live-tunable via [ / ], DevTools.key_step()
+var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable via [ / ], DevTools.key_step()
 
 
 func setup(_data: Dictionary) -> void:
@@ -325,58 +99,61 @@ func _exit_tree() -> void:
 
 # --- Terrain ----------------------------------------------------------------
 func _build_terrain() -> void:
-	water_layer = Art.terrain_layer(WATER_BG, TILE, [Vector2i(0, 0)])
+	water_layer = Art.terrain_layer(MapCfg.WATER_BG, MapCfg.TILE, [Vector2i(0, 0)])
 	world.add_child(water_layer)
-	for gy in H:
-		for gx in W:
+	for gy in MapCfg.WORLD_H:
+		for gx in MapCfg.WORLD_W:
 			water_layer.set_cell(Vector2i(gx, gy), 0, Vector2i(0, 0))
-	grass_layer = Art.terrain_layer(TILEMAP_COLOR, TILE)
+	grass_layer = Art.terrain_layer(MapCfg.TILEMAP_COLOR, MapCfg.TILE)
 	world.add_child(grass_layer)
 	world.set_meta("grass", grass_layer)
-	world.set_meta("tile", TILE)
+	world.set_meta("tile", MapCfg.TILE)
 
 
 # --- Island shapes ----------------------------------------------------------
 ## Normalized map coords to world px, and back to a cell.
 static func _norm(p: Vector2) -> Vector2:
-	return Vector2(p.x * W * TILE, p.y * H * TILE)
+	return Vector2(p.x * MapCfg.WORLD_W * MapCfg.TILE, p.y * MapCfg.WORLD_H * MapCfg.TILE)
 
 
 static func _cell_at(pos: Vector2) -> Vector2i:
-	return Vector2i(floori(pos.x / TILE), floori(pos.y / TILE))
+	return Vector2i(floori(pos.x / MapCfg.TILE), floori(pos.y / MapCfg.TILE))
 
 
 static func _cell_mid(c: Vector2i) -> Vector2:
-	return Vector2(c.x * TILE + TILE / 2, c.y * TILE + TILE / 2)
+	return Vector2(c.x * MapCfg.TILE + MapCfg.TILE / 2, c.y * MapCfg.TILE + MapCfg.TILE / 2)
 
 
 static func _in_bounds(c: Vector2i) -> bool:
-	return c.x >= 0 and c.y >= 0 and c.x < W and c.y < H
+	return c.x >= 0 and c.y >= 0 and c.x < MapCfg.WORLD_W and c.y < MapCfg.WORLD_H
 
 
 ## Which island a cell belongs to, or -1 for open water. The radial wobble is what
 ## keeps the coastlines ragged -- a bare ellipse reads as a pond, not an island.
 func _island_index(cell: Vector2i) -> int:
-	var px := (float(cell.x) + 0.5) / float(W)
-	var py := (float(cell.y) + 0.5) / float(H)
-	for i in ISLANDS.size():
-		var isl: Dictionary = ISLANDS[i]
+	var px := (float(cell.x) + 0.5) / float(MapCfg.WORLD_W)
+	var py := (float(cell.y) + 0.5) / float(MapCfg.WORLD_H)
+	for i in MapCfg.ISLANDS.size():
+		var isl: Dictionary = MapCfg.ISLANDS[i]
 		var c: Vector2 = isl.c
 		var r: Vector2 = isl.r
 		var dx := (px - c.x) / r.x
 		var dy := (py - c.y) / r.y
 		var d := sqrt(dx * dx + dy * dy)
-		if d > 1.3:
+		if d > MapCfg.COAST_REJECT:
 			continue
 		var ang := atan2(dy, dx)
-		if d < 0.86 + 0.11 * sin(ang * 3.0 + float(isl.wobble)) + 0.06 * cos(ang * 5.0 + 0.4):
+		var edge := MapCfg.COAST_BASE \
+				+ MapCfg.COAST_WAVE1.x * sin(ang * MapCfg.COAST_WAVE1.y + float(isl.wobble)) \
+				+ MapCfg.COAST_WAVE2.x * cos(ang * MapCfg.COAST_WAVE2.y + MapCfg.COAST_WAVE2_PHASE)
+		if d < edge:
 			return i
 	return -1
 
 
 func _build_island() -> void:
-	for y in H:
-		for x in W:
+	for y in MapCfg.WORLD_H:
+		for x in MapCfg.WORLD_W:
 			var cell := Vector2i(x, y)
 			var i := _island_index(cell)
 			if i >= 0:
@@ -418,20 +195,20 @@ func _is_walkable(pos: Vector2) -> bool:
 	for r in _solid:
 		if r.has_point(pos):
 			return false
-	var cell := Vector2i(floori(pos.x / TILE), floori(pos.y / TILE))
+	var cell := Vector2i(floori(pos.x / MapCfg.TILE), floori(pos.y / MapCfg.TILE))
 	return grass_layer.get_cell_source_id(cell) != -1
 
 
 ## Nearest land walking inward from a normalized spot, for props that must not
 ## end up in the sea.
 func _first_land(nx: float, ny: float, toward: Vector2) -> Vector2:
-	for tries in 60:
-		var c := Vector2i(floori(nx * W), floori(ny * H))
+	for tries in MapCfg.LAND_SEARCH_TRIES:
+		var c := Vector2i(floori(nx * MapCfg.WORLD_W), floori(ny * MapCfg.WORLD_H))
 		if _land.has(c):
 			return _cell_mid(c)
-		nx = lerpf(nx, toward.x, 0.1)
-		ny = lerpf(ny, toward.y, 0.1)
-	return _norm(ISLANDS[0].c)
+		nx = lerpf(nx, toward.x, MapCfg.LAND_SEARCH_STEP)
+		ny = lerpf(ny, toward.y, MapCfg.LAND_SEARCH_STEP)
+	return _norm(MapCfg.ISLANDS[0].c)
 
 
 # --- The trails -------------------------------------------------------------
@@ -450,7 +227,7 @@ func _stops_on(i: int) -> int:
 	var n: int = int(Game.ITEMS_PER_STATION[i - 1])
 	if i > 1:
 		n += 1                                    # that station's own tower
-	if i == TRAILS.size() - 1:
+	if i == MapCfg.TRAILS.size() - 1:
 		n += 1                                    # victory gate
 	return n
 
@@ -489,8 +266,8 @@ static func _space_along(way: Array, stops: int) -> Array:
 ## unambiguous.
 func _path_anchors() -> Array:
 	var out: Array = []
-	for i in TRAILS.size():
-		out.append_array(_space_along(TRAILS[i], _stops_on(i)))
+	for i in MapCfg.TRAILS.size():
+		out.append_array(_space_along(MapCfg.TRAILS[i], _stops_on(i)))
 	return out
 
 
@@ -500,18 +277,18 @@ func _path_anchors() -> Array:
 ## camp's centre, which is the right answer -- it is the stop nearest the camp.
 func _island_of_anchor(k: int) -> int:
 	var seen := 0
-	for i in TRAILS.size():
+	for i in MapCfg.TRAILS.size():
 		seen += _stops_on(i)
 		if k < seen:
 			return i
-	return TRAILS.size() - 1
+	return MapCfg.TRAILS.size() - 1
 
 
 ## Anchor index of each tower: one before each station's run of circles.
 func _tower_anchors() -> Array:
 	var out: Array = []
 	var k := 1                       # anchor 0 is the base camp
-	for st in 3:
+	for st in Game.ITEMS_PER_STATION.size():
 		out.append(k)
 		k += 1 + Game.ITEMS_PER_STATION[st]
 	return out
@@ -526,11 +303,11 @@ func _tower_lift(k: int) -> Vector2:
 	var b: Vector2 = _anchors[mini(k + 1, _anchors.size() - 1)]
 	var dir := (b - a).normalized()
 	if absf(dir.x) >= absf(dir.y):
-		return Vector2(0, -TOWER_LIFT)
+		return Vector2(0, -MapCfg.TOWER_LIFT)
 	# Outward from its own island's centre -- against the world centre it would
 	# step the middle island's tower into the sea.
-	var mid := _norm(ISLANDS[_island_of_anchor(k)].c)
-	return Vector2(signf(_anchors[k].x - mid.x) * TOWER_LIFT, 0)
+	var mid := _norm(MapCfg.ISLANDS[_island_of_anchor(k)].c)
+	return Vector2(signf(_anchors[k].x - mid.x) * MapCfg.TOWER_LIFT, 0)
 
 
 ## Same direction logic for a question circle's tower, but much closer in: the
@@ -548,26 +325,26 @@ func _circle_lift(k: int) -> Vector2:
 	var b: Vector2 = _anchors[mini(k + 1, _anchors.size() - 1)]
 	var dir := (b - a).normalized()
 	if absf(dir.x) >= absf(dir.y):
-		return Vector2(0, -CIRCLE_LIFT)
-	var mid := _norm(ISLANDS[_island_of_anchor(k)].c)
-	return Vector2(signf(_anchors[k].x - mid.x) * CIRCLE_SIDE_LIFT, 0)
+		return Vector2(0, -MapCfg.CIRCLE_LIFT)
+	var mid := _norm(MapCfg.ISLANDS[_island_of_anchor(k)].c)
+	return Vector2(signf(_anchors[k].x - mid.x) * MapCfg.CIRCLE_SIDE_LIFT, 0)
 
 
 ## The path is authored, the island is generated, so the two can disagree: force
 ## land under the whole walk (three cells wide) before the autotile pass paints
 ## the shoreline, and the board is never cut by a stray inlet.
 func _stamp_path() -> void:
-	for t in TRAILS.size():
-		var way: Array = TRAILS[t]
+	for t in MapCfg.TRAILS.size():
+		var way: Array = MapCfg.TRAILS[t]
 		_stamp_way(way, t, true)
-		if t + 1 >= TRAILS.size():
+		if t + 1 >= MapCfg.TRAILS.size():
 			continue
 		# The hop on to the next trail is walk as well, so it is road for the decor
 		# pass either way. It is only *ground* where that seam is bridged -- on an
 		# unbridged one there would be nothing to walk on, which is what makes a
 		# seam left out of BRIDGED_SEAMS fail loudly rather than quietly.
-		var next: Array = TRAILS[t + 1]
-		_stamp_way([way[way.size() - 1], next[0]], t + 1, BRIDGED_SEAMS.has(t))
+		var next: Array = MapCfg.TRAILS[t + 1]
+		_stamp_way([way[way.size() - 1], next[0]], t + 1, MapCfg.BRIDGED_SEAMS.has(t))
 	# The towers step off the path, so their ground has to be stamped as well or
 	# one ends up standing in the shallows at a bend.
 	_stamp_towers()
@@ -580,12 +357,12 @@ func _stamp_way(way: Array, isl: int, ground: bool) -> void:
 	for i in way.size() - 1:
 		var a := _norm(way[i])
 		var b := _norm(way[i + 1])
-		var steps := maxi(int(a.distance_to(b) / (TILE * 0.5)), 1)
+		var steps := maxi(int(a.distance_to(b) / MapCfg.STAMP_STEP), 1)
 		for k in steps + 1:
 			var pos := a.lerp(b, float(k) / float(steps))
 			var c := _cell_at(pos)
-			for oy in [-1, 0, 1]:
-				for ox in [-1, 0, 1]:
+			for oy: int in MapCfg.STAMP_RING:
+				for ox: int in MapCfg.STAMP_RING:
 					var cc := c + Vector2i(ox, oy)
 					if not _in_bounds(cc):
 						continue
@@ -606,8 +383,8 @@ func _stamp_towers() -> void:
 		var base: Vector2 = _anchors[k] + _tower_lift(k)
 		var bc := _cell_at(base)
 		var isl := _island_of_anchor(k)
-		for oy in range(-2, 2):
-			for ox in range(-2, 3):
+		for oy in range(MapCfg.TOWER_PAD_Y.x, MapCfg.TOWER_PAD_Y.y):
+			for ox in range(MapCfg.TOWER_PAD_X.x, MapCfg.TOWER_PAD_X.y):
 				var cc := bc + Vector2i(ox, oy)
 				if _in_bounds(cc):
 					if not _land.has(cc):
@@ -618,13 +395,13 @@ func _stamp_towers() -> void:
 func _build_path() -> void:
 	var PathCircle := preload("res://scripts/PathCircle.gd")
 	var k := 1                       # anchor 0 is the base camp
-	for st in 3:
+	for st in Game.ITEMS_PER_STATION.size():
 		var meta := QuestionGen.station_meta(st)
 		_make_station(st, _anchors[k], meta.accent, _tower_lift(k))
 		k += 1
 		# Every circle is a tower in its station's livery -- native colors, no
 		# tint -- so size the decor keep-out box off it too.
-		var building: String = CIRCLE_BUILDINGS[st]
+		var building: String = MapCfg.CIRCLE_BUILDINGS[st]
 		var ctex := Art.cell(building, 0, 0)
 		var chw := ctex.region.size.x * 0.5 * PathCircle.TOWER_SCALE
 		var cbh := ctex.region.size.y * PathCircle.TOWER_SCALE
@@ -645,8 +422,8 @@ func _build_path() -> void:
 			w.position += _anchors[k]
 			_solid.append(w)
 			_station_rects.append(Rect2(
-					_anchors[k] + lift - Vector2(chw + TILE * 0.5, cbh),
-					Vector2(chw * 2.0 + TILE, cbh + TILE * 0.5)))
+					_anchors[k] + lift - Vector2(chw + MapCfg.TILE * 0.5, cbh),
+					Vector2(chw * 2.0 + MapCfg.TILE, cbh + MapCfg.TILE * 0.5)))
 			k += 1
 	_build_camp(_anchors[0])
 	_build_gate(_anchors[k])
@@ -659,7 +436,7 @@ func _build_path() -> void:
 func _build_barricades() -> void:
 	_barricades.clear()
 	var towers := _tower_anchors()
-	for spec: Dictionary in BARRICADES:
+	for spec: Dictionary in MapCfg.BARRICADES:
 		var g := _build_barricade(spec, int(towers[int(spec.st)]))
 		_barricades.append(g)
 		_post_guard(g)
@@ -695,7 +472,8 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 	# before `_build_decor()` runs, which is also what makes it the same clear
 	# ground on a restart that has already opened this gate.
 	_station_rects.append(Rect2(g.post as Vector2, Vector2.ZERO).expand(g.stand as Vector2)
-			.grow_individual(TILE * 1.5, TILE * 2.5, TILE * 1.5, TILE * 1.5))
+			.grow_individual(MapCfg.GUARD_CLEARING.x, MapCfg.GUARD_CLEARING.y,
+					MapCfg.GUARD_CLEARING.z, MapCfg.GUARD_CLEARING.w))
 	# Keep the decor pass clear of the rubble on both sides. Touching it is not
 	# enough: a loose boulder alongside the line reads as part of the wall and
 	# walking through that one is the bug it looks like, and one tile is not
@@ -705,7 +483,7 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 		var span: Rect2 = rocks[0]
 		for r in rocks:
 			span = span.merge(r)
-		_station_rects.append(span.grow(TILE * 2.0))
+		_station_rects.append(span.grow(MapCfg.RUBBLE_CLEARING))
 	return g
 
 
@@ -719,15 +497,15 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 ## Each cell's wall is `ROCK_WALL`, wider than its cell, so neighbours overlap
 ## however the curve steps and there is no diagonal slip between two of them.
 func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float) -> void:
-	var r := radius * TILE
+	var r := radius * MapCfg.TILE
 	# The gap sits on the bearing the walk leaves by, give or take `shift` cells of
 	# arc -- clockwise is downward on screen. It is only where the guard stands;
 	# the way out is open wherever it is, since nothing draws the road.
-	var bearing := (b - a).angle() + shift * TILE / r
+	var bearing := (b - a).angle() + shift * MapCfg.TILE / r
 	# Half a cell of arc per step, so the walk round never skips a cell.
-	var da := TILE * 0.5 / r
+	var da := MapCfg.ARC_STEP / r
 	g.post = a + Vector2.from_angle(bearing) * r
-	var stretch := Rect2(GUARD_REACH.position + (g.post as Vector2), GUARD_REACH.size)
+	var stretch := Rect2(MapCfg.GUARD_REACH.position + (g.post as Vector2), MapCfg.GUARD_REACH.size)
 	var seen := {}
 	var wall := Rect2(g.post as Vector2, Vector2.ZERO)
 	for side: float in [1.0, -1.0]:
@@ -758,7 +536,7 @@ func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float
 
 ## A boulder's wall, standing on the boulder. See `ROCK_WALL`.
 func _rock_wall(c: Vector2i) -> Rect2:
-	return Rect2(_cell_mid(c) - Vector2(ROCK_WALL.x * 0.5, ROCK_WALL.y + ROCK_WALL_BASE), ROCK_WALL)
+	return Rect2(_cell_mid(c) - Vector2(MapCfg.ROCK_WALL.x * 0.5, MapCfg.ROCK_WALL.y + MapCfg.ROCK_WALL_BASE), MapCfg.ROCK_WALL)
 
 
 ## One boulder, and the rect that makes it a wall.
@@ -766,8 +544,8 @@ func _lay_rock(g: Dictionary, c: Vector2i, rect: Rect2) -> void:
 	(g.rocks as Array).append(rect)
 	_solid.append(rect)
 	# Round-robin off the cell so the wall is not four of the same stone.
-	Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
-			% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
+	Art.sprite(world, Art.tex(MapCfg.ROCK_SHEET % (1 + posmod(c.x + c.y, MapCfg.ROCK_VARIANTS))),
+			_cell_mid(c), MapCfg.ROCK_SCALE)
 
 
 ## Has this run already earned its way past `g`? One rule: the briefing.
@@ -799,17 +577,17 @@ func _post_guard(g: Dictionary) -> void:
 func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 	var k := AnimatedSprite2D.new()
 	k.sprite_frames = Art.anim_spriteframes({
-		"idle": ["res://assets/units/%s/Warrior_Idle.png" % LIVERY[st], 5.0, true],
-		"walk": ["res://assets/units/%s/Warrior_Run.png" % LIVERY[st], 9.0, true],
+		"idle": [MapCfg.GUARD_IDLE_SHEET % MapCfg.LIVERY[st], MapCfg.GUARD_IDLE_FPS, true],
+		"walk": [MapCfg.GUARD_WALK_SHEET % MapCfg.LIVERY[st], MapCfg.GUARD_WALK_FPS, true],
 	})
 	k.position = at
-	k.scale = Vector2(GUARD_SCALE, GUARD_SCALE)
+	k.scale = Vector2(MapCfg.GUARD_SCALE, MapCfg.GUARD_SCALE)
 	var f: Texture2D = k.sprite_frames.get_frame_texture("idle", 0)
 	if f != null:
 		k.offset = Vector2(0, -f.get_height() * 0.5)
 	k.play("idle")
 	# Over the grass like the outpost guards, who are decoration at the same depth.
-	k.z_index = 1
+	k.z_index = MapCfg.GUARD_Z
 	world.add_child(k)
 	return k
 
@@ -819,7 +597,7 @@ func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 ## The sheets' own direction is east, so a station west of him flips the sprite.
 func _face(g: Dictionary, from: Vector2) -> void:
 	var home: Vector2 = _anchors[_tower_anchors()[int(g.st)]]
-	(g.guard as AnimatedSprite2D).scale.x = GUARD_SCALE * (1.0 if home.x >= from.x else -1.0)
+	(g.guard as AnimatedSprite2D).scale.x = MapCfg.GUARD_SCALE * (1.0 if home.x >= from.x else -1.0)
 
 
 ## Where opening the gate will send him: open ground beside his own station, on
@@ -838,22 +616,22 @@ func _guard_rest(g: Dictionary) -> Vector2:
 	# one that has not rather than planting him in the rubble.
 	var want: Vector2 = g.rest
 	if want != Vector2.ZERO:
-		for c in _rings(_cell_at(post + want), 4):
+		for c in _rings(_cell_at(post + want), int(MapCfg.GUARD_REST_RINGS[0])):
 			var at := _cell_mid(c)
 			if _stands_clear(g, at):
 				return at
 	var inside := post.distance_to(home)
-	for c in _rings(_cell_at(home), 8):
+	for c in _rings(_cell_at(home), int(MapCfg.GUARD_REST_RINGS[1])):
 		var at := _cell_mid(c)
 		if at.distance_to(home) <= inside and _stands_clear(g, at):
 			return at
 	for centre: Vector2 in [home, post]:
-		for c in _rings(_cell_at(centre), 8):
+		for c in _rings(_cell_at(centre), int(MapCfg.GUARD_REST_RINGS[2])):
 			var at := _cell_mid(c)
 			if _stands_clear(g, at):
 				return at
 	# Nothing open at all: at least get out of the gap.
-	return post + (home - post).normalized() * (3.0 * TILE)
+	return post + (home - post).normalized() * MapCfg.GUARD_REST_FALLBACK
 
 
 ## Ground a man his size can stand on: nothing under him, nothing drawn over him.
@@ -863,11 +641,11 @@ func _stands_clear(g: Dictionary, at: Vector2) -> bool:
 	var c := _cell_at(at)
 	if not _is_walkable(at) or _trail.has(c):
 		return false
-	var body := Rect2(GUARD_BODY.position + at, GUARD_BODY.size)
+	var body := Rect2(MapCfg.GUARD_BODY.position + at, MapCfg.GUARD_BODY.size)
 	# The rubble gets his body plus a little below his feet: a boulder's wall is
 	# the stone and stops above the cell it stands on, and the y-sort draws a
 	# stone in the cell below him over his boots.
-	if not _clear_of(body.grow_individual(0.0, 0.0, 0.0, 24.0), g.rocks as Array):
+	if not _clear_of(body.grow_individual(0.0, 0.0, 0.0, MapCfg.GUARD_FOOT_SLACK), g.rocks as Array):
 		return false
 	return _clear_of_signs(body) and _clear_of_buildings(body)
 
@@ -886,10 +664,10 @@ func _open_barricade(g: Dictionary) -> void:
 		return
 	var to: Vector2 = g.stand
 	# Facing the way he is about to go -- the sheets' own direction is east.
-	k.scale.x = GUARD_SCALE * (1.0 if to.x >= k.position.x else -1.0)
+	k.scale.x = MapCfg.GUARD_SCALE * (1.0 if to.x >= k.position.x else -1.0)
 	k.play("walk")
 	var tw := k.create_tween()
-	tw.tween_property(k, "position", to, 1.2).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(k, "position", to, MapCfg.GUARD_STEP_TIME).set_ease(Tween.EASE_IN_OUT)
 	# Arriving, he turns back to face his station, which is where `_post_guard()`
 	# leaves him on a restart. Without this the walk's own direction sticks, and
 	# the same knight faced two ways depending on whether you saw him step aside.
@@ -907,13 +685,14 @@ func _refresh_barricades() -> void:
 
 
 func _build_camp(at: Vector2) -> void:
-	Art.anim_sprite(world, "res://assets/fx/Fire_01.png", at + Vector2(0, -26), 0.7, 9.0)
+	Art.anim_sprite(world, MapCfg.CAMP_FIRE, at + MapCfg.CAMP_FIRE_OFFSET,
+			MapCfg.CAMP_FIRE_SCALE, MapCfg.CAMP_FIRE_FPS)
 	var l := Art.label("BASE CAMP", 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
 	l.position = at + Vector2(-70, -54)
 	l.size = Vector2(140, 20)
 	Art.shadow(l)
 	world.add_child(l)
-	_station_rects.append(Rect2(at - Vector2(48, 60), Vector2(96, 80)))
+	_station_rects.append(Rect2(MapCfg.CAMP_KEEPOUT.position + at, MapCfg.CAMP_KEEPOUT.size))
 
 
 ## The end of the whole player flow: walking up and interacting ends the
@@ -926,15 +705,15 @@ func _build_gate(at: Vector2) -> void:
 	# Same crop-to-bbox, base-anchored pattern as `_make_station`'s tower sprite,
 	# parented to `world` (not `_gate`) so the y-sort places it by where it
 	# actually stands rather than by the gate's own transform.
-	var btex := Art.cell(GATE_BUILDING, 0, 0)
+	var btex := Art.cell(MapCfg.GATE_BUILDING, 0, 0)
 	var bsize := btex.region.size
 	var building := Sprite2D.new()
 	building.texture = btex
-	building.scale = Vector2(BUILDING_SCALE, BUILDING_SCALE)
+	building.scale = Vector2(MapCfg.BUILDING_SCALE, MapCfg.BUILDING_SCALE)
 	building.position = at
 	building.offset = Vector2(0, -bsize.y * 0.5)
 	world.add_child(building)
-	var bh := bsize.y * BUILDING_SCALE
+	var bh := bsize.y * MapCfg.BUILDING_SCALE
 	var rib := Art.cell("res://assets/ui/BigRibbons.png", 0, 1)
 	var spr := Sprite2D.new()
 	spr.texture = rib
@@ -947,10 +726,10 @@ func _build_gate(at: Vector2) -> void:
 	l.size = Vector2(160, 20)
 	Art.shadow(l)
 	_gate.add_child(l)
-	var hw := bsize.x * 0.5 * BUILDING_SCALE
+	var hw := bsize.x * 0.5 * MapCfg.BUILDING_SCALE
 	_station_rects.append(Rect2(
-			Vector2(at.x - (hw + TILE), at.y - (bh + TILE)),
-			Vector2(hw * 2.0 + TILE * 2.0, bh + TILE * 2.0)))
+			Vector2(at.x - (hw + MapCfg.TILE), at.y - (bh + MapCfg.TILE)),
+			Vector2(hw * 2.0 + MapCfg.TILE * 2.0, bh + MapCfg.TILE * 2.0)))
 
 
 # --- Decorations ------------------------------------------------------------
@@ -966,33 +745,31 @@ func _build_gate(at: Vector2) -> void:
 ## nothing to be gained from a different mess each time; there is a lot to be lost.
 func _build_decor() -> void:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 90210
-	for isl in ISLAND_PROPS.size():
-		var mix: Dictionary = ISLAND_PROPS[isl]
+	rng.seed = MapCfg.DECOR_SEED
+	for isl in MapCfg.ISLAND_PROPS.size():
+		var mix: Dictionary = MapCfg.ISLAND_PROPS[isl]
 		var placed := 0
 		var tries := 0
-		while placed < int(mix.count) and tries < int(mix.count) * 60:
+		while placed < int(mix.count) and tries < int(mix.count) * MapCfg.DECOR_TRIES:
 			tries += 1
-			var c := Vector2i(rng.randi_range(1, W - 2), rng.randi_range(1, H - 2))
+			var c := Vector2i(rng.randi_range(1, MapCfg.WORLD_W - 2), rng.randi_range(1, MapCfg.WORLD_H - 2))
 			if not _plantable(c, isl):
 				continue
 			placed += _plant_patch(rng, c, _roll_kind(rng, mix), isl)
 		for _k in int(mix.sheep):
 			world.add_child(_sheep_at(rng, isl))
 	# Animated rocks in the water off each island, to break up the open sea.
-	for isl in ISLANDS.size():
-		var c: Vector2 = ISLANDS[isl].c
-		var r: Vector2 = ISLANDS[isl].r
+	for isl in MapCfg.ISLANDS.size():
+		var c: Vector2 = MapCfg.ISLANDS[isl].c
+		var r: Vector2 = MapCfg.ISLANDS[isl].r
 		for side in [-1.0, 1.0]:
-			var wrp := _norm(Vector2(c.x + side * (r.x + 0.035), c.y + 0.04))
+			var wrp := _norm(Vector2(c.x + side * (r.x + MapCfg.WATER_ROCK_OUT),
+					c.y + MapCfg.WATER_ROCK_DOWN))
 			if _in_bounds(_cell_at(wrp)) and not _is_walkable(wrp):
-				Art.anim_sprite(world, "res://assets/terrain/decorations/Water Rocks_0%d.png" % rng.randi_range(1, 4),
-						wrp, 1.4, 4.0)
+				Art.anim_sprite(world, MapCfg.WATER_ROCK_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS),
+						wrp, MapCfg.WATER_ROCK_SCALE, MapCfg.WATER_ROCK_FPS)
 
 
-## How many of a kind stand together at most. A wood is a wood, a rock field is a
-## handful of stones, and loot is a single thing someone dropped.
-const PATCH := {"tree": 6, "stump": 3, "rock": 4, "loot": 1}
 
 
 ## The same weighted roll as before, but for the patch rather than for one prop.
@@ -1024,14 +801,14 @@ func _plantable(c: Vector2i, isl: int) -> bool:
 ## how many actually took. The skipped cells are the point: a patch with no holes
 ## in it reads as a hedge, not as a wood.
 func _plant_patch(rng: RandomNumberGenerator, c: Vector2i, kind: String, isl: int) -> int:
-	var want := rng.randi_range(1, int(PATCH[kind]))
+	var want := rng.randi_range(1, int(MapCfg.PATCH[kind]))
 	var n := 0
-	for cc in _rings(c, 2):
+	for cc in _rings(c, MapCfg.PATCH_RADIUS):
 		if n >= want:
 			break
 		if not _plantable(cc, isl):
 			continue
-		if cc != c and rng.randf() < 0.45:
+		if cc != c and rng.randf() < MapCfg.PATCH_HOLE:
 			continue
 		_taken[cc] = true
 		_plant(rng, cc, kind)
@@ -1055,45 +832,43 @@ func _plant(rng: RandomNumberGenerator, c: Vector2i, kind: String) -> void:
 	var p := _cell_mid(c)
 	match kind:
 		"tree":
-			var fl := 1.0 if rng.randf() < 0.9 else -1.0
-			Art.anim_sprite(world, "res://assets/terrain/decorations/Tree%d.png"
-					% rng.randi_range(1, 4), p, 0.42, 3.0, fl)
+			var fl := 1.0 if rng.randf() < MapCfg.TREE_FLIP else -1.0
+			Art.anim_sprite(world, MapCfg.TREE_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS),
+					p, MapCfg.TREE_SCALE, MapCfg.TREE_FPS, fl)
 		"stump":
-			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Stump %d.png"
-					% rng.randi_range(1, 4)), p, 0.4)
+			Art.sprite(world, Art.tex(MapCfg.STUMP_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS)),
+					p, MapCfg.STUMP_SCALE)
 		"rock":
-			Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
-					% rng.randi_range(1, 4)), p, 1.4)
+			Art.sprite(world, Art.tex(MapCfg.ROCK_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS)),
+					p, MapCfg.ROCK_DECOR_SCALE)
 		_:
-			var loot := [
-				"res://assets/terrain/resources/Gold_Resource.png",
-				"res://assets/terrain/resources/Wood Resource.png",
-				"res://assets/terrain/resources/Meat Resource.png",
-				"res://assets/terrain/resources/Tool_0%d.png" % rng.randi_range(1, 4),
-			]
-			Art.sprite(world, Art.tex(loot[rng.randi_range(0, loot.size() - 1)]), p, 0.5)
+			var loot := (MapCfg.LOOT_SHEETS as Array).duplicate()
+			loot[-1] = str(loot[-1]) % rng.randi_range(1, MapCfg.DECOR_VARIANTS)
+			Art.sprite(world, Art.tex(loot[rng.randi_range(0, loot.size() - 1)]),
+					p, MapCfg.LOOT_SCALE)
 
 
 func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 	var sheep := Node2D.new()
 	var spr := AnimatedSprite2D.new()
 	spr.sprite_frames = Art.anim_spriteframes({
-		"idle": ["res://assets/terrain/resources/Sheep_Idle.png", 5.0, true],
-		"walk": ["res://assets/terrain/resources/Sheep_Move.png", 7.0, true],
+		"idle": [MapCfg.SHEEP_IDLE, MapCfg.SHEEP_IDLE_FPS, true],
+		"walk": [MapCfg.SHEEP_WALK, MapCfg.SHEEP_WALK_FPS, true],
 	})
-	spr.scale = Vector2(0.9, 0.9)
+	spr.scale = Vector2(MapCfg.SHEEP_SCALE, MapCfg.SHEEP_SCALE)
 	sheep.add_child(spr)
 	var shadow := Sprite2D.new()
-	shadow.texture = Art.tex("res://assets/terrain/tileset/Shadow.png")
-	shadow.scale = Vector2(0.5, 0.5)
-	shadow.modulate.a = 0.5
+	shadow.texture = Art.tex(MapCfg.SHADOW_SHEET)
+	shadow.scale = Vector2(MapCfg.SHEEP_SHADOW_SCALE, MapCfg.SHEEP_SHADOW_SCALE)
+	shadow.modulate.a = MapCfg.SHEEP_SHADOW_ALPHA
 	sheep.add_child(shadow)
 	sheep.set_script(preload("res://scripts/Wander.gd"))
-	var c: Vector2 = ISLANDS[isl].c
-	var r: Vector2 = ISLANDS[isl].r
+	var c: Vector2 = MapCfg.ISLANDS[isl].c
+	var r: Vector2 = MapCfg.ISLANDS[isl].r
+	var spread := MapCfg.SHEEP_SPREAD
 	sheep.position = _first_land(
-			c.x + rng.randf_range(-0.45, 0.45) * r.x,
-			c.y + rng.randf_range(-0.45, 0.45) * r.y, c)
+			c.x + rng.randf_range(-spread, spread) * r.x,
+			c.y + rng.randf_range(-spread, spread) * r.y, c)
 	return sheep
 
 
@@ -1108,7 +883,7 @@ func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 ## perfectly well stand there.
 func _clear_of_buildings(r: Rect2) -> bool:
 	for b in _station_rects:
-		var box := (b as Rect2).grow(-TILE)
+		var box := (b as Rect2).grow(-MapCfg.TILE)
 		# A box that was only the margin has nothing left to stand clear of, and
 		# Rect2 will not take a negative size.
 		if box.size.x > 0.0 and box.size.y > 0.0 and box.intersects(r):
@@ -1128,7 +903,7 @@ static func _clear_of(r: Rect2, boxes: Array) -> bool:
 
 
 func _near_station(c: Vector2i) -> bool:
-	var p := Vector2(c.x * TILE + TILE / 2, c.y * TILE + TILE / 2)
+	var p := Vector2(c.x * MapCfg.TILE + MapCfg.TILE / 2, c.y * MapCfg.TILE + MapCfg.TILE / 2)
 	for r in _station_rects:
 		if (r as Rect2).has_point(p):
 			return true
@@ -1146,31 +921,32 @@ var _sign_rects: Array[Rect2] = []
 ## A station is a small outpost, not a lone building: its keep, two houses of the
 ## same livery, and a pair of idle guards. The signage is untouched -- `Station N`
 ## plus the topic line, the client's wording.
-func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOWER_LIFT)) -> void:
+func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -MapCfg.TOWER_LIFT)) -> void:
 	var st := Node2D.new()
 	st.position = at
 	world.add_child(st)
 	# `Art.cell(path, 0, 0)` crops to the alpha bounding box -- every building
 	# PNG carries 20-60px of transparent padding, and an uncropped sprite would
 	# hang above the grass. Anchored at its base like the decor.
-	var btex := Art.cell(BUILDINGS[i], 0, 0)
+	var btex := Art.cell(MapCfg.BUILDINGS[i], 0, 0)
 	var bsize := btex.region.size
 	# Lifted off the path and parented to the world, so the y-sort places it by
 	# where it actually stands rather than by the doorstep on the path.
 	var building := Sprite2D.new()
 	building.texture = btex
-	building.scale = Vector2(BUILDING_SCALE, BUILDING_SCALE)
+	building.scale = Vector2(MapCfg.BUILDING_SCALE, MapCfg.BUILDING_SCALE)
 	building.position = at + lift
 	building.offset = Vector2(0, -bsize.y * 0.5)
 	world.add_child(building)
-	var hw := bsize.x * 0.5 * BUILDING_SCALE
-	var bh := bsize.y * BUILDING_SCALE
+	var hw := bsize.x * 0.5 * MapCfg.BUILDING_SCALE
+	var bh := bsize.y * MapCfg.BUILDING_SCALE
 	# Only the walls standing on the ground, not the whole sprite: the roof is
 	# walkable so the player can pass behind, which is what the y-sort expects.
 	# `has_point` excludes the bottom edge, so the doorstep row the station node
 	# sits on stays open and `INTERACT_RADIUS` is always reachable.
 	var base := at + lift
-	var wall := Rect2(base.x - hw, base.y - bh * 0.45, hw * 2.0, bh * 0.45)
+	var wall := Rect2(base.x - hw, base.y - bh * MapCfg.WALL_HEIGHT_FRAC,
+			hw * 2.0, bh * MapCfg.WALL_HEIGHT_FRAC)
 	_solid.append(wall)
 	# The test reads the wall off the station itself: the outpost's houses append
 	# walls too, so `_solid[i]` is no longer "station i".
@@ -1178,8 +954,8 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOW
 	_build_outpost(i, base, hw)
 	# Keep decor off the building itself, plus a tile of breathing room.
 	_station_rects.append(Rect2(
-			Vector2(base.x - (hw + TILE), base.y - (bh + TILE)),
-			Vector2(hw * 2.0 + TILE * 2.0, bh + TILE * 2.0)))
+			Vector2(base.x - (hw + MapCfg.TILE), base.y - (bh + MapCfg.TILE)),
+			Vector2(hw * 2.0 + MapCfg.TILE * 2.0, bh + MapCfg.TILE * 2.0)))
 	# ...and off the signage below it, which is wider than any of the buildings
 	# and was getting a tree planted through the middle of the topic line.
 	# Signage over the doorway rather than over the roof. Above the roof the
@@ -1192,18 +968,18 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOW
 	# A keep that stepped sideways rather than up is the exception: its houses sit
 	# at the doorstep's own height and print themselves across the line. Below the
 	# outpost is the clear ground there -- past the guards, who stand 30px down.
-	var sign_y := -30.0 if lift.y < 0.0 else 46.0
-	var sign_box := Rect2(at + Vector2(-100.0, sign_y), Vector2(200.0, 44.0))
+	var sign_y := MapCfg.SIGN_Y_UP if lift.y < 0.0 else MapCfg.SIGN_Y_DOWN
+	var sign_box := Rect2(at + Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y), MapCfg.SIGN_BOX)
 	_station_rects.append(sign_box)
 	_sign_rects.append(sign_box)
 	var title := Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-	title.position = Vector2(-100, sign_y)
-	title.size = Vector2(200, 20)
+	title.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y)
+	title.size = Vector2(MapCfg.SIGN_BOX.x, 20)
 	st.add_child(title)
 	_station_locks.append(title)
 	var topic := Art.label(QuestionGen.station_meta(i).short, 11, Color(1, 1, 1, 0.92), HORIZONTAL_ALIGNMENT_CENTER)
-	topic.position = Vector2(-100, sign_y + 18.0)
-	topic.size = Vector2(200, 16)
+	topic.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y + MapCfg.SIGN_LINE_GAP)
+	topic.size = Vector2(MapCfg.SIGN_BOX.x, 16)
 	st.add_child(topic)
 	# Both sit over grass and roof, so they need the same shadow the map prompts
 	# use to stay readable.
@@ -1212,14 +988,12 @@ func _make_station(i: int, at: Vector2, _accent: String, lift := Vector2(0, -TOW
 	_station_nodes.append(st)
 
 
-## The keep's livery, for the houses and the guards that flank it.
-const LIVERY := ["Blue", "Yellow", "Red"]
 
 
 ## Nothing the player has to stand on may end up inside a wall. The disc's own
 ## radius plus a margin, against every stop on the board.
 func _clear_of_anchors(rect: Rect2) -> bool:
-	var r := rect.grow(20.0)
+	var r := rect.grow(MapCfg.ANCHOR_CLEARANCE)
 	for a in _anchors:
 		if r.has_point(a):
 			return false
@@ -1230,24 +1004,25 @@ func _clear_of_anchors(rect: Rect2) -> bool:
 ## real walls; guards are decoration and stay walk-through, so they can stand near
 ## the path without blocking the trail.
 func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
-	var col: String = LIVERY[i]
+	var col: String = MapCfg.LIVERY[i]
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 4400 + i
+	rng.seed = MapCfg.OUTPOST_SEED + i
 	for side in [-1.0, 1.0]:
-		var path := "res://assets/buildings/%s_House%d.png" % [col, rng.randi_range(1, 3)]
+		var path := MapCfg.HOUSE_SHEET % [col, rng.randi_range(1, MapCfg.HOUSE_VARIANTS)]
 		var tex := Art.cell(path, 0, 0)
 		var size := tex.region.size
-		var hw := size.x * 0.5 * BUILDING_SCALE
-		var bh := size.y * BUILDING_SCALE
+		var hw := size.x * 0.5 * MapCfg.BUILDING_SCALE
+		var bh := size.y * MapCfg.BUILDING_SCALE
 		# A wide keep plus a house can reach the next circle 200px along, so the
 		# house steps further out until its footprint is clear of every anchor --
 		# and is dropped rather than built if the island never gives it room.
 		var at := Vector2.ZERO
 		var wall := Rect2()
 		var ok := false
-		for push in [0.0, 30.0, 60.0, 90.0]:
-			at = base + Vector2(side * (keep_hw + hw + 14.0 + push), 14.0)
-			wall = Rect2(at.x - hw, at.y - bh * 0.4, hw * 2.0, bh * 0.4)
+		for push: float in MapCfg.HOUSE_PUSH:
+			at = base + Vector2(side * (keep_hw + hw + MapCfg.HOUSE_GAP + push), MapCfg.HOUSE_DROP)
+			wall = Rect2(at.x - hw, at.y - bh * MapCfg.HOUSE_WALL_FRAC,
+					hw * 2.0, bh * MapCfg.HOUSE_WALL_FRAC)
 			if _clear_of_anchors(wall) and _land.has(_cell_at(at)):
 				ok = true
 				break
@@ -1255,36 +1030,37 @@ func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
 			continue
 		var spr := Sprite2D.new()
 		spr.texture = tex
-		spr.scale = Vector2(BUILDING_SCALE, BUILDING_SCALE)
+		spr.scale = Vector2(MapCfg.BUILDING_SCALE, MapCfg.BUILDING_SCALE)
 		spr.position = at
 		spr.offset = Vector2(0, -size.y * 0.5)
 		world.add_child(spr)
 		_solid.append(wall)
 		_station_rects.append(Rect2(
-				Vector2(at.x - (hw + TILE), at.y - (bh + TILE)),
-				Vector2(hw * 2.0 + TILE * 2.0, bh + TILE * 2.0)))
+				Vector2(at.x - (hw + MapCfg.TILE), at.y - (bh + MapCfg.TILE)),
+				Vector2(hw * 2.0 + MapCfg.TILE * 2.0, bh + MapCfg.TILE * 2.0)))
 	# Idle guards: the unit sheets are 8-frame strips with transparent gutters, so
 	# `Art.anim_sprite` slices them the same way it slices the swaying trees.
-	for spec in [["Pawn_Idle", -keep_hw - 6.0], ["Warrior_Idle", keep_hw + 6.0]]:
-		var g := Art.anim_sprite(world, "res://assets/units/%s/%s.png" % [col, spec[0]],
-				base + Vector2(float(spec[1]), 30.0), 0.3, 6.0,
-				1.0 if float(spec[1]) > 0.0 else -1.0)
-		g.z_index = 1
+	for n in MapCfg.DOOR_GUARDS.size():
+		var dx := (keep_hw + MapCfg.DOOR_GUARD_GAP) * (-1.0 if n == 0 else 1.0)
+		var g := Art.anim_sprite(world, MapCfg.UNIT_SHEET % [col, MapCfg.DOOR_GUARDS[n]],
+				base + Vector2(dx, MapCfg.DOOR_GUARD_DROP),
+				MapCfg.DOOR_GUARD_SCALE, MapCfg.DOOR_GUARD_FPS, signf(dx))
+		g.z_index = MapCfg.GUARD_Z
 
 
 func _spawn_player() -> void:
 	player = Node2D.new()
 	player.position = _anchors[0]
 	var shade := Sprite2D.new()
-	shade.texture = Art.tex("res://assets/terrain/tileset/Shadow.png")
-	shade.scale = Vector2(0.3, 0.3)
-	shade.modulate.a = 0.55
-	shade.position = Vector2(0, 2)
+	shade.texture = Art.tex(MapCfg.SHADOW_SHEET)
+	shade.scale = Vector2(MapCfg.HERO_SHADOW_SCALE, MapCfg.HERO_SHADOW_SCALE)
+	shade.modulate.a = MapCfg.HERO_SHADOW_ALPHA
+	shade.position = MapCfg.HERO_SHADOW_OFFSET
 	player.add_child(shade)
 	var spr := AnimatedSprite2D.new()
 	spr.name = "Spr"
 	spr.scale = Vector2(_hero_scale, _hero_scale)
-	spr.offset = Vector2(0, -10)   # 20px frame, so this puts the feet on the ground
+	spr.offset = MapCfg.HERO_FOOT_OFFSET
 	spr.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id))
 	spr.play("down")
 	spr.pause()
@@ -1292,25 +1068,26 @@ func _spawn_player() -> void:
 	# "There is something here you can actually do." Clears the hero's head: the
 	# 20px frame sits at `offset` -10 and scales by `_hero_scale`. Bobs so it
 	# catches the eye without a marker on the ground under it.
-	_bang = Art.label("!", 16, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-	_bang.position = Vector2(-20, -20.0 * _hero_scale - 24.0)
-	_bang.size = Vector2(40, 20)
+	_bang = Art.label("!", 16, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	_bang.position = Vector2(-MapCfg.BANG_BOX.x * 0.5,
+			-MapCfg.HERO_FRAME_H * _hero_scale - MapCfg.BANG_CLEARANCE)
+	_bang.size = MapCfg.BANG_BOX
 	_bang.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_bang.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bang.visible = false
 	Art.shadow(_bang)
 	player.add_child(_bang)
 	var bob := _bang.create_tween().set_loops()
-	bob.tween_property(_bang, "position:y", _bang.position.y - 4.0, 0.45) \
-			.set_trans(Tween.TRANS_SINE)
-	bob.tween_property(_bang, "position:y", _bang.position.y, 0.45) \
-			.set_trans(Tween.TRANS_SINE)
+	bob.tween_property(_bang, "position:y", _bang.position.y - MapCfg.BANG_BOB,
+			MapCfg.BANG_BOB_TIME).set_trans(Tween.TRANS_SINE)
+	bob.tween_property(_bang, "position:y", _bang.position.y,
+			MapCfg.BANG_BOB_TIME).set_trans(Tween.TRANS_SINE)
 	world.add_child(player)
 	# On the world, not the hero: the aerial POV has to frame the whole board
 	# before it swoops down to him.
 	_cam = Camera2D.new()
 	_cam.position_smoothing_enabled = true
-	_cam.position_smoothing_speed = 6.0
+	_cam.position_smoothing_speed = MapCfg.CAM_SMOOTH
 	_cam.position = player.position
 	world.add_child(_cam)
 	_clamp_cam(true)
@@ -1320,16 +1097,17 @@ func _spawn_player() -> void:
 ## than the limits does not get letterboxed -- it gets shoved off-centre, so the
 ## whole-board view has to run unclamped.
 func _clamp_cam(on: bool) -> void:
-	_cam.limit_left = 0 if on else -1000000
-	_cam.limit_top = 0 if on else -1000000
-	_cam.limit_right = W * TILE if on else 1000000
-	_cam.limit_bottom = H * TILE if on else 1000000
+	_cam.limit_left = 0 if on else -MapCfg.CAM_UNCLAMPED
+	_cam.limit_top = 0 if on else -MapCfg.CAM_UNCLAMPED
+	_cam.limit_right = MapCfg.WORLD_W * MapCfg.TILE if on else MapCfg.CAM_UNCLAMPED
+	_cam.limit_bottom = MapCfg.WORLD_H * MapCfg.TILE if on else MapCfg.CAM_UNCLAMPED
 
 
 ## Frames the whole board. Computed, not a constant: the old 0.46 framed a
 ## 1408x960 world and would show a corner of this one.
 static func _aerial_zoom() -> float:
-	return minf(640.0 / float(W * TILE), 360.0 / float(H * TILE))
+	return minf(Pal.CANVAS.x / float(MapCfg.WORLD_W * MapCfg.TILE),
+			Pal.CANVAS.y / float(MapCfg.WORLD_H * MapCfg.TILE))
 
 
 # --- Pre-start aerial POV ---------------------------------------------------
@@ -1349,7 +1127,7 @@ func _start_intro() -> void:
 	_clamp_cam(false)
 	var z := _aerial_zoom()
 	_cam.zoom = Vector2(z, z)
-	_cam.position = Vector2(W * TILE * 0.5, H * TILE * 0.5)
+	_cam.position = Vector2(MapCfg.WORLD_W * MapCfg.TILE * 0.5, MapCfg.WORLD_H * MapCfg.TILE * 0.5)
 	_prompt.text = "Scouting the board..."
 	# The controls crib goes with the joystick -- there is nothing to drive yet.
 	if _hint_bar != null:
@@ -1371,8 +1149,8 @@ func _swoop() -> void:
 	_prompt.text = ""
 	_intro_tw = create_tween()
 	_intro_tw.set_parallel(true)
-	_intro_tw.tween_property(_cam, "zoom", Vector2(PLAY_ZOOM, PLAY_ZOOM), 0.9).set_ease(Tween.EASE_IN_OUT)
-	_intro_tw.tween_property(_cam, "position", player.position, 0.9).set_ease(Tween.EASE_IN_OUT)
+	_intro_tw.tween_property(_cam, "zoom", Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM), MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
+	_intro_tw.tween_property(_cam, "position", player.position, MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
 	_intro_tw.chain().tween_callback(skip_intro)
 
 
@@ -1395,7 +1173,7 @@ func skip_intro() -> void:
 		_hint_bar.visible = true
 	_frozen = false
 	Game.clock_paused = false
-	_cam.zoom = Vector2(PLAY_ZOOM, PLAY_ZOOM)
+	_cam.zoom = Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM)
 	_clamp_cam(true)
 	_cam.position = player.position
 	_cam.position_smoothing_enabled = true
@@ -1429,7 +1207,7 @@ func _process(delta: float) -> void:
 		# One axis at a time, so a diagonal into a wall slides along it rather
 		# than stopping dead. Buildings only became real walls once the
 		# footprint stopped being rounded to tile centres.
-		var step := dir * PLAYER_SPEED * _speed_mult * delta
+		var step := dir * MapCfg.PLAYER_SPEED * _speed_mult * delta
 		player.position.x += step.x
 		if not _is_walkable(player.position):
 			player.position.x -= step.x
@@ -1467,7 +1245,7 @@ func _can_enter_gate() -> bool:
 ## Index of the nearest node in `nodes` within reach, or -1.
 func _nearest_of(nodes: Array) -> int:
 	var best := -1
-	var best_d := INTERACT_RADIUS
+	var best_d := MapCfg.INTERACT_RADIUS
 	for i in nodes.size():
 		var n: Node2D = nodes[i]
 		if n == null:
@@ -1486,7 +1264,7 @@ func _nearest_of(nodes: Array) -> int:
 ## centred on a sideways-lifted tower would only catch ~25px of that walk.
 func _nearest_target() -> Dictionary:
 	var best := {}
-	var best_d := INTERACT_RADIUS
+	var best_d := MapCfg.INTERACT_RADIUS
 	for pair in [["tower", _station_nodes], ["circle", _circles], ["gate", [_gate]]]:
 		var nodes: Array = pair[1]
 		for i in nodes.size():
@@ -1585,7 +1363,7 @@ func _nudge_hero_scale(delta: float) -> void:
 	_hero_scale = clampf(_hero_scale + delta, 0.5, 3.0)
 	var spr: AnimatedSprite2D = player.get_node("Spr")
 	spr.scale = Vector2(_hero_scale, _hero_scale)
-	_flash_tip("Hero scale: %.1f  (was UNIT_SCALE = %.1f)" % [_hero_scale, UNIT_SCALE])
+	_flash_tip("Hero scale: %.1f  (was MapCfg.UNIT_SCALE = %.1f)" % [_hero_scale, MapCfg.UNIT_SCALE])
 
 
 ## Tap-to-inspect. `self` is a canvas item under the camera, so the viewport's
@@ -1597,7 +1375,7 @@ func _nudge_hero_scale(delta: float) -> void:
 func _tap_at(screen_pos: Vector2) -> void:
 	var at: Vector2 = get_viewport().get_canvas_transform().affine_inverse() * screen_pos
 	var best := -1
-	var best_d := TOWER_TAP_REACH + 14.0 / maxf(_cam.zoom.x, 0.01)
+	var best_d := MapCfg.TOWER_TAP_REACH + 14.0 / maxf(_cam.zoom.x, 0.01)
 	for n in _circles.size():
 		var c := _circles[n] as Node2D
 		var d: float = (c.get_meta("tower_mid", c.position) as Vector2).distance_to(at)
@@ -1640,7 +1418,7 @@ func _show_circle_card(n: int) -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 10)
 	box.add_child(row)
-	if _can_answer(n) and (_circles[n] as Node2D).position.distance_to(player.position) < INTERACT_RADIUS:
+	if _can_answer(n) and (_circles[n] as Node2D).position.distance_to(player.position) < MapCfg.INTERACT_RADIUS:
 		var go := Ui.button("Answer Quest!", 170, 44, Ui.RED)
 		go.pressed.connect(func() -> void:
 			_close_card()
@@ -1700,7 +1478,7 @@ func _try_answer_circle() -> void:
 
 
 func _try_enter_gate() -> void:
-	if _gate == null or _gate.position.distance_to(player.position) >= INTERACT_RADIUS:
+	if _gate == null or _gate.position.distance_to(player.position) >= MapCfg.INTERACT_RADIUS:
 		return
 	if not _can_enter_gate():
 		_flash_tip("Conquer all %d circles first!" % Game.TOTAL_ITEMS)
@@ -1911,7 +1689,7 @@ func _refresh_hud() -> void:
 		_hud_station.text = "Station %d · %d/%d" % [st + 1,
 				Game.item_in_station(Game.items_done), Game.ITEMS_PER_STATION[st]]
 	var marks := ""
-	for i in 3:
+	for i in Game.ITEMS_PER_STATION.size():
 		marks += ["✓", "★", "—"][ 0 if Game.completed_stations[i] else (1 if Game.perfect_stations[i] else 2) ] + " "
 	_hud_pips.text = marks.strip_edges()
 	# Label the boards on the map itself, otherwise all three look identical.

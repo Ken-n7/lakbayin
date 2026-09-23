@@ -44,7 +44,7 @@ func _initialize() -> void:
 		# His body plus a little below his boots, the same slack `_stands_clear()`
 		# gives the rubble: the y-sort draws a stone in the cell below him over his
 		# feet, which reads as standing in the wall even when he is a cell clear.
-		var body := Rect2(_s.GUARD_BODY.position + at, _s.GUARD_BODY.size)
+		var body := Rect2(MapCfg.GUARD_BODY.position + at, MapCfg.GUARD_BODY.size)
 		var why := ""
 		if not _s._clear_of(body.grow_individual(0.0, 0.0, 0.0, 24.0), g.rocks as Array):
 			why = "rests on its own fence"

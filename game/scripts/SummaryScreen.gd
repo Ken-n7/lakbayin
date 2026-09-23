@@ -45,7 +45,7 @@ func _build() -> void:
 	box.add_child(line)
 
 	var stations := ""
-	for i in 3:
+	for i in Game.ITEMS_PER_STATION.size():
 		var done: bool = (result.get("completed", [false, false, false]) as Array)[i]
 		var perfect: bool = (result.get("perfect", [false, false, false]) as Array)[i]
 		var mark := "✗" if not done else ("★" if perfect else "✓")
