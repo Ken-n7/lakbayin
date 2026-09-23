@@ -207,6 +207,10 @@ func _run() -> void:
 	name_field.text = "E2E Hero"
 	_find_button_tooltip(hero, "Adventurer #12").pressed.emit()
 	_click(hero, "Begin Adventure")
+	await _wait(3)
+	# Hero select hands off to the team name, which is what begins the run.
+	_screen()._team.text = "Test Team"
+	_click(_screen(), "Ready!")
 	await _wait(4)
 
 	print("== 3. adventure map ==")
@@ -424,6 +428,10 @@ func _run() -> void:
 	# re-pick after the screen was recreated (Back discarded the locals)
 	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
 	_click(hero, "Begin Adventure")
+	await _wait(3)
+	# Hero select hands off to the team name, which is what begins the run.
+	_screen()._team.text = "Test Team"
+	_click(_screen(), "Ready!")
 	await _wait(4)
 	check("reached adventure (hero 7)", _screen().has_method("_try_enter_station"))
 	check("hero 7 persisted", Game.hero_id == 7, str(Game.hero_id))

@@ -50,7 +50,7 @@ func setup(_data: Dictionary) -> void:
 	right.custom_minimum_size = Vector2(260, 0)
 	cols.add_child(right)
 	right.add_child(Art.label("Teams", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER))
-	var scroll := Ui.scroll(right, 130)
+	var scroll := Ui.scroll(right, 110)
 	_teams_box = VBoxContainer.new()
 	_teams_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_teams_box)
@@ -72,20 +72,27 @@ func setup(_data: Dictionary) -> void:
 
 func _build_duration(col: VBoxContainer) -> void:
 	col.add_child(Art.label("Set Adventure Duration", Pal.H2, Pal.TITLE))
+	# Each pair sits under its own caption. Unlabelled, the row read
+	# "- + 0 hr 10 min - +" and gave no clue which pair moved which number.
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
+	for spec in [["hr", 1, 0], ["min", 0, 5]]:
+		var group := VBoxContainer.new()
+		group.add_theme_constant_override("separation", 2)
+		group.add_child(Art.label(spec[0], Pal.TINY, Pal.INK_MUTED,
+				HORIZONTAL_ALIGNMENT_CENTER))
+		var pair := HBoxContainer.new()
+		pair.add_theme_constant_override("separation", 2)
+		var dh: int = spec[1]
+		var dm: int = spec[2]
+		for sign in [-1, 1]:
+			var b := Ui.button("−" if sign < 0 else "+", Ui.H, Ui.H, Ui.SMALL)
+			b.pressed.connect(func() -> void: _bump(dh * sign, dm * sign))
+			pair.add_child(b)
+		group.add_child(pair)
+		row.add_child(group)
 	_time_label = Art.label("", Pal.BODY, Pal.INK)
-	for spec in [["−", -1, 0], ["+", 1, 0]]:
-		var b := Ui.button(spec[0], Ui.H, Ui.H, Ui.SMALL)
-		var step: int = spec[1]
-		b.pressed.connect(func() -> void: _bump(step, 0))
-		row.add_child(b)
 	row.add_child(_time_label)
-	for spec2 in [["−", 0, -5], ["+", 0, 5]]:
-		var b2 := Ui.button(spec2[0], Ui.H, Ui.H, Ui.SMALL)
-		var step2: int = spec2[2]
-		b2.pressed.connect(func() -> void: _bump(0, step2))
-		row.add_child(b2)
 	col.add_child(row)
 
 	var apply := Ui.button("Apply Time", Ui.W_WIDE, Ui.H, Ui.SMALL)
@@ -110,13 +117,20 @@ func _show_time() -> void:
 func _build_buttons(col: VBoxContainer) -> void:
 	_state_label = Art.label("", Pal.SMALL, Pal.INK_MUTED)
 	col.add_child(_state_label)
-	for spec in [["Start Game", "running", Ui.BLUE], ["Pause Game", "paused", Ui.SMALL],
-			["Resume", "running", Ui.SMALL]]:
-		var b := Ui.button(spec[0], Ui.W_WIDE, Ui.H, spec[2])
+	# Start on its own, Pause and Resume paired: they are the same decision seen
+	# twice, and stacking all three ran the column off the bottom.
+	var start := Ui.button("Start Game", Ui.W_WIDE, Ui.H, Ui.RED)
+	start.pressed.connect(func() -> void: _set_state("running", true))
+	col.add_child(start)
+
+	var pair := HBoxContainer.new()
+	pair.add_theme_constant_override("separation", 4)
+	for spec in [["Pause Game", "paused"], ["Resume", "running"]]:
+		var b := Ui.button(spec[0], (Ui.W_WIDE - 4) / 2.0, Ui.H, Ui.SMALL)
 		var want: String = spec[1]
-		var is_start: bool = spec[0] == "Start Game"
-		b.pressed.connect(func() -> void: _set_state(want, is_start))
-		col.add_child(b)
+		b.pressed.connect(func() -> void: _set_state(want, false))
+		pair.add_child(b)
+	col.add_child(pair)
 
 
 func _seconds() -> int:
@@ -125,6 +139,9 @@ func _seconds() -> int:
 
 # --- The session row --------------------------------------------------------
 func _load() -> void:
+	if not Net.signed_in():
+		_say("Sign in as an admin to run a session.", Pal.INK_MUTED)
+		return
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
 		SESSIONS + "?select=*&admin_id=eq." + Net.user_id + "&order=created_at.desc&limit=1")
 	if not is_instance_valid(self):
@@ -145,6 +162,8 @@ func _load() -> void:
 ## One session per admin, reused. A second row would leave players guessing
 ## which adventure they joined.
 func _ensure_session() -> String:
+	if not Net.signed_in():
+		return "Sign in as an admin first."
 	if not _session.is_empty():
 		return ""
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, SESSIONS,

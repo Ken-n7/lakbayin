@@ -47,14 +47,15 @@ func _build_dev_nav() -> void:
 
 	var panel := VBoxContainer.new()
 	panel.add_theme_constant_override("separation", 2)
-	panel.position = Vector2(272, 22)
+	panel.position = Vector2(4, 24)
 	panel.visible = false
 	layer.add_child(panel)
 
 	var toggle := Ui.button("DEV", 42, 18, Ui.SMALL_RED)
-	# Top centre: the left column carries the title on both dashboards, and the
-	# right carries Log Out.
-	toggle.position = Vector2(299, 2)
+	# Bottom left: the dashboards put their title top-left and Log Out
+	# top-right, and every panel screen puts its title top-centre. This is the
+	# one corner nothing claims.
+	toggle.position = Vector2(4, 340)
 	toggle.add_theme_font_size_override("font_size", 10)
 	toggle.pressed.connect(func() -> void: panel.visible = not panel.visible)
 	layer.add_child(toggle)

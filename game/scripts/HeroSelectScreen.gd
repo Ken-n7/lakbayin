@@ -7,7 +7,6 @@ extends Control
 var main: Control
 
 var _name_field: LineEdit
-var _team_field: LineEdit
 var _preview: AnimatedSprite2D
 var _hero_buttons: Dictionary = {}
 var _hero_id := 1
@@ -23,32 +22,22 @@ func _build() -> void:
 	var outer := Ui.screen_panel(self, Vector2(560, 330), "Create your adventurer")
 	outer.alignment = BoxContainer.ALIGNMENT_CENTER
 	outer.add_theme_constant_override("separation", 6)
-	var scroll := Ui.scroll(outer, 205)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 10)
 	# Without this the scroll sizes the column to its own minimum width and every
 	# row hugs the left edge, centred inside a box narrower than the panel.
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(box)
+	outer.add_child(box)
 
 	_name_field = Ui.line_edit("Adventurer name", 240, 32)
 	_name_field.text = Game.player_name
 	_name_field.max_length = 18
 	var name_row := HBoxContainer.new()
 	name_row.add_theme_constant_override("separation", 10)
-	name_row.add_child(Art.label("Name:", 15))
+	name_row.add_child(Art.label("Name:", Pal.LABEL, Pal.INK_MUTED))
 	name_row.add_child(_name_field)
 	box.add_child(name_row)
-
-	_team_field = Ui.line_edit("Team name (optional)", 240, 32)
-	_team_field.text = Game.team_name
-	_team_field.max_length = 18
-	var team_row := HBoxContainer.new()
-	team_row.add_theme_constant_override("separation", 10)
-	team_row.add_child(Art.label("Team:", 15))
-	team_row.add_child(_team_field)
-	box.add_child(team_row)
 
 	box.add_child(_preview_row())
 
@@ -57,10 +46,11 @@ func _build() -> void:
 	# no colour or class to combine, the sprite IS the choice.
 	# A CenterContainer, because SIZE_SHRINK_CENTER on the grid itself leaves it
 	# hugging the left edge of the scroll.
-	# The grid is four rows of eight and simply does not fit under the name
-	# field and above the button, whatever the swatches are scaled to. It
-	# scrolls instead -- the alternative is a Begin Adventure nobody can reach.
-	var grid_scroll := Ui.scroll(box, 96)
+	# The grid is four rows of eight and does not fit under the name field and
+	# above the button, so it scrolls -- and it is the ONLY thing that does.
+	# Nested inside the form's own scroll it just pushed Begin Adventure past
+	# the outer fold, where the screenshot found nothing at all.
+	var grid_scroll := Ui.scroll(box, 60)
 	var grid_center := CenterContainer.new()
 	grid_center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var grid := GridContainer.new()
@@ -80,10 +70,10 @@ func _build() -> void:
 		grid.add_child(b)
 	grid_scroll.add_child(grid_center)
 
-	var start := Ui.button("Begin Adventure", 210, 52, Ui.RED)
+	var start := Ui.button("Begin Adventure", 210, Ui.H, Ui.RED)
 	start.pressed.connect(_begin)
 	box.add_child(start)
-	var back := Ui.button("Back", 70, 34, Ui.SMALL)
+	var back := Ui.button("Back", 210, Ui.H, Ui.SMALL)
 	back.pressed.connect(func() -> void: main.open("home"))
 	Ui.centre_row(box, back)
 
@@ -131,8 +121,7 @@ func _begin() -> void:
 	if _name_field.text.strip_edges() == "":
 		_name_field.text = "Adventurer"
 	Game.player_name = _name_field.text.strip_edges()
-	Game.team_name = _team_field.text.strip_edges()
 	Game.hero_id = _hero_id
 	Game.save_profile()
-	Game.begin_adventure(int(Game.duration_seconds))
-	main.open("adventure")
+	# The team name is its own screen now (G16), and it is what starts the run.
+	main.open("team")
