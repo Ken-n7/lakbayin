@@ -133,7 +133,7 @@ const BRIDGED_SEAMS := [0, 1, 2]
 const BARRICADES := [
 	# Radius picked so the gap lands on the cell the old straight line put him on:
 	# the knight has not moved, the wall around him has curved.
-	{"st": 0, "arc": 8.0},
+	{"st": 0, "arc": 8.5},
 	{"st": 1, "arc": 7.0},
 	# Island 3's station stands at the island's west end with the whole board east
 	# of it, so its fence is a small one: the gap where the road leaves, one rock
@@ -142,13 +142,33 @@ const BARRICADES := [
 	{"st": 2, "arc": 5.0, "shift": 2.0},
 ]
 const GUARD_SCALE := 0.9
-## A boulder line is laid cell by cell straight across the walk, land's end to
-## land's end. Objects, not terrain -- the old three-tile neck had to be stamped
-## because `_island_index()` gives a shore ten cells wide, and a line of rocks just
-## plugs whatever is there. `BARRICADE_GAP` is the cells of it the guard fills,
-## `ROCK_SCALE` picked by eye against the 32px grid with DevTools' live tuner.
-const BARRICADE_GAP := 2
-const ROCK_SCALE := 1.0
+## A fence is laid cell by cell round its station, shore to shore. Objects, not
+## terrain -- the old three-tile neck had to be stamped because `_island_index()`
+## gives a shore ten cells wide, and a line of rocks just plugs whatever is there.
+## `ROCK_SCALE` is big enough that neighbouring stones touch even where the curve
+## steps diagonally and their cells are a cell and a half apart: below that the
+## fence reads as scattered pebbles with walls between them.
+const ROCK_SCALE := 1.2
+## The stretch of fence the guard stands in for, as a box round his boots: his
+## shoulders either side, his chest above, and just enough below to keep the cell
+## he stands on. He is base-anchored like everything else here, so all of him is
+## drawn *upward* -- measured evenly round him, the slack landed under his boots,
+## which is the one shape a fence can take that reads as a way through.
+##
+## Against each cell's **middle**, not along the arc. A post sits wherever the
+## bearing puts it inside its own cell, so an arc length that rounded to two cells
+## at one gate rounded to three at the next -- which is how the red knight came to
+## have a stride of bare grass over his head with the wall still in it.
+const GUARD_REACH := Rect2(-35.0, -42.0, 70.0, 59.0)
+## A boulder's wall, like a building's, is the foot of what you can see and not
+## the cell it was laid on. `Art.sprite()` base-anchors a 64px stone, so the
+## stone is drawn a whole texture-height *above* its cell: a box centred on the
+## cell blocked a tile of open grass below the rock and left the rock's own top
+## walkable -- the bump into nothing the wall gave off. 1.5 cells across so
+## neighbours still overlap however the curve steps, 1.25 down from a quarter
+## cell above the base, which lands inside all four Rock sheets' pixels.
+const ROCK_WALL := Vector2(TILE * 1.5, TILE * 1.25)
+const ROCK_WALL_BASE := TILE * 0.25
 
 ## Towers stand beside the path, not on it: their walls are up to 150px wide and
 ## would otherwise swallow the next circle along. `_tower_lift()` picks the side.
@@ -682,38 +702,49 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 ## leaves the last circle on the station's side -- but a fence around the corner
 ## has the whole island outside it.
 ##
-## Each cell's rect is a tile and a half square, so neighbours overlap however the
-## curve steps and there is no diagonal slip between two of them.
+## Each cell's wall is `ROCK_WALL`, wider than its cell, so neighbours overlap
+## however the curve steps and there is no diagonal slip between two of them.
 func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float) -> void:
 	var r := radius * TILE
 	# The gap sits on the bearing the walk leaves by, give or take `shift` cells of
 	# arc -- clockwise is downward on screen. It is only where the guard stands;
 	# the way out is open wherever it is, since nothing draws the road.
 	var bearing := (b - a).angle() + shift * TILE / r
-	var size := Vector2(TILE, TILE) * 1.5
 	# Half a cell of arc per step, so the walk round never skips a cell.
 	var da := TILE * 0.5 / r
-	var gap_arc := float(BARRICADE_GAP) * TILE * 0.5
 	g.post = a + Vector2.from_angle(bearing) * r
+	var stretch := Rect2(GUARD_REACH.position + (g.post as Vector2), GUARD_REACH.size)
 	var seen := {}
 	var wall := Rect2(g.post as Vector2, Vector2.ZERO)
-	for side in [1.0, -1.0]:
+	for side: float in [1.0, -1.0]:
 		var n := 0
 		while true:
-			var arc := float(n) * TILE * 0.5
 			var c := _cell_at(a + Vector2.from_angle(bearing + side * float(n) * da) * r)
 			n += 1
 			if seen.has(c):
 				continue
 			if not _land.has(c):
+				# The arm has run out of island. A boulder's wall stands on the
+				# boulder, which leaves the boulder's own cell -- the ground at
+				# its foot -- open, and at the end of an arm that foot is the way
+				# round the whole fence. So the fence takes one more step, into
+				# the shallows: the last stone stands in the water with its wall
+				# over the beach behind it, and the arm ends where the map does.
+				if _in_bounds(c):
+					_lay_rock(g, c, _rock_wall(c))
 				break
 			seen[c] = true
-			var rect := Rect2(_cell_mid(c) - size * 0.5, size)
-			if arc <= gap_arc:
+			var rect := _rock_wall(c)
+			if stretch.has_point(_cell_mid(c)):
 				wall = wall.merge(rect)   # the guard's own stretch of it
 			else:
 				_lay_rock(g, c, rect)
 	g.wall = wall
+
+
+## A boulder's wall, standing on the boulder. See `ROCK_WALL`.
+func _rock_wall(c: Vector2i) -> Rect2:
+	return Rect2(_cell_mid(c) - Vector2(ROCK_WALL.x * 0.5, ROCK_WALL.y + ROCK_WALL_BASE), ROCK_WALL)
 
 
 ## One boulder, and the rect that makes it a wall.
@@ -804,9 +835,9 @@ func _stands_clear(g: Dictionary, at: Vector2) -> bool:
 	if not _is_walkable(at) or _trail.has(c):
 		return false
 	var body := Rect2(at - Vector2(34.0, 64.0), Vector2(68.0, 64.0))
-	# The rubble gets his body plus a little below his feet: a rock is a 48px rect
-	# but a 64px sprite rising off its own cell, and the y-sort draws one in the
-	# cell below him over his boots.
+	# The rubble gets his body plus a little below his feet: a boulder's wall is
+	# the stone and stops above the cell it stands on, and the y-sort draws a
+	# stone in the cell below him over his boots.
 	if not _clear_of(body.grow_individual(0.0, 0.0, 0.0, 24.0), g.rocks as Array):
 		return false
 	return _clear_of_signs(body) and _clear_of_buildings(body)

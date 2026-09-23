@@ -263,11 +263,28 @@ func _assert_line(screen: Control, g: Dictionary) -> void:
 	var who: int = int(g.st) + 1
 	assert(rocks.size() >= 3,
 			"station %d's boulder line is only %d rocks long" % [who, rocks.size()])
+	var in_the_sea := 0
 	for r in rocks:
-		assert(not screen._is_walkable((r as Rect2).get_center()),
-				"a boulder at %s is not solid" % (r as Rect2).get_center())
-		assert(screen._clear_of_anchors(r),
-				"a boulder at %s swallows a stop on the board" % (r as Rect2).get_center())
+		var rock: Rect2 = r
+		assert(not screen._is_walkable(rock.get_center()),
+				"a boulder at %s is not solid" % rock.get_center())
+		assert(screen._clear_of_anchors(rock),
+				"a boulder at %s swallows a stop on the board" % rock.get_center())
+		# The cell the boulder was laid on, back out of the wall that stands on it.
+		var cell: Vector2i = screen._cell_at(rock.get_center()
+				+ Vector2(0.0, screen.ROCK_WALL.y * 0.5 + screen.ROCK_WALL_BASE))
+		# `Art.sprite()` draws a boulder upward from its cell, so a wall centred on
+		# the cell blocks a tile of open grass *below* the stone -- the bump into
+		# nothing that made this fence feel unfinished. The wall stands on the art.
+		assert(rock.end.y <= screen._cell_mid(cell).y,
+				"the wall at %s sits below its boulder" % rock.get_center())
+		if not screen._land.has(cell):
+			in_the_sea += 1
+	# Which leaves the cell at each arm's end -- the stone's own foot -- open, and
+	# that foot is the way round the whole fence. So each arm takes one more step,
+	# into the shallows, and there the beach behind the last stone is the wall.
+	assert(in_the_sea == 2,
+			"station %d's fence ends on dry land (%d stones in the water)" % [who, in_the_sea])
 
 
 ## Cells walkable from the base camp, by flood fill over cell centres.
