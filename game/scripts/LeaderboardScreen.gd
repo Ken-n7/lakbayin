@@ -52,7 +52,7 @@ func _build() -> void:
 	box.add_child(note)
 
 	var back := Ui.button("Back", 110, 44, Ui.RED)
-	back.pressed.connect(func() -> void: main.open("title"))
+	back.pressed.connect(func() -> void: main.open("home"))
 	Ui.centre_row(box, back)
 
 

@@ -77,7 +77,7 @@ func skip() -> void:
 	if Net.configured() and not Net.signed_in():
 		main.open("login")
 	else:
-		main.open("title")
+		main.open("home")
 
 
 func go_back() -> void:

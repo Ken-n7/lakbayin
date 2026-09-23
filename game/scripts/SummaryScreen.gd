@@ -72,7 +72,7 @@ func _build() -> void:
 	var board_btn := Ui.button("Leaderboard", 120, 42, Ui.SMALL)
 	board_btn.pressed.connect(func() -> void: main.open("board"))
 	var home := Ui.button("Home", 90, 42, Ui.SMALL)
-	home.pressed.connect(func() -> void: main.open("title"))
+	home.pressed.connect(func() -> void: main.open("home"))
 	btns.add_child(again)
 	btns.add_child(board_btn)
 	btns.add_child(home)

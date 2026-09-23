@@ -57,8 +57,8 @@ func _ready() -> void:
 	await login._submit()
 	await get_tree().process_frame
 	_check("good password signs in", "" if Net.signed_in() else "no session")
-	_check("lands on the title screen",
-		"" if main.current.get_script().resource_path.ends_with("TitleScreen.gd")
+	_check("lands on the home screen",
+		"" if main.current.get_script().resource_path.ends_with("HomeScreen.gd")
 		else "opened %s" % main.current.get_script().resource_path)
 	_check("name survives into the session",
 		"" if Net.username == "sc" + stamp else "got '%s'" % Net.username)

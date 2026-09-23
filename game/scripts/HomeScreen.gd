@@ -32,6 +32,8 @@ func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_scene()
 	_build_menu()
+	_build_header()
+	_build_tabs()
 	_build_footer()
 
 
@@ -132,6 +134,61 @@ func _build_hero() -> void:
 	tw.tween_callback(func() -> void: spr.play("right"))
 
 
+# --- Header -----------------------------------------------------------------
+## Who is signed in, and the way out. Only drawn when there is a session --
+## offline dev runs and the headless suites have nobody to show or log out.
+func _build_header() -> void:
+	if not Net.signed_in():
+		return
+	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
+	who.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	who.offset_left = -300
+	who.offset_right = -(INSET + 86)
+	who.offset_top = INSET + 6
+	who.offset_bottom = INSET + 24
+	Art.shadow(who, Pal.SHADOW, 2, 0)
+	add_child(who)
+
+	var out := Ui.button("Log Out", 76, 28, Ui.SMALL_RED)
+	out.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	out.offset_left = -(INSET + 76)
+	out.offset_right = -INSET
+	out.offset_top = INSET
+	out.offset_bottom = INSET + 28
+	out.pressed.connect(func() -> void:
+		Net.sign_out()
+		main.open("login"))
+	add_child(out)
+
+
+# --- Tab bar ----------------------------------------------------------------
+## The four tabs the mockups show. Home is the tab you are on, so it only
+## re-opens this screen; the other three are the screens that already exist.
+func _build_tabs() -> void:
+	var bar := HBoxContainer.new()
+	bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	bar.add_theme_constant_override("separation", 6)
+	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	bar.offset_left = COL_W + INSET * 2
+	bar.offset_right = -INSET
+	bar.offset_top = -(INSET + 34)
+	bar.offset_bottom = -INSET
+	add_child(bar)
+
+	for spec in [["Home", "home"], ["Start Adventure", ""],
+			["Leaderboard", "board"], ["Learn", "learn"]]:
+		var b := Ui.button(spec[0], 104, 30, Ui.SMALL if spec[1] != "" else Ui.SMALL_RED)
+		var dest: String = spec[1]
+		b.pressed.connect(func() -> void: main.open(dest if dest != "" else _adventure_route()))
+		bar.add_child(b)
+
+
+## Team name comes before the map, but a player with no character yet has to
+## pick one first -- that is the only reason this is a branch and not a route.
+func _adventure_route() -> String:
+	return "team" if Game.player_name != "" else "hero"
+
+
 # --- Menu -------------------------------------------------------------------
 func _build_menu() -> void:
 	# A gradient rather than a panel: the scene still reads through it, and the
@@ -176,8 +233,7 @@ func _build_menu() -> void:
 	var go := (Ui.button("Continue Quest", COL_W, BTN_H) if has_profile
 			else Ui.button("Start New Journey", COL_W, BTN_H, Ui.RED))
 	col.add_child(go)
-	go.pressed.connect(func() -> void:
-		main.open("adventure" if Game.player_name != "" else "hero"))
+	go.pressed.connect(func() -> void: main.open(_adventure_route()))
 
 	# With a profile saved the big button continues the old hero, so this is the
 	# only way back to name / team / character. Without one it would just be a

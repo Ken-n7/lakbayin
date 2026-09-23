@@ -283,7 +283,7 @@ func toggle_pause() -> void:
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	# label, kind, height, screen to open ("" = stay on the map), what to do with
 	# the run in progress.
-	for spec in [["Resume", Ui.BLUE, 44, "", ""], ["Home", Ui.SMALL, 38, "title", "end"],
+	for spec in [["Resume", Ui.BLUE, 44, "", ""], ["Home", Ui.SMALL, 38, "home", "end"],
 			["Restart", Ui.SMALL, 38, "adventure", "restart"],
 			["Leaderboard", Ui.SMALL_RED, 38, "board", ""],
 			["New Game", Ui.SMALL_RED, 38, "hero", "abandon"]]:

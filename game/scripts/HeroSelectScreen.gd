@@ -93,7 +93,7 @@ func _build() -> void:
 	start.pressed.connect(_begin)
 	box.add_child(start)
 	var back := Ui.button("Back", 70, 34, Ui.SMALL)
-	back.pressed.connect(func() -> void: main.open("title"))
+	back.pressed.connect(func() -> void: main.open("home"))
 	Ui.centre_row(box, back)
 
 	_pick_hero(Game.hero_id)

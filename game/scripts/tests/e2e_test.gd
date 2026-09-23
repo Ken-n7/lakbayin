@@ -158,6 +158,19 @@ func _end_via_time() -> void:
 	await _wait(2)
 
 
+## Start Adventure is two steps now: the home screen, then the team name.
+## Every "Continue Quest" in this suite goes through both.
+## A player types a name every run, so the default is a name and not "".
+## Section 8 clears `Game.team_name`, and an empty field is refused -- which
+## is the screen behaving, not a broken step.
+func _continue_quest(team := "Test Team") -> void:
+	_click(_screen(), "Continue Quest")
+	await _wait(3)
+	_screen()._team.text = team
+	_click(_screen(), "Ready!")
+	await _wait(4)
+
+
 func _run() -> void:
 	_main_scene = preload("res://scenes/Main.tscn").instantiate()
 	add_child(_main_scene)
@@ -168,7 +181,7 @@ func _run() -> void:
 	check("splash shows the tagline", _find_label(_screen(), "Explore.") != null)
 	_screen().call("skip")
 	await _wait(3)
-	check("splash routes to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("splash routes to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("start button present", _find_button(_screen(), "Start New Journey") != null)
 	check("learn button present", _find_button(_screen(), "Learn") != null)
 	check("board button present", _find_button(_screen(), "Leaderboard") != null)
@@ -292,13 +305,13 @@ func _run() -> void:
 	check("leaderboard shown", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("back to home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	_click(_screen(), "Learn")
 	await _wait(3)
 	check("learn shown", _script_of(_screen(), "res://scripts/LearnScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("back to title again", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("back to title again", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("main backref wired", true)
 
 	print("== 7. continue quest + pause menu ==")
@@ -311,10 +324,17 @@ func _run() -> void:
 	check("title new game opens hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
+	# Start Adventure now goes by way of the team name, per SPECS §3.
 	_click(_screen(), "Continue Quest")
+	await _wait(3)
+	check("continue quest asks for the team name",
+		_script_of(_screen(), "res://scripts/TeamNameScreen.gd"))
+	_screen()._team.text = "Test Team"
+	_click(_screen(), "Ready!")
 	await _wait(4)
 	adv = _map()
 	check("reached adventure from continue", adv.has_method("_try_enter_station"))
+	check("team name carried into the run", Game.team_name == "Test Team")
 	adv.get("hud").toggle_pause()
 	await _wait(1)
 	check("paused", bool(adv.get("hud").paused))
@@ -351,8 +371,7 @@ func _run() -> void:
 	check("new game scored nothing", Game.leaderboard.size() == rows_before)
 	_click(_screen(), "Back")
 	await _wait(3)
-	_click(_screen(), "Continue Quest")
-	await _wait(4)
+	await _continue_quest()   # team name is remembered from the last run
 	adv = _map()
 	check("back on the map", adv.has_method("_try_enter_station"))
 	adv.get("hud").toggle_pause()
@@ -362,12 +381,12 @@ func _run() -> void:
 	check("leaderboard from pause", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("back to home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
 	print("== 8. hero select variations ==")
 	Game.player_name = ""
 	Game.team_name = ""
-	_main_scene.call("open", "title")
+	_main_scene.call("open", "home")
 	await _wait(3)
 	check("start button without profile", _find_button(_screen(), "Start New Journey") != null)
 	_click(_screen(), "Start New Journey")
@@ -383,7 +402,7 @@ func _run() -> void:
 	check("duration local set", int(hero.get("_duration")) == 300, str(hero.get("_duration")))
 	_click(hero, "Back")
 	await _wait(3)
-	check("hero back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("hero back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	_click(_screen(), "Start New Journey")
 	await _wait(3)
 	hero = _screen()
@@ -403,14 +422,13 @@ func _run() -> void:
 	await _wait(1)
 	_click(adv, "Home")
 	await _wait(4)
-	check("home lands on title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("home lands on title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("home ends adventure", not Game.adventure_active)
 	var res8: Dictionary = Game.last_run
 	check("unfinished penalty recorded (25)", int(res8.get("gems", 0)) == 25, str(res8.get("gems")))
 
 	print("== 9. summary buttons / natural end ==")
-	_click(_screen(), "Continue Quest")
-	await _wait(4)
+	await _continue_quest()
 	_map()
 	check("adventure again (fresh)", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
 	await _end_via_time()
@@ -428,18 +446,17 @@ func _run() -> void:
 	check("summary again", _script_of(sum, "res://scripts/SummaryScreen.gd"))
 	_click(sum, "Home")
 	await _wait(3)
-	check("summary home to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("summary home to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	_click(_screen(), "Leaderboard")
 	await _wait(3)
 	check("board reachable", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
 	check("board non-empty", not (Game.leaderboard.is_empty()))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("board back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("board back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
 	print("== 10. walk the whole board via the UI ==")
-	_click(_screen(), "Continue Quest")
-	await _wait(4)
+	await _continue_quest()
 	adv = _map()
 	check("fresh adventure", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
 	check("all stations locked", (Game.completed_stations as Array) == [false, false, false])
@@ -478,7 +495,7 @@ func _run() -> void:
 	check("0 wrong/skip/hint", int(res10.get("wrong", 0)) == 0 and int(res10.get("skipped", 0)) == 0 and int(res10.get("hints", 0)) == 0)
 	_click(sum, "Home")
 	await _wait(3)
-	check("title after full run", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("title after full run", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
 	print("== 11. learn tabs ==")
 	_click(_screen(), "Learn")
@@ -496,7 +513,7 @@ func _run() -> void:
 		check("%s lesson shown" % l[0], content_label != null and String(content_label.text).to_lower().contains(l[1]))
 	_click(learn, "Back")
 	await _wait(3)
-	check("learn back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("learn back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	# The last line of _run(): anything that aborts the coroutine early leaves
 	# this unset and `finish()` fails the suite.
 	completed = true

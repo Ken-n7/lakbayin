@@ -8,8 +8,9 @@ const SCREENS := {
 	"login": preload("res://scripts/LoginScreen.gd"),
 	"register": preload("res://scripts/RegisterScreen.gd"),
 	"reset": preload("res://scripts/ResetScreen.gd"),
-	"title": preload("res://scripts/TitleScreen.gd"),
+	"home": preload("res://scripts/HomeScreen.gd"),
 	"hero": preload("res://scripts/HeroSelectScreen.gd"),
+	"team": preload("res://scripts/TeamNameScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),
 	"learn": preload("res://scripts/LearnScreen.gd"),
 	"board": preload("res://scripts/LeaderboardScreen.gd"),
@@ -44,7 +45,7 @@ func _notification(what: int) -> void:
 	if current != null and current.has_method("go_back"):
 		current.go_back()
 	else:
-		open("title")
+		open("home")
 
 
 ## Cheap fade between screens so pops and flashes are softer.

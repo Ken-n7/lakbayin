@@ -82,7 +82,7 @@ func _apply() -> void:
 		return
 	# confirm_reset leaves a live session behind, so there is nothing to sign
 	# back in to.
-	main.open("title")
+	main.open("home")
 
 
 func _say(text: String, col: Color) -> void:
