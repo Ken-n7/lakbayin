@@ -15,7 +15,8 @@ fail=0
 run() {                                     # run <name> <godot args...>
 	local name=$1; shift
 	local log; log=$(mktemp)
-	timeout "$LIMIT" godot --headless --path . "$@" >"$log" 2>&1
+	local hl="--headless"; [[ ${1:-} == "--script" && $2 == *check_guards* ]] && hl=""
+	timeout "$LIMIT" godot $hl --path . "$@" >"$log" 2>&1
 	local code=$?
 	local tail; tail=$(grep -E '^---- ' "$log" | tail -1)
 	if [[ $code -eq 124 ]]; then
@@ -36,6 +37,21 @@ run "collisions  " --script res://test_collisions.gd
 run "smoke       " res://scripts/tests/smoke_test.tscn
 run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn
+
+# The two windowed tools need a GL context, so CI will skip them -- but they
+# reach deep into AdventureScreen and nothing else exercises them, so run them
+# wherever there is a display. map_shot's `_norm` call sat broken through a
+# whole refactor because nothing did.
+if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+	shots=$(mktemp -d)
+	run "guards (GL) " --script res://tools/check_guards.gd
+	timeout "$LIMIT" godot --path . --script res://tools/map_shot.gd -- "$shots" >/dev/null 2>&1 \
+		&& echo "ok    shots (GL)   $(ls "$shots" | wc -l) written" \
+		|| { echo "FAIL  shots (GL)  -- map_shot.gd"; fail=1; }
+	rm -rf "$shots"
+else
+	echo "skip  GL tools -- no display"
+fi
 
 [[ $fail -eq 0 ]] && echo "all suites green" || echo "SUITES FAILED"
 exit $fail

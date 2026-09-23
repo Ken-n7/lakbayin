@@ -68,7 +68,7 @@ func _process(_delta: float) -> bool:
 		if z <= 0.0:
 			z = _screen._aerial_zoom()
 		_screen._cam.zoom = Vector2(z, z)
-		_screen._cam.position = _screen._norm(shot.at)
+		_screen._cam.position = MapGrid.norm(shot.at)
 		# The HUD is off for every other shot; the drawer is the one thing here
 		# that only exists on the UI layer, so it gets it back.
 		_screen.hud.ui_layer.visible = bool(shot.get("drawer", false))
