@@ -5,6 +5,8 @@ extends Control
 ## a mechanics and wording contract; the art stays ours).
 
 const INSET := 16
+const COL_W := 186
+const BTN_H := 30
 
 var main: Control
 
@@ -36,32 +38,39 @@ func setup(_data: Dictionary) -> void:
 		main.open("login"))
 	add_child(out)
 
+	# Same shape as the player's Home: one column down the left. A landscape
+	# phone has width to spare and height to save, and five tabs along the
+	# bottom had to clip their own labels to fit.
 	var col := VBoxContainer.new()
-	col.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	col.offset_left = -280
-	col.offset_right = 280
-	col.offset_top = 70
-	col.add_theme_constant_override("separation", 8)
+	col.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	col.offset_left = INSET
+	col.offset_right = INSET + COL_W
+	col.offset_top = INSET + 30
+	col.custom_minimum_size = Vector2(COL_W, 0)
+	col.add_theme_constant_override("separation", 4)
 	add_child(col)
 
-	var hail := Art.label("Welcome to NumXventure Admin Dashboard!", Pal.H2,
+	var hail := Art.label("Admin Dashboard", Pal.H2,
 			Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
 	Art.shadow(hail, Pal.SHADOW, 2, 0)
 	col.add_child(hail)
 
 	var sub := Art.label("Monitor student progress, manage activities, and support "
 			+ "learners in mastering mathematical skills through interactive gameplay.",
-			Pal.SMALL, Pal.WHITE_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
+			Pal.TINY, Pal.WHITE_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	sub.custom_minimum_size = Vector2(520, 0)
+	sub.custom_minimum_size = Vector2(COL_W, 0)
 	col.add_child(sub)
 
 	_build_status(col)
 
-	Ui.tab_bar(self, [["Home", "admin"], ["Game Controls", "controls"],
-			["Leaderboard", "board"], ["Question Management", "questions"],
-			["Feedback", "feedback"]],
-		func(route: String) -> void: main.open(route), INSET, INSET)
+	for spec in [["Game Controls", "controls"], ["Question Management", "questions"],
+			["Leaderboard", "board"], ["Feedback", "feedback"]]:
+		var b := Ui.button(spec[0], COL_W, BTN_H, Ui.SMALL)
+		b.clip_text = true
+		var route: String = spec[1]
+		b.pressed.connect(func() -> void: main.open(route))
+		col.add_child(b)
 
 
 ## The one number a teacher needs before pressing Start: whether the bank can

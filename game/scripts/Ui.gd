@@ -128,35 +128,6 @@ static func screen_panel(parent: Node, s: Vector2, title := "",
 	return pc.get_child(0) as VBoxContainer
 
 
-## The bottom tab bar both dashboards wear: the player's four and the admin's
-## five. `tabs` is [[label, route], ...]; the route of the tab you are on is
-## still live, because re-opening the screen you are on is what the mockups do.
-static func tab_bar(parent: Node, tabs: Array, on_pick: Callable,
-		left := 16.0, inset := 16.0) -> HBoxContainer:
-	var bar := HBoxContainer.new()
-	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 6)
-	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bar.offset_left = left
-	bar.offset_right = -inset
-	bar.offset_top = -(inset + 34)
-	bar.offset_bottom = -inset
-	parent.add_child(bar)
-
-	# Share the strip evenly rather than fixing a width: the admin fits five
-	# tabs in the space the player's four have.
-	var w: float = (Pal.CANVAS.x - left - inset - 6.0 * (tabs.size() - 1)) / tabs.size()
-	for spec: Array in tabs:
-		var route: String = spec[1]
-		var b := button(spec[0], w, 30, SMALL if route != "" else SMALL_RED)
-		# Without this a Button's minimum size grows to fit its text, so
-		# "Question Management" pushed the whole bar off the right edge.
-		b.clip_text = true
-		b.pressed.connect(func() -> void: on_pick.call(route))
-		bar.add_child(b)
-	return bar
-
-
 ## The scrim that darkens whatever is behind a screen.
 static func dim(parent: Node) -> ColorRect:
 	var d := ColorRect.new()

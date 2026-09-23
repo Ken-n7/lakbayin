@@ -193,12 +193,12 @@ func _run() -> void:
 	_main_scene.call("open", "home")
 	await _wait(3)
 	check("splash routes to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	check("start button present", _find_button(_screen(), "Start New Journey") != null)
+	check("start button present", _find_button(_screen(), "Start Adventure") != null)
 	check("learn button present", _find_button(_screen(), "Learn") != null)
 	check("board button present", _find_button(_screen(), "Leaderboard") != null)
 
 	print("== 2. hero select ==")
-	_click(_screen(), "Start New Journey")
+	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	var hero := _screen()
 	check("reached hero select", _script_of(hero, "res://scripts/HeroSelectScreen.gd"))
@@ -327,11 +327,13 @@ func _run() -> void:
 	print("== 7. continue quest + pause menu ==")
 	check("continue quest shown", _find_button(_screen(), "Continue Quest") != null)
 	# With a profile saved, the title needs its own way back to hero creation.
-	check("title new game shown", _find_button(_screen(), "New Game") != null)
-	check("title quit shown", _find_button(_screen(), "Quit") != null)
-	_click(_screen(), "New Game")
+	check("title change character shown", _find_button(_screen(), "Change Character") != null)
+	# Quit is gone with the second navigation: on a phone the back button
+	# leaves, and Log Out is the action that means something to a student.
+	check("no stray Quit button", _find_button(_screen(), "Quit") == null)
+	_click(_screen(), "Change Character")
 	await _wait(3)
-	check("title new game opens hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
+	check("change character opens hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
 	# Start Adventure now goes by way of the team name, per SPECS §3.
@@ -398,8 +400,8 @@ func _run() -> void:
 	Game.team_name = ""
 	_main_scene.call("open", "home")
 	await _wait(3)
-	check("start button without profile", _find_button(_screen(), "Start New Journey") != null)
-	_click(_screen(), "Start New Journey")
+	check("start button without profile", _find_button(_screen(), "Start Adventure") != null)
+	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	hero = _screen()
 	for id in [1, Game.HERO_COUNT]:
@@ -413,7 +415,7 @@ func _run() -> void:
 	_click(hero, "Back")
 	await _wait(3)
 	check("hero back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	_click(_screen(), "Start New Journey")
+	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	hero = _screen()
 	var name2 := _find_line_edit(hero)

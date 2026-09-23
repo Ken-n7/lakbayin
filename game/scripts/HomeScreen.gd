@@ -35,7 +35,6 @@ func setup(_data: Dictionary) -> void:
 	_build_scene()
 	_build_menu()
 	_build_header()
-	_build_tabs()
 	_build_footer()
 
 
@@ -180,16 +179,6 @@ func _build_header() -> void:
 	add_child(out)
 
 
-# --- Tab bar ----------------------------------------------------------------
-## The four tabs the mockups show. Home is the tab you are on, so it only
-## re-opens this screen; the other three are the screens that already exist.
-func _build_tabs() -> void:
-	Ui.tab_bar(self, [["Home", "home"], ["Start Adventure", ""],
-			["Leaderboard", "board"], ["Learn", "learn"]],
-		func(route: String) -> void: main.open(route if route != "" else _adventure_route()),
-		COL_W + INSET * 2, INSET)
-
-
 ## Team name comes before the map, but a player with no character yet has to
 ## pick one first -- that is the only reason this is a branch and not a route.
 func _adventure_route() -> String:
@@ -248,29 +237,29 @@ func _build_menu() -> void:
 	pad.custom_minimum_size = Vector2(0, 4)
 	col.add_child(pad)
 
+	# One navigation, not two. This column was carrying Continue / New Game /
+	# Learn / Leaderboard / Quit while a tab bar along the bottom carried Home /
+	# Start Adventure / Leaderboard / Learn -- nine buttons for four
+	# destinations, two of them listed twice. The column wins: this is a
+	# landscape phone, where height is the scarce axis and a bottom bar spends
+	# it on something the side already does.
 	var has_profile := Game.player_name != ""
-	var go := (Ui.button("Continue Quest", COL_W, BTN_H) if has_profile
-			else Ui.button("Start New Journey", COL_W, BTN_H, Ui.RED))
-	col.add_child(go)
-	go.pressed.connect(func() -> void: main.open(_adventure_route()))
-
-	# With a profile saved the big button continues the old hero, so this is the
-	# only way back to name / team / character. Without one it would just be a
-	# second "Start New Journey".
+	var entries: Array = [
+		["Continue Quest" if has_profile else "Start Adventure", "", Ui.RED],
+		["Leaderboard", "board", Ui.SMALL_RED],
+		["Learn", "learn", Ui.SMALL],
+	]
+	# The only route back to the character picker once a hero is saved.
 	if has_profile:
-		var b_new := Ui.button("New Game", COL_W, BTN_H, Ui.SMALL)
-		b_new.pressed.connect(func() -> void: main.open("hero"))
-		col.add_child(b_new)
+		entries.insert(1, ["Change Character", "hero", Ui.SMALL])
 
-	var b_learn := Ui.button("Learn", COL_W, BTN_H, Ui.SMALL)
-	var b_board := Ui.button("Leaderboard", COL_W, BTN_H, Ui.SMALL_RED)
-	var b_quit := Ui.button("Quit", COL_W, BTN_H, Ui.SMALL)
-	col.add_child(b_learn)
-	col.add_child(b_board)
-	col.add_child(b_quit)
-	b_learn.pressed.connect(func() -> void: main.open("learn"))
-	b_board.pressed.connect(func() -> void: main.open("board"))
-	b_quit.pressed.connect(func() -> void: get_tree().quit())
+	for spec: Array in entries:
+		var b := Ui.button(spec[0], COL_W, BTN_H, spec[2])
+		b.clip_text = true
+		var route: String = spec[1]
+		b.pressed.connect(func() -> void:
+			main.open(route if route != "" else _adventure_route()))
+		col.add_child(b)
 
 
 ## Back on the home screen is the way out of the app.
