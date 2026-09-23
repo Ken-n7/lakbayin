@@ -195,7 +195,6 @@ func _run() -> void:
 	check("name field present", name_field != null)
 	name_field.text = "E2E Hero"
 	_find_button_tooltip(hero, "Adventurer #12").pressed.emit()
-	_click(hero, "15 min")
 	_click(hero, "Begin Adventure")
 	await _wait(4)
 
@@ -335,7 +334,7 @@ func _run() -> void:
 	adv = _map()
 	check("reached adventure from continue", adv.has_method("_try_enter_station"))
 	check("team name carried into the run", Game.team_name == "Test Team")
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	check("paused", bool(adv.get("hud").paused))
 	check("resume button", _find_button(adv, "Resume") != null)
@@ -351,7 +350,7 @@ func _run() -> void:
 	Game.gems = 999
 	Game.completed_stations[0] = true
 	var rows_before: int = Game.leaderboard.size()
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "Restart")
 	await _wait(4)
@@ -362,7 +361,7 @@ func _run() -> void:
 	check("restart scored nothing", Game.leaderboard.size() == rows_before)
 
 	# New Game goes back to hero creation, also without scoring the run.
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "New Game")
 	await _wait(4)
@@ -374,7 +373,7 @@ func _run() -> void:
 	await _continue_quest()   # team name is remembered from the last run
 	adv = _map()
 	check("back on the map", adv.has_method("_try_enter_station"))
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "Leaderboard")
 	await _wait(3)
@@ -394,12 +393,12 @@ func _run() -> void:
 	hero = _screen()
 	for id in [1, Game.HERO_COUNT]:
 		check("adventurer #%d present" % id, _find_button_tooltip(hero, "Adventurer #%d" % id) != null)
+	# Duration left this screen with G6 -- the admin owns the clock now, and a
+	# player who could pick their own length could out-sit the class.
 	for dur in ["5 min", "10 min", "15 min"]:
-		check("duration %s present" % dur, _find_button(hero, dur) != null)
+		check("duration %s is gone from hero select" % dur, _find_button(hero, dur) == null)
 	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
 	check("hero local set", int(hero.get("_hero_id")) == 7, str(hero.get("_hero_id")))
-	_click(hero, "5 min")
-	check("duration local set", int(hero.get("_duration")) == 300, str(hero.get("_duration")))
 	_click(hero, "Back")
 	await _wait(3)
 	check("hero back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
@@ -411,14 +410,16 @@ func _run() -> void:
 	name2.text = "E2E Hero"
 	# re-pick after the screen was recreated (Back discarded the locals)
 	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
-	_click(hero, "5 min")
 	_click(hero, "Begin Adventure")
 	await _wait(4)
-	check("reached adventure (hero 7 / 5min)", _screen().has_method("_try_enter_station"))
+	check("reached adventure (hero 7)", _screen().has_method("_try_enter_station"))
 	check("hero 7 persisted", Game.hero_id == 7, str(Game.hero_id))
-	check("duration 300 persisted", Game.duration_seconds == 300, str(Game.duration_seconds))
+	# The run takes whatever duration the admin set; hero select no longer has
+	# a say, so the default is what survives.
+	check("duration came from Game, not the player",
+		Game.duration_seconds == 600, str(Game.duration_seconds))
 	adv = _map()
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "Home")
 	await _wait(4)

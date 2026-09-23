@@ -29,6 +29,57 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	focus_mode = Control.FOCUS_ALL
 	open("splash")
+	if OS.is_debug_build():
+		_build_dev_nav()
+
+
+# --- Dev navigator ----------------------------------------------------------
+## Debug builds only: jump to any screen from any screen, because walking the
+## real flow to reach the sixth one gets old. Lives on its own CanvasLayer so
+## `open()` -- which frees `current` -- cannot take it with it.
+##
+## Not a substitute for the suites. It is for looking at a screen, which is the
+## one thing a headless check cannot do.
+func _build_dev_nav() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 128
+	add_child(layer)
+
+	var panel := VBoxContainer.new()
+	panel.add_theme_constant_override("separation", 2)
+	panel.position = Vector2(4, 22)
+	panel.visible = false
+	layer.add_child(panel)
+
+	var toggle := Ui.button("DEV", 42, 18, Ui.SMALL_RED)
+	toggle.position = Vector2(4, 2)
+	toggle.add_theme_font_size_override("font_size", 10)
+	toggle.pressed.connect(func() -> void: panel.visible = not panel.visible)
+	layer.add_child(toggle)
+
+	for name: String in SCREENS:
+		var b := Ui.button(name, 96, 17, Ui.SMALL)
+		b.add_theme_font_size_override("font_size", 10)
+		b.pressed.connect(func() -> void:
+			panel.visible = false
+			_dev_open(name))
+		panel.add_child(b)
+
+	var out := Ui.button("sign out", 96, 17, Ui.SMALL_RED)
+	out.add_theme_font_size_override("font_size", 10)
+	out.pressed.connect(func() -> void:
+		Net.sign_out()
+		panel.visible = false
+		open("login"))
+	panel.add_child(out)
+
+
+## The map is the one screen with a precondition -- it reads a run that may not
+## exist yet -- so jumping to it starts one rather than showing a dead board.
+func _dev_open(name: String) -> void:
+	if name == "adventure" and not Game.adventure_active:
+		Game.begin_adventure(int(Game.duration_seconds))
+	open(name)
 
 
 func open(name: String, data: Dictionary = {}) -> void:

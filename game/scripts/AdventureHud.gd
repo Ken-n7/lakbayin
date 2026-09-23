@@ -30,7 +30,7 @@ var _hint_bar: Label = null  # the controls crib, hidden while the board is froz
 var pad: Node2D = null
 var _flash_active := false
 
-## The pause menu is up. The screen reads this to stop the hero walking and to
+## The menu is up. The screen reads this to stop the hero walking and to
 ## keep the board from taking taps behind the panel.
 var paused := false
 
@@ -97,7 +97,7 @@ func build() -> void:
 	prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(prompt)
 
-	var keys := ("joystick — move   ·   GO — enter   ·   MENU / back — pause" if Game.touch
+	var keys := ("joystick — move   ·   GO — enter   ·   MENU / back — menu" if Game.touch
 			else "WASD / arrows — move   ·   E — interact   ·   Esc — menu")
 	var hint_bar: Label = Art.label(keys, Pal.TINY,
 			Pal.WHITE_DIM, HORIZONTAL_ALIGNMENT_CENTER)
@@ -271,14 +271,18 @@ func refresh() -> void:
 		adv.stations.locks[i].text = "Station %d  %s" % [i + 1, mark]
 
 
-func toggle_pause() -> void:
+## Not a pause. Players have no pause button -- only the admin can stop the
+## clock, and one press stops it for everyone (SPECS §2, confirmed by the
+## client 2026-09-23). This menu never touched `Game.clock_paused` anyway; it
+## was only ever called "Paused", which was a lie the label told.
+func open_menu() -> void:
 	if paused:
 		return
 	paused = true
 	adv._close_card()
 	close_dev()
 	set_pad(false)
-	var box := Ui.screen_panel(ui_layer, Vector2(300, 250), "Paused")
+	var box := Ui.screen_panel(ui_layer, Vector2(300, 250), "Menu")
 	var menu := box.get_parent()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	# label, kind, height, screen to open ("" = stay on the map), what to do with
@@ -288,15 +292,15 @@ func toggle_pause() -> void:
 			["Leaderboard", Ui.SMALL_RED, 38, "board", ""],
 			["New Game", Ui.SMALL_RED, 38, "hero", "abandon"]]:
 		var b := Ui.button(spec[0], 170, spec[2], spec[1])
-		b.pressed.connect(_leave_pause.bind(menu, spec[3], spec[4]))
+		b.pressed.connect(_leave_menu.bind(menu, spec[3], spec[4]))
 		box.add_child(b)
 
 
-## Every pause exit closes the menu. `drop` decides the fate of the run in
+## Every exit closes the menu. `drop` decides the fate of the run in
 ## progress -- "end" scores it, "restart" and "abandon" discard it unscored --
 ## and `screen` where to go next. Restart rebuilds the island, because `open()`
 ## remakes the screen, and the gems go back to the starting purse.
-func _leave_pause(menu: Control, screen: String, drop: String) -> void:
+func _leave_menu(menu: Control, screen: String, drop: String) -> void:
 	paused = false
 	set_pad(true)
 	menu.queue_free()

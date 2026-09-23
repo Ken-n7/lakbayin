@@ -479,7 +479,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact"):
 		_interact()
 	elif event.is_action_pressed("pause"):
-		hud.toggle_pause()
+		hud.open_menu()
 
 
 ## Dev-only sizing knob: [ shrinks, ] grows, the readout is the number to bake
@@ -624,7 +624,7 @@ func _refresh_circles() -> void:
 ## is not on offer, so back opens the pause menu instead.
 func go_back() -> void:
 	if _overlay == null and not hud.paused and not _frozen:
-		hud.toggle_pause()
+		hud.open_menu()
 
 
 # --- Quiz overlay -----------------------------------------------------------

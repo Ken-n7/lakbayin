@@ -1,6 +1,6 @@
 extends Control
 
-## Profile & hero creation: name, class, color and adventure duration before
+## Profile & hero creation: name, class and colour before
 ## the adventure map opens. (Login-style flows are web concerns; offline we
 ## just pick a hero.)
 
@@ -10,8 +10,6 @@ var _name_field: LineEdit
 var _team_field: LineEdit
 var _preview: AnimatedSprite2D
 var _hero_buttons: Dictionary = {}
-var _duration_buttons: Dictionary = {}
-var _duration := 600
 var _hero_id := 1
 
 
@@ -77,18 +75,6 @@ func _build() -> void:
 		grid.add_child(b)
 	box.add_child(grid_center)
 
-	box.add_child(Art.label("Adventure length", 16, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER))
-	var dur_row := HBoxContainer.new()
-	dur_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	dur_row.add_theme_constant_override("separation", 8)
-	for d in Game.DURATION_CHOICES:
-		var label := "%d min" % (d / 60)
-		var b := Ui.button(label, 82, 34, Ui.SMALL_RED if d != 600 else Ui.SMALL)
-		b.pressed.connect(_pick_duration.bind(d))
-		_duration_buttons[d] = b
-		dur_row.add_child(b)
-	box.add_child(dur_row)
-
 	var start := Ui.button("Begin Adventure", 210, 52, Ui.RED)
 	start.pressed.connect(_begin)
 	box.add_child(start)
@@ -97,7 +83,6 @@ func _build() -> void:
 	Ui.centre_row(box, back)
 
 	_pick_hero(Game.hero_id)
-	_pick_duration(Game.duration_seconds)
 
 
 func _preview_row() -> Control:
@@ -137,12 +122,6 @@ func _swatch_style(selected: bool) -> StyleBox:
 	return ring
 
 
-func _pick_duration(sec: int) -> void:
-	_duration = sec
-	for k in _duration_buttons:
-		_duration_buttons[k].add_theme_color_override("font_color", Pal.WHITE_STRONG if k != sec else Pal.CREAM)
-
-
 func _begin() -> void:
 	if _name_field.text.strip_edges() == "":
 		_name_field.text = "Adventurer"
@@ -150,5 +129,5 @@ func _begin() -> void:
 	Game.team_name = _team_field.text.strip_edges()
 	Game.hero_id = _hero_id
 	Game.save_profile()
-	Game.begin_adventure(_duration)
+	Game.begin_adventure(int(Game.duration_seconds))
 	main.open("adventure")
