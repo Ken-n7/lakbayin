@@ -5,6 +5,9 @@ extends Control
 
 const SCREENS := {
 	"splash": preload("res://scripts/SplashScreen.gd"),
+	"login": preload("res://scripts/LoginScreen.gd"),
+	"register": preload("res://scripts/RegisterScreen.gd"),
+	"reset": preload("res://scripts/ResetScreen.gd"),
 	"title": preload("res://scripts/TitleScreen.gd"),
 	"hero": preload("res://scripts/HeroSelectScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),

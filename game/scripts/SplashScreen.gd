@@ -72,7 +72,12 @@ func skip() -> void:
 	if _done:
 		return
 	_done = true
-	main.open("title")
+	# Sign in first -- unless there is no backend to sign in to, which is how
+	# the headless suites and an offline dev run still reach the game.
+	if Net.configured() and not Net.signed_in():
+		main.open("login")
+	else:
+		main.open("title")
 
 
 func go_back() -> void:

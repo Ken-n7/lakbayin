@@ -29,6 +29,10 @@ boot_splash/show_image=false
 [autoload]
 
 Game="*res://scripts/Game.gd"
+; The backend, under the name the screens call it by. This is a name, not an
+; interface -- there is one implementation. If LAN ever ships, it is this line
+; that changes, which is the whole reason the screens never say "Supabase".
+Net="*res://scripts/net/Supabase.gd"
 
 [display]
 

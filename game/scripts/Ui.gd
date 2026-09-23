@@ -72,6 +72,17 @@ static func line_edit(placeholder: String, w: float, h := 30.0, size := 15) -> L
 	return le
 
 
+## A labelled text field on its own row. The three auth forms are the same
+## shape six times over; only the caption and the secrecy change.
+static func field(parent: Node, caption: String, placeholder: String,
+		secret := false, w := 300.0) -> LineEdit:
+	parent.add_child(Art.label(caption, Pal.LABEL, Pal.INK_MUTED))
+	var le := line_edit(placeholder, w)
+	le.secret = secret
+	parent.add_child(le)
+	return le
+
+
 ## A paper panel with a title bar; returns a PanelContainer sized to `s`.
 static func panel(s: Vector2, title := "", title_col: Color = Pal.TITLE) -> PanelContainer:
 	var pc := PanelContainer.new()

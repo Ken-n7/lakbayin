@@ -22,6 +22,10 @@ var url: String
 var anon_key: String
 var access_token := ""
 var user_id := ""
+## Filled from `public.profiles` on every successful sign-in, so a screen never
+## has to know that the display name and the login identity live apart.
+var username := ""
+var role := ""
 
 var _http: HTTPRequest
 
@@ -56,12 +60,12 @@ func sign_up(email: String, username: String, password: String, role: String) ->
 		"password": password,
 		"data": {"username": username.strip_edges(), "role": role},
 	}
-	return _remember(await _call(HTTPClient.METHOD_POST, "/auth/v1/signup", body))
+	return await _finish(await _call(HTTPClient.METHOD_POST, "/auth/v1/signup", body))
 
 
 func sign_in(email: String, password: String) -> String:
 	var body := {"email": email.strip_edges().to_lower(), "password": password}
-	return _remember(await _call(
+	return await _finish(await _call(
 		HTTPClient.METHOD_POST, "/auth/v1/token?grant_type=password", body))
 
 
@@ -97,6 +101,17 @@ func change_password(new_password: String) -> String:
 	return reply.error
 
 
+func signed_in() -> bool:
+	return access_token != ""
+
+
+func sign_out() -> void:
+	access_token = ""
+	user_id = ""
+	username = ""
+	role = ""
+
+
 ## One PostgREST call. `path` is a table and its query, e.g.
 ##   await sb.rest(HTTPClient.METHOD_GET, "/rest/v1/team_scores?order=gems.desc")
 ## The reply is in `.data`; `.error` is "" when it worked.
@@ -105,11 +120,29 @@ func rest(method: int, path: String, body: Variant = null) -> Dictionary:
 
 
 func _verify(email: String, code: String, type: String) -> String:
-	return _remember(await _call(HTTPClient.METHOD_POST, "/auth/v1/verify", {
+	return await _finish(await _call(HTTPClient.METHOD_POST, "/auth/v1/verify", {
 		"type": type,
 		"email": email.strip_edges().to_lower(),
 		"token": code.strip_edges(),
 	}))
+
+
+## A token is only half a session -- the display name and the role live in
+## `profiles`, so every way in loads them before it reports success.
+func _finish(reply: Dictionary) -> String:
+	var err := _remember(reply)
+	if err != "":
+		return err
+	var got := await rest(HTTPClient.METHOD_GET,
+		"/rest/v1/profiles?select=username,role&id=eq." + user_id)
+	if got.error != "":
+		return got.error
+	var rows: Variant = got.data
+	if rows is Array and not (rows as Array).is_empty():
+		var row: Dictionary = rows[0]
+		username = row.get("username", "")
+		role = row.get("role", "")
+	return ""
 
 
 func _call(method: int, path: String, body: Variant) -> Dictionary:
