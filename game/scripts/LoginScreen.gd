@@ -28,7 +28,7 @@ func setup(_data: Dictionary) -> void:
 	box.add_child(Art.label("Sign in to begin", Pal.SMALL, Pal.INK_MUTED,
 			HORIZONTAL_ALIGNMENT_CENTER))
 
-	_email = Ui.field(box, "Email", "you@example.com")
+	_email = Ui.field(box, "Email or Username", "you@example.com  or  yourname")
 	_email.keep_editing_on_text_submit = true
 	_pass = Ui.field(box, "Password", "at least 8 characters", true)
 
@@ -61,7 +61,7 @@ func setup(_data: Dictionary) -> void:
 
 func _submit() -> void:
 	if _email.text.strip_edges().is_empty() or _pass.text.is_empty():
-		_say("Enter your email and password.")
+		_say("Enter your email or username, and your password.")
 		return
 	_busy(true)
 	var err: String = await Net.sign_in(_email.text, _pass.text)

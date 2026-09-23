@@ -63,10 +63,29 @@ func sign_up(email: String, username: String, password: String, role: String) ->
 	return await _finish(await _call(HTTPClient.METHOD_POST, "/auth/v1/signup", body))
 
 
-func sign_in(email: String, password: String) -> String:
-	var body := {"email": email.strip_edges().to_lower(), "password": password}
+## `who` is an email or a username -- the mockups sign in by username, the
+## client asked for both. GoTrue only knows emails, so a username is resolved
+## through the `email_for_username` function first.
+func sign_in(who: String, password: String) -> String:
+	var email := who.strip_edges()
+	if not email.contains("@"):
+		var found := await _email_for(email)
+		if found == "":
+			# Same words GoTrue uses for a wrong password, on purpose: the form
+			# must not become a way to test which usernames exist.
+			return "Invalid login credentials"
+		email = found
+	var body := {"email": email.to_lower(), "password": password}
 	return await _finish(await _call(
 		HTTPClient.METHOD_POST, "/auth/v1/token?grant_type=password", body))
+
+
+func _email_for(username: String) -> String:
+	var reply := await _call(HTTPClient.METHOD_POST, "/rest/v1/rpc/email_for_username",
+		{"uname": username})
+	if reply.error != "" or not (reply.data is String):
+		return ""
+	return reply.data
 
 
 ## Confirm a new account with the code from the sign-up email. Signs them in.

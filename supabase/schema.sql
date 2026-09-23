@@ -63,6 +63,23 @@ language sql stable security definer set search_path = '' as $$
                  where id = auth.uid() and role = 'admin')
 $$;
 
+-- Sign in takes an email or a username (client, 2026-09-23). GoTrue only
+-- knows emails, so a username has to be resolved to one first, and the email
+-- lives in auth.users where no client may read it.
+--
+-- The tradeoff, stated plainly: anyone who can reach this project can map a
+-- username to an email address. For a classroom roster that is acceptable; if
+-- it ever is not, the fix is to drop username sign-in, not to obscure this.
+create or replace function public.email_for_username(uname text) returns text
+language sql stable security definer set search_path = '' as $$
+  select u.email
+  from   auth.users u
+  join   public.profiles p on p.id = u.id
+  where  lower(p.username) = lower(trim(uname))
+$$;
+
+grant execute on function public.email_for_username(text) to anon, authenticated;
+
 -- 2. Sessions ---------------------------------------------------------------
 -- One live adventure. The clock lives here so every phone reads the same one:
 -- `ends_at` while running, `remaining_s` while paused.

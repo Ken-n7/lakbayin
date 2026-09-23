@@ -140,6 +140,23 @@ func _build_hero() -> void:
 func _build_header() -> void:
 	if not Net.signed_in():
 		return
+	# The chosen character stands beside the name, per the mockup's header.
+	var wrap := Control.new()
+	wrap.custom_minimum_size = Vector2(28, 28)
+	wrap.clip_contents = true
+	wrap.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	wrap.offset_left = -(INSET + 86 + 30)
+	wrap.offset_right = -(INSET + 86 + 2)
+	wrap.offset_top = INSET + 2
+	wrap.offset_bottom = INSET + 30
+	var face := AnimatedSprite2D.new()
+	face.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id), 1.0)
+	face.animation = "right"
+	face.scale = Vector2(1.4, 1.4)
+	face.position = Vector2(14, 20)
+	wrap.add_child(face)
+	add_child(wrap)
+
 	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
 	who.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	who.offset_left = -300
@@ -224,6 +241,18 @@ func _build_menu() -> void:
 
 	col.add_child(Art.label("Explore.  Solve.  Conquer.", Pal.SMALL, Pal.GOLD,
 			HORIZONTAL_ALIGNMENT_CENTER))
+
+	# The mockup's welcome copy, word for word -- §1 treats the PDFs as a
+	# wording contract even though the art is ours.
+	var hail := Art.label("Welcome, Adventurer!", Pal.H2, Pal.PARCHMENT,
+			HORIZONTAL_ALIGNMENT_CENTER)
+	Art.shadow(hail, Pal.SHADOW, 2, 0)
+	col.add_child(hail)
+	var sub := Art.label("Every problem is a new adventure waiting to be solved.",
+			Pal.TINY, Pal.WHITE_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sub.custom_minimum_size = Vector2(COL_W, 0)
+	col.add_child(sub)
 
 	var pad := Control.new()
 	pad.custom_minimum_size = Vector2(0, 4)
