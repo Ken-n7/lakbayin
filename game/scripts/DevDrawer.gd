@@ -93,7 +93,7 @@ func close() -> void:
 ## drawer. Hand back exactly the strip the drawer is using. Desktop runs have no
 ## joystick at all, so this is a no-op there.
 func _claim_touch() -> void:
-	var stick: Node2D = _adv._joystick
+	var stick: Node2D = _adv.hud.joystick
 	if stick == null or not is_instance_valid(stick):
 		return
 	var taken := (PANEL_W if _open else HANDLE.x) + 4.0
@@ -121,17 +121,17 @@ func _mark(fn: String, on: bool) -> void:
 ## whatever that station's progress unlocks.
 func _skip_station() -> void:
 	if Game.items_done >= Game.TOTAL_ITEMS:
-		_adv._flash_tip("Board already cleared.")
+		_adv.hud.flash("Board already cleared.")
 		return
 	var st := Game.station_of_item(Game.items_done)
 	Game.towers_entered[st] = true
 	while Game.items_done < Game.TOTAL_ITEMS and Game.station_of_item(Game.items_done) == st:
 		Game.mark_correct()
 	Game.finish_station(st)
-	_adv._refresh_hud()
+	_adv.hud.refresh()
 	_adv._refresh_circles()
 	_adv.barricades.refresh()
-	_adv._flash_tip("Station %d skipped." % (st + 1))
+	_adv.hud.flash("Station %d skipped." % (st + 1))
 
 
 ## The next stop on the walk: an unbriefed station's own doorstep, else the
@@ -173,7 +173,7 @@ func _aerial() -> void:
 func _open_gates() -> void:
 	for g: Dictionary in _adv.barricades.list:
 		_adv.barricades.open(g)
-	_adv._flash_tip("All crossings open.")
+	_adv.hud.flash("All crossings open.")
 
 
 func _fast_walk() -> void:

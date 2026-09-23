@@ -61,8 +61,8 @@ func _ready() -> void:
 	_map = main.current
 	# The map opens frozen on the aerial POV. The client was explicit: no joystick
 	# before the adventure starts, and only a press starts it.
-	check("pad built", _map._touch_pad != null)
-	check("pad hidden on the aerial POV", not _map._touch_pad.visible)
+	check("pad built", _map.hud.pad != null)
+	check("pad hidden on the aerial POV", not _map.hud.pad.visible)
 	check("start hint offered", _map._start_hint != null)
 	check("clock held while frozen", Game.clock_paused)
 
@@ -73,7 +73,7 @@ func _ready() -> void:
 	touch(Vector2(80, 80), false)
 	await wait_until(func() -> bool: return not _map._frozen)
 	check("tap on the frozen board swoops", not Game.clock_paused)
-	check("pad back after a tap-started swoop", _map._touch_pad.visible)
+	check("pad back after a tap-started swoop", _map.hud.pad.visible)
 	check("start hint gone after a tap-started swoop", _map._start_hint == null)
 
 	# Re-freeze and prove the button removal didn't just move the trigger --
@@ -86,7 +86,7 @@ func _ready() -> void:
 	# Collapse it so the hero can walk.
 	_map.skip_intro()
 	check("intro collapsed", not Game.clock_paused)
-	check("pad back after the swoop", _map._touch_pad.visible)
+	check("pad back after the swoop", _map.hud.pad.visible)
 	check("start hint gone", _map._start_hint == null)
 
 	var start: Vector2 = _map.player.position
@@ -129,10 +129,10 @@ func _ready() -> void:
 	touch(Vector2(574, 290), false)
 	await frames(4)
 	check("GO enters the station", _map._overlay != null)
-	check("pad hidden under the quiz", not _map._touch_pad.visible)
+	check("pad hidden under the quiz", not _map.hud.pad.visible)
 	_map.close_overlay()
 	await frames(2)
-	check("pad back after the quiz", _map._touch_pad.visible)
+	check("pad back after the quiz", _map.hud.pad.visible)
 
 	Game.abandon_adventure()
 	print("---- TOUCH %s ---- %d checks, %d failures" %

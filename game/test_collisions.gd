@@ -182,10 +182,10 @@ func _initialize() -> void:
 	root.add_child(rig)
 	G.begin_adventure(600)
 	rig.setup({})
-	assert(rig._dev != null, "no dev drawer on a debug build")
+	assert(rig.hud.dev != null, "no dev drawer on a debug build")
 	_assert_islands(rig, G, -1)
 	for st in 3:
-		rig._dev._skip_station()
+		rig.hud.dev._skip_station()
 		assert(G.items_done == _items_through(G, st),
 				"skipping station %d left %d items done" % [st + 1, G.items_done])
 		assert(bool(G.completed_stations[st]), "station %d was not banked" % (st + 1))
@@ -196,7 +196,7 @@ func _initialize() -> void:
 			"three skips left %d of %d items" % [G.items_done, G.TOTAL_ITEMS])
 	assert(rig._can_enter_gate(), "the Victory Gate stayed shut after three skips")
 	# ...and it is not a way past the end of the board.
-	rig._dev._skip_station()
+	rig.hud.dev._skip_station()
 	assert(G.items_done == G.TOTAL_ITEMS, "skipping a cleared board ran past the end")
 
 	print("collisions ok")

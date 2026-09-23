@@ -345,9 +345,9 @@ func _run() -> void:
 	await _wait(4)
 	adv = _map()
 	check("reached adventure from continue", adv.has_method("_try_enter_station"))
-	adv.call("_toggle_pause")
+	adv.get("hud").toggle_pause()
 	await _wait(1)
-	check("paused", bool(adv.get("_paused")))
+	check("paused", bool(adv.get("hud").paused))
 	check("resume button", _find_button(adv, "Resume") != null)
 	check("home button", _find_button(adv, "Home") != null)
 	check("board button", _find_button(adv, "Leaderboard") != null)
@@ -355,13 +355,13 @@ func _run() -> void:
 	check("new game button", _find_button(adv, "New Game") != null)
 	_click(adv, "Resume")
 	await _wait(1)
-	check("resumed", not bool(adv.get("_paused")))
+	check("resumed", not bool(adv.get("hud").paused))
 
 	# Restart drops the run and starts a fresh one on a rebuilt map.
 	Game.gems = 999
 	Game.completed_stations[0] = true
 	var rows_before: int = Game.leaderboard.size()
-	adv.call("_toggle_pause")
+	adv.get("hud").toggle_pause()
 	await _wait(1)
 	_click(adv, "Restart")
 	await _wait(4)
@@ -372,7 +372,7 @@ func _run() -> void:
 	check("restart scored nothing", Game.leaderboard.size() == rows_before)
 
 	# New Game goes back to hero creation, also without scoring the run.
-	adv.call("_toggle_pause")
+	adv.get("hud").toggle_pause()
 	await _wait(1)
 	_click(adv, "New Game")
 	await _wait(4)
@@ -385,7 +385,7 @@ func _run() -> void:
 	await _wait(4)
 	adv = _map()
 	check("back on the map", adv.has_method("_try_enter_station"))
-	adv.call("_toggle_pause")
+	adv.get("hud").toggle_pause()
 	await _wait(1)
 	_click(adv, "Leaderboard")
 	await _wait(3)
@@ -429,7 +429,7 @@ func _run() -> void:
 	check("hero 7 persisted", Game.hero_id == 7, str(Game.hero_id))
 	check("duration 300 persisted", Game.duration_seconds == 300, str(Game.duration_seconds))
 	adv = _map()
-	adv.call("_toggle_pause")
+	adv.get("hud").toggle_pause()
 	await _wait(1)
 	_click(adv, "Home")
 	await _wait(4)

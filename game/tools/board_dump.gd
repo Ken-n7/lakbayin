@@ -14,6 +14,19 @@ extends SceneTree
 ##
 ## Take one before a change and one after; `diff` them. They must be identical.
 
+## A runtime error inside `_initialize()` aborts that function but leaves the
+## SceneTree running, so the process hangs instead of failing -- which is how
+## three stale headless Godots once piled up fighting over the project. Quit on
+## the first idle frame: reaching it at all means `_initialize()` did not.
+func _process(_delta: float) -> bool:
+	if not _done:
+		printerr("board_dump: build failed, see the error above")
+	return true
+
+
+var _done := false
+
+
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	var out_path: String = args[0] if args.size() > 0 else "user://board_dump.txt"
@@ -82,6 +95,7 @@ func _initialize() -> void:
 		return
 	f.store_string("\n".join(L) + "\n")
 	f.close()
+	_done = true
 	print("wrote %s -- %d lines" % [out_path, L.size()])
 	quit(0)
 

@@ -13,6 +13,9 @@ var main: Control
 var world: Node2D
 var player: Node2D
 
+## Everything drawn over the board. See `AdventureHud.gd`.
+var hud: AdventureHud
+
 ## Every cell and every box on the board. See `map/MapGrid.gd`.
 var grid := MapGrid.new()
 ## The four that build it, in the order `setup()` runs them. Each owns one
@@ -24,27 +27,13 @@ var decor: Decor
 
 var _circles: Array = []        # Game.TOTAL_ITEMS PathCircle nodes, path order
 var _cam: Camera2D
-var _prompt: Label
 var _bang: Label = null         # the "!" over the hero when something is in reach
-var _hud_gems: Label
-var _hud_time: Label
-var _hud_station: Label
-var _hud_pips: Label
-var _gem_bar: ProgressBar
-var _hud_layer: CanvasLayer
-var _ui_layer: CanvasLayer
 
-var _touch_pad: Node2D = null
-var _joystick: Node2D = null
 var _overlay: Control = null
-var _paused := false
-var _flash_active := false
 var _frozen := false            # the aerial POV before the adventure starts
 var _intro_tw: Tween = null
 var _start_hint: Label = null   # "Tap anywhere to start" -- freed once it does
 var _card: Control = null       # the tapped circle's info card
-var _hint_bar: Label = null     # the controls crib, hidden while the board is frozen
-var _dev: Control = null        # the cheat drawer, on debug builds only
 ## Dev knobs the drawer drives: a walk-speed multiplier, and the flag that stops
 ## `_process()` dragging the camera back to the hero while the board is framed.
 var _speed_mult := 1.0
@@ -59,7 +48,8 @@ func setup(_data: Dictionary) -> void:
 	# the board (start, circle cards) would silently do nothing. The HUD buttons
 	# and panels are their own Controls with their own filters, unaffected by this.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_build_hud()
+	hud = AdventureHud.new(self)
+	hud.build()
 	if not Game.adventure_active:
 		Game.begin_adventure()
 	world = Node2D.new()
@@ -78,10 +68,10 @@ func setup(_data: Dictionary) -> void:
 	_build_path()
 	decor.build()
 	_spawn_player()
-	Game.time_changed.connect(_on_time)
-	Game.gems_changed.connect(_on_gems)
+	Game.time_changed.connect(hud.on_time)
+	Game.gems_changed.connect(hud.on_gems)
 	Game.adventure_ended.connect(_on_adventure_end)
-	_refresh_hud()
+	hud.refresh()
 	_refresh_circles()
 	# A restart mid-run keeps whatever it had already opened.
 	barricades.refresh()
@@ -95,8 +85,8 @@ func _exit_tree() -> void:
 	# fresh intro -- an unconditional clear here would clobber that.
 	if _frozen:
 		Game.clock_paused = false
-	Game.time_changed.disconnect(_on_time)
-	Game.gems_changed.disconnect(_on_gems)
+	Game.time_changed.disconnect(hud.on_time)
+	Game.gems_changed.disconnect(hud.on_gems)
 	Game.adventure_ended.disconnect(_on_adventure_end)
 
 
@@ -218,23 +208,22 @@ static func _aerial_zoom() -> float:
 func _start_intro() -> void:
 	_frozen = true
 	Game.clock_paused = true
-	_set_pad(false)
+	hud.set_pad(false)
 	_cam.position_smoothing_enabled = false
 	_clamp_cam(false)
 	var z := _aerial_zoom()
 	_cam.zoom = Vector2(z, z)
 	_cam.position = Vector2(MapCfg.WORLD_W * MapCfg.TILE * 0.5, MapCfg.WORLD_H * MapCfg.TILE * 0.5)
-	_prompt.text = "Scouting the board..."
+	hud.set_prompt("Scouting the board...")
 	# The controls crib goes with the joystick -- there is nothing to drive yet.
-	if _hint_bar != null:
-		_hint_bar.visible = false
+	hud.set_crib(false)
 	# Right under the prompt, lower centre -- nothing sits on the board itself.
 	_start_hint = Art.label("Tap anywhere to start", 13, Color(1, 1, 1, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	_start_hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_start_hint.offset_top = -74.0
 	_start_hint.offset_bottom = -50.0
 	_start_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ui_layer.add_child(_start_hint)
+	hud.ui_layer.add_child(_start_hint)
 
 
 ## The transition: the POV comes down onto the board and the hero.
@@ -242,7 +231,7 @@ func _swoop() -> void:
 	if not _frozen:
 		return
 	_drop_start_hint()
-	_prompt.text = ""
+	hud.set_prompt("")
 	_intro_tw = create_tween()
 	_intro_tw.set_parallel(true)
 	_intro_tw.tween_property(_cam, "zoom", Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM), MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
@@ -265,16 +254,15 @@ func skip_intro() -> void:
 		_intro_tw.kill()
 	_intro_tw = null
 	_drop_start_hint()
-	if _hint_bar != null:
-		_hint_bar.visible = true
+	hud.set_crib(true)
 	_frozen = false
 	Game.clock_paused = false
 	_cam.zoom = Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM)
 	_clamp_cam(true)
 	_cam.position = player.position
 	_cam.position_smoothing_enabled = true
-	_set_pad(true)
-	_prompt.text = ""
+	hud.set_pad(true)
+	hud.set_prompt("")
 	_update_interaction()
 
 
@@ -289,7 +277,7 @@ static func _facing(dir: Vector2) -> String:
 func _process(delta: float) -> void:
 	if _overlay != null and is_instance_valid(_overlay) and Game.adventure_active:
 		return
-	if _paused or _frozen or not Game.adventure_active:
+	if hud.paused or _frozen or not Game.adventure_active:
 		return
 	if not _dev_aerial:
 		_cam.position = player.position
@@ -417,16 +405,13 @@ func _prompt_for(target: Dictionary) -> String:
 func _update_interaction() -> void:
 	var target := _nearest_target()
 	_bang.visible = _can_act_on(target)
-	# A toast owns the prompt line for a moment, but it has no business freezing
-	# the "!" -- that is a separate channel and has to keep tracking what is in
-	# reach while the tip is up.
-	if _flash_active:
-		return
-	_prompt.text = _prompt_for(target)
+	# The "!" is a separate channel from the prompt line: a toast owning the line
+	# has no business freezing it, so it keeps tracking what is in reach.
+	hud.set_prompt(_prompt_for(target))
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _overlay != null or _paused:
+	if _overlay != null or hud.paused:
 		return
 	var tap := ((event is InputEventMouseButton
 					and (event as InputEventMouseButton).pressed
@@ -449,7 +434,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact"):
 		_interact()
 	elif event.is_action_pressed("pause"):
-		_toggle_pause()
+		hud.toggle_pause()
 
 
 ## Dev-only sizing knob: [ shrinks, ] grows, the readout is the number to bake
@@ -459,7 +444,7 @@ func _nudge_hero_scale(delta: float) -> void:
 	_hero_scale = clampf(_hero_scale + delta, 0.5, 3.0)
 	var spr: AnimatedSprite2D = player.get_node("Spr")
 	spr.scale = Vector2(_hero_scale, _hero_scale)
-	_flash_tip("Hero scale: %.1f  (was MapCfg.UNIT_SCALE = %.1f)" % [_hero_scale, MapCfg.UNIT_SCALE])
+	hud.flash("Hero scale: %.1f  (was MapCfg.UNIT_SCALE = %.1f)" % [_hero_scale, MapCfg.UNIT_SCALE])
 
 
 ## Tap-to-inspect. `self` is a canvas item under the camera, so the viewport's
@@ -501,7 +486,7 @@ func _show_circle_card(n: int) -> void:
 	var meta: Dictionary = QuestionGen.station_meta(st)
 	var card := Ui.panel(Vector2(300, 0), "Circle %d of %d" % [n + 1, Game.TOTAL_ITEMS])
 	card.position = Vector2(170, 92)
-	_ui_layer.add_child(card)
+	hud.ui_layer.add_child(card)
 	_card = card
 	var box: VBoxContainer = card.get_child(0) as VBoxContainer
 	box.add_child(Art.label(meta.title, 14, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER))
@@ -540,11 +525,11 @@ func _try_enter_station() -> void:
 		return
 	if not _can_enter_tower(i):
 		if Game.items_done >= Game.TOTAL_ITEMS:
-			_flash_tip("Every circle is cleared — head for the Victory Gate!")
+			hud.flash("Every circle is cleared — head for the Victory Gate!")
 		elif Game.towers_entered[i]:
-			_flash_tip("Station %d is briefed — answer its circles!" % (i + 1))
+			hud.flash("Station %d is briefed — answer its circles!" % (i + 1))
 		else:
-			_flash_tip("Complete Station %d first!" % (Game.station_of_item(Game.items_done) + 1))
+			hud.flash("Complete Station %d first!" % (Game.station_of_item(Game.items_done) + 1))
 		return
 	Game.current_station = i
 	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
@@ -560,11 +545,11 @@ func _try_answer_circle() -> void:
 		return
 	if not _can_answer(n):
 		if n < Game.items_done:
-			_flash_tip("Circle %d is already cleared!" % (n + 1))
+			hud.flash("Circle %d is already cleared!" % (n + 1))
 		elif not Game.towers_entered[Game.station_of_item(n)]:
-			_flash_tip("Enter Station %d first!" % (Game.station_of_item(n) + 1))
+			hud.flash("Enter Station %d first!" % (Game.station_of_item(n) + 1))
 		else:
-			_flash_tip("Answer circle %d first!" % (Game.items_done + 1))
+			hud.flash("Answer circle %d first!" % (Game.items_done + 1))
 		return
 	Game.current_station = Game.station_of_item(n)
 	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
@@ -577,228 +562,11 @@ func _try_enter_gate() -> void:
 	if stations.gate == null or stations.gate.position.distance_to(player.position) >= MapCfg.INTERACT_RADIUS:
 		return
 	if not _can_enter_gate():
-		_flash_tip("Conquer all %d circles first!" % Game.TOTAL_ITEMS)
+		hud.flash("Conquer all %d circles first!" % Game.TOTAL_ITEMS)
 		return
 	Game.end_adventure()
 
 
-# --- HUD --------------------------------------------------------------------
-func _build_hud() -> void:
-	# The player's Camera2D transforms every canvas item in layer 0, UI included,
-	# so screen-space elements have to live in their own CanvasLayers or they
-	# get dragged around the world with the camera.
-	_hud_layer = CanvasLayer.new()
-	_hud_layer.layer = 1
-	add_child(_hud_layer)
-	_ui_layer = CanvasLayer.new()
-	_ui_layer.layer = 2
-	add_child(_ui_layer)
-	var top := PanelContainer.new()
-	top.position = Vector2(4, 4)
-	top.custom_minimum_size = Vector2(632, 44)
-	top.add_theme_stylebox_override("panel", Art.panel("res://assets/ui/BigBar_Base.png", Vector2(10, 2), 0.5))
-	_hud_layer.add_child(top)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	top.add_child(row)
-
-	var av := Art.texrect("res://assets/ui/Avatar_01.png", 32, 32)
-	row.add_child(av)
-	var name_col := VBoxContainer.new()
-	var nm := Art.label(Game.player_name, 13, Color("ffe9a8"))
-	name_col.add_child(nm)
-	var cls := Art.label("Adventurer #%d" % Game.hero_id, 11, Color(1, 1, 1, 0.8))
-	name_col.add_child(cls)
-	row.add_child(name_col)
-
-	var stats := VBoxContainer.new()
-	stats.alignment = BoxContainer.ALIGNMENT_CENTER
-	stats.custom_minimum_size = Vector2(150, 0)
-	_hud_station = Art.label("Station 1", 13, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	stats.add_child(_hud_station)
-	_hud_pips = Art.label("— — —", 13, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	stats.add_child(_hud_pips)
-	row.add_child(stats)
-
-	row.add_child(Control.new()) # spacer
-	var gems_icon := Art.texrect("res://assets/ui/Icon_03.png", 26, 26)
-	row.add_child(gems_icon)
-	var gems_col := VBoxContainer.new()
-	_hud_gems = Art.label("50", 15, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-	gems_col.add_child(_hud_gems)
-	_hud_time = Art.label("10:00", 13, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	gems_col.add_child(_hud_time)
-	row.add_child(gems_col)
-
-	# Full-width, not centre-anchored: PRESET_CENTER_BOTTOM puts the box's left
-	# edge at mid-screen, so a 640-wide label started in the middle and ran off
-	# the right edge -- centred text ended up hanging off the screen.
-	_prompt = Art.label("", 15, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-	_prompt.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	_prompt.offset_top = -104.0
-	_prompt.offset_bottom = -74.0
-	_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud_layer.add_child(_prompt)
-
-	var keys := ("joystick — move   ·   GO — enter   ·   MENU / back — pause" if Game.touch
-			else "WASD / arrows — move   ·   E — interact   ·   Esc — menu")
-	var hint_bar: Label = Art.label(keys, 12,
-			Color(1, 1, 1, 0.75), HORIZONTAL_ALIGNMENT_CENTER)
-	if Game.touch:
-		hint_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-		hint_bar.offset_top = 52.0
-		hint_bar.offset_bottom = 76.0
-	else:
-		hint_bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-		hint_bar.offset_top = -40.0
-		hint_bar.offset_bottom = -16.0
-	hint_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud_layer.add_child(hint_bar)
-	_hint_bar = hint_bar
-
-	# Both float over open terrain, so they need a shadow to stay readable.
-	for l in [_prompt, hint_bar]:
-		Art.shadow(l)
-
-	var gemrow := HBoxContainer.new()
-	gemrow.position = Vector2(4, 50)
-	gemrow.add_theme_constant_override("separation", 4)
-	_hud_layer.add_child(gemrow)
-	# SmallBar_Fill is a 3px sliver and SmallBar_Base a 3x1 patch; they never
-	# lined up as a TextureProgressBar. A flat gauge in the pack's palette is
-	# both correct at any size and legible at a glance.
-	_gem_bar = ProgressBar.new()
-	_gem_bar.custom_minimum_size = Vector2(140, 10)
-	_gem_bar.show_percentage = false
-	_gem_bar.max_value = 100.0
-	_gem_bar.value = 0.0
-	var trough := StyleBoxFlat.new()
-	trough.bg_color = Color(0.08, 0.06, 0.10, 0.75)
-	trough.set_corner_radius_all(4)
-	trough.set_border_width_all(1)
-	trough.border_color = Color(0, 0, 0, 0.6)
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Pal.GOLD
-	fill.set_corner_radius_all(4)
-	_gem_bar.add_theme_stylebox_override("background", trough)
-	_gem_bar.add_theme_stylebox_override("fill", fill)
-	gemrow.add_child(_gem_bar)
-	_build_touch_pad()
-	# The cheat drawer, and only where cheating is free: a release export never
-	# builds the node, so there is nothing in it to reach.
-	if OS.is_debug_build():
-		_dev = preload("res://scripts/DevDrawer.gd").new()
-		_ui_layer.add_child(_dev)
-		_dev.setup(self)
-
-
-# --- Touch controls ---------------------------------------------------------
-## The stick is a raw-touch Node2D (its own finger index, like TouchScreenButton
-## tracks), and GO/MENU stay TouchScreenButtons -- both read real touch rather
-## than mouse-emulated, so steering and pressing GO work on separate fingers at
-## once. Each feeds a real InputMap action (the stick with analog strength), so
-## `_process` and `_unhandled_input` stay untouched.
-func _build_touch_pad() -> void:
-	if not Game.touch:
-		return
-	_touch_pad = Node2D.new()
-	_hud_layer.add_child(_touch_pad)
-	# Kept a thumb's width off the bottom edge: that strip is Android's
-	# swipe-up-home gesture zone, immersive mode or not.
-	_joystick = preload("res://scripts/Joystick.gd").new()
-	_touch_pad.add_child(_joystick)
-	_touch_btn("interact", "GO", Vector2(574, 290), 0.52, 20, false)
-	_touch_btn("pause", "MENU", Vector2(606, 74), 0.34, 11, true)
-
-
-func _touch_btn(action: String, text: String, center: Vector2, s: float, font: int, red: bool) -> void:
-	var skin := "res://assets/ui/Small%sRoundButton_%s.png"
-	var col := "Red" if red else "Blue"
-	var b := TouchScreenButton.new()
-	b.texture_normal = Art.tex(skin % [col, "Regular"])
-	b.texture_pressed = Art.tex(skin % [col, "Pressed"])
-	b.action = action
-	b.passby_press = true   # a thumb sliding onto GO/MENU still presses it
-	# The art is 128px drawn from the node's origin, so the hit circle is its
-	# own centre at full size and rides `scale` down with the sprite.
-	var circle := CircleShape2D.new()
-	circle.radius = 64.0
-	b.shape = circle
-	b.shape_centered = true
-	b.scale = Vector2(s, s)
-	b.position = center - Vector2(64.0, 64.0) * s
-	b.modulate.a = 0.8
-	_touch_pad.add_child(b)
-	var l := Art.label(text, font, Color(1, 1, 1, 0.95), HORIZONTAL_ALIGNMENT_CENTER)
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.size = Vector2(80, 24)
-	l.position = center - Vector2(40, 12)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	Art.shadow(l)
-	_touch_pad.add_child(l)
-
-
-## The drawer stays out of the way of anything that wants the whole screen.
-func _close_dev() -> void:
-	if _dev != null and is_instance_valid(_dev):
-		_dev.close()
-
-
-## Hiding a TouchScreenButton releases its action on its own; the stick is a
-## plain Node2D, so a held drag needs the same release told explicitly, or it
-## would survive into a quiz or the pause menu.
-func _set_pad(on: bool) -> void:
-	if _touch_pad != null:
-		_touch_pad.visible = on
-	if not on and _joystick != null:
-		_joystick.release()
-
-
-func _flash_tip(text: String) -> void:
-	if not is_instance_valid(_prompt):
-		return
-	_flash_active = true
-	Art.toast(_prompt, text, 1.2, "", func() -> void: _flash_active = false)
-
-
-func _on_gems(g: int) -> void:
-	if is_instance_valid(_hud_gems):
-		_hud_gems.text = str(g)
-	var ratio := clampf(float(g) / float(Game.START_GEMS + 60), 0.0, 1.0)
-	if is_instance_valid(_gem_bar):
-		_gem_bar.value = 100.0 * ratio
-
-
-func _on_time(sec: int) -> void:
-	if is_instance_valid(_hud_time):
-		_hud_time.text = Ui.mmss(sec)
-
-
-func _refresh_hud() -> void:
-	_on_gems(Game.gems)
-	_on_time(int(ceilf(Game.time_left)))
-	var next := Game.completed_stations.find(false)
-	if Game.items_done >= Game.TOTAL_ITEMS:
-		_hud_station.text = "Victory Gate!"
-	else:
-		var st := Game.station_of_item(Game.items_done)
-		_hud_station.text = "Station %d · %d/%d" % [st + 1,
-				Game.item_in_station(Game.items_done), Game.ITEMS_PER_STATION[st]]
-	var marks := ""
-	for i in Game.ITEMS_PER_STATION.size():
-		marks += ["✓", "★", "—"][ 0 if Game.completed_stations[i] else (1 if Game.perfect_stations[i] else 2) ] + " "
-	_hud_pips.text = marks.strip_edges()
-	# Label the boards on the map itself, otherwise all three look identical.
-	for i in stations.locks.size():
-		var mark := "—"
-		if Game.completed_stations[i]:
-			mark = "★" if Game.perfect_stations[i] else "✓"
-		elif i == next:
-			mark = "▶"
-		stations.locks[i].text = "Station %d  %s" % [i + 1, mark]
-
-
-## Locked / current / done for all forty, after every resolved item.
 func _refresh_circles() -> void:
 	for n in _circles.size():
 		var state := "locked"
@@ -812,58 +580,19 @@ func _refresh_circles() -> void:
 ## Android's back button, routed here by Main: leaving a station mid-question
 ## is not on offer, so back opens the pause menu instead.
 func go_back() -> void:
-	if _overlay == null and not _paused and not _frozen:
-		_toggle_pause()
-
-
-func _toggle_pause() -> void:
-	if _paused:
-		return
-	_paused = true
-	_close_card()
-	_close_dev()
-	_set_pad(false)
-	var menu := Ui.panel(Vector2(300, 250), "Paused")
-	menu.position = Vector2(170, 46)
-	_ui_layer.add_child(menu)
-	var box: VBoxContainer = menu.get_child(0) as VBoxContainer
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	# label, kind, height, screen to open ("" = stay on the map), what to do with
-	# the run in progress.
-	for spec in [["Resume", Ui.BLUE, 44, "", ""], ["Home", Ui.SMALL, 38, "title", "end"],
-			["Restart", Ui.SMALL, 38, "adventure", "restart"],
-			["Leaderboard", Ui.SMALL_RED, 38, "board", ""],
-			["New Game", Ui.SMALL_RED, 38, "hero", "abandon"]]:
-		var b := Ui.button(spec[0], 170, spec[2], spec[1])
-		b.pressed.connect(_leave_pause.bind(menu, spec[3], spec[4]))
-		box.add_child(b)
-
-
-## Every pause exit closes the menu. `drop` decides the fate of the run in
-## progress -- "end" scores it, "restart" and "abandon" discard it unscored --
-## and `screen` where to go next. Restart rebuilds the island, because `open()`
-## remakes the screen, and the gems go back to the starting purse.
-func _leave_pause(menu: Control, screen: String, drop: String) -> void:
-	_paused = false
-	_set_pad(true)
-	menu.queue_free()
-	match drop:
-		"end": Game.end_adventure()
-		"restart": Game.restart_adventure()
-		"abandon": Game.abandon_adventure()
-	if screen != "":
-		main.open(screen)
+	if _overlay == null and not hud.paused and not _frozen:
+		hud.toggle_pause()
 
 
 # --- Quiz overlay -----------------------------------------------------------
 func _show_overlay(overlay: Control) -> void:
 	_overlay = overlay
 	_close_card()
-	_close_dev()
-	_set_pad(false)
+	hud.close_dev()
+	hud.set_pad(false)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.focus_mode = Control.FOCUS_ALL
-	_ui_layer.add_child(overlay)
+	hud.ui_layer.add_child(overlay)
 	overlay.setup({})
 	overlay.grab_focus()
 
@@ -875,8 +604,8 @@ func close_overlay() -> void:
 			Game.towers_entered[int(_overlay.get("station_index"))] = true
 		_overlay.queue_free()
 		_overlay = null
-		_set_pad(true)
-		_refresh_hud()
+		hud.set_pad(true)
+		hud.refresh()
 		_refresh_circles()
 		barricades.refresh()
 	# Clearing the board no longer ends the run on its own -- the Victory Gate
@@ -886,5 +615,5 @@ func close_overlay() -> void:
 func _on_adventure_end(result: Dictionary) -> void:
 	if _overlay != null:
 		close_overlay()
-	_paused = false
+	hud.paused = false
 	main.open("summary", result)

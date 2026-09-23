@@ -51,8 +51,8 @@ func _initialize() -> void:
 	root.add_child(_screen)
 	_screen.setup({})
 	# The board, not the game: no HUD bar, no joystick, no "tap to start".
-	_screen._hud_layer.visible = false
-	_screen._ui_layer.visible = false
+	_screen.hud.hud_layer.visible = false
+	_screen.hud.ui_layer.visible = false
 	_screen._cam.position_smoothing_enabled = false
 	_screen._clamp_cam(false)
 
@@ -71,9 +71,9 @@ func _process(_delta: float) -> bool:
 		_screen._cam.position = _screen._norm(shot.at)
 		# The HUD is off for every other shot; the drawer is the one thing here
 		# that only exists on the UI layer, so it gets it back.
-		_screen._ui_layer.visible = bool(shot.get("drawer", false))
-		if bool(shot.get("drawer", false)) and _screen._dev != null:
-			_screen._dev.toggle()
+		_screen.hud.ui_layer.visible = bool(shot.get("drawer", false))
+		if bool(shot.get("drawer", false)) and _screen.hud.dev != null:
+			_screen.hud.dev.toggle()
 			_hold = maxi(_hold, 30)
 		if bool(shot.get("dismiss", false)):
 			for g: Dictionary in _screen.barricades.list:
