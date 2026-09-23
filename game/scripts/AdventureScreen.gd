@@ -124,12 +124,16 @@ const BRIDGED_SEAMS := [0, 1, 2]
 ## What keeps the walk in order is not the guards, then, but `_can_enter_tower()`:
 ## a station only opens its briefing while the current item belongs to it. Reaching
 ## Station 2's door early gets you nothing but the view.
-## `t` draws a straight line that far along the stretch from the station to its
-## first circle. `arc` instead swings a fence of that radius, in cells, right
-## round the station -- for a station that sits in a corner of its island, where a
-## straight line has nowhere to go.
+## Each is a fence of `arc` cells' radius swung right round its station, with the
+## gap on the bearing the walk leaves by, `shift` cells of arc along the curve
+## from it. A fence rather than a line across the walk because every station
+## stands in a corner or at an end of its island, where a line either has nowhere
+## to go or strands a stop on the wrong side of itself -- and because a wall that
+## bows away from the station reads as one from the yard inside it.
 const BARRICADES := [
-	{"st": 0, "t": 0.55},
+	# Radius picked so the gap lands on the cell the old straight line put him on:
+	# the knight has not moved, the wall around him has curved.
+	{"st": 0, "arc": 8.0},
 	{"st": 1, "arc": 7.0},
 	# Island 3's station stands at the island's west end with the whole board east
 	# of it, so its fence is a small one: the gap where the road leaves, one rock
@@ -648,10 +652,7 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 		"guard": null,
 		"open": false,
 	}
-	if spec.has("arc"):
-		_lay_arc(g, a, b, float(spec.arc), float(spec.get("shift", 0.0)))
-	else:
-		_lay_line(g, a, b, float(spec.t))
+	_lay_arc(g, a, b, float(spec.arc), float(spec.get("shift", 0.0)))
 	g.stand = _guard_rest(g)
 	# Nothing grows in the gap, along the walk he takes out of it, or where he ends
 	# up standing -- a tree in any of the three reads as him shoving through a wood.
@@ -672,33 +673,6 @@ func _build_barricade(spec: Dictionary, ai: int) -> Dictionary:
 			span = span.merge(r)
 		_station_rects.append(span.grow(TILE * 2.0))
 	return g
-
-
-## A straight line square across the walk, `t` of the way from the station to its
-## first circle, laid cell by cell out to land's end on both sides.
-func _lay_line(g: Dictionary, a: Vector2, b: Vector2, t: float) -> void:
-	var dir := (b - a).normalized()
-	# Whole cells, square to the grid, or the rects leave diagonal slips between
-	# them: across the walk is the other axis, whichever one that is.
-	var step := Vector2i(0, 1) if absf(dir.x) >= absf(dir.y) else Vector2i(1, 0)
-	# Each cell of the line is two cells deep along the walk, one across. Two deep
-	# because `_is_walkable()` is a point test against the player's position, and a
-	# one-tile wall can be stepped clean over in a single frame after a hitch.
-	var size := (Vector2(2, 1) if step == Vector2i(0, 1) else Vector2(1, 2)) * TILE
-	# The gap runs from `mid` outward for BARRICADE_GAP cells; the rocks start on
-	# either side of it and run to the water.
-	var mid := _cell_at(a.lerp(b, t))
-	var last := BARRICADE_GAP - 1
-	g.post = _cell_mid(mid) + Vector2(step) * (float(last) * 0.5 * TILE)
-	g.wall = _cells_rect(mid, step, 0, last, size)
-	for run in [[-1, -1], [last + 1, 1]]:
-		var n: int = run[0]
-		while true:
-			var c := mid + step * n
-			if not _land.has(c):
-				break
-			_lay_rock(g, c, _cells_rect(c, step, 0, 0, size))
-			n += int(run[1])
 
 
 ## A fence swung right round the station at `radius` cells, from land's end on one
@@ -749,15 +723,6 @@ func _lay_rock(g: Dictionary, c: Vector2i, rect: Rect2) -> void:
 	# Round-robin off the cell so the wall is not four of the same stone.
 	Art.sprite(world, Art.tex("res://assets/terrain/decorations/Rock%d.png"
 			% (1 + posmod(c.x + c.y, 4))), _cell_mid(c), ROCK_SCALE)
-
-
-## The rect covering the cells `lo` to `hi` steps of `step` away from `c`, each cell
-## being `size` (already deeper along the walk than one tile). Shared so the
-## guard's plug and the rocks either side of it line up exactly.
-func _cells_rect(c: Vector2i, step: Vector2i, lo: int, hi: int, size: Vector2) -> Rect2:
-	var from := _cell_mid(c) + Vector2(step) * (float(lo) * TILE) - size * 0.5
-	var to := _cell_mid(c) + Vector2(step) * (float(hi) * TILE) + size * 0.5
-	return Rect2(from, to - from)
 
 
 ## Has this run already earned its way past `g`? One rule: the briefing.
