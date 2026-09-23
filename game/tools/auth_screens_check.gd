@@ -63,6 +63,27 @@ func _ready() -> void:
 	_check("name survives into the session",
 		"" if Net.username == "sc" + stamp else "got '%s'" % Net.username)
 
+	# Sign in again with the USERNAME this time, through the same form.
+	Net.sign_out()
+	main.open("login")
+	await get_tree().process_frame
+	var form: Control = main.current
+	form._email.text = "sc" + stamp
+	form._pass.text = pw
+	await form._submit()
+	await get_tree().process_frame
+	_check("username signs in too", "" if Net.signed_in() else "no session from a username")
+	_check("username lands on home",
+		"" if main.current.get_script().resource_path.ends_with("HomeScreen.gd")
+		else "opened %s" % main.current.get_script().resource_path)
+
+	# An unknown username must fail like a wrong password, not differently.
+	Net.sign_out()
+	var unknown: String = await Net.sign_in("nobody" + stamp, pw)
+	var wrong: String = await Net.sign_in("sc" + stamp, "wrongpassword")
+	_check("unknown username cannot be told from a wrong password",
+		"" if unknown == wrong else "'%s' vs '%s'" % [unknown, wrong])
+
 	print("---- AUTH SCREENS %s ----" % ("PASS" if _failures == 0 else "FAIL"))
 	get_tree().quit(1 if _failures > 0 else 0)
 
