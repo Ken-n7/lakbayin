@@ -264,6 +264,12 @@ func _set_state(want: String, is_start: bool) -> void:
 		# The typed duration goes up with the start, which is why there is no
 		# Apply Time: the only moment it matters is the moment it begins.
 		duration_seconds = _seconds()
+		# One live adventure per teacher. Old rows stayed `running` for ever
+		# and a student joining tomorrow landed in yesterday's game.
+		await Net.rest(HTTPClient.METHOD_PATCH,
+			SESSIONS + "?admin_id=eq." + Net.user_id
+			+ "&id=neq." + str(_session.get("id", "")) + "&state=neq.ended",
+			{"state": "ended"})
 		var short: String = await QuestionStore.shortfall()
 		if short != "":
 			_say("Cannot start — question bank incomplete:  " + short, Pal.WRONG)

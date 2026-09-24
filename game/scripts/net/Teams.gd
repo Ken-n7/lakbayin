@@ -18,12 +18,25 @@ const MEMBERS := "/rest/v1/members"
 ## SPECS §11 Q12 if two teachers ever need to run at once.
 static func live_session() -> Dictionary:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		SESSIONS + "?select=*&state=neq.ended&order=created_at.desc&limit=1")
+		SESSIONS + "?select=*&state=neq.ended&order=created_at.desc&limit=5")
 	if got.error != "":
 		return {"error": got.error, "session": {}}
-	if got.data is Array and not (got.data as Array).is_empty():
-		return {"error": "", "session": got.data[0]}
+	for row: Dictionary in (got.data if got.data is Array else []):
+		if not expired(row):
+			return {"error": "", "session": row}
 	return {"error": "No adventure has been set up yet.", "session": {}}
+
+
+## A run whose deadline has passed is over whether or not anybody set its state
+## to `ended`. Without this a student joining tomorrow lands in yesterday's
+## adventure, with a clock that reads 00:00 and a board that will not start.
+static func expired(session: Dictionary) -> bool:
+	if str(session.get("state", "")) != "running":
+		return false
+	var ends: String = str(session.get("ends_at", ""))
+	if ends == "":
+		return false
+	return Time.get_unix_time_from_datetime_string(ends) <= Time.get_unix_time_from_system()
 
 
 ## Join by name. Returns "" on success, or what to show under the field.

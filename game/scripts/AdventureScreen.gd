@@ -51,6 +51,9 @@ var decor: Decor
 var _circles: Array = []        # Game.TOTAL_ITEMS PathCircle nodes, path order
 ## Everyone else in the session, drawn where their `items_done` puts them.
 var _peers: Peers = null
+## The session has ended and we are on our way out; arriving twice must not
+## score the run twice.
+var _ending := false
 var _cam: Camera2D
 var _bang: Label = null         # the "!" over the hero when something is in reach
 
@@ -101,7 +104,6 @@ func _sync_session() -> void:
 	# the fan-out is the session's size -- see `Teams.everyone()` for the
 	# number that decides whether this stays affordable.
 	rt.watch("members", "session_id=eq." + sid)
-	_refresh_peers()
 
 
 ## Forward a scoring event to the function that owns it, then take the
@@ -130,6 +132,11 @@ func _on_session_row(table: String, _type: String, record: Dictionary) -> void:
 	if table == "members":
 		_refresh_peers()
 		return
+	if table == "sessions" and record.is_empty():
+		# The row was deleted out from under everyone -- the teacher tearing
+		# the session down counts as ending it.
+		_leave_ended()
+		return
 	if table != "sessions":
 		return
 	Game.apply_session(record)
@@ -155,6 +162,23 @@ func _refresh_peers() -> void:
 	_peers.refresh(rows, anchors, gate_at, Net.user_id)
 
 
+## The run is over and it was not this player's doing, so say so and score
+## what they have. Guarded, because the state can arrive twice -- once from
+## the fetch and once from the socket -- and ending twice would score twice.
+func _leave_ended() -> void:
+	if _ending:
+		return
+	_ending = true
+	hud.flash("The adventure has ended")
+	await get_tree().create_timer(1.6).timeout
+	if not is_instance_valid(self):
+		return
+	if Game.adventure_active:
+		Game.end_adventure()      # opens the summary through `_on_adventure_end`
+	else:
+		main.open("home")
+
+
 ## One place deciding what the session's state means on the board.
 func _apply_session_state() -> void:
 	match Game.session_state:
@@ -171,7 +195,8 @@ func _apply_session_state() -> void:
 			hud.set_prompt("Paused by your teacher")
 		"ended":
 			hud.paused = true
-			hud.set_prompt("Time is up")
+			hud.set_prompt("Your teacher ended the adventure")
+			_leave_ended()
 		_:
 			hud.paused = true
 			if is_instance_valid(_start_hint):
@@ -223,6 +248,9 @@ func setup(_data: Dictionary) -> void:
 	Game.adventure_ended.connect(_on_adventure_end)
 	hud.refresh()
 	_refresh_circles()
+	# After the circles exist: `_sync_session()` starts before the board is
+	# built, and an early call found no anchors and drew nobody.
+	_refresh_peers()
 	# A restart mid-run keeps whatever it had already opened.
 	barricades.refresh()
 	_start_intro()
