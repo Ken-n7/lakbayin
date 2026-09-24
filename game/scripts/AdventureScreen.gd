@@ -49,6 +49,8 @@ var barricades: Barricades
 var decor: Decor
 
 var _circles: Array = []        # Game.TOTAL_ITEMS PathCircle nodes, path order
+## Everyone else in the session, drawn where their `items_done` puts them.
+var _peers: Peers = null
 var _cam: Camera2D
 var _bang: Label = null         # the "!" over the hero when something is in reach
 
@@ -91,9 +93,15 @@ func _sync_session() -> void:
 	# overlay does not wait on a round trip.
 	Game.scored.connect(_on_scored)
 
+	var sid: String = str(live.session.get("id", ""))
 	var rt: Realtime = Net.realtime()
 	rt.changed.connect(_on_session_row)
-	rt.watch("sessions", "id=eq." + str(live.session.get("id", "")))
+	rt.watch("sessions", "id=eq." + sid)
+	# Everyone else in this session, on this board. Scoped to the session, so
+	# the fan-out is the session's size -- see `Teams.everyone()` for the
+	# number that decides whether this stays affordable.
+	rt.watch("members", "session_id=eq." + sid)
+	_refresh_peers()
 
 
 ## Forward a scoring event to the function that owns it, then take the
@@ -117,10 +125,34 @@ func _on_scored(kind: String, flag: bool) -> void:
 
 
 func _on_session_row(table: String, _type: String, record: Dictionary) -> void:
-	if table != "sessions" or not is_instance_valid(self):
+	if not is_instance_valid(self):
+		return
+	if table == "members":
+		_refresh_peers()
+		return
+	if table != "sessions":
 		return
 	Game.apply_session(record)
 	_apply_session_state()
+
+
+## Where everybody else has got to. `items_done` is the position and it is
+## already being written by `apply_answer`, so this adds no writes -- it only
+## listens to what the scoring was sending anyway.
+func _refresh_peers() -> void:
+	if Game.session_id == "":
+		return
+	var rows: Array = await Teams.everyone(Game.session_id)
+	if not is_instance_valid(self) or _circles.is_empty():
+		return
+	if _peers == null or not is_instance_valid(_peers):
+		_peers = Peers.new()
+		world.add_child(_peers)
+	var anchors: Array = []
+	for c in _circles:
+		anchors.append((c as Node2D).position)
+	var gate_at: Vector2 = stations.gate.position if stations.gate != null else anchors[-1]
+	_peers.refresh(rows, anchors, gate_at, Net.user_id)
 
 
 ## One place deciding what the session's state means on the board.

@@ -99,6 +99,31 @@ static func teammates(session_id: String) -> Array:
 	return out
 
 
+## Everyone in the session, whatever team: who they are, where they have got
+## to, and which team's colour to draw them in. This is what puts the whole
+## class on one board.
+##
+## Scoped to a session, so the fan-out is the session's size -- eight players
+## is ~900 realtime messages an adventure. A class of forty would be ~22,000,
+## which is the number to remember before widening this.
+static func everyone(session_id: String) -> Array:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		MEMBERS + "?select=profile_id,team_id,items_done,gems,eliminated,"
+		+ "profiles(username)&session_id=eq." + session_id)
+	var out: Array = []
+	for row: Dictionary in (got.data if got.data is Array else []):
+		var who: Variant = row.get("profiles")
+		out.append({
+			"profile_id": str(row.get("profile_id", "")),
+			"team_id": str(row.get("team_id", "")),
+			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else "?",
+			"items_done": int(row.get("items_done", 0)),
+			"gems": int(row.get("gems", 0)),
+			"eliminated": bool(row.get("eliminated", false)),
+		})
+	return out
+
+
 ## team id -> [username]. What Game Controls prints under "Joined Members:".
 static func roster(session_id: String) -> Dictionary:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,

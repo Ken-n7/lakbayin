@@ -144,5 +144,38 @@ func _init() -> void:
 	assert(E.spend_hint(), "a hint is affordable even at zero")
 	print("elimination: fires at zero, latches, and gems run negative")
 
+	# --- Everyone else on the board -----------------------------------------
+	# `items_done` is the position: a player who has answered three items
+	# stands at circle three, and one who has finished stands at the gate.
+	var P: Node2D = load("res://scripts/map/Peers.gd").new()
+	var anchors: Array = []
+	for i in 14:
+		anchors.append(Vector2(i * 100, 0))
+	var gate := Vector2(9999, 0)
+	var rows: Array = [
+		{"profile_id": "me", "username": "me", "team_id": "a", "items_done": 5},
+		{"profile_id": "b", "username": "bea", "team_id": "a", "items_done": 3},
+		{"profile_id": "c", "username": "cy", "team_id": "z", "items_done": 14},
+		{"profile_id": "d", "username": "dee", "team_id": "z", "items_done": 0,
+			"eliminated": true},
+	]
+	P.refresh(rows, anchors, gate, "me")
+	assert(P.get_child_count() == 3, "the player themselves is not a marker: %d" % P.get_child_count())
+	var spots := {}
+	for m in P.get_children():
+		spots[(m as Node2D).position] = true
+	assert(spots.has(Vector2(300, 0)), "three items done stands at circle three")
+	assert(spots.has(gate), "everything done stands at the gate")
+	assert(spots.has(Vector2(0, 0)), "nothing done stands at the first circle")
+
+	# Two teams, two colours, and the same team keeps its colour.
+	assert(P._colour("a") == P._colour("a"), "a team's colour is stable")
+	assert(P._colour("a") != P._colour("z"), "two teams read apart")
+
+	# Somebody who leaves the session leaves the board.
+	P.refresh(rows.slice(0, 2), anchors, gate, "me")
+	assert(P.get_child_count() == 1, "left the session, left the board: %d" % P.get_child_count())
+	print("peers: markers stand where items_done says, and leave when the player does")
+
 	print("test_rules: all assertions passed")
 	quit()
