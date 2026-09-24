@@ -41,14 +41,16 @@ def note(kind, text):
 class Student(threading.Thread):
     """One phone. Joins, waits to be started, answers its way to the gate."""
 
-    def __init__(self, idx, stamp, team, accuracy, rescuer):
+    def __init__(self, idx, stamp, team, accuracy, rescuer, reuse=False):
         super().__init__(daemon=True)
         self.idx, self.stamp, self.team = idx, stamp, team
+        self.reuse = reuse
         self.accuracy, self.rescuer = accuracy, rescuer
         self.api = Api(f"s{idx}")
         self.expected = START_GEMS
         self.answered = self.correct = self.hints = self.skips = self.refused = 0
         self.error = None
+        self.name = ""
         self.session = None
         self.joined_at = None
 
@@ -60,9 +62,20 @@ class Student(threading.Thread):
             note("error", f"student {self.idx}: {e}")
 
     def _play(self):
-        name = f"sim{self.stamp}p{self.idx}"
+        # A fixed roster when reusing, so the same forty accounts serve every
+        # run; a stamped one when registering, which is what measures the
+        # sign-up burst a real first day would produce.
+        name = f"simclass{self.idx:03d}" if self.reuse else f"sim{self.stamp}p{self.idx}"
+        self.name = name
         started = time.time()
-        self.api.sign_up(f"{name}@numxventure-test.dev", name, "letmein123", "player")
+        email = f"{name}@numxventure-test.dev"
+        if self.reuse:
+            try:
+                self.api.sign_in(email, "letmein123")
+            except ApiError:
+                self.api.sign_up(email, name, "letmein123", "player")
+        else:
+            self.api.sign_up(email, name, "letmein123", "player")
         # Join by team name, exactly as the team screen does.
         live = self.api.get("sessions?select=*&state=neq.ended"
                             "&order=created_at.desc&limit=1", what="live_session")
@@ -140,6 +153,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--students", type=int, default=24)
     ap.add_argument("--teams", type=int, default=4)
+    ap.add_argument("--reuse", action="store_true",
+                    help="sign in as a fixed roster instead of registering a new "
+                         "one. The simulation cannot delete auth users -- that "
+                         "needs the service key -- so every run otherwise leaves "
+                         "N more accounts behind, and spends the sign-up budget "
+                         "measuring something already measured.")
     args = ap.parse_args()
 
     stamp = str(int(time.time()))
@@ -169,7 +188,8 @@ def main():
     students = []
     for i in range(args.students):
         s = Student(i, stamp, team_names[i % args.teams],
-                    accuracy=random.uniform(0.45, 0.95), rescuer=(i % 7 == 0))
+                    accuracy=random.uniform(0.45, 0.95), rescuer=(i % 7 == 0),
+                    reuse=args.reuse)
         students.append(s)
         s.start()
         time.sleep(0.15)                 # a class does not tap in lockstep
@@ -225,19 +245,18 @@ def report(teacher, session, students, team_names):
     mismatched = 0
     played = [s for s in students if not s.error]
     for s in played:
-        name = f"sim{s.stamp}p{s.idx}"
-        row = by_name.get(name)
+        row = by_name.get(s.name)
         if row is None:
-            note("missing", f"{name} has no members row")
+            note("missing", f"{s.name} has no members row")
             continue
         if row["gems"] != s.expected:
             mismatched += 1
-            note("gems", f"{name}: server {row['gems']}, expected {s.expected}")
+            note("gems", f"{s.name}: server {row['gems']}, expected {s.expected}")
         if row["items_done"] != s.answered + s.skips:
-            note("items", f"{name}: items_done {row['items_done']}, "
+            note("items", f"{s.name}: items_done {row['items_done']}, "
                           f"expected {s.answered + s.skips}")
         if row["correct"] != s.correct:
-            note("correct", f"{name}: correct {row['correct']}, expected {s.correct}")
+            note("correct", f"{s.name}: correct {row['correct']}, expected {s.correct}")
 
     print(f"students that played: {len(played)}/{len(students)}")
     print(f"gem totals matched : {len(played) - mismatched}/{len(played) or 1}")
