@@ -161,7 +161,7 @@ begin
     raise exception 'the adventure is not running';
   end if;
   update public.members
-     set gems       = greatest(gems + case when p_correct then 10 else -5 end, 0),
+     set gems       = gems + case when p_correct then 10 else -5 end,
          correct    = correct + case when p_correct then 1 else 0 end,
          items_done = items_done + 1,
          updated_at = now()
@@ -184,7 +184,7 @@ begin
     raise exception 'the adventure is not running';
   end if;
   update public.members
-     set gems = greatest(gems - 5, 0), updated_at = now()
+     set gems = gems - 5, updated_at = now()
    where session_id = p_session and profile_id = auth.uid()
   returning * into row;
   return row;
@@ -201,18 +201,22 @@ begin
     raise exception 'the adventure is not running';
   end if;
   update public.members
-     set gems = greatest(gems - 15, 0), items_done = items_done + 1,
+     set gems = gems - 15, items_done = items_done + 1,
          updated_at = now()
    where session_id = p_session and profile_id = auth.uid()
   returning * into row;
   return row;
 end $$;
 
--- ponytail: gems clamp at 0, so elimination can never fire. That clamp is
--- deliberate until Q2 comes back -- the client has not said whether an
--- eliminated player stops playing or keeps answering at zero, and guessing
--- wrong here costs a team 50 gems. Remove `greatest(..., 0)` when it is
--- answered, and Phase 5 takes the -50 from there.
+-- Gems no longer clamp at zero, so a player can reach it and be eliminated
+-- (SPECS §4, and the research paper's "Eliminated Member (reaching 0 gems):
+-- -50 gems"). They keep answering afterwards -- the -50 has already been taken
+-- and a student benched for the rest of a proctored class is the worse
+-- outcome -- but they cannot fall further: `eliminated` latches once, so the
+-- team is charged exactly one -50 however the run goes from there.
+--
+-- Q2 is still open on whether an eliminated player should stop entirely. If
+-- the client says stop, it is this flag the map would read.
 
 create or replace function public.finish_station(p_session uuid, p_perfect boolean)
 returns public.members
@@ -227,6 +231,72 @@ begin
   returning * into row;
   return row;
 end $$;
+
+-- Elimination latches the first time a player's gems reach zero, so the team
+-- is charged -50 exactly once no matter what happens afterwards.
+create or replace function public.mark_eliminated() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.gems <= 0 and not old.eliminated then
+    new.eliminated := true;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists members_eliminated on public.members;
+create trigger members_eliminated before update on public.members
+  for each row execute function public.mark_eliminated();
+
+-- Rescue: -10 from the sender, +10 to the receiver, both in one statement so a
+-- failure cannot create or destroy gems (SPECS §4, and the paper's "A teammate
+-- will be allowed to transfer 10 gems to assist one member only").
+--
+-- One assist per sender per adventure, which is what "one member only" means,
+-- enforced by `rescued_at` rather than trusted to the client. You cannot
+-- rescue yourself, someone on another team, or someone already eliminated --
+-- the -50 has been taken and refunding it would make elimination negotiable.
+alter table public.members add column if not exists rescued_at timestamptz;
+
+create or replace function public.rescue(p_session uuid, p_to uuid)
+returns public.members
+language plpgsql security definer set search_path = '' as $$
+declare
+  giver public.members;
+  taker public.members;
+begin
+  select * into giver from public.members
+   where session_id = p_session and profile_id = auth.uid();
+  if giver is null then
+    raise exception 'you are not in this adventure';
+  end if;
+  if giver.rescued_at is not null then
+    raise exception 'you have already sent a rescue';
+  end if;
+  if giver.profile_id = p_to then
+    raise exception 'you cannot rescue yourself';
+  end if;
+  if giver.gems < 10 then
+    raise exception 'you need 10 gems to send a rescue';
+  end if;
+
+  select * into taker from public.members
+   where session_id = p_session and profile_id = p_to;
+  if taker is null or taker.team_id <> giver.team_id then
+    raise exception 'that player is not on your team';
+  end if;
+  if taker.eliminated then
+    raise exception 'that player is already out';
+  end if;
+
+  update public.members set gems = gems - 10, rescued_at = now(), updated_at = now()
+   where session_id = p_session and profile_id = auth.uid();
+  update public.members set gems = gems + 10, updated_at = now()
+   where session_id = p_session and profile_id = p_to
+  returning * into taker;
+  return taker;
+end $$;
+
+grant execute on function public.rescue(uuid, uuid) to authenticated;
 
 grant execute on function public.apply_answer(uuid, boolean) to authenticated;
 grant execute on function public.spend_hint(uuid) to authenticated;

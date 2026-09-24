@@ -9,6 +9,8 @@ signal adventure_started
 signal adventure_ended(result: Dictionary)
 ## lobby / running / paused / ended, as the admin's session row says.
 signal session_state_changed(state: String)
+## Gems reached zero. The team is charged GEM_ELIMINATED once.
+signal eliminated_changed
 
 # --- Gems scoring rules (from the NumXventure design) -----------------------
 const START_GEMS := 50
@@ -18,6 +20,8 @@ const GEM_HINT := -5
 const GEM_SKIP := -15
 const GEM_PERFECT_BONUS := 10
 const GEM_TEAM_FINISH_PENALTY := -25
+## Charged to the team the first time a member reaches zero gems.
+const GEM_ELIMINATED := -50
 
 # --- Adventure shape --------------------------------------------------------
 const ITEMS_PER_STATION := [8, 3, 3]      # Station 1/2/3
@@ -108,6 +112,13 @@ func _ready() -> void:
 
 ## The state of the admin's session, "" when playing offline.
 var session_state := ""
+## Latches once. An eliminated player keeps answering -- the penalty is already
+## taken, and benching a student for the rest of a proctored class is the worse
+## outcome -- but the team is only ever charged for it once.
+var eliminated := false
+## One assist per sender per adventure -- the paper's "to assist one member
+## only". The server enforces it; this only keeps the button honest.
+var rescue_sent := false
 ## The session the score belongs to, "" when playing offline.
 var session_id := ""
 
@@ -165,6 +176,8 @@ func begin_adventure(seconds: int = 600) -> void:
 	time_left = duration_seconds
 	adventure_active = true
 	clock_paused = false
+	eliminated = false
+	rescue_sent = false
 	current_station = 0
 	items_done = 0
 	towers_entered = [false, false, false]
@@ -253,14 +266,21 @@ func _gems_reset() -> void:
 	gems_changed.emit(gems)
 
 
+## No clamp. Gems reach zero and the player is eliminated -- the paper's
+## "Eliminated Member (reaching 0 gems): -50 gems", which could never fire
+## while this floored at zero. The -50 is charged once, by `eliminated`
+## latching, so a run cannot keep billing the team.
 func _apply(delta: int) -> void:
-	gems = maxi(gems + delta, 0)
+	gems += delta
+	if gems <= 0 and not eliminated:
+		eliminated = true
+		eliminated_changed.emit()
 	gems_changed.emit(gems)
 
 
 ## One hint per item, -5 gems each (design doc: "Use of Hint: -5 gems").
 func spend_hint() -> bool:
-	if gems <= 0 or item_used_hint:
+	if item_used_hint:
 		return false
 	item_used_hint = true
 	station_used_hint = true
@@ -295,6 +315,12 @@ func mark_skipped() -> void:
 	station_flawed = true
 	_apply(GEM_SKIP)
 	scored.emit("skip", false)
+
+
+## Ten gems to a team-mate, already applied on the server.
+func mark_rescue_sent() -> void:
+	rescue_sent = true
+	_apply(-10)
 
 
 ## Call after finishing a station's last item.

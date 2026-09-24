@@ -33,6 +33,9 @@ var _btn_hint: Button
 var _btn_skip: Button
 var _inrow: HBoxContainer
 var _keypad: CenterContainer
+var _rescue: MenuButton
+## The team-mates the dropdown is currently offering.
+var _mates: Array = []
 var _action: HBoxContainer
 var _result_title: Label
 var _result_rule: Label
@@ -138,13 +141,14 @@ func _build() -> void:
 	_btn_submit.pressed.connect(_submit)
 	var btn_skip := Ui.button("Skip (−15)", 120, Ui.H, Ui.SMALL_RED)
 	btn_skip.pressed.connect(_skip)
-	var rescue := Ui.button("Rescue", 92, Ui.H, Ui.SMALL)
-	rescue.disabled = true
-	rescue.tooltip_text = "Needs a teammate to transfer gems"
+	_rescue = Ui.menu_button("Rescue", 92, Ui.H, Ui.SMALL)
+	_rescue.disabled = true
+	_rescue.tooltip_text = "Needs a team-mate to transfer gems to"
+	_rescue.get_popup().id_pressed.connect(_send_rescue)
 	action.add_child(_btn_hint)
 	action.add_child(_btn_submit)
 	action.add_child(btn_skip)
-	action.add_child(rescue)
+	action.add_child(_rescue)
 	_btn_skip = btn_skip
 	_action = action
 	_panel.add_child(action)
@@ -198,6 +202,7 @@ func _next_question() -> void:
 	_layout()
 	_hint_text.text = ""
 	_input.text = ""
+	_refresh_rescue()
 	_btn_hint.disabled = false
 
 
@@ -215,6 +220,44 @@ func _submit() -> void:
 	else:
 		Game.mark_wrong()
 		_show_result(false)
+
+
+## Who Rescue can send to, refreshed per item because a team-mate's gems and
+## their being out both change while the adventure runs.
+##
+## -10 from the sender and +10 to the receiver is net zero for the team; the
+## point is keeping somebody above zero, since hitting it costs the team 50.
+func _refresh_rescue() -> void:
+	if not is_instance_valid(_rescue):
+		return
+	_rescue.disabled = true
+	if Game.session_id == "" or Game.rescue_sent or Game.gems < 10:
+		return
+	_mates = await Teams.teammates(Game.session_id)
+	if not is_instance_valid(_rescue):
+		return
+	var menu := _rescue.get_popup()
+	menu.clear()
+	for i in _mates.size():
+		var m: Dictionary = _mates[i]
+		menu.add_item("%s  (%d gems)" % [m.username, m.gems], i)
+		# Already out: the team has been charged, and refunding that would
+		# make elimination negotiable. The server refuses it too.
+		menu.set_item_disabled(i, bool(m.eliminated))
+	_rescue.disabled = _mates.is_empty()
+
+
+func _send_rescue(id: int) -> void:
+	if id < 0 or id >= _mates.size():
+		return
+	var mate: Dictionary = _mates[id]
+	var reply: Dictionary = await Scores.rescue(Game.session_id, str(mate.profile_id))
+	if reply.error != "":
+		_flash_trouble(reply.error)
+		return
+	Game.mark_rescue_sent()
+	_flash_trouble("Sent 10 gems to %s" % mate.username)
+	_refresh_rescue()
 
 
 ## Authored answers are free text, so "-2", "-2 " and "−2" (the minus sign the

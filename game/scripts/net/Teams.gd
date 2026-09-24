@@ -71,6 +71,34 @@ static func join(team_name: String) -> String:
 	return made.error
 
 
+## The caller's team-mates in this session, minus the caller. Who Rescue can
+## send to, and the only list it is allowed to offer -- the server checks the
+## same thing, since a dropdown is not a permission.
+static func teammates(session_id: String) -> Array:
+	var mine: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		MEMBERS + "?select=team_id&session_id=eq." + session_id
+		+ "&profile_id=eq." + Net.user_id)
+	var rows: Array = mine.data if mine.data is Array else []
+	if rows.is_empty():
+		return []
+	var team: String = str(rows[0].get("team_id", ""))
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		MEMBERS + "?select=profile_id,gems,eliminated,profiles(username)"
+		+ "&session_id=eq." + session_id + "&team_id=eq." + team + "&order=gems")
+	var out: Array = []
+	for row: Dictionary in (got.data if got.data is Array else []):
+		if str(row.get("profile_id", "")) == Net.user_id:
+			continue
+		var who: Variant = row.get("profiles")
+		out.append({
+			"profile_id": str(row.get("profile_id", "")),
+			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else "?",
+			"gems": int(row.get("gems", 0)),
+			"eliminated": bool(row.get("eliminated", false)),
+		})
+	return out
+
+
 ## team id -> [username]. What Game Controls prints under "Joined Members:".
 static func roster(session_id: String) -> Dictionary:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,

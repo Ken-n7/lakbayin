@@ -27,6 +27,12 @@ static func finish_station(session_id: String, perfect: bool) -> Dictionary:
 	return await _call("finish_station", {"p_session": session_id, "p_perfect": perfect})
 
 
+## Send 10 gems to a team-mate. One per sender per adventure, which the server
+## enforces -- the dropdown only decides what is easy, never what is allowed.
+static func rescue(session_id: String, to_profile: String) -> Dictionary:
+	return await _call("rescue", {"p_session": session_id, "p_to": to_profile})
+
+
 ## `{"error": String, "row": Dictionary}` -- the member row as the server left it.
 static func _call(fn: String, args: Dictionary) -> Dictionary:
 	var reply: Dictionary = await Net.rest(HTTPClient.METHOD_POST, RPC + fn, args)

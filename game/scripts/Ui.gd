@@ -58,6 +58,27 @@ static func button(text: String, w: float, h: float, kind := BLUE) -> Button:
 	return b
 
 
+## A button that drops a list, wearing the same skin as the rest. The one
+## place the game needs it is Rescue, which the mockups draw as "Rescue ▾".
+static func menu_button(text: String, w: float, h: float, kind := BLUE) -> MenuButton:
+	var m := MenuButton.new()
+	m.text = text
+	m.custom_minimum_size = Vector2(w, h)
+	m.clip_text = true
+	var normal: String = KINDS[kind][0]
+	var down: String = KINDS[kind][1]
+	for state in ["normal", "hover", "focus"]:
+		m.add_theme_stylebox_override(state, Art.panel(normal, BTN_SLICE, BTN_K))
+	m.add_theme_stylebox_override("pressed", Art.panel(down, BTN_SLICE, BTN_K))
+	var off := Art.panel(normal, BTN_SLICE, BTN_K)
+	off.modulate_color = Color(0.62, 0.62, 0.66, 0.85)
+	m.add_theme_stylebox_override("disabled", off)
+	m.add_theme_color_override("font_color", Pal.WHITE_STRONG)
+	m.add_theme_color_override("font_disabled_color", Pal.WHITE_FAINT)
+	m.add_theme_font_size_override("font_size", maxi(int(KINDS[kind][2]), Art.MIN_FONT))
+	return m
+
+
 ## Text field styled for the parchment panels; the engine default grey box
 ## read as an OS form dropped onto the artwork.
 static func line_edit(placeholder: String, w: float, h := 30.0, size := 15) -> LineEdit:

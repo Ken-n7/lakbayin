@@ -120,5 +120,29 @@ func _init() -> void:
 	assert(G.time_left == 0.0, "a passed deadline clamps at zero: %f" % G.time_left)
 	print("clock: lobby / running / paused / ended all read the session")
 
+	# --- Elimination --------------------------------------------------------
+	# The paper: "Eliminated Member (reaching 0 gems): -50 gems". It could
+	# never fire while gems floored at zero, which they did until now.
+	var E: Node = load("res://scripts/Game.gd").new()
+	E.begin_adventure(600)
+	assert(not E.eliminated, "nobody starts eliminated")
+	for i in 10:
+		E.begin_item()
+		E.mark_wrong()          # -5 each: 50 -> 0
+	assert(E.gems == 0, "ten wrong answers reach exactly zero: %d" % E.gems)
+	assert(E.eliminated, "reaching zero eliminates")
+
+	# Gems go past zero rather than sticking, and the team is charged once.
+	E.begin_item()
+	E.mark_wrong()
+	assert(E.gems == -5, "gems do not clamp: %d" % E.gems)
+	assert(E.eliminated, "still eliminated, not re-eliminated")
+
+	# A hint with no gems left is still allowed -- the cost is the point, and
+	# refusing it used to be an accident of the clamp rather than a rule.
+	E.begin_item()
+	assert(E.spend_hint(), "a hint is affordable even at zero")
+	print("elimination: fires at zero, latches, and gems run negative")
+
 	print("test_rules: all assertions passed")
 	quit()
