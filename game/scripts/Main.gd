@@ -45,36 +45,43 @@ func _build_dev_nav() -> void:
 	layer.layer = 128
 	add_child(layer)
 
-	var panel := VBoxContainer.new()
-	panel.add_theme_constant_override("separation", 2)
-	panel.position = Vector2(4, 24)
-	panel.visible = false
-	layer.add_child(panel)
-
-	var toggle := Ui.button("DEV", 42, 18, Ui.SMALL_RED)
-	# Bottom left: the dashboards put their title top-left and Log Out
-	# top-right, and every panel screen puts its title top-centre. This is the
-	# one corner nothing claims.
-	toggle.position = Vector2(4, 334)
-	toggle.add_theme_font_size_override("font_size", 10)
-	toggle.pressed.connect(func() -> void: panel.visible = not panel.visible)
-	layer.add_child(toggle)
+	var box := DevUi.box(184.0)
+	box.position = Vector2(20, 4)
+	box.visible = false
+	layer.add_child(box)
+	# Two columns: fifteen entries in one ran off the bottom of the canvas, and
+	# a row is ~24px however small the height asked for -- the content margins
+	# set the floor, not the request.
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 2)
+	grid.add_theme_constant_override("v_separation", 1)
+	DevUi.column(box).add_child(grid)
+	var col := grid
 
 	for name: String in SCREENS:
-		var b := Ui.button(name, 96, 17, Ui.SMALL)
-		b.add_theme_font_size_override("font_size", 10)
+		var b := DevUi.button(name)
+		b.custom_minimum_size = Vector2(88, 19)
 		b.pressed.connect(func() -> void:
-			panel.visible = false
+			box.visible = false
 			_dev_open(name))
-		panel.add_child(b)
+		col.add_child(b)
 
-	var out := Ui.button("sign out", 96, 17, Ui.SMALL_RED)
-	out.add_theme_font_size_override("font_size", 10)
+	var out := DevUi.button("sign out")
+	out.custom_minimum_size = Vector2(88, 19)
 	out.pressed.connect(func() -> void:
 		Net.sign_out()
-		panel.visible = false
+		box.visible = false
 		open("login"))
-	panel.add_child(out)
+	col.add_child(out)
+
+	# A tab on the edge, not a button in the corner: it has to be reachable on
+	# every screen without landing on anything the screen owns.
+	var tab := DevUi.button("D", 40.0)
+	tab.custom_minimum_size = Vector2(18, 40)
+	tab.position = Vector2(0, 4)
+	tab.pressed.connect(func() -> void: box.visible = not box.visible)
+	layer.add_child(tab)
 
 
 ## The map is the one screen with a precondition -- it reads a run that may not

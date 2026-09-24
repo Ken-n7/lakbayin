@@ -1,7 +1,8 @@
 extends Control
 
-## The dev drawer: a handle on the left edge of the Adventure map that slides out
-## a panel of cheats. It exists so the later islands can be reached without
+## The dev drawer: a tab on the left edge of the Adventure map that pops out a
+## box of cheats. Plain widgets, no pack art and no slide -- it is a test rig,
+## and dressing it as parchment only makes it look like part of the game. It exists so the later islands can be reached without
 ## answering every question in front of them, and so the board can be looked at
 ## while the game is running rather than only in a screenshot.
 ##
@@ -13,14 +14,12 @@ extends Control
 ## is a test rig, not a feature, and it can be deleted whole without touching a
 ## line of the game.
 
-const PANEL_W := 150.0
-## Top edge only -- the panel is a container, so it takes whatever height its
-## buttons need. Nine of them come to ~340px of the 360px canvas, which is why it
-## starts flush with the top and rides over the HUD bar while it is out.
+const PANEL_W := 124.0
+## Top edge only -- the box is a container, so it takes whatever height its
+## buttons need, and nine of them nearly fill the 360px canvas.
 const PANEL_Y := 4.0
-const HANDLE := Vector2(22.0, 56.0)
-const HANDLE_Y := 150.0
-const SLIDE := 0.18
+const TAB := Vector2(18.0, 40.0)
+const TAB_Y := 150.0
 const FAST_WALK := 3.0
 
 ## One row per button: label, and the method it calls. Adding a tool is a line
@@ -52,34 +51,29 @@ func setup(adv: Control) -> void:
 	# the rest of the screen still gets taps, drags and the circle-inspect.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	_panel = Ui.panel(Vector2(PANEL_W, 0.0), "Dev")
-	_panel.position = Vector2(-PANEL_W, PANEL_Y)
+	_panel = DevUi.box(PANEL_W)
+	_panel.position = Vector2(TAB.x, PANEL_Y)
+	_panel.visible = false
 	add_child(_panel)
-	var box: VBoxContainer = _panel.get_child(0) as VBoxContainer
-	box.add_theme_constant_override("separation", 2)
+	var box := DevUi.column(_panel)
 	for spec: Array in TOOLS:
-		var b := Ui.button(String(spec[0]), 130.0, 24.0, Ui.SMALL)
+		var b := DevUi.button(String(spec[0]))
 		b.pressed.connect(_press.bind(String(spec[1])))
 		box.add_child(b)
 		_buttons[String(spec[1])] = b
 
-	_handle = Ui.button("»", HANDLE.x, HANDLE.y, Ui.SMALL_RED)
-	_handle.position = Vector2(0.0, HANDLE_Y)
+	_handle = DevUi.button("D", TAB.y)
+	_handle.custom_minimum_size = TAB
+	_handle.position = Vector2(0.0, TAB_Y)
 	_handle.pressed.connect(toggle)
 	add_child(_handle)
 	_claim_touch()
 
 
-## Slide in or out. The handle rides the panel's edge so it is always the thing
-## nearest the middle of the screen.
+## Show or hide. No tween: waiting 0.18s to reach a cheat is 0.18s of nothing.
 func toggle() -> void:
 	_open = not _open
-	_handle.text = "«" if _open else "»"
-	var to := 0.0 if _open else -PANEL_W
-	var tw := create_tween()
-	tw.set_parallel(true)
-	tw.tween_property(_panel, "position:x", to, SLIDE).set_ease(Tween.EASE_OUT)
-	tw.tween_property(_handle, "position:x", to + PANEL_W, SLIDE).set_ease(Tween.EASE_OUT)
+	_panel.visible = _open
 	_claim_touch()
 
 
@@ -96,7 +90,7 @@ func _claim_touch() -> void:
 	var stick: Node2D = _adv.hud.joystick
 	if stick == null or not is_instance_valid(stick):
 		return
-	var taken := (PANEL_W if _open else HANDLE.x) + 4.0
+	var taken := (TAB.x + PANEL_W if _open else TAB.x) + 4.0
 	stick.zone = Rect2(Vector2(taken, 0.0), Vector2(320.0 - taken, 360.0))
 
 
