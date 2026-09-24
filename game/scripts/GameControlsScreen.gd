@@ -206,17 +206,24 @@ func _load() -> void:
 	if not Net.signed_in():
 		_say("Sign in as an admin to run a session.", Pal.INK_MUTED)
 		return
+	# Only a live one. Without the filter this adopted the newest session
+	# whatever its state, so after a run ended the teacher was shown a dead
+	# session's teams and Add Team added to a corpse.
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		SESSIONS + "?select=*&admin_id=eq." + Net.user_id + "&order=created_at.desc&limit=1")
+		SESSIONS + "?select=*&admin_id=eq." + Net.user_id
+		+ "&state=neq.ended&order=created_at.desc&limit=5")
 	if not is_instance_valid(self):
 		return
 	if got.error != "":
 		_say(got.error, Pal.WRONG)
 		return
-	if got.data is Array and not (got.data as Array).is_empty():
-		_session = got.data[0]
+	for row: Dictionary in (got.data if got.data is Array else []):
+		if Teams.expired(row):
+			continue
+		_session = row
 		duration_seconds = int(_session.get("duration_s", 600))
 		_show_time()
+		break
 	_refresh_state()
 	_load_teams()
 	_watch_roster()
@@ -239,11 +246,16 @@ func _watch_roster() -> void:
 	rt.watch("teams", "session_id=eq." + sid)
 
 
+## A new session whenever there is not a live one. An ended or expired row is
+## not something to add teams to -- the teams would belong to a game nobody
+## can join.
 func _ensure_session() -> String:
 	if not Net.signed_in():
 		return "Sign in as an admin first."
-	if not _session.is_empty():
+	if not _session.is_empty() and str(_session.get("state", "")) != "ended" \
+			and not Teams.expired(_session):
 		return ""
+	_session = {}
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, SESSIONS,
 		{"admin_id": Net.user_id, "duration_s": duration_seconds})
 	if made.error != "":
