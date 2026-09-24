@@ -526,7 +526,8 @@ func _run() -> void:
 	var lessons := [
 		["Basic Operations", "operation"],
 		["Exponential Notation", "exponent"],
-		["Order of Operations", "pemdas"],
+		# The mockup's Learn copy says GEMDAS, not PEMDAS, and so do we now.
+		["Order of Operations", "gemdas"],
 	]
 	for l in lessons:
 		_click(learn, l[0])
