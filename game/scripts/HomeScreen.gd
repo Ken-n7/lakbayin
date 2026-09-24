@@ -19,7 +19,9 @@ const BTN_H := Ui.H      # 30 x the ~3x phone upscale is ~90 physical px, still 
                        # comfortable touch target; 40 did not leave room for the
                        # welcome copy and five buttons above the tab bar
 const TILE := 32       # world px per cell; art is 64px drawn at 0.5
-const W := 21          # 21 x 32 = 672, over-covers the 640 viewport
+const W := 27          # 27 x 32 = 864: covers 800, which is what `keep_height`
+                       # gives a 20:9 phone. At 21 the right edge of the screen
+                       # showed the clear colour past the water.
 const H := 12          # 12 x 32 = 384, over-covers 360
 const ISLE := Vector2(13.2, 6.2)    # island centre, in cells
 const ISLE_R := Vector2(6.0, 3.9)   # island radii, in cells

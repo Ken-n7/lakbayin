@@ -309,9 +309,13 @@ func _clamp_cam(on: bool) -> void:
 
 ## Frames the whole board. Computed, not a constant: the old 0.46 framed a
 ## 1408x960 world and would show a corner of this one.
-static func _aerial_zoom() -> float:
-	return minf(Pal.CANVAS.x / float(MapCfg.WORLD_W * MapCfg.TILE),
-			Pal.CANVAS.y / float(MapCfg.WORLD_H * MapCfg.TILE))
+## Framed against the viewport, not `Pal.CANVAS`: with `keep_height` the canvas
+## is 640 wide at 16:9 and ~800 at 20:9, and a constant would have cropped the
+## board on one phone and floated it on another.
+func _aerial_zoom() -> float:
+	var view := get_viewport_rect().size
+	return minf(view.x / float(MapCfg.WORLD_W * MapCfg.TILE),
+			view.y / float(MapCfg.WORLD_H * MapCfg.TILE))
 
 
 # --- Pre-start aerial POV ---------------------------------------------------

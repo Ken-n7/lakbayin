@@ -25,8 +25,9 @@ func _init(w: Node2D, g: MapGrid) -> void:
 func build_terrain() -> void:
 	water = Art.terrain_layer(MapCfg.WATER_BG, MapCfg.TILE, [Vector2i(0, 0)])
 	world.add_child(water)
-	for gy in MapCfg.WORLD_H:
-		for gx in MapCfg.WORLD_W:
+	var pad := MapCfg.WATER_MARGIN
+	for gy in range(-pad, MapCfg.WORLD_H + pad):
+		for gx in range(-pad, MapCfg.WORLD_W + pad):
 			water.set_cell(Vector2i(gx, gy), 0, Vector2i(0, 0))
 	grass = Art.terrain_layer(MapCfg.TILEMAP_COLOR, MapCfg.TILE)
 	world.add_child(grass)

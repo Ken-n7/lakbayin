@@ -9,7 +9,11 @@ extends Node
 ## measurement beats a screenshot for this -- "it goes over the screen" is a
 ## number, not an opinion.
 
-const CANVAS := Vector2(640, 360)
+## 16:9 and 20:9 at the same height, which is what `keep_height` gives a phone.
+## The narrow one catches overflow; the wide one catches anything that assumed
+## 640 and ends up floating in the middle of a wider screen.
+const SIZES := [Vector2(640, 360), Vector2(800, 360)]
+var CANVAS := Vector2(640, 360)
 ## Splash, team and adventure are settled; the client asked to leave them be.
 const SCREENS := ["login", "register", "reset", "home", "admin", "controls",
 		"questions", "feedback", "hero", "learn", "board", "summary"]
@@ -22,34 +26,38 @@ func _ready() -> void:
 	var main: Control = load("res://scripts/Main.gd").new()
 	get_tree().root.add_child(main)
 	main.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	main.size = CANVAS
 
 	Game.player_name = "Adventurer"
 	Game.team_name = "Math Mavericks"
 	Game.begin_adventure(600)
 
-	# The quiz overlay is not a route, so the loop below never reached it --
-	# and it is the screen a student spends the whole session on. Checked
-	# first, in both the states it has.
-	for intro in [true, false]:
-		var quiz: Control = load("res://scripts/QuizOverlay.gd").new()
-		quiz.station_index = 0
-		quiz.intro_only = intro
-		main.add_child(quiz)
-		quiz.size = CANVAS
-		quiz.setup({})
-		for i in 20:
+	for size: Vector2 in SIZES:
+		CANVAS = size
+		main.size = CANVAS
+		print("== %d x %d ==" % [int(size.x), int(size.y)])
+		# The quiz overlay is not a route, so the loop below never reached it --
+		# and it is the screen a student spends the whole session on. Checked
+		# first, in both the states it has.
+		for intro in [true, false]:
+			var quiz: Control = load("res://scripts/QuizOverlay.gd").new()
+			quiz.station_index = 0
+			quiz.intro_only = intro
+			main.add_child(quiz)
+			quiz.size = CANVAS
+			quiz.setup({})
+			for i in 20:
+				await get_tree().process_frame
+			_audit("quiz (%s)" % ("intro" if intro else "question"), quiz)
+			quiz.queue_free()
 			await get_tree().process_frame
-		_audit("quiz (%s)" % ("intro" if intro else "question"), quiz)
-		quiz.queue_free()
-		await get_tree().process_frame
 
-	for name: String in SCREENS:
-		main.open(name)
-		main.current.size = CANVAS
-		for i in 30:
-			await get_tree().process_frame
-		_audit(name, main.current)
+		for name: String in SCREENS:
+			main.open(name)
+			main.current.size = CANVAS
+			for i in 30:
+				await get_tree().process_frame
+			_audit(name, main.current)
+
 
 	print("---- LAYOUT %s ---- %d overflowing controls" %
 		["PASS" if _bad == 0 else "FAIL", _bad])

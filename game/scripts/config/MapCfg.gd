@@ -15,6 +15,10 @@ extends RefCounted
 const TILE := 32        # world px per cell; art is 64px drawn at 0.5
 
 const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
+## Water drawn beyond the board on every side. A taller-than-16:9 phone sees
+## past the world when the aerial view frames the whole height, and what it
+## saw there was the clear colour.
+const WATER_MARGIN := 20
 const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
 
 ## Three islands over open water. The world is deliberately much larger than the

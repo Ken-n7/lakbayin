@@ -51,8 +51,13 @@ func build() -> void:
 	ui_layer.layer = 2
 	adv.add_child(ui_layer)
 	var top := PanelContainer.new()
-	top.position = Vector2(4, 4)
-	top.custom_minimum_size = Vector2(632, 44)
+	# Anchored, not 632 wide: with `keep_height` the canvas is 640 at 16:9 and
+	# ~800 at 20:9, and a fixed width left a quarter of a phone's top edge bare.
+	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top.offset_left = 4.0
+	top.offset_right = -4.0
+	top.offset_top = 4.0
+	top.offset_bottom = 48.0
 	top.add_theme_stylebox_override("panel", Art.panel("res://assets/ui/BigBar_Base.png", Vector2(10, 2), 0.5))
 	hud_layer.add_child(top)
 	var row := HBoxContainer.new()
@@ -164,8 +169,12 @@ func _build_pad() -> void:
 	# swipe-up-home gesture zone, immersive mode or not.
 	joystick = preload("res://scripts/Joystick.gd").new()
 	pad.add_child(joystick)
-	_touch_btn("interact", "GO", Vector2(574, 290), 0.52, 20, false)
-	_touch_btn("pause", "MENU", Vector2(606, 74), 0.34, 11, true)
+	# Measured in from the right edge, not from 640: `keep_height` makes the
+	# canvas ~800 wide on a 20:9 phone, and fixed coordinates left GO and MENU
+	# stranded 160px short of the thumb that reaches for them.
+	var right := adv.get_viewport_rect().size.x
+	_touch_btn("interact", "GO", Vector2(right - 66, 290), 0.52, 20, false)
+	_touch_btn("pause", "MENU", Vector2(right - 34, 74), 0.34, 11, true)
 
 
 func _touch_btn(action: String, text: String, center: Vector2, s: float, font: int, red: bool) -> void:
