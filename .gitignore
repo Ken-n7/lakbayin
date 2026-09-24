@@ -22,3 +22,5 @@ __pycache__/
 Thumbs.db
 *~
 build/shots/
+build/*.apk
+build/*.idsig

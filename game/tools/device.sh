@@ -2,6 +2,7 @@
 # Build, install, run and photograph the app on a connected phone.
 #
 #   tools/device.sh build      export the debug APK
+#   tools/device.sh release    export the SIGNED release APK
 #   tools/device.sh install    build, then install over USB
 #   tools/device.sh shot NAME  screenshot the running app into build/shots/
 #   tools/device.sh log        the app's own log lines, live
@@ -28,6 +29,22 @@ case "${1:-run}" in
 build)
 	godot --headless --path . --export-debug "Android" "$APK" | tail -1
 	;;
+release)
+	# Signed, and without the dev tools -- they are gated on
+	# OS.is_debug_build(), so a release export drops them by itself.
+	#
+	# The keystore lives outside the repo and its password comes from the
+	# environment, never from export_presets.cfg: that file is committed, and
+	# a signing key in git is a signing key everyone has. Losing this key
+	# means never updating the app on a phone that already has it.
+	KS="${NUMX_KEYSTORE:-$HOME/.local/share/numxventure/release.keystore}"
+	PASSFILE="$KS.pass"
+	[ -f "$PASSFILE" ] || { echo "no $PASSFILE -- see SPECS §8 Release signing"; exit 1; }
+	GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$KS" \
+	GODOT_ANDROID_KEYSTORE_RELEASE_USER="$(grep ^alias= "$PASSFILE" | cut -d= -f2)" \
+	GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$(grep ^password= "$PASSFILE" | cut -d= -f2)" \
+	godot --headless --path . --export-release "Android" "../build/NumXventure-release.apk" | tail -1
+	;;
 install)
 	"$SELF" build && need_device && "$ADB" install -r "$APK" | tail -1
 	;;
@@ -53,6 +70,6 @@ run)
 	"$SELF" shot "launch"
 	;;
 *)
-	echo "usage: $0 {build|install|shot NAME|log|run}"; exit 1
+	echo "usage: $0 {build|release|install|shot NAME|log|run}"; exit 1
 	;;
 esac
