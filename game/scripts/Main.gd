@@ -112,6 +112,10 @@ func open(name: String, data: Dictionary = {}) -> void:
 func _process(_delta: float) -> void:
 	if current == null:
 		return
+	# Asked only where there is one: on desktop this warns every frame, which
+	# is 60 lines a second of "Virtual keyboard not supported".
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		return
 	var keyboard := DisplayServer.virtual_keyboard_get_height()
 	var window_h := float(DisplayServer.window_get_size().y)
 	var want := 0.0
