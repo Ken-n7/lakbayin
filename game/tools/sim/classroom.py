@@ -47,7 +47,7 @@ class Student(threading.Thread):
         self.accuracy, self.rescuer = accuracy, rescuer
         self.api = Api(f"s{idx}")
         self.expected = START_GEMS
-        self.answered = self.correct = self.hints = self.skips = 0
+        self.answered = self.correct = self.hints = self.skips = self.refused = 0
         self.error = None
         self.session = None
         self.joined_at = None
@@ -128,6 +128,8 @@ class Student(threading.Thread):
             # Being refused mid-pause is correct; anything else is a finding.
             if "not running" in str(e):
                 note("paused", f"student {self.idx}: refused while paused (correct)")
+                self.api.calls[-1] = (self.api.calls[-1][0], self.api.calls[-1][1], True)
+                self.refused += 1
                 time.sleep(2)
                 self._act(fn, extra, delta)
             else:
@@ -256,7 +258,10 @@ def report(teacher, session, students, team_names):
     every = [c for s in students for c in s.api.calls] + teacher.calls
     times = sorted(t for _, t, ok in every if ok)
     fails = [(w, t) for w, t, ok in every if not ok]
-    print(f"\nrequests           : {len(every)}  ({len(fails)} failed)")
+    refused = sum(s.refused for s in students)
+    print(f"\nrequests           : {len(every)}")
+    print(f"refused while paused: {refused}  (correct -- the clock was stopped)")
+    print(f"genuinely failed   : {len(fails)}")
     if times:
         print(f"latency p50 / p95  : {statistics.median(times)*1000:.0f} ms / "
               f"{times[int(len(times)*0.95)]*1000:.0f} ms")
