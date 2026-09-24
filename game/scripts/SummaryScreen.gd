@@ -15,11 +15,19 @@ func setup(data: Dictionary) -> void:
 func _build() -> void:
 	Ui.dim(self)
 
+	# Online the ranking is the class's, team totals from the server. The
+	# local board only knows this phone's runs, and listed the player's own
+	# gems as if they were the team's.
+	var rows: Array = Game.leaderboard
+	if _online():
+		var live: Array = await Board.teams(Game.session_id)
+		if not is_instance_valid(self):
+			return
+		if not live.is_empty():
+			rows = live
 	var won := false
 	if not result.is_empty():
-		var rows := Game.leaderboard
-		var me := Game.me()
-		won = not rows.is_empty() and str(rows[0].name) == me
+		won = not rows.is_empty() and str(rows[0].name) == Game.me()
 
 	var box := Ui.screen_panel(self, Vector2(580, 318),
 			"Adventure Complete!" if not result.get("time_up", false) else "Time's Up!")
@@ -52,7 +60,7 @@ func _build() -> void:
 		stations += "  %s: %s" % [QuestionGen.station_meta(i).short, mark]
 	box.add_child(Art.label(stations, Pal.SMALL, Pal.INFO, HORIZONTAL_ALIGNMENT_CENTER))
 
-	var top := Game.leaderboard.slice(0, 4)
+	var top := rows.slice(0, 4)
 	var top_txt := ""
 	for i in top.size():
 		top_txt += "%d  %s — %d    " % [i + 1, str(top[i].name), int(top[i].gems)]
@@ -68,7 +76,9 @@ func _build() -> void:
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER
 	btns.add_theme_constant_override("separation", 10)
 	var again := Ui.button("Adventure again", 150, 46, Ui.RED)
-	again.pressed.connect(func() -> void: main.open("adventure"))
+	# Online a new run is a new session, joined by team name like the first;
+	# straight onto the map would be a run the server is not scoring.
+	again.pressed.connect(func() -> void: main.open("team" if _online() else "adventure"))
 	var board_btn := Ui.button("Leaderboard", 120, 42, Ui.SMALL)
 	board_btn.pressed.connect(func() -> void: main.open("board"))
 	var home := Ui.button("Home", 90, 42, Ui.SMALL)
@@ -77,3 +87,7 @@ func _build() -> void:
 	btns.add_child(board_btn)
 	btns.add_child(home)
 	box.add_child(btns)
+
+
+func _online() -> bool:
+	return Net.configured() and Net.signed_in() and Game.session_id != ""

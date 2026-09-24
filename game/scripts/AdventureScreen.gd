@@ -85,81 +85,317 @@ const HERO_SCALE_RANGE := Vector2(0.5, 3.0)
 func _sync_session() -> void:
 	if not (Net.configured() and Net.signed_in()):
 		return
-	var live: Dictionary = await Teams.live_session()
-	if live.error != "" or not is_instance_valid(self):
-		return
+	# Signed in means online: whatever happens next, the board waits for the
+	# teacher. Falling back to tap-to-start here let a student play a whole
+	# run that no server ever scored.
 	_wait_for_admin = true
-	Game.apply_session(live.session)
+	# The session this phone joined by its code -- never "the newest one
+	# anywhere", which is how a leftover test session once caught a class.
+	var session: Dictionary = await Teams.session(Game.joined_session)
+	if not is_instance_valid(self):
+		return
+	if session.is_empty() or Teams.expired(session):
+		_hold_offline("That adventure has ended.")
+		await get_tree().create_timer(1.6).timeout
+		if is_instance_valid(self):
+			main.open("team")
+		return
+	var sid: String = str(session.get("id", ""))
+
+	# In this session? Then pick up where the server says, which is a fresh
+	# 50 gems on circle 1 for a first join and the real progress for a rejoin.
+	var mine: Dictionary = await Teams.membership(sid)
+	if not is_instance_valid(self):
+		return
+	if mine.has("error"):
+		_hold_offline(str(mine.error))
+		return
+	if mine.is_empty() or mine.get("team_id") == null:
+		_hold_offline("Pick your team first.")
+		await get_tree().create_timer(1.6).timeout
+		if is_instance_valid(self):
+			main.open("team")
+		return
+	Game.restore_from(mine)
+	_my_team = str(mine.get("team_id", ""))
+	Game.apply_session(session)
 	_apply_session_state()
+	if not _circles.is_empty():
+		hud.refresh()
+		_refresh_circles()
+		barricades.refresh()
 
 	# The server owns the arithmetic; the local sum was only ever so the result
 	# overlay does not wait on a round trip.
-	Game.scored.connect(_on_scored)
+	if not Game.scored.is_connected(_on_scored):
+		Game.scored.connect(_on_scored)
 
-	var sid: String = str(live.session.get("id", ""))
 	var rt: Realtime = Net.realtime()
-	rt.changed.connect(_on_session_row)
+	if not rt.changed.is_connected(_on_session_row):
+		rt.changed.connect(_on_session_row)
+	# A socket that dropped and came back missed whatever happened meanwhile
+	# -- a pause, a resume, the end. Read the row again rather than trust it.
+	if not rt.subscribed.is_connected(_resync):
+		rt.subscribed.connect(_resync)
+	if not rt.broadcast.is_connected(_on_broadcast):
+		rt.broadcast.connect(_on_broadcast)
 	rt.watch("sessions", "id=eq." + sid)
 	# Everyone else in this session, on this board. Scoped to the session, so
 	# the fan-out is the session's size -- see `Teams.everyone()` for the
 	# number that decides whether this stays affordable.
 	rt.watch("members", "session_id=eq." + sid)
+	# On the teacher's list as here, on the board.
+	rt.track({"sid": sid, "where": "map", "name": Net.username})
+	_refresh_peers()
+
+
+## Where this hero is, for everybody else's board. Sent a few times a second
+## while walking and every few seconds standing still, so someone who opens
+## the map late still sees who is standing where.
+##
+## ponytail: one topic for every session, filtered by `sid` on arrival. Fine
+## at one live class; a topic per session if several ever run at once (Q12).
+## Sends scale as players x rate and deliveries as players squared: 8 players
+## all walking at once is ~375 deliveries a second (~7 sends each, to 7
+## others), 40 would be ~10,000 -- check Supabase's per-second quota before a
+## class that size shares one board. POS_EVERY_S is the knob.
+## Walking: often enough that the other boards' guess (see `Peers`) never
+## drifts far. A turn or a stop goes out almost at once, since that is exactly
+## where a guess from the last velocity goes wrong. Standing: a keepalive.
+const POS_EVERY_S := 0.15
+const POS_TURN_S := 0.05
+const POS_IDLE_S := 3.0
+var _my_team := ""
+var _pos_clock := 0.0
+var _pos_idle := 0.0
+var _pos_prev := Vector2.INF     # last frame's position, for the velocity
+var _vel_sent := Vector2.ZERO
+
+
+func _share_position(delta: float) -> void:
+	if Game.session_id == "" or player == null:
+		return
+	_pos_clock += delta
+	_pos_idle += delta
+	var vel := Vector2.ZERO
+	if _pos_prev != Vector2.INF and delta > 0.0:
+		vel = (player.position - _pos_prev) / delta
+	_pos_prev = player.position
+	var turned := vel.distance_to(_vel_sent) > 20.0
+	var due := (turned and _pos_clock >= POS_TURN_S) \
+		or (vel != Vector2.ZERO and _pos_clock >= POS_EVERY_S) \
+		or _pos_idle >= POS_IDLE_S
+	if not due:
+		return
+	_pos_clock = 0.0
+	_pos_idle = 0.0
+	_vel_sent = vel
+	var spr: AnimatedSprite2D = player.get_node("Spr")
+	Net.realtime().send_broadcast("pos", {
+		"sid": Game.session_id,
+		"id": Net.user_id,
+		"name": Net.username,
+		"team": _my_team,
+		"hero": Game.hero_id,
+		"x": player.position.x,
+		"y": player.position.y,
+		# The sender's own clock, so the other boards can space positions by
+		# when they happened rather than by when the network delivered them.
+		"ts": Time.get_ticks_msec() / 1000.0,
+		"vx": vel.x,
+		"vy": vel.y,
+		"face": str(spr.animation),
+		"moving": vel.length() > 1.0,
+	})
+
+
+func _on_broadcast(event: String, data: Dictionary) -> void:
+	if event != "pos" or str(data.get("sid", "")) != Game.session_id \
+			or not is_instance_valid(self):
+		return
+	if _peers == null or not is_instance_valid(_peers):
+		_refresh_peers()
+		return
+	_peers.move(str(data.get("id", "")), data)
+
+
+## Online with nothing to join: say why and keep the board shut. The old
+## fallback was the offline tap-to-start, i.e. an unscored run.
+func _hold_offline(why: String) -> void:
+	hud.paused = true
+	if is_instance_valid(_start_hint):
+		_start_hint.text = why
+	else:
+		hud.set_prompt(why)
+
+
+func _resync() -> void:
+	if Game.session_id == "" or not is_instance_valid(self):
+		return
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		Teams.SESSIONS + "?select=*&id=eq." + Game.session_id)
+	if not is_instance_valid(self) or got.error != "":
+		return
+	var rows: Array = got.data if got.data is Array else []
+	if rows.is_empty():
+		_leave_ended()
+		return
+	Game.apply_session(rows[0])
+	_apply_session_state()
+	_refresh_peers()
 
 
 ## Forward a scoring event to the function that owns it, then take the
 ## server's number back. Usually identical; when it is not, this is where a
 ## phone that got out of step comes back into line.
 func _on_scored(kind: String, flag: bool) -> void:
-	if Game.session_id == "":
-		return
-	var reply: Dictionary
-	match kind:
-		"answer": reply = await Scores.apply_answer(Game.session_id, flag)
-		"hint": reply = await Scores.spend_hint(Game.session_id)
-		"skip": reply = await Scores.skip_item(Game.session_id)
-		"station": reply = await Scores.finish_station(Game.session_id, flag)
-	if reply.error != "" or (reply.row as Dictionary).is_empty():
-		return
-	var server_gems: int = int((reply.row as Dictionary).get("gems", Game.gems))
-	if server_gems != Game.gems:
-		Game.gems = server_gems
-		Game.gems_changed.emit(Game.gems)
+	if Game.session_id != "":
+		Scores.submit(kind, flag, Game.session_id, _on_score_reply)
 
 
-func _on_session_row(table: String, _type: String, record: Dictionary) -> void:
-	if not is_instance_valid(self):
+func _on_score_reply(reply: Dictionary) -> void:
+	if reply.error != "":
+		hud.flash("Not scored: " + reply.error)
+	else:
+		_take_server_row(reply.row)
+
+
+## The server's copy of this player's row -- from a scoring reply or from the
+## socket. Gems follow it; a rise nobody here asked for is a rescue landing.
+func _take_server_row(row: Dictionary) -> void:
+	# Only with nothing still on its way: an older reply taken over a newer
+	# local sum would briefly undo it.
+	if row.is_empty() or Scores.pending() > 0:
+		return
+	var server_gems: int = int(row.get("gems", Game.gems))
+	if server_gems == Game.gems:
+		return
+	if server_gems - Game.gems == 10:
+		hud.flash("A team-mate rescued you: +10 gems!")
+	Game.gems = server_gems
+	Game.eliminated = bool(row.get("eliminated", Game.eliminated))
+	Game.gems_changed.emit(Game.gems)
+
+
+## Everything the socket says. Filters narrow what the server sends, but not
+## deletes -- Realtime delivers every DELETE on a watched table whatever the
+## filter -- so each row is checked against this session before it counts.
+func _on_session_row(table: String, type: String, record: Dictionary) -> void:
+	if not is_instance_valid(self) or Game.session_id == "":
 		return
 	if table == "members":
-		_refresh_peers()
+		# Deletes arrive from every session (see `Realtime._join`), so this
+		# check matters for them most of all. The key carries session_id.
+		if str(record.get("session_id", "")) != Game.session_id:
+			return
+		var pid: String = str(record.get("profile_id", ""))
+		var me: bool = pid == Net.user_id
+		if type == "DELETE":
+			if me:
+				_leave_removed()
+			elif _peer_rows.erase(pid):
+				_draw_peers()
+			return
+		if me:
+			_take_team(record)
+			_take_server_row(record)
+		elif _peer_rows.has(pid):
+			# Applied from the message -- an answer moves a marker with no
+			# fetch. Only a newcomer, whose name it lacks, costs a read.
+			var row: Dictionary = _peer_rows[pid]
+			row.team_id = "" if record.get("team_id") == null else str(record.get("team_id"))
+			for k in ["items_done", "gems", "eliminated"]:
+				if record.has(k):
+					row[k] = record[k]
+			_draw_peers()
+		else:
+			_refresh_peers()
 		return
-	if table == "sessions" and record.is_empty():
-		# The row was deleted out from under everyone -- the teacher tearing
-		# the session down counts as ending it.
+	if table != "sessions" or str(record.get("id", "")) != Game.session_id:
+		return
+	if type == "DELETE":
+		# The teacher tearing the session down counts as ending it.
 		_leave_ended()
-		return
-	if table != "sessions":
 		return
 	Game.apply_session(record)
 	_apply_session_state()
 
 
+## The teacher moved this player (before Start) or removed their team. Moved:
+## say so, and positions go out under the new colour. Removed: back to the
+## lobby to pick another -- still in the session, gems and all.
+func _take_team(row: Dictionary) -> void:
+	var team: String = "" if row.get("team_id") == null else str(row.get("team_id"))
+	if team == _my_team:
+		return
+	_my_team = team
+	if team != "":
+		hud.flash("Your teacher moved you to another team")
+		return
+	if _ending:
+		return
+	_ending = true
+	hud.flash("Your team was removed — pick another")
+	await get_tree().create_timer(1.6).timeout
+	if is_instance_valid(self):
+		main.open("team")
+
+
+## This player's membership is gone -- only a deleted session takes it now,
+## since removing a team leaves its players in with no team. Not scored:
+## there is nothing left on the server to score against.
+func _leave_removed() -> void:
+	if _ending:
+		return
+	_ending = true
+	Game.abandon_adventure()
+	hud.flash("You are no longer in this adventure")
+	await get_tree().create_timer(1.6).timeout
+	if is_instance_valid(self):
+		main.open("team")
+
+
 ## Where everybody else has got to. `items_done` is the position and it is
 ## already being written by `apply_answer`, so this adds no writes -- it only
 ## listens to what the scoring was sending anyway.
+## profile_id -> the row `Peers` draws from, kept current off the socket.
+var _peer_rows := {}
+## A read in flight. Positions arrive ~7 times a second per player, and before
+## the first read lands each one used to ask for another.
+var _peers_loading := false
+
+
 func _refresh_peers() -> void:
-	if Game.session_id == "":
+	if Game.session_id == "" or _peers_loading:
 		return
+	_peers_loading = true
 	var rows: Array = await Teams.everyone(Game.session_id)
-	if not is_instance_valid(self) or _circles.is_empty():
+	if not is_instance_valid(self):
 		return
+	_peers_loading = false
+	_peer_rows = {}
+	for r: Dictionary in rows:
+		_peer_rows[str(r.profile_id)] = r
 	if _peers == null or not is_instance_valid(_peers):
 		_peers = Peers.new()
 		world.add_child(_peers)
+		var teams: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+			"/rest/v1/teams?select=id&session_id=eq." + Game.session_id + "&order=name")
+		if not is_instance_valid(_peers):
+			return
+		_peers.set_team_order((teams.data if teams.data is Array else []).map(
+			func(t: Dictionary) -> String: return str(t.get("id", ""))))
+	_draw_peers()
+
+
+func _draw_peers() -> void:
+	if _peers == null or not is_instance_valid(_peers) or _circles.is_empty():
+		return
 	var anchors: Array = []
 	for c in _circles:
 		anchors.append((c as Node2D).position)
 	var gate_at: Vector2 = stations.gate.position if stations.gate != null else anchors[-1]
-	_peers.refresh(rows, anchors, gate_at, Net.user_id)
+	_peers.refresh(_peer_rows.values(), anchors, gate_at, Net.user_id)
 
 
 ## The run is over and it was not this player's doing, so say so and score
@@ -458,6 +694,7 @@ static func _facing(dir: Vector2) -> String:
 
 
 func _process(delta: float) -> void:
+	_share_position(delta)
 	if _overlay != null and is_instance_valid(_overlay) and Game.adventure_active:
 		return
 	if hud.paused or _frozen or not Game.adventure_active:

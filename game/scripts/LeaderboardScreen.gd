@@ -14,6 +14,10 @@ var main: Control
 var _list: VBoxContainer
 var _tab := 0
 var _watching := false
+## Which session this board shows. `Game.session_id` is only ever set by the
+## map, which a teacher never opens -- so the admin's "Live Leaderboard" was
+## reading "" and showing this device's offline runs instead of the class.
+var _sid := ""
 
 
 func setup(_data: Dictionary) -> void:
@@ -22,6 +26,8 @@ func setup(_data: Dictionary) -> void:
 
 
 func _build() -> void:
+	if _sid == "":
+		_sid = await _find_session()
 	Ui.dim(self)
 	var box := Ui.screen_panel(self, Vector2(560, 330), "Live Leaderboard"
 		if _is_admin() else "Team Ranking")
@@ -60,6 +66,21 @@ func _build() -> void:
 	_watch()
 
 
+## The teacher's newest session, running or finished -- a finished one is the
+## result they came to read. A player's is the one they last played, else the
+## one they joined by code.
+func _find_session() -> String:
+	if not (Net.configured() and Net.signed_in()):
+		return ""
+	if not _is_admin():
+		return Game.session_id if Game.session_id != "" else Game.joined_session
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		"/rest/v1/sessions?select=id&admin_id=eq." + Net.user_id
+		+ "&order=created_at.desc&limit=1")
+	var rows: Array = got.data if got.data is Array else []
+	return str(rows[0].get("id", "")) if not rows.is_empty() else ""
+
+
 func _is_admin() -> bool:
 	return Net.configured() and Net.signed_in() and Net.role == "admin"
 
@@ -68,20 +89,19 @@ func _is_admin() -> bool:
 ## row; forty students watching that turns ~200 realtime messages an adventure
 ## into ~22,000, for a screen they are not looking at mid-run.
 func _watch() -> void:
-	if not _is_admin() or Game.session_id == "" or _watching:
+	if not _is_admin() or _sid == "" or _watching:
 		return
 	_watching = true
 	var rt: Realtime = Net.realtime()
 	rt.changed.connect(func(table: String, _t: String, _r: Dictionary) -> void:
 		if table == "members" and is_instance_valid(_list):
 			_fill())
-	rt.watch("members", "session_id=eq." + Game.session_id)
+	rt.watch("members", "session_id=eq." + _sid)
 
 
 func _rebuild() -> void:
 	for c in get_children():
 		c.queue_free()
-	_watching = false
 	_build()
 
 
@@ -99,8 +119,8 @@ func _fill() -> void:
 func _fill_teams() -> void:
 	_row(["Rank", "Team", "Gems"], [12, 40, 12])
 	var rows: Array = []
-	if Net.configured() and Net.signed_in() and Game.session_id != "":
-		rows = await Board.teams(Game.session_id)
+	if _sid != "":
+		rows = await Board.teams(_sid)
 	if rows.is_empty():
 		rows = Game.leaderboard
 	if rows.is_empty():
@@ -117,7 +137,7 @@ func _fill_teams() -> void:
 ## and who has not touched anything in minutes.
 func _fill_players() -> void:
 	_row(["Rank", "Username", "Gems", "Right", "Idle"], [10, 30, 12, 10, 12])
-	var rows: Array = await Board.players(Game.session_id)
+	var rows: Array = await Board.players(_sid)
 	if rows.is_empty():
 		_list.add_child(Art.label("Nobody has joined yet.", Pal.SMALL, Pal.INK_MUTED,
 				HORIZONTAL_ALIGNMENT_CENTER))

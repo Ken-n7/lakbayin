@@ -9,6 +9,7 @@ extends Node
 var _failures := 0
 var _admin := ""
 var _session := ""
+var _code := ""
 
 
 func _ready() -> void:
@@ -26,6 +27,8 @@ func _ready() -> void:
 		 "ends_at": Time.get_datetime_string_from_unix_time(
 			int(Time.get_unix_time_from_system()) + 600) + "Z"})
 	_session = str(made.data[0].get("id", "")) if made.data is Array \
+		and not (made.data as Array).is_empty() else ""
+	_code = str(made.data[0].get("code", "")) if made.data is Array \
 		and not (made.data as Array).is_empty() else ""
 	_check("session", made.error)
 	for t in ["Reds", "Blues"]:
@@ -101,7 +104,7 @@ func _ready() -> void:
 func _player(tag: String, team: String) -> String:
 	_check("register " + tag, await Net.sign_up(
 		"rs-" + tag + "@numxventure-test.dev", "rs" + tag, "letmein123", "player"))
-	_check("join " + team, await Teams.join(team))
+	_check("join " + team, await Teams.join(_code, team))
 	return Net.user_id
 
 

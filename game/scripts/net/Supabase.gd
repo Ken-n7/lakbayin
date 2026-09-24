@@ -19,7 +19,8 @@ extends Node
 ## The *service role* key is not, and never belongs in this file or the repo.
 
 ## Where the refresh token lives between launches.
-const SESSION_PATH := "user://session.cfg"
+## Per `--profile=NAME`, like `Game.SAVE_PATH`.
+var SESSION_PATH := "user://session%s.cfg" % Game.profile_suffix()
 
 var url: String
 var anon_key: String
@@ -176,8 +177,11 @@ func sign_out() -> void:
 ## One PostgREST call. `path` is a table and its query, e.g.
 ##   await sb.rest(HTTPClient.METHOD_GET, "/rest/v1/team_scores?order=gems.desc")
 ## The reply is in `.data`; `.error` is "" when it worked.
-func rest(method: int, path: String, body: Variant = null) -> Dictionary:
-	return await _call(method, path, body)
+##
+## `prefer` is added to PostgREST's Prefer header -- "resolution=ignore-duplicates"
+## turns a POST into insert-if-missing, one round trip instead of look-then-add.
+func rest(method: int, path: String, body: Variant = null, prefer := "") -> Dictionary:
+	return await _call(method, path, body, true, prefer)
 
 
 func _verify(email: String, code: String, type: String) -> String:
@@ -203,10 +207,14 @@ func _finish(reply: Dictionary) -> String:
 		var row: Dictionary = rows[0]
 		username = row.get("username", "")
 		role = row.get("role", "")
+		# Desktop windows run side by side under `--profile`; the title says
+		# which account each one is, since the screens all look alike.
+		if Game.profile_suffix() != "":
+			get_window().title = "NumXventure — %s (%s)" % [username, role]
 	return ""
 
 
-func _call(method: int, path: String, body: Variant, retry := true) -> Dictionary:
+func _call(method: int, path: String, body: Variant, retry := true, prefer := "") -> Dictionary:
 	if not configured():
 		return {"error": "Supabase is not configured -- see supabase/README.md", "data": null}
 	if not is_inside_tree():
@@ -216,7 +224,7 @@ func _call(method: int, path: String, body: Variant, retry := true) -> Dictionar
 		"apikey: " + anon_key,
 		"Authorization: Bearer " + (access_token if access_token else anon_key),
 		"Content-Type: application/json",
-		"Prefer: return=representation",
+		"Prefer: return=representation" + ("," + prefer if prefer != "" else ""),
 	]
 	var payload := "" if body == null else JSON.stringify(body)
 	var err := http.request(url + path, headers, method, payload)
@@ -227,7 +235,8 @@ func _call(method: int, path: String, body: Variant, retry := true) -> Dictionar
 	http.queue_free()
 	var code: int = res[1]
 	var text := (res[3] as PackedByteArray).get_string_from_utf8()
-	var parsed: Variant = JSON.parse_string(text)
+	# A function returning nothing (Shuffle) answers 204 with no body at all.
+	var parsed: Variant = JSON.parse_string(text) if text.strip_edges() != "" else null
 	# An hour into a session the access token expires. Renew once and repeat
 	# the call rather than showing a student an error for the clock ticking.
 	if code == 401 and retry and refresh_token != "" and not path.begins_with("/auth/v1/token"):
@@ -237,7 +246,7 @@ func _call(method: int, path: String, body: Variant, retry := true) -> Dictionar
 			access_token = (renewed.data as Dictionary).get("access_token", access_token)
 			refresh_token = (renewed.data as Dictionary).get("refresh_token", refresh_token)
 			_save_session()
-			return await _call(method, path, body, false)
+			return await _call(method, path, body, false, prefer)
 
 	if code < 200 or code >= 300:
 		# GoTrue says `msg`, PostgREST says `message`. Neither is always there.
@@ -266,7 +275,9 @@ func _remember(reply: Dictionary) -> String:
 
 
 func _save_session() -> void:
-	if refresh_token == "":
+	# The tools sign up throwaway accounts every run; remembering one only
+	# signs the next (offline) tool into a session it never asked for.
+	if refresh_token == "" or Game.profile_suffix() == "-tools":
 		return
 	var cfg := ConfigFile.new()
 	cfg.set_value("auth", "refresh_token", refresh_token)

@@ -1,12 +1,16 @@
 extends Control
 
-## Set Adventure Duration · Start / Pause / Resume / End, and the Teams panel,
-## per the mockups.
+## A session, from start to finish: Set Adventure Duration · Start / Pause /
+## Resume / End, and the Teams panel.
 ##
-## These write real rows into `sessions` and `teams` now; what is still missing
-## is anybody reading them, which is Phase 4. The clock is stored the way the
-## schema wants it: `ends_at` while running, `remaining_s` while paused, so a
-## phone that joins late computes the same countdown as everyone else.
+## The dashboard's Start New Session opens this with `{"new": true}`: the
+## teacher's previous session is ended and a fresh one made, with a
+## four-character code to read out. Leaving this screen ends the session,
+## after asking -- the dashboard is where the next one starts. Students type the code,
+## then pick their own team; the teacher can Move anyone or Shuffle everyone
+## until Start, which locks the teams. The clock is stored the way the schema
+## wants it: `ends_at` while running, `remaining_s` while paused, so a phone
+## that joins late computes the same countdown as everyone else.
 ##
 ## Start Game refuses on an incomplete bank rather than generating the
 ## difference -- the teacher authored those questions and gets to know.
@@ -27,18 +31,32 @@ var duration_seconds := 600
 var _min_field: LineEdit
 var _sec_field: LineEdit
 var _msg: Label
+var _code_label: Label
 var _start_btn: Button
 var _hold_btn: Button
 var _end_btn: Button
 var _teams_grid: GridContainer
 var _body: VBoxContainer
 var _add_btn: Button
+var _shuffle_btn: Button
+var _loose: HBoxContainer      # players who have not picked a team
 var _tab := 0
 var _session := {}
-var _watching := false
+## The session's teams and players, kept current off the socket -- see `Lobby`.
+var _lobby := Lobby.new()
+## The session whose roster the socket is following, "" for none. Tracked by id
+## because a new session (Start after an ended run) needs watching afresh.
+var _watching := ""
 
 
-func setup(_data: Dictionary) -> void:
+## Set by `setup({"new": true})` for the first build only; a tab switch
+## rebuilds with `{}` and must not make another session.
+var _fresh := false
+
+
+func setup(data: Dictionary) -> void:
+	if bool(data.get("new", false)):
+		_fresh = true
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.color = Pal.BG
@@ -70,6 +88,11 @@ func setup(_data: Dictionary) -> void:
 		tabs.add_child(t)
 	box.add_child(tabs)
 
+	# The code, on both tabs: it is what the teacher reads out, and what they
+	# glance at when a student asks "what was it again?".
+	_code_label = Art.label("", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_code_label)
+
 	_body = VBoxContainer.new()
 	_body.add_theme_constant_override("separation", 6)
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -86,7 +109,16 @@ func setup(_data: Dictionary) -> void:
 	else:
 		_build_teams_tab(_body)
 
-	_load()
+	# A tab switch rebuilds the screen: draw what is already known at once,
+	# and let the read below catch anything missed.
+	if not _session.is_empty():
+		_refresh_state()
+		_draw_teams()
+	if _fresh:
+		_fresh = false
+		_open_fresh()
+	else:
+		_load()
 
 
 ## Rebuilt rather than hidden: the two tabs share no widgets, and keeping both
@@ -94,7 +126,6 @@ func setup(_data: Dictionary) -> void:
 func _rebuild() -> void:
 	for c in get_children():
 		c.queue_free()
-	_watching = false
 	setup({})
 
 
@@ -109,9 +140,22 @@ func _build_teams_tab(col: VBoxContainer) -> void:
 	_teams_grid.add_theme_constant_override("h_separation", 8)
 	centre.add_child(_teams_grid)
 
+	_loose = HBoxContainer.new()
+	_loose.alignment = BoxContainer.ALIGNMENT_CENTER
+	_loose.add_theme_constant_override("separation", 4)
+	col.add_child(_loose)
+
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
 	_add_btn = Ui.button("Add Team", Ui.W_MED, Ui.H, Ui.SMALL)
 	_add_btn.pressed.connect(_add_team)
-	Ui.centre_row(col, _add_btn)
+	row.add_child(_add_btn)
+	# For when picking freely has put all the friends on one side.
+	_shuffle_btn = Ui.button("Shuffle", Ui.W_MED, Ui.H, Ui.SMALL)
+	_shuffle_btn.pressed.connect(_shuffle)
+	row.add_child(_shuffle_btn)
+	col.add_child(row)
 
 
 ## Minutes and seconds, typed. The steppers were eleven taps to reach half an
@@ -201,32 +245,116 @@ func _confirm_end() -> void:
 	ask.add_child(row)
 
 
+## Start New Session, from the dashboard. Usually that is simply a new
+## session. The one exception is an adventure still being played -- the app
+## closed mid-lesson and reopened -- where making a new one would end it for
+## the whole class, so it asks: carry on with it, or end it.
+func _open_fresh() -> void:
+	if not Net.signed_in():
+		_say("Sign in as an admin to run a session.", Pal.INK_MUTED)
+		return
+	var live := await _live_session()
+	if not is_instance_valid(self):
+		return
+	var state := str(live.get("state", ""))
+	if state != "running" and state != "paused":
+		_new_session()
+		return
+	var dim := Ui.dim(self)
+	var ask := Ui.screen_panel(dim, Vector2(380, 180), "An adventure is still going")
+	var warn := Art.label("Session %s is %s. Carry on with it, or end it for everyone "
+			% [str(live.get("code", "")), state] + "and start a new one?",
+			Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warn.custom_minimum_size = Vector2(340, 0)
+	ask.add_child(warn)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	var keep := Ui.button("Carry on", 150, Ui.H, Ui.RED)
+	var fresh := Ui.button("End it, start new", 150, Ui.H, Ui.SMALL)
+	keep.pressed.connect(func() -> void:
+		dim.queue_free()
+		_adopt(live))
+	fresh.pressed.connect(func() -> void:
+		dim.queue_free()
+		_session = live
+		_new_session())
+	row.add_child(keep)
+	row.add_child(fresh)
+	ask.add_child(row)
+
+
+## The teacher's newest session still in play, `{}` for none.
+func _live_session() -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		SESSIONS + "?select=*&admin_id=eq." + Net.user_id
+		+ "&state=neq.ended&order=created_at.desc&limit=5")
+	if got.error != "":
+		_say(got.error, Pal.WRONG)
+		return {}
+	for row: Dictionary in (got.data if got.data is Array else []):
+		if not Teams.expired(row):
+			return row
+	return {}
+
+
+## Every session this teacher still has open is ended -- one live adventure per
+## teacher, so nobody is ever left in yesterday's game -- and a fresh one takes
+## its place with a new code and two teams ready to rename.
+func _new_session() -> void:
+	if not Net.signed_in():
+		_say("Sign in as an admin first.", Pal.WRONG)
+		return
+	if not _session.is_empty():
+		_tell("sessions", "UPDATE", {"id": _session.get("id", ""), "state": "ended"})
+	await Net.rest(HTTPClient.METHOD_PATCH,
+		SESSIONS + "?admin_id=eq." + Net.user_id + "&state=neq.ended", {"state": "ended"})
+	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, SESSIONS,
+		{"admin_id": Net.user_id, "duration_s": _seconds()})
+	if not is_instance_valid(self):
+		return
+	if made.error != "" or not (made.data is Array) or (made.data as Array).is_empty():
+		_say(made.error if made.error != "" else "Could not make a session.", Pal.WRONG)
+		return
+	_session = made.data[0]
+	_watch_roster()
+	# Both teams in one request -- PostgREST inserts an array as one statement.
+	var sid: String = str(_session.get("id", ""))
+	var teams: Dictionary = await Net.rest(HTTPClient.METHOD_POST, TEAMS,
+		[{"session_id": sid, "name": "Team 1"}, {"session_id": sid, "name": "Team 2"}])
+	if not is_instance_valid(self):
+		return
+	_lobby.session = _session.duplicate()
+	_lobby.players = {}
+	_lobby.teams = []
+	for t: Dictionary in (teams.data if teams.data is Array else []):
+		_lobby.apply("teams", "INSERT", t)
+	_say("New session ready. Students type the code, then pick a team.", Pal.CORRECT)
+	_refresh_state()
+	_draw_teams()
+
+
 # --- The session row --------------------------------------------------------
 func _load() -> void:
 	if not Net.signed_in():
 		_say("Sign in as an admin to run a session.", Pal.INK_MUTED)
 		return
-	# Only a live one. Without the filter this adopted the newest session
-	# whatever its state, so after a run ended the teacher was shown a dead
-	# session's teams and Add Team added to a corpse.
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		SESSIONS + "?select=*&admin_id=eq." + Net.user_id
-		+ "&state=neq.ended&order=created_at.desc&limit=5")
+	# Only a live one: an ended session is not something to show or add to.
+	var live := await _live_session()
 	if not is_instance_valid(self):
 		return
-	if got.error != "":
-		_say(got.error, Pal.WRONG)
-		return
-	for row: Dictionary in (got.data if got.data is Array else []):
-		if Teams.expired(row):
-			continue
-		_session = row
-		duration_seconds = int(_session.get("duration_s", 600))
+	_adopt(live)
+
+
+func _adopt(row: Dictionary) -> void:
+	_session = row
+	if not row.is_empty():
+		duration_seconds = int(row.get("duration_s", 600))
 		_show_time()
-		break
 	_refresh_state()
-	_load_teams()
 	_watch_roster()
+	_load_teams()
 
 
 ## One session per admin, reused. A second row would leave players guessing
@@ -234,34 +362,62 @@ func _load() -> void:
 ## The teacher's own board is the one that subscribes; forty students watching
 ## `members` would turn ~200 realtime messages an adventure into ~22,000.
 func _watch_roster() -> void:
-	if _watching or _session.is_empty():
-		return
-	_watching = true
-	var rt: Realtime = Net.realtime()
-	rt.changed.connect(func(table: String, _t: String, _r: Dictionary) -> void:
-		if table in ["members", "teams"] and is_instance_valid(_teams_grid):
-			_load_teams())
 	var sid: String = str(_session.get("id", ""))
+	if _session.is_empty() or _watching == sid:
+		return
+	_watching = sid
+	var rt: Realtime = Net.realtime()
+	if not rt.changed.is_connected(_on_roster_row):
+		rt.changed.connect(_on_roster_row)
+	# The fast road: students' own picks and joins, announced as they happen.
+	if not rt.broadcast.is_connected(_on_hint):
+		rt.broadcast.connect(_on_hint)
+	# Who is actually here -- a dot by each name.
+	if not rt.presence_changed.is_connected(_draw_teams):
+		rt.presence_changed.connect(_draw_teams)
 	rt.watch("members", "session_id=eq." + sid)
 	rt.watch("teams", "session_id=eq." + sid)
 
 
-## A new session whenever there is not a live one. An ended or expired row is
-## not something to add teams to -- the teams would belong to a game nobody
-## can join.
+## Applied from the message: a student joining or switching shows at once,
+## with no fetch. Only a newcomer, whose name the message lacks, costs one.
+func _on_roster_row(table: String, type: String, record: Dictionary) -> void:
+	if not is_instance_valid(self) or table == "sessions":
+		return
+	match _lobby.apply(table, type, record):
+		"changed":
+			_draw_teams()
+		"reload":
+			_load_teams()
+
+
+func _on_hint(event: String, data: Dictionary) -> void:
+	if not is_instance_valid(self):
+		return
+	match _lobby.hear(event, data):
+		"changed":
+			_draw_teams()
+		"reload":
+			_load_teams()
+
+
+## Tell the lobbies, then (for the caller) write it. A refused write is
+## followed by a RELOAD so nobody keeps showing what did not happen.
+func _tell(table: String, type: String, record: Dictionary) -> void:
+	Lobby.tell(str(_session.get("id", "")), table, type, record)
+
+
+func _tell_reload() -> void:
+	_tell("members", "RELOAD", {})
+
+
+## Everything but New Session needs a session still in play. An ended or
+## expired one is not something to add teams to or start -- nobody can join it.
 func _ensure_session() -> String:
 	if not Net.signed_in():
 		return "Sign in as an admin first."
-	if not _session.is_empty() and str(_session.get("state", "")) != "ended" \
-			and not Teams.expired(_session):
-		return ""
-	_session = {}
-	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, SESSIONS,
-		{"admin_id": Net.user_id, "duration_s": duration_seconds})
-	if made.error != "":
-		return made.error
-	if made.data is Array and not (made.data as Array).is_empty():
-		_session = made.data[0]
+	if _session.is_empty() or Teams.expired(_session):
+		return "This session has ended. Go back and press Start New Session."
 	return ""
 
 
@@ -276,12 +432,6 @@ func _set_state(want: String, is_start: bool) -> void:
 		# The typed duration goes up with the start, which is why there is no
 		# Apply Time: the only moment it matters is the moment it begins.
 		duration_seconds = _seconds()
-		# One live adventure per teacher. Old rows stayed `running` for ever
-		# and a student joining tomorrow landed in yesterday's game.
-		await Net.rest(HTTPClient.METHOD_PATCH,
-			SESSIONS + "?admin_id=eq." + Net.user_id
-			+ "&id=neq." + str(_session.get("id", "")) + "&state=neq.ended",
-			{"state": "ended"})
 		var short: String = await QuestionStore.shortfall()
 		if short != "":
 			_say("Cannot start — question bank incomplete:  " + short, Pal.WRONG)
@@ -307,9 +457,14 @@ func _set_state(want: String, is_start: bool) -> void:
 			int(now) + left) + "Z"
 		fields["remaining_s"] = null
 
+	# The lobbies show Start as teams locking; announced as it is written.
+	_tell("sessions", "UPDATE", {"id": _session.get("id", ""), "state": want})
 	var done: Dictionary = await _patch(fields)
+	if done.error != "":
+		_tell("sessions", "UPDATE", _session)
 	if done.error == "":
-		_say("Game %s." % want, Pal.CORRECT)
+		_say("Game %s." % want if not is_start
+			else "Game running. Teams are locked now.", Pal.CORRECT)
 	_refresh_state()
 
 
@@ -325,10 +480,19 @@ func _patch(fields: Dictionary) -> Dictionary:
 
 ## The buttons carry the state, so there is nothing else to label it with.
 func _refresh_state() -> void:
+	var state := str(_session.get("state", ""))
+	# Out of time is over, whatever the row says -- the same rule the players
+	# go by, so nothing is offered for a dead clock.
+	if _session.is_empty() or Teams.expired(_session):
+		state = "ended"
+	if is_instance_valid(_code_label):
+		_code_label.text = "Session ended — go back to start a new one" if state == "ended" \
+			else "Code:  %s   ·   %s" % [str(_session.get("code", "")), state.capitalize()]
+	if is_instance_valid(_shuffle_btn):
+		_shuffle_btn.disabled = state != "lobby"
 	if not is_instance_valid(_start_btn):
 		return
-	var state := str(_session.get("state", ""))
-	_start_btn.disabled = state == "running" or state == "paused"
+	_start_btn.disabled = state != "lobby"
 	_hold_btn.disabled = state != "running" and state != "paused"
 	_hold_btn.text = "▶  Resume" if state == "paused" else "⏸  Pause Game"
 	_end_btn.disabled = state == "" or state == "ended"
@@ -339,34 +503,48 @@ func _refresh_state() -> void:
 ## and who is in it underneath. Live -- a student joining appears without the
 ## teacher reopening anything.
 func _load_teams() -> void:
-	if _session.is_empty() or not is_instance_valid(_teams_grid):
+	if _session.is_empty():
 		return
-	var sid: String = str(_session.get("id", ""))
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		TEAMS + "?select=id,name&session_id=eq." + sid + "&order=name")
-	var joined: Dictionary = await Teams.roster(sid)
+	var err := await _lobby.load(str(_session.get("id", "")))
+	if not is_instance_valid(self):
+		return
+	if err != "":
+		_say(err, Pal.WRONG)
+	_draw_teams()
+
+
+## The Teams tab, drawn from `_lobby` -- never waits on the network.
+func _draw_teams() -> void:
 	if not is_instance_valid(_teams_grid):
 		return
 	for c in _teams_grid.get_children():
+		_teams_grid.remove_child(c)
 		c.queue_free()
-	if got.error != "":
-		_say(got.error, Pal.WRONG)
-		return
-
-	var teams: Array = got.data if got.data is Array else []
+	var teams: Array = _lobby.teams
 	for t: Dictionary in teams:
-		_teams_grid.add_child(_team_card(t, joined.get(str(t.get("id", "")), [])))
+		_teams_grid.add_child(_team_card(t, _lobby.members_of(t.id), teams))
+	# Joined the session, no team yet -- or their team was removed.
+	if is_instance_valid(_loose):
+		for c in _loose.get_children():
+			c.queue_free()
+		var loose: Array = _lobby.members_of("")
+		if not loose.is_empty():
+			_loose.add_child(Art.label("No team:", Pal.TINY, Pal.WRONG))
+			for who: Dictionary in loose:
+				_loose.add_child(_player_chip(who, "", teams))
 	if is_instance_valid(_add_btn):
 		_add_btn.disabled = teams.size() >= MAX_TEAMS
 		_add_btn.text = "Add Team" if teams.size() < MAX_TEAMS else "4 teams is the most"
 
 
-func _team_card(t: Dictionary, names: Array) -> Control:
+func _team_card(t: Dictionary, members: Array, teams: Array) -> Control:
 	var id: String = str(t.get("id", ""))
 	# A wrapper so the × can sit ON the corner rather than inside the box,
 	# where a boxed button was eating a third of a card this narrow.
 	var wrap := Control.new()
-	wrap.custom_minimum_size = CARD
+	# A plain Control does not grow with what is in it, so the card is sized
+	# for its names: a line each under the name field and the count.
+	wrap.custom_minimum_size = CARD + Vector2(0, 15 * members.size())
 
 	var card := PanelContainer.new()
 	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -393,13 +571,12 @@ func _team_card(t: Dictionary, names: Array) -> Control:
 	col.add_child(field)
 
 	# The count is what a teacher scans: five of six means somebody is still on
-	# the login screen.
-	var who := Art.label("Joined %d%s" % [names.size(),
-			"" if names.is_empty() else ": " + ", ".join(names)],
-			Pal.TINY, Pal.INK_MUTED if names.is_empty() else Pal.CORRECT)
-	who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	who.custom_minimum_size = Vector2(CARD.x - 16, 0)
-	col.add_child(who)
+	# the login screen. Each name is a menu, for Move.
+	var here := members.filter(func(m: Dictionary) -> bool: return _is_here(m.profile_id)).size()
+	col.add_child(Art.label("Joined %d · %d here" % [members.size(), here], Pal.TINY,
+			Pal.INK_MUTED if members.is_empty() else Pal.CORRECT))
+	for who: Dictionary in members:
+		col.add_child(_player_chip(who, id, teams))
 
 	var del := Ui.glyph("×", 16, Pal.WRONG)
 	del.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
@@ -407,23 +584,22 @@ func _team_card(t: Dictionary, names: Array) -> Control:
 	del.offset_top = -9.0
 	del.offset_right = 4.0
 	del.offset_bottom = 13.0
-	del.pressed.connect(func() -> void: _remove_team(id, str(t.get("name", "")), names))
+	del.pressed.connect(func() -> void: _remove_team(id, str(t.get("name", "")), members))
 	wrap.add_child(del)
 	return wrap
 
 
-## An empty team goes straight away; one with players in it asks first, because
-## deleting it takes their membership with it and they would be dropped out of
-## the adventure mid-run with no idea why.
+## An empty team goes straight away; one with players in it asks first. Its
+## players are not removed: they stay in the session with no team and are sent
+## back to pick another, gems and all.
 func _remove_team(id: String, name: String, names: Array) -> void:
 	if names.is_empty():
-		await Net.rest(HTTPClient.METHOD_DELETE, TEAMS + "?id=eq." + id)
-		_load_teams()
+		_drop_team(id)
 		return
 
 	var dim := Ui.dim(self)
 	var ask := Ui.screen_panel(dim, Vector2(360, 170), "Remove this team?")
-	var warn := Art.label("%s has %d player%s in it. Removing it takes them out of the adventure."
+	var warn := Art.label("%s has %d player%s in it. They stay in the adventure and pick another team."
 			% [name, names.size(), "" if names.size() == 1 else "s"],
 			Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -436,48 +612,139 @@ func _remove_team(id: String, name: String, names: Array) -> void:
 	var no := Ui.button("Keep it", 140, Ui.H, Ui.SMALL)
 	yes.pressed.connect(func() -> void:
 		dim.queue_free()
-		await Net.rest(HTTPClient.METHOD_DELETE, TEAMS + "?id=eq." + id)
-		_load_teams())
+		_drop_team(id))
 	no.pressed.connect(func() -> void: dim.queue_free())
 	row.add_child(yes)
 	row.add_child(no)
 	ask.add_child(row)
 
 
+## Gone from the screen at once; if the server refuses, it is read back.
+func _drop_team(id: String) -> void:
+	_lobby.apply("teams", "DELETE", {"id": id})
+	_draw_teams()
+	_tell("teams", "DELETE", {"id": id})
+	var done: Dictionary = await Net.rest(HTTPClient.METHOD_DELETE, TEAMS + "?id=eq." + id)
+	if is_instance_valid(self) and done.error != "":
+		_say(done.error, Pal.WRONG)
+		_tell_reload()
+		_load_teams()
+
+
 func _rename(id: String, name: String) -> void:
 	var wanted := name.strip_edges()
-	if wanted.is_empty():
+	# Leaving the field saves too, so most calls change nothing: skip those.
+	if wanted.is_empty() or wanted == _lobby.name_of(id):
 		return
+	var row := {"id": id, "name": wanted, "session_id": _session.get("id", "")}
+	_lobby.apply("teams", "UPDATE", row)
+	_tell("teams", "UPDATE", row)
 	var done: Dictionary = await Net.rest(HTTPClient.METHOD_PATCH,
 		TEAMS + "?id=eq." + id, {"name": wanted})
+	if not is_instance_valid(self):
+		return
 	if done.error != "":
 		_say(done.error, Pal.WRONG)
+		_tell_reload()
 		_load_teams()      # put the old name back on screen
 	else:
-		_say("Team renamed to \"%s\" — that is the code to hand out." % wanted,
-			Pal.CORRECT)
+		_say("Team renamed to \"%s\"." % wanted, Pal.CORRECT)
 
 
-## The new card appears as soon as the row does. It used to wait on
-## `_load_teams()`, which re-fetches every team AND the whole roster -- two
-## more round trips before a button press showed any sign of having worked.
 func _add_team() -> void:
 	var err := await _ensure_session()
 	if err != "":
 		_say(err, Pal.WRONG)
 		return
-	var n := _teams_grid.get_child_count() + 1
-	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, TEAMS,
-		{"session_id": _session.get("id", ""), "name": "Team %d" % n})
+	# The first "Team N" nobody has. Counting cards gave "Team 2" again after
+	# Team 1 was removed, and the unique name refused it. Read off `_lobby`,
+	# which is current, rather than asked of the server first.
+	var taken: Array = []
+	for t: Dictionary in _lobby.teams:
+		taken.append(str(t.name).to_lower())
+	if taken.size() >= MAX_TEAMS:
+		return
+	var n := 1
+	while ("team %d" % n) in taken:
+		n += 1
+	# The id is made here, so the card and every lobby's copy of it can
+	# appear before the server has answered.
+	var row := {"id": Teams.uuid(), "session_id": _session.get("id", ""), "name": "Team %d" % n}
+	_lobby.apply("teams", "INSERT", row)
+	_draw_teams()
+	_tell("teams", "INSERT", row)
+	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, TEAMS, row)
+	if not is_instance_valid(self):
+		return
 	if made.error != "":
 		_say(made.error, Pal.WRONG)
+		_tell_reload()
+		_load_teams()
 		return
-	if made.data is Array and not (made.data as Array).is_empty() \
-			and is_instance_valid(_teams_grid):
-		_teams_grid.add_child(_team_card(made.data[0], []))
-		if is_instance_valid(_add_btn):
-			_add_btn.disabled = _teams_grid.get_child_count() >= MAX_TEAMS
-	_say("Team added — rename it to the code you give that team.", Pal.INK_MUTED)
+	_say("Team added — tap its name to rename it.", Pal.INK_MUTED)
+
+
+## A player's name, which opens "Move to ..." for every other team. Before
+## Start only -- after it the teams are locked, and the server says so too.
+func _player_chip(who: Dictionary, on_team: String, teams: Array) -> Control:
+	var chip := MenuButton.new()
+	chip.flat = true
+	# ● here now (lobby or map), ○ joined but not connected -- a phone that
+	# died, or a student who wandered off to another screen.
+	var here: bool = _is_here(str(who.get("profile_id", "")))
+	chip.text = ("● " if here else "○ ") + str(who.get("username", "?"))
+	chip.add_theme_font_size_override("font_size", Pal.TINY)
+	chip.add_theme_color_override("font_color", Pal.CORRECT if here else Pal.INK_MUTED)
+	chip.add_theme_color_override("font_hover_color", Pal.WRONG)
+	chip.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	chip.custom_minimum_size = Vector2(0, 14)
+	chip.disabled = str(_session.get("state", "")) != "lobby"
+	chip.tooltip_text = "Move to another team" if not chip.disabled else "Teams are locked"
+	var menu := chip.get_popup()
+	var ids: Array = []
+	for t: Dictionary in teams:
+		if str(t.get("id", "")) == on_team:
+			continue
+		menu.add_item("Move to " + str(t.get("name", "")), ids.size())
+		ids.append(str(t.get("id", "")))
+	menu.id_pressed.connect(func(i: int) -> void: _move(str(who.get("profile_id", "")), ids[i]))
+	return chip
+
+
+## Moved on screen at once; read back only if the server says no.
+func _is_here(profile_id: String) -> bool:
+	var meta: Variant = Net.realtime().online.get(profile_id)
+	return meta is Dictionary and str((meta as Dictionary).get("sid", "")) == str(_session.get("id", ""))
+
+
+func _move(profile_id: String, team_id: String) -> void:
+	if _lobby.players.has(profile_id):
+		_lobby.players[profile_id].team_id = team_id
+	_draw_teams()
+	_tell("members", "UPDATE", {"session_id": _session.get("id", ""),
+		"profile_id": profile_id, "team_id": team_id})
+	var done: Dictionary = await Net.rest(HTTPClient.METHOD_PATCH,
+		"/rest/v1/members?session_id=eq." + str(_session.get("id", ""))
+		+ "&profile_id=eq." + profile_id, {"team_id": team_id})
+	if is_instance_valid(self) and done.error != "":
+		_say(done.error, Pal.WRONG)
+		_tell_reload()
+		_load_teams()
+
+
+## Everyone dealt round the teams at random, on the server in one go.
+func _shuffle() -> void:
+	var err := await _ensure_session()
+	if err != "":
+		_say(err, Pal.WRONG)
+		return
+	var done: Dictionary = await Net.rest(HTTPClient.METHOD_POST,
+		"/rest/v1/rpc/shuffle_teams", {"p_session": _session.get("id", "")})
+	_say(done.error if done.error != "" else "Teams shuffled.",
+		Pal.WRONG if done.error != "" else Pal.CORRECT)
+	# Too many rows to describe one by one: every lobby reads it again.
+	_tell_reload()
+	_load_teams()
 
 
 func _say(text: String, col: Color) -> void:
@@ -485,5 +752,42 @@ func _say(text: String, col: Color) -> void:
 	_msg.add_theme_color_override("font_color", col)
 
 
+## Leaving ends the session, so it asks -- the code stops working and anyone
+## still in it is sent out. A session already over just leaves.
 func go_back() -> void:
+	if _session.is_empty() or Teams.expired(_session):
+		main.open("admin")
+		return
+	var dim := Ui.dim(self)
+	var ask := Ui.screen_panel(dim, Vector2(360, 170), "End this session?")
+	var warn := Art.label("Code %s stops working and everyone in it is sent out. "
+			% str(_session.get("code", "")) + "You can start a new session from the dashboard.",
+			Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warn.custom_minimum_size = Vector2(320, 0)
+	ask.add_child(warn)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	var yes := Ui.button("End session", 140, Ui.H, Ui.RED)
+	var no := Ui.button("Stay", 140, Ui.H, Ui.SMALL)
+	yes.pressed.connect(func() -> void:
+		dim.queue_free()
+		_end_and_leave())
+	no.pressed.connect(func() -> void: dim.queue_free())
+	row.add_child(yes)
+	row.add_child(no)
+	ask.add_child(row)
+
+
+func _end_and_leave() -> void:
+	var sid: String = str(_session.get("id", ""))
+	_tell("sessions", "UPDATE", {"id": sid, "state": "ended"})
+	var done: Dictionary = await Net.rest(HTTPClient.METHOD_PATCH,
+		SESSIONS + "?id=eq." + sid, {"state": "ended"})
+	if not is_instance_valid(self):
+		return
+	if done.error != "":
+		_say(done.error, Pal.WRONG)
+		return
 	main.open("admin")

@@ -86,6 +86,41 @@ func _ready() -> void:
 	_check("pause hands back what it banked",
 		"" if is_equal_approx(Game.time_left, 111.0) else "%f left" % Game.time_left)
 
+	# --- Positions: one phone's hero, on another phone's board --------------
+	# A second socket stands in for the second phone. Broadcast is not the
+	# database: nothing is written, the message goes socket to socket.
+	var other := Realtime.new()
+	add_child(other)
+	var heard: Array = []
+	# Only this run's: every session shares the one topic, so a real game
+	# open at the same time is heard too -- the map filters by `sid` as well.
+	other.broadcast.connect(func(event: String, data: Dictionary) -> void:
+		if str(data.get("sid", "")) == sid:
+			heard.append({"event": event, "data": data}))
+	other.watch("sessions", "id=eq." + sid)
+	_check("a second socket goes live", "" if await _until(func() -> bool: return other.live)
+		else "never subscribed in %ds" % int(WAIT_S))
+	rt.send_broadcast("pos", {"sid": sid, "id": "hero-a", "x": 120.5, "y": 64.0})
+	_check("a position reaches the other socket",
+		"" if await _until(func() -> bool: return not heard.is_empty())
+		else "nothing heard in %ds" % int(WAIT_S))
+	if not heard.is_empty():
+		_check("it carries where the hero is",
+			"" if heard[0].event == "pos" and is_equal_approx(float(heard[0].data.get("x", 0)), 120.5)
+			else "got %s" % str(heard[0]))
+
+	# --- Presence: who is here ----------------------------------------------
+	# The second socket announces itself; the first sees it, then sees it go
+	# when that socket closes -- nobody has to notice a phone leave.
+	other.track({"sid": sid, "where": "lobby", "name": "rt-check"})
+	_check("a tracked phone shows as here",
+		"" if await _until(func() -> bool: return str(rt.online.get(Net.user_id, {}).get("sid", "")) == sid)
+		else "never appeared in %ds: %s" % [int(WAIT_S), str(rt.online)])
+	other.close_socket()
+	_check("and is gone when it disconnects",
+		"" if await _until(func() -> bool: return not rt.online.has(Net.user_id))
+		else "still listed after %ds" % int(WAIT_S))
+
 	rt.close_socket()
 	await Net.rest(HTTPClient.METHOD_DELETE, "/rest/v1/sessions?id=eq." + sid)
 	print("---- REALTIME %s ----" % ("PASS" if _failures == 0 else "FAIL"))

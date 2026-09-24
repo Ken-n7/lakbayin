@@ -120,6 +120,28 @@ func _init() -> void:
 	assert(G.time_left == 0.0, "a passed deadline clamps at zero: %f" % G.time_left)
 	print("clock: lobby / running / paused / ended all read the session")
 
+	# Only a running session scores; offline ("") always does.
+	G.apply_session({"state": "paused", "duration_s": 600, "remaining_s": 60})
+	assert(not G.can_score(), "a paused session refuses answers")
+	G.apply_session({"state": "running", "duration_s": 600, "ends_at": deadline})
+	assert(G.can_score(), "a running session takes them")
+	G.begin_adventure(600)
+	assert(G.session_state == "" and G.session_id == "", "a new run forgets the last session")
+	assert(G.can_score(), "offline scores")
+
+	# A rejoin picks up the server's row: circle 10 is station 2's third item.
+	var R: Node = load("res://scripts/Game.gd").new()
+	R.begin_adventure(600)
+	R.restore_from({"gems": 72, "correct": 7, "items_done": 10, "eliminated": false,
+		"rescued_at": "2026-09-24T10:00:00Z"})
+	assert(R.gems == 72 and R.items_done == 10 and R.correct == 7, "row restored")
+	assert(R.rescue_sent, "a sent rescue stays sent")
+	assert(R.current_station == 1, "on station 2: %d" % R.current_station)
+	assert(R.completed_stations == [true, false, false], "station 1 done")
+	assert(R.towers_entered == [true, true, false], "briefings 1 and 2 read")
+	R.free()
+	print("session: pause refuses, rejoin restores")
+
 	# --- Elimination --------------------------------------------------------
 	# The paper: "Eliminated Member (reaching 0 gems): -50 gems". It could
 	# never fire while gems floored at zero, which they did until now.
@@ -172,9 +194,41 @@ func _init() -> void:
 	assert(P._colour("a") == P._colour("a"), "a team's colour is stable")
 	assert(P._colour("a") != P._colour("z"), "two teams read apart")
 
-	# Somebody who leaves the session leaves the board.
+	# A live position beats the circle: bea is standing on the road, not on 3.
+	P.move("b", {"x": 555.0, "y": 77.0, "face": "left", "moving": true, "hero": 4})
+	P.refresh(rows, anchors, gate, "me")
+	# Heading there, not snapped: `_process` walks the hero onto it frame by frame.
+	assert(P._is_live("b") and P._live_pos("b") == Vector2(555, 77),
+		"a live hero heads where it was sent: %s" % P._live_pos("b"))
+	P._process(1.0)
+	assert(P._markers["b"].position == Vector2(555, 77),
+		"and gets there: %s" % P._markers["b"].position)
+	P.move("new", {"x": 1.0, "y": 2.0, "name": "late", "team": "z"})
+	assert(P._markers.has("new"), "someone the roster has not caught up with still appears")
+	P.move("me", {"x": 1.0, "y": 2.0})
+	assert(not P._markers.has("me"), "your own echo is not a second you")
+
+	# Drawn in the past, between two positions: halfway in time is halfway there,
+	# and past the newest it walks on only briefly.
+	var PeersScript: GDScript = load("res://scripts/map/Peers.gd")
+	var trail := {"samples": [
+		{"ts": 1.0, "pos": Vector2(0, 0), "vel": Vector2(100, 0), "face": "right", "moving": true},
+		{"ts": 1.2, "pos": Vector2(20, 0), "vel": Vector2(100, 0), "face": "right", "moving": true}]}
+	assert(PeersScript._sample_at(trail, 1.1).pos == Vector2(10, 0), "interpolates between positions")
+	assert(PeersScript._sample_at(trail, 1.3).pos.is_equal_approx(Vector2(30, 0)), "walks on past the newest")
+	assert(PeersScript._sample_at(trail, 9.0).pos.is_equal_approx(Vector2(50, 0)), "but only for PREDICT_S")
+
+	# A refresh updates heroes where they stand rather than rebuilding them --
+	# rebuilding reset every walk cycle on every answer anyone gave.
+	var bea_before: Node2D = P._markers["b"]
+	P.refresh(rows, anchors, gate, "me")
+	assert(P._markers["b"] == bea_before, "a refresh keeps the same hero")
+
+	# Somebody who leaves the session leaves the board. "new" stays: known only
+	# from live positions, it goes when those stop.
 	P.refresh(rows.slice(0, 2), anchors, gate, "me")
-	assert(P.get_child_count() == 1, "left the session, left the board: %d" % P.get_child_count())
+	assert(not P._markers.has("c") and not P._markers.has("d"), "left the session, left the board")
+	assert(P._markers.has("b") and P._markers.has("new"), "the rest stay: %s" % str(P._markers.keys()))
 	print("peers: markers stand where items_done says, and leave when the player does")
 
 	print("test_rules: all assertions passed")

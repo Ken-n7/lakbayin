@@ -94,6 +94,31 @@ create table if not exists public.sessions (
   created_at  timestamptz not null default now()
 );
 
+-- The join code a teacher reads out: four characters, none of the pairs that
+-- read alike off a board (0/O, 1/I/L). Unique among sessions still in play --
+-- not for ever, which four characters could not promise -- so the lookup is
+-- always "the newest open session with this code".
+create or replace function public.session_code() returns text
+language plpgsql volatile set search_path = '' as $$
+declare
+  abc text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  c   text;
+begin
+  loop
+    c := '';
+    for i in 1..4 loop
+      c := c || substr(abc, 1 + floor(random() * length(abc))::int, 1);
+    end loop;
+    exit when not exists (select 1 from public.sessions
+                          where code = c and state <> 'ended'
+                            and created_at > now() - interval '3 hours');
+  end loop;
+  return c;
+end $$;
+
+alter table public.sessions add column if not exists
+  code text not null default public.session_code();
+
 -- 3. Teams and members ------------------------------------------------------
 -- The team name IS the join code, so it is unique within its session.
 create table if not exists public.teams (
@@ -103,18 +128,36 @@ create table if not exists public.teams (
   unique (session_id, name)
 );
 
+-- A player joins the SESSION (by its code) and then picks a team, so
+-- `team_id` is empty until they do -- and empty again if the teacher removes
+-- their team, which sends them back to pick rather than out of the adventure.
 create table if not exists public.members (
   session_id uuid not null references public.sessions on delete cascade,
-  team_id    uuid not null references public.teams    on delete cascade,
+  team_id    uuid          references public.teams    on delete set null,
   profile_id uuid not null references public.profiles on delete cascade,
   gems       int  not null default 50,
   correct    int  not null default 0,
   items_done int  not null default 0,
   eliminated boolean not null default false,
   finished   boolean not null default false,
-  primary key (team_id, profile_id),
-  unique (session_id, profile_id)   -- one team per player per adventure
+  primary key (session_id, profile_id)   -- one membership per player per adventure
 );
+
+-- Projects made before the join code: the key was (team_id, profile_id), which
+-- cannot hold an empty team, and removing a team deleted its players.
+do $$
+begin
+  if exists (select 1 from pg_constraint c
+             join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+             where c.conname = 'members_pkey' and a.attname = 'team_id') then
+    alter table public.members drop constraint members_pkey;
+    alter table public.members add primary key (session_id, profile_id);
+  end if;
+end $$;
+alter table public.members alter column team_id drop not null;
+alter table public.members drop constraint if exists members_team_id_fkey;
+alter table public.members add constraint members_team_id_fkey
+  foreign key (team_id) references public.teams on delete set null;
 
 -- 4. Question bank ----------------------------------------------------------
 -- Empty is fine: QuestionGen still fills any station short of active items.
@@ -218,6 +261,15 @@ end $$;
 -- Q2 is still open on whether an eliminated player should stop entirely. If
 -- the client says stop, it is this flag the map would read.
 
+-- Once per station, and only once its circles are done. Without the counter a
+-- client could call this with p_perfect = true as often as it liked, +10 each
+-- time. `stations_done` indexes the cumulative item counts (8/3/3 ->
+-- 8, 11, 14; `Game.ITEMS_PER_STATION`), so station n pays out only when
+-- items_done has reached its last circle. Not gated on `running`: the bonus
+-- is earned by the answers, which already were.
+alter table public.members add column if not exists
+  stations_done int not null default 0;
+
 create or replace function public.finish_station(p_session uuid, p_perfect boolean)
 returns public.members
 language plpgsql security definer set search_path = '' as $$
@@ -226,9 +278,14 @@ declare
 begin
   update public.members
      set gems = gems + case when p_perfect then 10 else 0 end,
+         stations_done = stations_done + 1,
          updated_at = now()
    where session_id = p_session and profile_id = auth.uid()
+     and items_done >= (array[8, 11, 14])[stations_done + 1]
   returning * into row;
+  if row is null then
+    raise exception 'that station is not finished';
+  end if;
   return row;
 end $$;
 
@@ -264,6 +321,10 @@ declare
   giver public.members;
   taker public.members;
 begin
+  if not exists (select 1 from public.sessions
+                 where id = p_session and state = 'running') then
+    raise exception 'the adventure is not running';
+  end if;
   select * into giver from public.members
    where session_id = p_session and profile_id = auth.uid();
   if giver is null then
@@ -281,7 +342,8 @@ begin
 
   select * into taker from public.members
    where session_id = p_session and profile_id = p_to;
-  if taker is null or taker.team_id <> giver.team_id then
+  if taker is null or giver.team_id is null
+     or taker.team_id is distinct from giver.team_id then
     raise exception 'that player is not on your team';
   end if;
   if taker.eliminated then
@@ -303,14 +365,78 @@ grant execute on function public.spend_hint(uuid) to authenticated;
 grant execute on function public.skip_item(uuid) to authenticated;
 grant execute on function public.finish_station(uuid, boolean) to authenticated;
 
+-- 4c. Picking a team ---------------------------------------------------------
+-- Students pick their own team in the lobby and may switch until the teacher
+-- presses Start; from then on teams are locked, or a player could carry their
+-- gems over to whichever side is winning. The one exception is somebody with
+-- no team -- never picked, or theirs was removed -- who may always pick one.
+-- The same rule binds the teacher's Move and Shuffle.
+create or replace function public.team_rules() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.team_id is not null and not exists (
+       select 1 from public.teams where id = new.team_id and session_id = new.session_id) then
+    raise exception 'that team is not in this adventure';
+  end if;
+  if tg_op = 'UPDATE' and new.team_id is distinct from old.team_id
+     and old.team_id is not null and new.team_id is not null
+     and exists (select 1 from public.sessions
+                 where id = new.session_id and state <> 'lobby') then
+    raise exception 'teams are locked once the adventure starts';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists members_team_rules on public.members;
+create trigger members_team_rules before insert or update on public.members
+  for each row execute function public.team_rules();
+
+-- Shuffle: everyone in the session dealt round the teams in a random order,
+-- for when picking freely has put all the friends on one side. One statement,
+-- so nobody is ever seen half-shuffled.
+create or replace function public.shuffle_teams(p_session uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not public.is_admin() then
+    raise exception 'only the teacher can shuffle teams';
+  end if;
+  if not exists (select 1 from public.sessions
+                 where id = p_session and state = 'lobby') then
+    raise exception 'teams are locked once the adventure starts';
+  end if;
+  with t as (select id, row_number() over (order by name) - 1 as k,
+                    count(*) over () as n
+               from public.teams where session_id = p_session),
+       m as (select profile_id, row_number() over (order by random()) - 1 as r
+               from public.members where session_id = p_session)
+  update public.members mem
+     set team_id = t.id
+    from m, t
+   where mem.session_id = p_session and mem.profile_id = m.profile_id
+     and t.k = m.r % t.n;
+end $$;
+
+grant execute on function public.shuffle_teams(uuid) to authenticated;
+
 -- 5. Leaderboard ------------------------------------------------------------
+-- The team's total is its members' gems less the two team penalties (SPECS
+-- §4), which live here rather than in anybody's gems: -50 for each member who
+-- was eliminated, and -25 for each member short of all 14 items once the
+-- adventure is over (ended, or out of time while still marked running --
+-- `Teams.expired()`'s rule). Summing gems alone charged neither.
 create or replace view public.team_scores with (security_invoker = on) as
   select t.session_id, t.id as team_id, t.name,
-         coalesce(sum(m.gems), 0)::int as gems,
+         (coalesce(sum(m.gems), 0)
+          - 50 * count(*) filter (where m.eliminated)
+          - case when s.state = 'ended'
+                      or (s.state = 'running' and s.ends_at <= now())
+                 then 25 * count(*) filter (where m.items_done < 14)
+                 else 0 end)::int      as gems,
          count(m.profile_id)::int      as members
   from public.teams t
+  join public.sessions s on s.id = t.session_id
   left join public.members m on m.team_id = t.id
-  group by t.session_id, t.id, t.name;
+  group by t.session_id, t.id, t.name, s.state, s.ends_at;
 
 -- 6. Row level security -----------------------------------------------------
 alter table public.profiles  enable row level security;
@@ -331,6 +457,7 @@ drop policy if exists admin_teams    on public.teams;
 drop policy if exists admin_questions on public.questions;
 drop policy if exists join_team      on public.members;
 drop policy if exists own_member     on public.members;
+drop policy if exists admin_members  on public.members;
 
 -- Everyone signed in can read; the leaderboard is the whole point.
 create policy read_profiles  on public.profiles  for select to authenticated using (true);
@@ -365,6 +492,10 @@ create policy join_team on public.members for insert to authenticated
 create policy own_member on public.members for update to authenticated
   using (profile_id = auth.uid()) with check (profile_id = auth.uid());
 
+-- The teacher's Move: another player's team, and nothing else of their row.
+create policy admin_members on public.members for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
 revoke update on public.members from authenticated;
 grant update (team_id) on public.members to authenticated;
 
@@ -382,6 +513,14 @@ begin
                  where pubname = 'supabase_realtime'
                    and schemaname = 'public' and tablename = 'members') then
     alter publication supabase_realtime add table public.members;
+  end if;
+  -- Game Controls watches teams so a rename or a removal shows at once; it
+  -- was subscribed all along and never sent anything, since the table was
+  -- not published.
+  if not exists (select 1 from pg_publication_tables
+                 where pubname = 'supabase_realtime'
+                   and schemaname = 'public' and tablename = 'teams') then
+    alter publication supabase_realtime add table public.teams;
   end if;
 end $$;
 

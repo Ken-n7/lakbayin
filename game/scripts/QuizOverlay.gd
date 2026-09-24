@@ -207,7 +207,7 @@ func _next_question() -> void:
 
 
 func _submit() -> void:
-	if phase != Phase.QUESTION:
+	if phase != Phase.QUESTION or not _may_score():
 		return
 	var t := _input.text.strip_edges()
 	if t.is_empty():
@@ -220,6 +220,16 @@ func _submit() -> void:
 	else:
 		Game.mark_wrong()
 		_show_result(false)
+
+
+## The teacher's pause reaches a student mid-question too. The server would
+## refuse the score, so the answer is held here rather than counted on this
+## phone alone and lost from the team's total.
+func _may_score() -> bool:
+	if Game.can_score():
+		return true
+	_flash_trouble("Paused by your teacher — wait for Resume")
+	return false
 
 
 ## Who Rescue can send to, refreshed per item because a team-mate's gems and
@@ -248,7 +258,7 @@ func _refresh_rescue() -> void:
 
 
 func _send_rescue(id: int) -> void:
-	if id < 0 or id >= _mates.size():
+	if id < 0 or id >= _mates.size() or not _may_score():
 		return
 	var mate: Dictionary = _mates[id]
 	var reply: Dictionary = await Scores.rescue(Game.session_id, str(mate.profile_id))
@@ -334,7 +344,7 @@ func _finish() -> void:
 
 
 func _use_hint() -> void:
-	if phase != Phase.QUESTION or Game.item_used_hint:
+	if phase != Phase.QUESTION or Game.item_used_hint or not _may_score():
 		return
 	if Game.spend_hint():
 		_hint_text.text = "Hint: " + current.hint
@@ -344,7 +354,7 @@ func _use_hint() -> void:
 
 
 func _skip() -> void:
-	if phase != Phase.QUESTION:
+	if phase != Phase.QUESTION or not _may_score():
 		return
 	if Game.gems <= 0:
 		_flash_trouble("No gems left to skip")

@@ -141,65 +141,101 @@ func _ready() -> void:
 	_check("an unset question leaves the pool",
 		"" if still_in == 2 else "%d of this run's 3 still in the pool" % still_in)
 
-	# --- Joining a team, the way a student does ---------------------------
-	# Still signed in as the admin: make a session and two teams.
+	# --- Joining by code, then picking a team -------------------------------
+	# Still signed in as the admin: a session (it gets its code from the
+	# database) and two teams.
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/sessions",
 		{"admin_id": Net.user_id, "duration_s": 600})
 	_check("admin creates a session", made.error)
-	var sid: String = str(made.data[0].get("id", "")) if made.data is Array \
-		and not (made.data as Array).is_empty() else ""
+	var row: Dictionary = made.data[0] if made.data is Array \
+		and not (made.data as Array).is_empty() else {}
+	var sid: String = str(row.get("id", ""))
+	var code: String = str(row.get("code", ""))
 	_sessions.append(sid)
+	_check("the session has a four-character code",
+		"" if code.length() == 4 else "got '%s'" % code)
+	_check("it has none of the look-alikes",
+		"" if not (code.contains("0") or code.contains("O") or code.contains("1")
+			or code.contains("I") or code.contains("L")) else "got '%s'" % code)
 
+	var team_ids := {}
 	for tname in ["Math Mavericks", "Number Ninjas"]:
 		var t: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/teams",
 			{"session_id": sid, "name": tname})
 		_check("admin adds team %s" % tname, t.error)
+		if t.data is Array and not (t.data as Array).is_empty():
+			team_ids[tname] = str(t.data[0].get("id", ""))
 
 	# Now be a student.
 	var pstamp := stamp + "p"
+	var player_email := "player-" + pstamp + "@numxventure-test.dev"
 	_check("register a player", await Net.sign_up(
-		"player-" + pstamp + "@numxventure-test.dev", "pl" + pstamp, "letmein123", "player"))
+		player_email, "pl" + pstamp, "letmein123", "player"))
 
-	_check("a name nobody was given is refused",
-		"" if (await Teams.join("Not A Team")) != "" else "the join was allowed")
-	_check("the team name joins", await Teams.join("Math Mavericks"))
-	# Typed as the student would, not as the teacher wrote it.
-	_check("joining is not case-sensitive", await Teams.join("math mavericks"))
-
+	# "0" is never in a code, so this one can never be real.
+	_check("a code nobody was given is refused",
+		"" if (await Teams.enter("Z0ZZ")).error != "" else "the join was allowed")
+	_check("the code gets you in", (await Teams.enter(code)).error)
 	var roster: Dictionary = await Teams.roster(sid)
-	var total := 0
-	for team_id: String in roster:
-		total += (roster[team_id] as Array).size()
-	_check("roster shows one member, not two",
-		"" if total == 1 else "roster held %d" % total)
-	_check("roster names the player",
-		"" if str(roster.values()[0][0]).begins_with("pl") else "got %s" % str(roster.values()))
-
-	# Switching teams moves the membership rather than adding a second.
-	_check("switch team", await Teams.join("Number Ninjas"))
+	_check("in the session with no team yet",
+		"" if (roster.get("", []) as Array).size() == 1 else "got %s" % str(roster))
+	# Typed as the student would, not as the teacher read it out.
+	_check("the code is not case-sensitive", (await Teams.enter(code.to_lower())).error)
+	_check("pick a team", await Teams.pick(sid, team_ids.get("Math Mavericks", "")))
+	_check("switch before Start", await Teams.pick(sid, team_ids.get("Number Ninjas", "")))
 	var after_switch: Dictionary = await Teams.roster(sid)
-	var total2 := 0
-	for team_id2: String in after_switch:
-		total2 += (after_switch[team_id2] as Array).size()
+	var total := 0
+	for team_id: String in after_switch:
+		total += (after_switch[team_id] as Array).size()
 	_check("still one membership after switching",
-		"" if total2 == 1 else "roster held %d" % total2)
+		"" if total == 1 else "roster held %d" % total)
+	_check("the roster names the player", "" if str(after_switch.get(
+		team_ids.get("Number Ninjas", ""), [{}])[0].get("username", "")).begins_with("pl")
+		else "got %s" % str(after_switch))
 
-	# --- A dead session is not the one to work in ---------------------------
-	# The teacher's screen used to adopt the newest session whatever its
-	# state, so after a run ended it showed that run's teams and added to it.
+	# The teacher's tools, then Start, which locks the teams.
 	await Net.sign_in(_admin_email, "letmein123")
+	var shuffled: Dictionary = await Net.rest(HTTPClient.METHOD_POST,
+		"/rest/v1/rpc/shuffle_teams", {"p_session": sid})
+	_check("the teacher can shuffle before Start", shuffled.error)
+	_check("the teacher can move a player before Start", (await Net.rest(
+		HTTPClient.METHOD_PATCH, "/rest/v1/members?session_id=eq." + sid
+		+ "&profile_id=neq." + Net.user_id, {"team_id": team_ids.get("Math Mavericks", "")})).error)
+	_check("start the game", (await Net.rest(HTTPClient.METHOD_PATCH,
+		"/rest/v1/sessions?id=eq." + sid, {"state": "running", "ends_at":
+		Time.get_datetime_string_from_unix_time(int(Time.get_unix_time_from_system()) + 600)
+		+ "Z"})).error)
+	var late: Dictionary = await Net.rest(HTTPClient.METHOD_POST,
+		"/rest/v1/rpc/shuffle_teams", {"p_session": sid})
+	_check("no shuffle once it has started",
+		"" if late.error != "" else "the shuffle went through")
+
+	await Net.sign_in(player_email, "letmein123")
+	_check("no switching once it has started",
+		"" if (await Teams.pick(sid, team_ids.get("Number Ninjas", ""))) != ""
+		else "the switch went through")
+
+	# Removing a team leaves its players in the session, teamless.
+	await Net.sign_in(_admin_email, "letmein123")
+	await Net.rest(HTTPClient.METHOD_DELETE,
+		"/rest/v1/teams?id=eq." + str(team_ids.get("Math Mavericks", "")))
+	var orphans: Dictionary = await Teams.roster(sid)
+	_check("a removed team's player stays in, with no team",
+		"" if (orphans.get("", []) as Array).size() == 1 else "got %s" % str(orphans))
+	await Net.sign_in(player_email, "letmein123")
+	_check("and may pick again, even after Start",
+		await Teams.pick(sid, team_ids.get("Number Ninjas", "")))
+	await Net.sign_in(_admin_email, "letmein123")
+
+	# --- A dead session's code opens nothing ---------------------------------
 	var dead: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/sessions",
 		{"admin_id": Net.user_id, "duration_s": 600, "state": "ended"})
 	_check("an ended session exists", dead.error)
-	if dead.data is Array and not (dead.data as Array).is_empty():
-		_sessions.append(str(dead.data[0].get("id", "")))
-	# There IS a live session from the join tests above, so the question is
-	# not whether one comes back -- it is whether the dead one does.
-	var dead_id: String = str(dead.data[0].get("id", "")) if dead.data is Array \
-		and not (dead.data as Array).is_empty() else ""
-	var offered: Dictionary = await Teams.live_session()
-	_check("an ended session is not offered to a joiner",
-		"" if str(offered.session.get("id", "")) != dead_id
+	var dead_row: Dictionary = dead.data[0] if dead.data is Array \
+		and not (dead.data as Array).is_empty() else {}
+	_sessions.append(str(dead_row.get("id", "")))
+	_check("an ended session's code is refused",
+		"" if (await Teams.find(str(dead_row.get("code", "")))).error != ""
 		else "the dead session was handed out")
 
 	# And one whose deadline has passed is over whatever its state says.
@@ -208,16 +244,14 @@ func _ready() -> void:
 		 "ends_at": Time.get_datetime_string_from_unix_time(
 			int(Time.get_unix_time_from_system()) - 60) + "Z"})
 	_check("a stale running session exists", stale.error)
-	if stale.data is Array and not (stale.data as Array).is_empty():
-		_sessions.append(str(stale.data[0].get("id", "")))
-	var stale_id: String = str(stale.data[0].get("id", "")) if stale.data is Array \
-		and not (stale.data as Array).is_empty() else ""
-	var offered2: Dictionary = await Teams.live_session()
-	_check("a passed deadline counts as over",
-		"" if str(offered2.session.get("id", "")) != stale_id
+	var stale_row: Dictionary = stale.data[0] if stale.data is Array \
+		and not (stale.data as Array).is_empty() else {}
+	_sessions.append(str(stale_row.get("id", "")))
+	_check("a passed deadline's code is refused",
+		"" if (await Teams.find(str(stale_row.get("code", "")))).error != ""
 		else "the expired run was handed out")
 	_check("Teams.expired() spots it",
-		"" if Teams.expired(stale.data[0]) else "an hour-old deadline read as live")
+		"" if Teams.expired(stale_row) else "a passed deadline read as live")
 
 	await _cleanup()
 	print("---- ADMIN %s ----" % ("PASS" if _failures == 0 else "FAIL"))

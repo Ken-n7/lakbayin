@@ -32,7 +32,23 @@ const DURATION_CHOICES := [300, 600, 900] # 5 / 10 / 15 minutes
 ## Super Retro World character pack: 32 sheets, one per adventurer.
 const HERO_COUNT := 32
 
-const SAVE_PATH := "user://numxventure.cfg"
+## `--profile=NAME` (after `--`) gives a desktop window its own save, so three
+## windows can be a teacher and two students instead of one login three times.
+var SAVE_PATH := "user://numxventure%s.cfg" % profile_suffix()
+
+
+##
+## The live checks under `res://tools/` sign up throwaway accounts, and saved
+## them over the real login -- the teacher's window came back as a test admin
+## that owned none of the class's sessions. They get a profile of their own.
+static func profile_suffix() -> String:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--profile="):
+			return "-" + a.trim_prefix("--profile=")
+	for a in OS.get_cmdline_args():
+		if a.begins_with("res://tools/"):
+			return "-tools"
+	return ""
 
 # --- Palette (sampled from the pack) ---------------------------------------
 
@@ -59,6 +75,11 @@ var item_used_hint := false       # one hint per item; reset by the quiz per que
 
 var player_name := ""
 var team_name := ""
+## The session this phone joined by code, kept across launches so Continue
+## Quest goes straight back in -- a dead phone mid-lesson must not need the
+## code read out again. `session_id` is the run being played; this is the door.
+var joined_session := ""
+var joined_code := ""
 var hero_id := 1
 
 var leaderboard: Array = []   # [{name, gems}]
@@ -183,7 +204,40 @@ func begin_adventure(seconds: int = 600) -> void:
 	towers_entered = [false, false, false]
 	completed_stations = [false, false, false]
 	perfect_stations = [false, false, false]
+	# Last run's session must not leak into this one: an `ended` state left
+	# over would refuse every answer until the fresh fetch landed.
+	session_id = ""
+	session_state = ""
 	adventure_started.emit()
+
+
+## Only while the clock runs does an answer count. The server refuses a score
+## outside `running`, so a phone that took one locally anyway would walk on
+## ahead of its own row and the team total would never see it.
+func can_score() -> bool:
+	return session_state == "" or session_state == "running"
+
+
+## Back into a run already under way -- a phone that died, an app restarted,
+## "Continue Quest" after leaving the board. The server's member row is the
+## progress; a fresh local run would put the player back on circle 1 while
+## every answer still moved the server's counter on from where it was.
+func restore_from(row: Dictionary) -> void:
+	gems = int(row.get("gems", START_GEMS))
+	correct = int(row.get("correct", 0))
+	items_done = clampi(int(row.get("items_done", 0)), 0, TOTAL_ITEMS)
+	wrong = maxi(items_done - correct, 0)   # wrong and skipped are not kept apart
+	eliminated = bool(row.get("eliminated", false))
+	rescue_sent = row.get("rescued_at") != null
+	current_station = station_of_item(items_done)
+	var end := 0
+	for s in ITEMS_PER_STATION.size():
+		var start := end
+		end += ITEMS_PER_STATION[s]
+		completed_stations[s] = items_done >= end
+		# Past its first circle means its briefing was read.
+		towers_entered[s] = items_done > start
+	gems_changed.emit(gems)
 
 
 ## Walking away from a run: dropped, not scored. No summary, no leaderboard row
@@ -345,6 +399,8 @@ func load_profile() -> void:
 		return
 	player_name = cfg.get_value("profile", "name", "")
 	team_name = cfg.get_value("profile", "team", "")
+	joined_session = cfg.get_value("profile", "session", "")
+	joined_code = cfg.get_value("profile", "code", "")
 	hero_id = clampi(int(cfg.get_value("profile", "hero_id", 1)), 1, HERO_COUNT)
 	leaderboard = cfg.get_value("leaderboard", "rows", leaderboard)
 
@@ -353,6 +409,8 @@ func save_profile() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("profile", "name", player_name)
 	cfg.set_value("profile", "team", team_name)
+	cfg.set_value("profile", "session", joined_session)
+	cfg.set_value("profile", "code", joined_code)
 	cfg.set_value("profile", "hero_id", hero_id)
 	cfg.set_value("leaderboard", "rows", leaderboard)
 	cfg.save(SAVE_PATH)

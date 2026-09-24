@@ -304,8 +304,10 @@ func _build_menu() -> void:
 		var b := Ui.button(spec[0], COL_W, BTN_H, spec[2])
 		b.clip_text = true
 		var route: String = spec[1]
+		# An optional fourth field is handed to the screen it opens.
+		var data: Dictionary = spec[3] if spec.size() > 3 else {}
 		b.pressed.connect(func() -> void:
-			main.open(route if route != "" else _adventure_route()))
+			main.open(route if route != "" else _adventure_route(), data))
 		col.add_child(b)
 	_after_menu(col)
 
