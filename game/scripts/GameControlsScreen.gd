@@ -1,7 +1,7 @@
 extends Control
 
-## Set Adventure Duration · Apply Time · Start / Pause / Resume, and the Teams
-## panel, per the mockups.
+## Set Adventure Duration · Start / Pause / Resume / End, and the Teams panel,
+## per the mockups.
 ##
 ## These write real rows into `sessions` and `teams` now; what is still missing
 ## is anybody reading them, which is Phase 4. The clock is stored the way the
@@ -12,20 +12,24 @@ extends Control
 ## difference -- the teacher authored those questions and gets to know.
 
 const PANEL := Vector2(600, 310)
-## Four is the ceiling the client asked for; two cards across keeps them
-## readable at 640 canvas and centred as a group however many there are.
+## Four is the ceiling the client asked for, and they sit in one row: at this
+## width four fit across a 640 canvas and the group stays centred however many
+## there are.
 const MAX_TEAMS := 4
-const CARD := Vector2(250, 62)
+const CARD := Vector2(132, 54)
 const SESSIONS := "/rest/v1/sessions"
 const TEAMS := "/rest/v1/teams"
 
 var main: Control
 
-var _hours := 0
-var _minutes := 10
-var _time_label: Label
+## The duration the fields show, in seconds. Mirrors the session row.
+var duration_seconds := 600
+var _min_field: LineEdit
+var _sec_field: LineEdit
 var _msg: Label
-var _state_label: Label
+var _start_btn: Button
+var _hold_btn: Button
+var _end_btn: Button
 var _teams_grid: GridContainer
 var _body: VBoxContainer
 var _add_btn: Button
@@ -41,22 +45,29 @@ func setup(_data: Dictionary) -> void:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
+	# The back arrow sits on the screen, not in the panel: a boxed "Back" at the
+	# bottom was a whole row of panel for one word.
+	var back := Ui.glyph("←", 26, Pal.PARCHMENT)
+	back.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	back.offset_left = 8.0
+	back.offset_top = 6.0
+	back.offset_right = 44.0
+	back.offset_bottom = 40.0
+	back.pressed.connect(go_back)
+	add_child(back)
+
 	var box := Ui.screen_panel(self, PANEL, "Game Controls")
 
-	# Two tabs rather than two columns. Side by side, the clock and the teams
-	# each got half a panel and neither had room -- the teams especially, which
-	# is the half a teacher works in while the class files in.
 	var tabs := HBoxContainer.new()
 	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
-	tabs.add_theme_constant_override("separation", 6)
+	tabs.add_theme_constant_override("separation", 18)
 	for i in 2:
-		var label: String = "Controls" if i == 0 else "Teams"
-		var b := Ui.button(label, 150, Ui.H, Ui.RED if _tab == i else Ui.SMALL)
+		var t := Ui.tab_text("Controls" if i == 0 else "Teams", _tab == i)
 		var which := i
-		b.pressed.connect(func() -> void:
+		Ui.tab_button(t).pressed.connect(func() -> void:
 			_tab = which
 			_rebuild())
-		tabs.add_child(b)
+		tabs.add_child(t)
 	box.add_child(tabs)
 
 	_body = VBoxContainer.new()
@@ -68,10 +79,6 @@ func setup(_data: Dictionary) -> void:
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_msg.custom_minimum_size = Vector2(540, 0)
 	box.add_child(_msg)
-
-	var back := Ui.button("Back", Ui.W_WIDE, Ui.H, Ui.SMALL)
-	back.pressed.connect(go_back)
-	Ui.centre_row(box, back)
 
 	if _tab == 0:
 		_build_duration(_body)
@@ -92,17 +99,14 @@ func _rebuild() -> void:
 
 
 # --- Teams tab --------------------------------------------------------------
-## Up to four teams in a centred grid, two across. Each one is a card with its
-## name editable on top -- the teacher hands that name out as the join code, so
-## "Team 1" is not a name anybody was given.
+## Four teams in one row, small enough to fit. Add Team sits under them.
 func _build_teams_tab(col: VBoxContainer) -> void:
 	var centre := CenterContainer.new()
 	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(centre)
 	_teams_grid = GridContainer.new()
-	_teams_grid.columns = 2
-	_teams_grid.add_theme_constant_override("h_separation", 10)
-	_teams_grid.add_theme_constant_override("v_separation", 8)
+	_teams_grid.columns = MAX_TEAMS
+	_teams_grid.add_theme_constant_override("h_separation", 8)
 	centre.add_child(_teams_grid)
 
 	_add_btn = Ui.button("Add Team", Ui.W_MED, Ui.H, Ui.SMALL)
@@ -110,72 +114,91 @@ func _build_teams_tab(col: VBoxContainer) -> void:
 	Ui.centre_row(col, _add_btn)
 
 
+## Minutes and seconds, typed. The steppers were eleven taps to reach half an
+## hour, and Apply Time is gone with them: Start Game is when the duration is
+## set, which is the moment it can actually matter.
 func _build_duration(col: VBoxContainer) -> void:
-	col.add_child(Art.label("Set Adventure Duration", Pal.H2, Pal.TITLE))
-	# Each pair sits under its own caption. Unlabelled, the row read
-	# "- + 0 hr 10 min - +" and gave no clue which pair moved which number.
+	col.add_child(Art.label("Set Adventure Duration", Pal.H2, Pal.TITLE,
+			HORIZONTAL_ALIGNMENT_CENTER))
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
-	for spec in [["hr", 1, 0], ["min", 0, 5]]:
-		var group := VBoxContainer.new()
-		group.add_theme_constant_override("separation", 2)
-		group.add_child(Art.label(spec[0], Pal.TINY, Pal.INK_MUTED,
-				HORIZONTAL_ALIGNMENT_CENTER))
-		var pair := HBoxContainer.new()
-		pair.add_theme_constant_override("separation", 2)
-		var dh: int = spec[1]
-		var dm: int = spec[2]
-		for sign in [-1, 1]:
-			var b := Ui.button("−" if sign < 0 else "+", Ui.H, Ui.H, Ui.SMALL)
-			b.pressed.connect(func() -> void: _bump(dh * sign, dm * sign))
-			pair.add_child(b)
-		group.add_child(pair)
-		row.add_child(group)
-	_time_label = Art.label("", Pal.BODY, Pal.INK)
-	row.add_child(_time_label)
-	# Beside the steppers, not beneath: the tab row above costs a line, and
-	# this is the one control that reads fine on the same row as its value.
-	var apply := Ui.button("Apply Time", Ui.W_MED, Ui.H, Ui.SMALL)
-	apply.pressed.connect(_apply_time)
-	row.add_child(apply)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 6)
+	_min_field = Ui.number_field(52)
+	_sec_field = Ui.number_field(52)
+	row.add_child(_min_field)
+	row.add_child(Art.label("min", Pal.SMALL, Pal.INK_MUTED))
+	row.add_child(_sec_field)
+	row.add_child(Art.label("sec", Pal.SMALL, Pal.INK_MUTED))
 	col.add_child(row)
 	_show_time()
 
 
-## The schema's floor and ceiling, enforced here so a stepper cannot compose a
-## duration Postgres will reject.
-func _bump(dh: int, dm: int) -> void:
-	var total: int = clampi((_hours + dh) * 60 + _minutes + dm, 1, 120)
-	_hours = total / 60
-	_minutes = total % 60
-	_show_time()
+## The schema's floor and ceiling, so a typed duration cannot compose one
+## Postgres will refuse.
+func _seconds() -> int:
+	var mins := int(_min_field.text) if is_instance_valid(_min_field) else 10
+	var secs := int(_sec_field.text) if is_instance_valid(_sec_field) else 0
+	return clampi(mins * 60 + secs, 60, 7200)
 
 
 func _show_time() -> void:
-	_time_label.text = "  %d hr  %02d min  " % [_hours, _minutes]
+	if not is_instance_valid(_min_field):
+		return
+	var total := int(duration_seconds)
+	_min_field.text = str(total / 60)
+	_sec_field.text = "%02d" % (total % 60)
 
 
+## Start, one button that is Pause or Resume depending on the state, and a way
+## to end a run early. Start disables once the adventure is running: pressing
+## it again would hand the class a fresh deadline mid-question.
 func _build_buttons(col: VBoxContainer) -> void:
-	_state_label = Art.label("", Pal.SMALL, Pal.INK_MUTED)
-	col.add_child(_state_label)
-	# Start on its own, Pause and Resume paired: they are the same decision seen
-	# twice, and stacking all three ran the column off the bottom.
-	var start := Ui.button("Start Game", Ui.W_WIDE, Ui.H, Ui.RED)
-	start.pressed.connect(func() -> void: _set_state("running", true))
-	col.add_child(start)
+	_start_btn = Ui.button("Start Game", Ui.W_WIDE, Ui.H, Ui.RED)
+	_start_btn.pressed.connect(func() -> void: _set_state("running", true))
+	Ui.centre_row(col, _start_btn)
 
-	var pair := HBoxContainer.new()
-	pair.add_theme_constant_override("separation", 4)
-	for spec in [["Pause Game", "paused"], ["Resume", "running"]]:
-		var b := Ui.button(spec[0], (Ui.W_WIDE - 4) / 2.0, Ui.H, Ui.SMALL)
-		var want: String = spec[1]
-		b.pressed.connect(func() -> void: _set_state(want, false))
-		pair.add_child(b)
-	col.add_child(pair)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 6)
+	_hold_btn = Ui.button("⏸  Pause Game", 120, Ui.H, Ui.SMALL)
+	_hold_btn.pressed.connect(_toggle_hold)
+	row.add_child(_hold_btn)
+	_end_btn = Ui.button("End Game", 120, Ui.H, Ui.SMALL_RED)
+	_end_btn.pressed.connect(_confirm_end)
+	row.add_child(_end_btn)
+	col.add_child(row)
 
 
-func _seconds() -> int:
-	return (_hours * 60 + _minutes) * 60
+## One control for the same decision seen twice. The label carries the state,
+## so there is never a Resume to press while the clock is already running.
+func _toggle_hold() -> void:
+	if str(_session.get("state", "")) == "paused":
+		_set_state("running", false)
+	else:
+		_set_state("paused", false)
+
+
+## Ending early takes the run away from everyone at once, so it asks.
+func _confirm_end() -> void:
+	var dim := Ui.dim(self)
+	var ask := Ui.screen_panel(dim, Vector2(360, 170), "End the adventure?")
+	var warn := Art.label("Every player stops where they are and the run is "
+			+ "scored as it stands.", Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warn.custom_minimum_size = Vector2(320, 0)
+	ask.add_child(warn)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	var yes := Ui.button("End it", 140, Ui.H, Ui.RED)
+	var no := Ui.button("Keep playing", 140, Ui.H, Ui.SMALL)
+	yes.pressed.connect(func() -> void:
+		dim.queue_free()
+		_set_state("ended", false))
+	no.pressed.connect(func() -> void: dim.queue_free())
+	row.add_child(yes)
+	row.add_child(no)
+	ask.add_child(row)
 
 
 # --- The session row --------------------------------------------------------
@@ -192,9 +215,7 @@ func _load() -> void:
 		return
 	if got.data is Array and not (got.data as Array).is_empty():
 		_session = got.data[0]
-		var secs: int = int(_session.get("duration_s", 600))
-		_hours = secs / 3600
-		_minutes = (secs % 3600) / 60
+		duration_seconds = int(_session.get("duration_s", 600))
 		_show_time()
 	_refresh_state()
 	_load_teams()
@@ -224,22 +245,12 @@ func _ensure_session() -> String:
 	if not _session.is_empty():
 		return ""
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, SESSIONS,
-		{"admin_id": Net.user_id, "duration_s": _seconds()})
+		{"admin_id": Net.user_id, "duration_s": duration_seconds})
 	if made.error != "":
 		return made.error
 	if made.data is Array and not (made.data as Array).is_empty():
 		_session = made.data[0]
 	return ""
-
-
-func _apply_time() -> void:
-	var err := await _ensure_session()
-	if err != "":
-		_say(err, Pal.WRONG)
-		return
-	var done: Dictionary = await _patch({"duration_s": _seconds()})
-	if done.error == "":
-		_say("Duration set to %d hr %02d min." % [_hours, _minutes], Pal.CORRECT)
 
 
 ## Start writes the deadline every phone will read; pause stores what was left
@@ -250,6 +261,9 @@ func _set_state(want: String, is_start: bool) -> void:
 		_say(err, Pal.WRONG)
 		return
 	if is_start:
+		# The typed duration goes up with the start, which is why there is no
+		# Apply Time: the only moment it matters is the moment it begins.
+		duration_seconds = _seconds()
 		var short: String = await QuestionStore.shortfall()
 		if short != "":
 			_say("Cannot start — question bank incomplete:  " + short, Pal.WRONG)
@@ -265,11 +279,12 @@ func _set_state(want: String, is_start: bool) -> void:
 		# No `use_space`: that writes "2026-09-23 15:06:13", and the clock has
 		# to round-trip through `Time.get_unix_time_from_datetime_string()`.
 		fields["ends_at"] = Time.get_datetime_string_from_unix_time(
-			int(now) + _seconds()) + "Z"
+			int(now) + duration_seconds) + "Z"
+		fields["duration_s"] = duration_seconds
 		fields["remaining_s"] = null
 	else:
 		# Resume: hand back exactly what the pause banked.
-		var left: int = int(_session.get("remaining_s", _seconds()))
+		var left: int = int(_session.get("remaining_s", duration_seconds))
 		fields["ends_at"] = Time.get_datetime_string_from_unix_time(
 			int(now) + left) + "Z"
 		fields["remaining_s"] = null
@@ -290,10 +305,15 @@ func _patch(fields: Dictionary) -> Dictionary:
 	return done
 
 
+## The buttons carry the state, so there is nothing else to label it with.
 func _refresh_state() -> void:
-	if not is_instance_valid(_state_label):
+	if not is_instance_valid(_start_btn):
 		return
-	_state_label.text = "State: %s" % (_session.get("state", "no session yet"))
+	var state := str(_session.get("state", ""))
+	_start_btn.disabled = state == "running" or state == "paused"
+	_hold_btn.disabled = state != "running" and state != "paused"
+	_hold_btn.text = "▶  Resume" if state == "paused" else "⏸  Pause Game"
+	_end_btn.disabled = state == "" or state == "ended"
 
 
 # --- Teams ------------------------------------------------------------------
@@ -325,44 +345,53 @@ func _load_teams() -> void:
 
 func _team_card(t: Dictionary, names: Array) -> Control:
 	var id: String = str(t.get("id", ""))
+	# A wrapper so the × can sit ON the corner rather than inside the box,
+	# where a boxed button was eating a third of a card this narrow.
+	var wrap := Control.new()
+	wrap.custom_minimum_size = CARD
+
 	var card := PanelContainer.new()
-	card.custom_minimum_size = CARD
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var face := StyleBoxFlat.new()
 	face.bg_color = Pal.PARCHMENT
 	face.border_color = Pal.WOOD
 	face.set_border_width_all(2)
 	face.set_corner_radius_all(3)
-	face.set_content_margin_all(6)
+	face.set_content_margin_all(5)
 	card.add_theme_stylebox_override("panel", face)
+	wrap.add_child(card)
 
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 4)
+	col.add_theme_constant_override("separation", 2)
 	card.add_child(col)
 
-	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 4)
-	var field := Ui.line_edit("Team Name", CARD.x - 46, 26, 13)
+	var field := Ui.line_edit("Team Name", CARD.x - 16, 22, 12)
 	field.text = str(t.get("name", ""))
 	field.max_length = 18
 	# Saved on Enter and on leaving the field, so a teacher who taps away does
 	# not silently lose the name they just typed.
 	field.text_submitted.connect(func(v: String) -> void: _rename(id, v))
 	field.focus_exited.connect(func() -> void: _rename(id, field.text))
-	top.add_child(field)
-	var del := Ui.button("×", 28, 26, Ui.SMALL_RED)
-	del.pressed.connect(func() -> void: _remove_team(id, str(t.get("name", "")), names))
-	top.add_child(del)
-	col.add_child(top)
+	col.add_child(field)
 
 	# The count is what a teacher scans: five of six means somebody is still on
 	# the login screen.
 	var who := Art.label("Joined %d%s" % [names.size(),
-			"" if names.is_empty() else ":  " + ", ".join(names)],
+			"" if names.is_empty() else ": " + ", ".join(names)],
 			Pal.TINY, Pal.INK_MUTED if names.is_empty() else Pal.CORRECT)
 	who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	who.custom_minimum_size = Vector2(CARD.x - 12, 0)
+	who.custom_minimum_size = Vector2(CARD.x - 16, 0)
 	col.add_child(who)
-	return card
+
+	var del := Ui.glyph("×", 16, Pal.WRONG)
+	del.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	del.offset_left = -18.0
+	del.offset_top = -9.0
+	del.offset_right = 4.0
+	del.offset_bottom = 13.0
+	del.pressed.connect(func() -> void: _remove_team(id, str(t.get("name", "")), names))
+	wrap.add_child(del)
+	return wrap
 
 
 ## An empty team goes straight away; one with players in it asks first, because
@@ -411,6 +440,9 @@ func _rename(id: String, name: String) -> void:
 			Pal.CORRECT)
 
 
+## The new card appears as soon as the row does. It used to wait on
+## `_load_teams()`, which re-fetches every team AND the whole roster -- two
+## more round trips before a button press showed any sign of having worked.
 func _add_team() -> void:
 	var err := await _ensure_session()
 	if err != "":
@@ -422,8 +454,12 @@ func _add_team() -> void:
 	if made.error != "":
 		_say(made.error, Pal.WRONG)
 		return
+	if made.data is Array and not (made.data as Array).is_empty() \
+			and is_instance_valid(_teams_grid):
+		_teams_grid.add_child(_team_card(made.data[0], []))
+		if is_instance_valid(_add_btn):
+			_add_btn.disabled = _teams_grid.get_child_count() >= MAX_TEAMS
 	_say("Team added — rename it to the code you give that team.", Pal.INK_MUTED)
-	_load_teams()
 
 
 func _say(text: String, col: Color) -> void:

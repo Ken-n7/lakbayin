@@ -161,6 +161,55 @@ static func _paper_box(focused: bool) -> StyleBoxFlat:
 	return box
 
 
+## A tab that is text, not a button: underlined when it is the one you are on.
+## Buttons here cost a whole row of panel for something that only has to say
+## which of two places you are looking at.
+static func tab_text(text: String, active: bool) -> VBoxContainer:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	var b := Button.new()
+	b.text = text
+	b.flat = true
+	b.add_theme_font_size_override("font_size", Pal.LABEL)
+	b.add_theme_color_override("font_color", Pal.TITLE if active else Pal.INK_MUTED)
+	b.add_theme_color_override("font_hover_color", Pal.TITLE)
+	b.add_theme_color_override("font_pressed_color", Pal.TITLE)
+	col.add_child(b)
+	var rule := ColorRect.new()
+	rule.color = Pal.TITLE if active else Color.TRANSPARENT
+	rule.custom_minimum_size = Vector2(0, 2)
+	col.add_child(rule)
+	return col
+
+
+## The button inside a `tab_text`, for connecting `pressed`.
+static func tab_button(t: VBoxContainer) -> Button:
+	return t.get_child(0) as Button
+
+
+## A glyph with no box around it: the back arrow, a card's close ×. Anything
+## where a nine-patch would be louder than the thing it frames.
+static func glyph(text: String, size := 20, color: Color = Pal.TITLE) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", size)
+	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
+		b.add_theme_color_override(state, color)
+	return b
+
+
+## A field a soft keyboard opens as a numpad. Typing a duration on a full
+## QWERTY is the same mistake the quiz screen already fixed.
+static func number_field(w: float, h := 26.0, size := 15) -> LineEdit:
+	var le := line_edit("", w, h, size)
+	le.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	le.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	le.max_length = 2
+	return le
+
+
 ## A paper panel with a title bar; returns a PanelContainer sized to `s`.
 static func panel(s: Vector2, title := "", title_col: Color = Pal.TITLE) -> PanelContainer:
 	var pc := PanelContainer.new()

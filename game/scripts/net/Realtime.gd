@@ -37,7 +37,12 @@ var live := false
 
 
 func open_socket() -> void:
-	if _state == WebSocketPeer.STATE_OPEN or _state == WebSocketPeer.STATE_CONNECTING:
+	# The peer's own state, not the cached one: `_state` only catches up in
+	# `_process`, so two `watch()` calls in the same frame -- members and
+	# teams, say -- both saw CLOSED and the second connect returned
+	# ERR_ALREADY_IN_USE.
+	var live := _ws.get_ready_state()
+	if live == WebSocketPeer.STATE_OPEN or live == WebSocketPeer.STATE_CONNECTING:
 		return
 	var url := Net.url.replace("https://", "wss://") \
 		+ "/realtime/v1/websocket?apikey=" + Net.anon_key + "&vsn=1.0.0"
