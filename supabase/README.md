@@ -35,6 +35,11 @@ neither. Authentication → Emails → Templates → edit **Confirm signup** and
 The player types the code; `confirm_sign_up()` / `confirm_reset()` trade it for
 a session at `/auth/v1/verify`. No deep link, no website, nothing to host.
 
+**The code's length is a project setting, not six by default.** A real reset
+email arrived as **8 digits**. Authentication → Providers → Email → *Email OTP
+Length* sets it (6–10). Six is easier to read off a phone and retype; the app
+does not care either way and no longer claims a length on screen.
+
 **Set up SMTP before the pilot.** Supabase's built-in mailer is rate-limited to
 a couple of messages an hour and is explicitly not for production — a class of
 40 registering at once will hit that wall in the first minute. Authentication →

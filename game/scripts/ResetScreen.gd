@@ -3,7 +3,9 @@ extends Control
 ## Forgot Password, in two steps on one screen: ask for a code, then spend it.
 ##
 ## A code and not a link -- a recovery link needs a web page or an Android deep
-## link to land on, and this app has neither. See `supabase/README.md`.
+## link to land on, and this app has neither. Its length is whatever the
+## project's OTP setting says, so nothing here assumes one. See
+## `supabase/README.md`.
 
 const PANEL := Vector2(380, 290)
 const MIN_PASSWORD := 8
@@ -34,7 +36,9 @@ func setup(data: Dictionary) -> void:
 	Ui.centre_row(box, _send)
 
 	_email.text_submitted.connect(func(_t: String) -> void: _request())
-	_code = Ui.field(box, "Code from the email", "6 digits")
+	# No length claimed: Supabase's OTP length is a project setting (6-10), and
+	# a real reset code arrived as 8 digits while this said "6 digits".
+	_code = Ui.field(box, "Code from the email", "the code we sent you")
 	_pass = Ui.field(box, "New password", "at least %d characters" % MIN_PASSWORD, true)
 	_pass.text_submitted.connect(func(_t: String) -> void: _apply())
 
