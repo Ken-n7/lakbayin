@@ -55,7 +55,7 @@ func _build_dev_nav() -> void:
 	# Bottom left: the dashboards put their title top-left and Log Out
 	# top-right, and every panel screen puts its title top-centre. This is the
 	# one corner nothing claims.
-	toggle.position = Vector2(4, 340)
+	toggle.position = Vector2(4, 334)
 	toggle.add_theme_font_size_override("font_size", 10)
 	toggle.pressed.connect(func() -> void: panel.visible = not panel.visible)
 	layer.add_child(toggle)
@@ -92,6 +92,27 @@ func open(name: String, data: Dictionary = {}) -> void:
 	current.set("main", self)
 	add_child(current)
 	current.setup(data)
+
+
+## The soft keyboard covers the bottom half of a landscape phone -- on this
+## screen it hid the password field and the Sign In button together. Lift the
+## whole screen by half the keyboard's height while it is up, which keeps the
+## focused field and the button under it in view without anyone having to know
+## to dismiss the keyboard first.
+##
+## One place for every screen: the alternative is each form handling it, and
+## the ones that forget are the ones nobody can sign in on.
+func _process(_delta: float) -> void:
+	if current == null:
+		return
+	var keyboard := DisplayServer.virtual_keyboard_get_height()
+	var window_h := float(DisplayServer.window_get_size().y)
+	var want := 0.0
+	if keyboard > 0 and window_h > 0.0:
+		# Keyboard height is in real pixels; the screen is laid out in canvas
+		# units, so scale it before shifting anything.
+		want = -keyboard * (get_viewport_rect().size.y / window_h) * 0.5
+	current.position.y = lerpf(current.position.y, want, 0.25)
 
 
 ## Android's back button. The engine quits the app outright by default (see

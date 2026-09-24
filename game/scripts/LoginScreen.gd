@@ -43,6 +43,10 @@ func setup(_data: Dictionary) -> void:
 	_go = Ui.button("Sign In", 300, Ui.H, Ui.RED)
 	Ui.centre_row(box, _go)
 	_go.pressed.connect(_submit)
+	# Enter on the email moves along; enter on the password signs in. The
+	# on-screen Sign In button sits under the soft keyboard, so the keyboard's
+	# own key has to do the job.
+	_email.text_submitted.connect(func(_t: String) -> void: _pass.grab_focus())
 	_pass.text_submitted.connect(func(_t: String) -> void: _submit())
 
 	var row := HBoxContainer.new()
@@ -56,7 +60,8 @@ func setup(_data: Dictionary) -> void:
 	row.add_child(forgot)
 	box.add_child(row)
 
-	_email.grab_focus()
+	# Deliberately no grab_focus(): on a phone that opens the soft keyboard
+	# immediately, over the form the student has not read yet.
 
 
 func _submit() -> void:

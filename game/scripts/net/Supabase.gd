@@ -34,7 +34,6 @@ var user_id := ""
 var username := ""
 var role := ""
 
-var _http: HTTPRequest
 var _realtime: Realtime
 
 
@@ -43,14 +42,19 @@ func _init() -> void:
 	anon_key = _conf("SUPABASE_ANON_KEY", "numxventure/supabase/anon_key")
 
 
-## Made on demand, not in `_ready()`. A node added to the tree before the main
-## loop starts has its `_ready` deferred, so a request issued in that same frame
-## found a null here -- which is exactly what a headless tool does.
-func _ensure_http() -> void:
-	if is_instance_valid(_http):
-		return
-	_http = HTTPRequest.new()
-	add_child(_http)
+## One `HTTPRequest` per call, not one for the client.
+##
+## A single shared node refuses a second request while the first is in flight
+## -- "HTTPRequest is processing a request" -- and the map issues two at once
+## every time it opens: the question bank and the session. It failed only on
+## the phone, because that is the first place two requests raced in earnest.
+##
+## Node churn at a handful of requests a minute costs nothing; a dropped
+## request costs a student their adventure.
+func _new_http() -> HTTPRequest:
+	var req := HTTPRequest.new()
+	add_child(req)
+	return req
 
 
 func configured() -> bool:
@@ -207,7 +211,7 @@ func _call(method: int, path: String, body: Variant, retry := true) -> Dictionar
 		return {"error": "Supabase is not configured -- see supabase/README.md", "data": null}
 	if not is_inside_tree():
 		return {"error": "Supabase client is not in the scene tree yet", "data": null}
-	_ensure_http()
+	var http := _new_http()
 	var headers := [
 		"apikey: " + anon_key,
 		"Authorization: Bearer " + (access_token if access_token else anon_key),
@@ -215,10 +219,12 @@ func _call(method: int, path: String, body: Variant, retry := true) -> Dictionar
 		"Prefer: return=representation",
 	]
 	var payload := "" if body == null else JSON.stringify(body)
-	var err := _http.request(url + path, headers, method, payload)
+	var err := http.request(url + path, headers, method, payload)
 	if err != OK:
+		http.queue_free()
 		return {"error": "request failed to start (%d)" % err, "data": null}
-	var res: Array = await _http.request_completed
+	var res: Array = await http.request_completed
+	http.queue_free()
 	var code: int = res[1]
 	var text := (res[3] as PackedByteArray).get_string_from_utf8()
 	var parsed: Variant = JSON.parse_string(text)

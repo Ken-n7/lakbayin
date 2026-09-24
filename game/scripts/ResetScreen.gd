@@ -33,8 +33,10 @@ func setup(data: Dictionary) -> void:
 	_send.pressed.connect(_request)
 	Ui.centre_row(box, _send)
 
+	_email.text_submitted.connect(func(_t: String) -> void: _request())
 	_code = Ui.field(box, "Code from the email", "6 digits")
 	_pass = Ui.field(box, "New password", "at least %d characters" % MIN_PASSWORD, true)
+	_pass.text_submitted.connect(func(_t: String) -> void: _apply())
 
 	_msg = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

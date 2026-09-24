@@ -45,6 +45,12 @@ func setup(_data: Dictionary) -> void:
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_msg)
 
+	# Enter walks the form and the last field registers -- the button is under
+	# the soft keyboard on a phone.
+	_email.text_submitted.connect(func(_t: String) -> void: _user.grab_focus())
+	_user.text_submitted.connect(func(_t: String) -> void: _pass.grab_focus())
+	_pass.text_submitted.connect(func(_t: String) -> void: _submit())
+
 	_go = Ui.button("Register", 300, Ui.H, Ui.RED)
 	Ui.centre_row(box, _go)
 	_go.pressed.connect(_submit)
@@ -52,7 +58,8 @@ func setup(_data: Dictionary) -> void:
 	var back := Ui.button("Back to Sign In", 300, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
-	_email.grab_focus()
+	# Deliberately no grab_focus(): on a phone that opens the soft keyboard
+	# immediately, over the form the student has not read yet.
 
 
 ## Checked here as well as in Postgres: a round trip to say "too short" is a

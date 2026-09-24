@@ -206,7 +206,9 @@ func _build_header() -> void:
 	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
 	who.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	who.offset_left = -300
-	who.offset_right = -(INSET + 86)
+	# Clear of the portrait, which sits at -(INSET + 86 + 30) .. -(INSET + 86 + 2)
+	# and was being drawn over the last letters of the name.
+	who.offset_right = -(INSET + 86 + 36) if _show_portrait() else -(INSET + 86)
 	who.offset_top = INSET + 6
 	who.offset_bottom = INSET + 24
 	Art.shadow(who, Pal.SHADOW, 2, 0)

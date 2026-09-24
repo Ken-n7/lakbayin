@@ -73,13 +73,16 @@ func _overlaps(root: Control, hits: Array[String]) -> void:
 					int(r.size.x), int(r.size.y)])
 
 
-## Buttons and labels only: panels, scrims and containers are meant to sit
-## under things, and reporting those is noise that hides the real collisions.
+## Buttons, labels, fields -- and any Control holding a sprite, which is how
+## the hero portrait on Home sat on top of the username for a day without this
+## check saying a word. Panels, scrims and containers are meant to sit under
+## things, and reporting those is noise that hides the real collisions.
 func _collect(node: Node, out: Array[Control]) -> void:
 	for child in node.get_children():
 		if child is ScrollContainer:
 			continue
-		if (child is Button or child is Label or child is LineEdit) \
+		if (child is Button or child is Label or child is LineEdit
+				or _holds_sprite(child)) and child is Control \
 				and (child as Control).visible:
 			var c := child as Control
 			if c.get_global_rect().size.x > 0.0:
@@ -117,6 +120,17 @@ func _check_rect(c: Control, hits: Array[String]) -> void:
 		over += " bottom by %d" % int(r.end.y - CANVAS.y)
 	if over != "":
 		hits.append("%s %s%s  rect=%s" % [c.get_class(), _name_of(c), over, str(r)])
+
+
+## A bare Control wrapping an AnimatedSprite2D or Sprite2D draws something,
+## even though it has no text and is not a widget.
+func _holds_sprite(node: Node) -> bool:
+	if not (node is Control):
+		return false
+	for c in node.get_children():
+		if c is AnimatedSprite2D or c is Sprite2D:
+			return true
+	return false
 
 
 func _name_of(c: Control) -> String:

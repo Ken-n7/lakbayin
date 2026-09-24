@@ -45,7 +45,8 @@ func setup(_data: Dictionary) -> void:
 	var back := Ui.button("Back", 300, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
-	_team.grab_focus()
+	# Deliberately no grab_focus(): on a phone that opens the soft keyboard
+	# immediately, over the form the student has not read yet.
 
 
 func _begin() -> void:
