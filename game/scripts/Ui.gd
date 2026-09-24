@@ -114,6 +114,53 @@ static func field(parent: Node, caption: String, placeholder: String,
 	return le
 
 
+## The same parchment field, as a dropdown. `OptionButton` and `TextEdit` come
+## with the engine's grey, which on these panels reads as an OS form dropped
+## onto the artwork -- the exact complaint `line_edit()` was written to fix.
+static func option(w: float, h := 30.0) -> OptionButton:
+	var o := OptionButton.new()
+	o.custom_minimum_size = Vector2(w, h)
+	o.clip_text = true
+	o.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	o.add_theme_color_override("font_color", Pal.INK)
+	o.add_theme_color_override("font_hover_color", Pal.TITLE)
+	o.add_theme_color_override("font_focus_color", Pal.INK)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		o.add_theme_stylebox_override(state, _paper_box(state == "focus"))
+	var pop := o.get_popup()
+	pop.add_theme_stylebox_override("panel", _paper_box(false))
+	pop.add_theme_color_override("font_color", Pal.INK)
+	pop.add_theme_color_override("font_hover_color", Pal.TITLE)
+	pop.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	return o
+
+
+static func text_area(w: float, h: float) -> TextEdit:
+	var t := TextEdit.new()
+	t.custom_minimum_size = Vector2(w, h)
+	t.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	t.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	t.add_theme_color_override("font_color", Pal.INK)
+	t.add_theme_color_override("caret_color", Pal.TITLE)
+	t.add_theme_stylebox_override("normal", _paper_box(false))
+	t.add_theme_stylebox_override("focus", _paper_box(true))
+	return t
+
+
+## The field face both of those wear, and the one `line_edit()` already used.
+static func _paper_box(focused: bool) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Pal.PAPER
+	box.set_corner_radius_all(3)
+	box.set_border_width_all(2)
+	box.border_color = Pal.AMBER if focused else Pal.WOOD
+	box.content_margin_left = 8.0
+	box.content_margin_right = 8.0
+	box.content_margin_top = 3.0
+	box.content_margin_bottom = 3.0
+	return box
+
+
 ## A paper panel with a title bar; returns a PanelContainer sized to `s`.
 static func panel(s: Vector2, title := "", title_col: Color = Pal.TITLE) -> PanelContainer:
 	var pc := PanelContainer.new()

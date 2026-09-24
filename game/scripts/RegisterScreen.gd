@@ -35,10 +35,9 @@ func setup(_data: Dictionary) -> void:
 	show.toggled.connect(func(on: bool) -> void: _pass.secret = not on)
 	row.add_child(show)
 	row.add_child(Art.label("Role", Pal.LABEL, Pal.INK_MUTED))
-	_role = OptionButton.new()
+	_role = Ui.option(110.0, 26.0)
 	_role.add_item("Player")
 	_role.add_item("Admin")
-	_role.add_theme_font_size_override("font_size", Art.MIN_FONT)
 	row.add_child(_role)
 	box.add_child(row)
 

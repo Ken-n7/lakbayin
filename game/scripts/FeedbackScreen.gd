@@ -32,17 +32,12 @@ func setup(_data: Dictionary) -> void:
 			HORIZONTAL_ALIGNMENT_CENTER))
 
 	box.add_child(Art.label("1. Select Question", Pal.LABEL, Pal.TITLE))
-	_pick = OptionButton.new()
-	_pick.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	_pick = Ui.option(500.0)
 	_pick.item_selected.connect(func(_i: int) -> void: _show_selected())
 	box.add_child(_pick)
 
 	box.add_child(Art.label("2. Feedback Message", Pal.LABEL, Pal.TITLE))
-	_text = TextEdit.new()
-	_text.custom_minimum_size = Vector2(500, 70)
-	_text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	_text.add_theme_font_size_override("font_size", Art.MIN_FONT)
-	_text.add_theme_color_override("font_color", Pal.INK)
+	_text = Ui.text_area(500.0, 70.0)
 	_text.text_changed.connect(_on_typed)
 	box.add_child(_text)
 
