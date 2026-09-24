@@ -136,7 +136,17 @@ func _load_into_form(q: Dictionary) -> void:
 	_say("Editing — press Add to save the change.", Pal.INFO_DEEP)
 
 
+## Answers are typed on a numeric keypad and graded by comparison, so a
+## non-numeric answer is one no student can enter and no check can settle.
+func _numeric(answer: String) -> bool:
+	var a := answer.strip_edges().replace("\u2212", "-")
+	return a.is_valid_int() or a.is_valid_float()
+
+
 func _add() -> void:
+	if not _numeric(_answer.text):
+		_say("The answer has to be a number — that is what the keypad types.", Pal.WRONG)
+		return
 	var result: Dictionary
 	if _editing != "":
 		result = await QuestionStore.edit(_editing, {

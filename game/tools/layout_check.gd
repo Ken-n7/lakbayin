@@ -28,6 +28,22 @@ func _ready() -> void:
 	Game.team_name = "Math Mavericks"
 	Game.begin_adventure(600)
 
+	# The quiz overlay is not a route, so the loop below never reached it --
+	# and it is the screen a student spends the whole session on. Checked
+	# first, in both the states it has.
+	for intro in [true, false]:
+		var quiz: Control = load("res://scripts/QuizOverlay.gd").new()
+		quiz.station_index = 0
+		quiz.intro_only = intro
+		main.add_child(quiz)
+		quiz.size = CANVAS
+		quiz.setup({})
+		for i in 20:
+			await get_tree().process_frame
+		_audit("quiz (%s)" % ("intro" if intro else "question"), quiz)
+		quiz.queue_free()
+		await get_tree().process_frame
+
 	for name: String in SCREENS:
 		main.open(name)
 		main.current.size = CANVAS
@@ -83,7 +99,7 @@ func _collect(node: Node, out: Array[Control]) -> void:
 			continue
 		if (child is Button or child is Label or child is LineEdit
 				or _holds_sprite(child)) and child is Control \
-				and (child as Control).visible:
+				and (child as Control).is_visible_in_tree():
 			var c := child as Control
 			if c.get_global_rect().size.x > 0.0:
 				out.append(c)
@@ -107,7 +123,7 @@ func _walk(node: Node, hits: Array[String]) -> void:
 
 func _check_rect(c: Control, hits: Array[String]) -> void:
 	var r := c.get_global_rect()
-	if not c.visible or r.size.x <= 0.0 or r.size.y <= 0.0:
+	if not c.is_visible_in_tree() or r.size.x <= 0.0 or r.size.y <= 0.0:
 		return
 	var over := ""
 	if r.position.x < -0.5:

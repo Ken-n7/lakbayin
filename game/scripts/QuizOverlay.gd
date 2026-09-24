@@ -32,6 +32,7 @@ var _btn_submit: Button
 var _btn_hint: Button
 var _btn_skip: Button
 var _inrow: HBoxContainer
+var _keypad: CenterContainer
 var _action: HBoxContainer
 var _result_title: Label
 var _result_rule: Label
@@ -101,21 +102,27 @@ func _build() -> void:
 	_input = Ui.line_edit("", 150, 36, 22)
 	_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_input.max_length = 12
-	_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER_DECIMAL
+	# No OS keyboard on this field. The answers are numbers, and forty cheap
+	# phones means forty keyboard apps -- different heights, different "done"
+	# keys, some with autocorrect that would helpfully mangle "-5". The keypad
+	# below is the input, and it cannot cover the Submit button.
+	_input.virtual_keyboard_enabled = false
 	_input.text_changed.connect(_filter_input)
 	_input.text_submitted.connect(func(_t: String) -> void: _submit())
 	var go_lbl := Art.label("=", 24, Pal.INK)
 	var img := Art.texrect("res://assets/ui/Icon_03.png", 28, 28)
 	inrow.add_child(go_lbl)
 	inrow.add_child(_input)
-	# Desktop keyboards have a minus key, but the field filters to digits and a
-	# leading "-", so the button is the only sign control that always works.
-	var neg := Ui.button("±", 46, 36, Ui.SMALL)
-	neg.pressed.connect(_toggle_sign)
-	inrow.add_child(neg)
 	inrow.add_child(img)
 	_inrow = inrow
-	_panel.add_child(inrow)
+
+	var pad_row := HBoxContainer.new()
+	pad_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	pad_row.add_theme_constant_override("separation", 16)
+	inrow.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pad_row.add_child(inrow)
+	pad_row.add_child(_build_keypad())
+	_panel.add_child(pad_row)
 
 	_hint_text = Art.label("", Pal.SMALL, Pal.INFO, HORIZONTAL_ALIGNMENT_CENTER)
 	_hint_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -125,13 +132,13 @@ func _build() -> void:
 	var action := HBoxContainer.new()
 	action.alignment = BoxContainer.ALIGNMENT_CENTER
 	action.add_theme_constant_override("separation", 10)
-	_btn_hint = Ui.button("Hint (−5)", 120, 38, Ui.SMALL)
+	_btn_hint = Ui.button("Hint (−5)", 120, Ui.H, Ui.SMALL)
 	_btn_hint.pressed.connect(_use_hint)
-	_btn_submit = Ui.button("Submit Answer", 150, 42)
+	_btn_submit = Ui.button("Submit Answer", 150, Ui.H, Ui.RED)
 	_btn_submit.pressed.connect(_submit)
-	var btn_skip := Ui.button("Skip (−15)", 120, 38, Ui.SMALL_RED)
+	var btn_skip := Ui.button("Skip (−15)", 120, Ui.H, Ui.SMALL_RED)
 	btn_skip.pressed.connect(_skip)
-	var rescue := Ui.button("Rescue", 92, 38, Ui.SMALL)
+	var rescue := Ui.button("Rescue", 92, Ui.H, Ui.SMALL)
 	rescue.disabled = true
 	rescue.tooltip_text = "Needs a teammate to transfer gems"
 	action.add_child(_btn_hint)
@@ -171,7 +178,7 @@ func _show_intro() -> void:
 ## the mission text and Continue. Every caller sets `phase` first.
 func _layout() -> void:
 	var asking := phase == Phase.QUESTION
-	for c in [_inrow, _action, _btn_hint, _btn_submit, _btn_skip, _input, _hint_text]:
+	for c in [_inrow, _action, _btn_hint, _btn_submit, _btn_skip, _input, _hint_text, _keypad]:
 		(c as Control).visible = asking
 	for c in [_result_title, _delta_label, _result_rule]:
 		(c as Control).visible = phase == Phase.FEEDBACK or phase == Phase.DONE
@@ -191,7 +198,6 @@ func _next_question() -> void:
 	_layout()
 	_hint_text.text = ""
 	_input.text = ""
-	_input.grab_focus()
 	_btn_hint.disabled = false
 
 
@@ -316,6 +322,45 @@ func _on_gems(g: int) -> void:
 
 ## Android's number pad has no minus key, and plenty of the answers here are
 ## negative. Assigning `text` skips `text_changed`, so the filter stays out.
+## Three rows of digits, then sign / zero / backspace. Big targets on a clock,
+## the minus sign a key rather than a toggle nobody finds, and nothing that can
+## slide up over the answer.
+func _build_keypad() -> Control:
+	var grid := GridContainer.new()
+	# Four across, three down. Stacked 3x4 it was one row too tall and pushed
+	# Submit off the canvas -- and the button heights are not the lever they
+	# look like, since the nine-patch has a floor of its own.
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 3)
+	_keypad = CenterContainer.new()
+	_keypad.add_child(grid)
+
+	for key in ["7", "8", "9", "⌫", "4", "5", "6", "±", "1", "2", "3", "0"]:
+		var b := Ui.button(key, 46, 28, Ui.SMALL if key.is_valid_int() else Ui.SMALL_RED)
+		b.add_theme_font_size_override("font_size", 17)
+		var k: String = key
+		b.pressed.connect(func() -> void: _key(k))
+		grid.add_child(b)
+	return _keypad
+
+
+## One place every key goes through, so the field can never hold something the
+## answer check would not understand.
+func _key(k: String) -> void:
+	if phase != Phase.QUESTION:
+		return
+	match k:
+		"±":
+			_toggle_sign()
+		"⌫":
+			_input.text = _input.text.substr(0, maxi(_input.text.length() - 1, 0))
+		_:
+			if _input.text.length() < _input.max_length:
+				_input.text += k
+	_input.caret_column = _input.text.length()
+
+
 func _toggle_sign() -> void:
 	_input.text = _input.text.substr(1) if _input.text.begins_with("-") else "-" + _input.text
 	_input.caret_column = _input.text.length()
