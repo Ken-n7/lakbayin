@@ -53,9 +53,17 @@ func build() -> void:
 					c.y + MapCfg.WATER_ROCK_DOWN))
 			if MapGrid.in_bounds(MapGrid.cell_at(wrp)) and not grid.is_walkable(wrp):
 				Art.anim_sprite(world, MapCfg.WATER_ROCK_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS),
-						wrp, MapCfg.WATER_ROCK_SCALE, MapCfg.WATER_ROCK_FPS)
+						wrp, MapCfg.WATER_ROCK_SCALE, MapCfg.WATER_ROCK_FPS, 1.0, 16)
 
 
+
+
+## A prop's solid base: `size` wide and high, standing on its anchor point
+## (every sprite here is base-anchored). The hero walked straight through
+## trees and rocks before; props keep off the road, so this can never close
+## the walk -- `test_collisions` floods the board to prove it.
+func _foot(base: Vector2, size: Vector2) -> void:
+	grid.block(Rect2(base.x - size.x * 0.5, base.y - size.y, size.x, size.y))
 
 
 ## The same weighted roll as before, but for the patch rather than for one prop.
@@ -93,12 +101,15 @@ func _plant(rng: RandomNumberGenerator, c: Vector2i, kind: String) -> void:
 			var fl := 1.0 if rng.randf() < MapCfg.TREE_FLIP else -1.0
 			Art.anim_sprite(world, MapCfg.TREE_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS),
 					p, MapCfg.TREE_SCALE, MapCfg.TREE_FPS, fl)
+			_foot(p, MapCfg.TREE_WALL)
 		"stump":
 			Art.sprite(world, Art.tex(MapCfg.STUMP_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS)),
 					p, MapCfg.STUMP_SCALE)
+			_foot(p, MapCfg.STUMP_WALL)
 		"rock":
 			Art.sprite(world, Art.tex(MapCfg.ROCK_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS)),
 					p, MapCfg.ROCK_DECOR_SCALE)
+			_foot(p, MapCfg.ROCK_DECOR_WALL)
 		_:
 			var loot := (MapCfg.LOOT_SHEETS as Array).duplicate()
 			loot[-1] = str(loot[-1]) % rng.randi_range(1, MapCfg.DECOR_VARIANTS)

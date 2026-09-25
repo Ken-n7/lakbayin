@@ -35,7 +35,11 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	backdrop = Backdrop.new()
 	add_child(backdrop)
-	open("splash")
+	# `godot --path game -- --explore`: straight onto the board, for looking.
+	if OS.is_debug_build() and "--explore" in OS.get_cmdline_user_args():
+		explore_map()
+	else:
+		open("splash")
 	if OS.is_debug_build():
 		_build_dev_nav()
 
@@ -74,6 +78,14 @@ func _build_dev_nav() -> void:
 			_dev_open(name))
 		col.add_child(b)
 
+	# The board with no session: for looking at the map, not for playing it.
+	var explore := DevUi.button("explore map")
+	explore.custom_minimum_size = Vector2(88, 19)
+	explore.pressed.connect(func() -> void:
+		box.visible = false
+		explore_map())
+	col.add_child(explore)
+
 	var out := DevUi.button("sign out")
 	out.custom_minimum_size = Vector2(88, 19)
 	out.pressed.connect(func() -> void:
@@ -89,6 +101,18 @@ func _build_dev_nav() -> void:
 	tab.position = Vector2(0, 4)
 	tab.pressed.connect(func() -> void: box.visible = not box.visible)
 	layer.add_child(tab)
+
+
+## Dev only: the map with no session, signed in or not -- nothing online,
+## nothing scored, a clock long enough not to end on you. The dev drawer on the
+## map (Teleport, Skip Station, Open Gates, Fast Walk, Show Walls) does the rest.
+const EXPLORE_S := 7200
+
+
+func explore_map() -> void:
+	Game.abandon_adventure()
+	Game.begin_adventure(EXPLORE_S)
+	open("adventure", {"explore": true})
 
 
 ## The map is the one screen with a precondition -- it reads a run that may not

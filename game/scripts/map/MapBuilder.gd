@@ -24,6 +24,7 @@ func _init(w: Node2D, g: MapGrid) -> void:
 # --- Terrain ----------------------------------------------------------------
 func build_terrain() -> void:
 	water = Art.terrain_layer(MapCfg.WATER_BG, MapCfg.TILE, [Vector2i(0, 0)])
+	water.modulate = MapCfg.WATER_TINT
 	world.add_child(water)
 	var pad := MapCfg.WATER_MARGIN
 	for gy in range(-pad, MapCfg.WORLD_H + pad):
@@ -46,6 +47,10 @@ func build_island() -> void:
 				grid.island_of[cell] = i
 	_stamp_path()
 	retile(grid.land.keys())
+	# The surf, in the pack's own order: water, then foam, then land. After
+	# the path is stamped, so the bridges' new shoreline gets its surf too.
+	water.z_index = -2
+	Art.shore_foam(world, grid.land, MapCfg.TILE).z_index = -1
 
 
 ## Paint (or erase) a set of cells and their four neighbours from the current land

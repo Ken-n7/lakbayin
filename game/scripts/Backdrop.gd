@@ -23,13 +23,9 @@ const GRASS := "res://assets/terrain/tileset/Tilemap_color1.png"
 const TREES := ["res://assets/terrain/decorations/Tree1.png",
 		"res://assets/terrain/decorations/Tree2.png",
 		"res://assets/terrain/decorations/Tree3.png"]
-const CLOUDS := ["res://assets/terrain/decorations/clouds/Clouds_01.png",
-		"res://assets/terrain/decorations/clouds/Clouds_03.png",
-		"res://assets/terrain/decorations/clouds/Clouds_05.png"]
 ## One full sweep across and back, in seconds. Slow enough to be felt rather
 ## than watched: a moving background that pulls the eye is a distraction.
 const PAN_S := 70.0
-const CLOUD_SPEED := 9.0           # px a second
 const WASH := 0.38                 # the dark wash over the scene
 
 ## Island: centre and radii in cells.
@@ -40,7 +36,7 @@ const ISLANDS := [
 ]
 
 var _world: Node2D
-var _clouds: Node2D
+var _clouds: Clouds
 var _land := {}
 var _pan_tw: Tween
 
@@ -55,9 +51,8 @@ func _ready() -> void:
 	_build_ground()
 	_build_islands()
 	_build_life()
-	_clouds = Node2D.new()
+	_clouds = Clouds.new(W * TILE * 0.6)
 	add_child(_clouds)
-	_build_clouds()
 	var wash := ColorRect.new()
 	wash.color = Color(Pal.BG, WASH)
 	wash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -85,13 +80,11 @@ func _at(cx: float, cy: float) -> Vector2:
 func _build_ground() -> void:
 	var water: TileMapLayer = Art.terrain_layer(WATER, int(TILE), [Vector2i(0, 0)])
 	# The same deeper sea Home uses, so the two scenes are one world.
-	water.modulate = Color(0.70, 0.68, 1.0)
+	water.modulate = MapCfg.WATER_TINT
 	_world.add_child(water)
 	for y in H:
 		for x in W:
 			water.set_cell(Vector2i(x, y), 0, Vector2i(0, 0))
-	var grass: TileMapLayer = Art.terrain_layer(GRASS, int(TILE))
-	_world.add_child(grass)
 	for y in H:
 		for x in W:
 			for isl: Dictionary in ISLANDS:
@@ -99,6 +92,12 @@ func _build_ground() -> void:
 				var ang := atan2(n.y, n.x)
 				if n.length() < 0.92 + 0.08 * sin(ang * 3.0 + isl.c.x) + 0.04 * cos(ang * 5.0):
 					_land[Vector2i(x, y)] = true
+	# Water, then the surf breaking on every shore, then the land over it --
+	# the pack's own layer order (its tilemap guide).
+	water.z_index = -2
+	Art.shore_foam(_world, _land, TILE).z_index = -1
+	var grass: TileMapLayer = Art.terrain_layer(GRASS, int(TILE))
+	_world.add_child(grass)
 	for cell: Vector2i in _land:
 		grass.set_cell(cell, 0, Art.autotile(
 				_land.has(cell + Vector2i(-1, 0)), _land.has(cell + Vector2i(1, 0)),
@@ -133,7 +132,7 @@ func _build_islands() -> void:
 	for r in [["Water Rocks_01", 14.8, 10.6], ["Water Rocks_02", 28.6, 2.4],
 			["Water Rocks_03", 1.4, 2.6], ["Water Rocks_04", 42.4, 11.2]]:
 		Art.anim_sprite(_world, "res://assets/terrain/decorations/%s.png" % r[0],
-				_at(r[1], r[2]), 0.5, 4.0)
+				_at(r[1], r[2]), 0.5, 4.0, 1.0, 16)
 
 
 ## Who lives here: sheep grazing, a worker on each island walking a round, a
@@ -172,25 +171,6 @@ func _walker(path: String, a: Vector2, b: Vector2, secs: float) -> void:
 	tw.tween_callback(func() -> void: w.scale.x = -absf(w.scale.x))
 	tw.tween_property(w, "position", a, secs)
 	tw.tween_callback(func() -> void: w.scale.x = absf(w.scale.x))
-
-
-## A few clouds crossing high over the scene, faint, wrapping round.
-func _build_clouds() -> void:
-	for i in CLOUDS.size():
-		var c := Sprite2D.new()
-		c.texture = Art.tex(CLOUDS[i])
-		c.scale = Vector2(0.55, 0.55)
-		c.modulate = Color(1, 1, 1, 0.55)
-		c.position = Vector2(i * 330.0, 40.0 + (i % 2) * 110.0)
-		_clouds.add_child(c)
-
-
-func _process(delta: float) -> void:
-	var span := maxf(size.x, 640.0) + 400.0
-	for c: Sprite2D in _clouds.get_children():
-		c.position.x += CLOUD_SPEED * delta
-		if c.position.x > span:
-			c.position.x = -200.0
 
 
 ## Across the islands and back, eased at each end so it never visibly stops

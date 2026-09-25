@@ -95,19 +95,23 @@ func _build_scene() -> void:
 	var water: TileMapLayer = Art.terrain_layer(WATER_BG, TILE, [Vector2i(0, 0)])
 	# The raw tile is a pale teal (#47aba9); multiply it toward a deeper sea blue
 	# so the grass reads against it and the menu gradient has something to sit on.
-	water.modulate = Color(0.70, 0.68, 1.0)
+	water.modulate = MapCfg.WATER_TINT
 	_world.add_child(water)
 	for y in H:
 		for x in W:
 			water.set_cell(Vector2i(x, y), 0, Vector2i(0, 0))
 
-	var grass: TileMapLayer = Art.terrain_layer(TILEMAP_COLOR, TILE)
-	_world.add_child(grass)
 	for y in H:
 		for x in W:
 			var c := Vector2i(x, y)
 			if _is_land(c):
 				_land[c] = true
+	# Water, then the surf breaking on the shore, then the island over it --
+	# the pack's own layer order (its tilemap guide).
+	water.z_index = -2
+	Art.shore_foam(_world, _land, TILE).z_index = -1
+	var grass: TileMapLayer = Art.terrain_layer(TILEMAP_COLOR, TILE)
+	_world.add_child(grass)
 	for cell in _land:
 		grass.set_cell(cell, 0, Art.autotile(
 				_land.has(cell + Vector2i(-1, 0)), _land.has(cell + Vector2i(1, 0)),
@@ -115,6 +119,8 @@ func _build_scene() -> void:
 
 	_build_props()
 	_build_hero()
+	# Clouds drifting over the island, under the vignette and the menu.
+	add_child(Clouds.new(W * TILE, 30.0, 130.0))
 
 	var vignette := ColorRect.new()
 	vignette.color = Color(Pal.BG, 0.28)

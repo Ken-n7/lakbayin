@@ -83,7 +83,7 @@ const HERO_SCALE_RANGE := Vector2(0.5, 3.0)
 ## With no backend none of this happens and the tap-to-start stand-in remains,
 ## which is what an offline dev run and the headless suites use.
 func _sync_session() -> void:
-	if not (Net.configured() and Net.signed_in()):
+	if _explore or not (Net.configured() and Net.signed_in()):
 		return
 	# Signed in means online: whatever happens next, the board waits for the
 	# teacher. Falling back to tap-to-start here let a student play a whole
@@ -465,7 +465,14 @@ func _load_bank() -> void:
 		hud.flash("Could not load the question bank — " + err)
 
 
-func setup(_data: Dictionary) -> void:
+## Dev only: walk the board with no session -- nothing online, nothing
+## scored, no teacher to wait for. Opened from the D navigator's "explore map"
+## or `godot --path game -- --explore`; a release build never sets it.
+var _explore := false
+
+
+func setup(data: Dictionary) -> void:
+	_explore = bool(data.get("explore", false)) and OS.is_debug_build()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# A bare Control defaults to MOUSE_FILTER_STOP, which swallows every click or
 	# tap right here as "handled" before _unhandled_input ever sees it -- taps on
@@ -495,6 +502,12 @@ func setup(_data: Dictionary) -> void:
 	builder.build_island()
 	_build_path()
 	decor.build()
+	# Clouds drifting along the open sea at the top of the board -- over the
+	# water, never over play (see MapCfg.MAP_CLOUD_Y).
+	var clouds := Clouds.new(MapCfg.WORLD_W * MapCfg.TILE, MapCfg.MAP_CLOUD_Y, 0.0,
+		MapCfg.MAP_CLOUDS, MapCfg.MAP_CLOUD_ALPHA)
+	clouds.z_index = 50
+	world.add_child(clouds)
 	_spawn_player()
 	Game.time_changed.connect(hud.on_time)
 	Game.gems_changed.connect(hud.on_gems)
@@ -507,6 +520,9 @@ func setup(_data: Dictionary) -> void:
 	# A restart mid-run keeps whatever it had already opened.
 	barricades.refresh()
 	_start_intro()
+	if _explore:
+		skip_intro()
+		hud.flash("Explore mode — nothing is scored")
 
 
 func _exit_tree() -> void:
@@ -626,7 +642,9 @@ func _clamp_cam(on: bool) -> void:
 ## is 640 wide at 16:9 and ~800 at 20:9, and a constant would have cropped the
 ## board on one phone and floated it on another.
 func _aerial_zoom() -> float:
-	var view := get_viewport_rect().size
+	# Built off-screen (the headless suites do) there is no viewport to frame:
+	# the canvas size stands in, rather than a zero that the camera rejects.
+	var view := get_viewport_rect().size if is_inside_tree() else Vector2(Pal.CANVAS)
 	return minf(view.x / float(MapCfg.WORLD_W * MapCfg.TILE),
 			view.y / float(MapCfg.WORLD_H * MapCfg.TILE))
 

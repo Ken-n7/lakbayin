@@ -206,7 +206,7 @@ func _build_top_bar() -> void:
 ## estimated: the ribbon's end caps and the plates' own margins are whatever
 ## the art makes them.
 func _fits() -> bool:
-	if not is_instance_valid(_bar):
+	if not is_instance_valid(_bar) or not adv.is_inside_tree():
 		return true
 	return _bar.get_combined_minimum_size().x <= adv.get_viewport_rect().size.x - 12.0
 

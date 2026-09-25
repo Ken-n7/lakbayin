@@ -322,10 +322,20 @@ static func sprite(parent: Node, t: Texture2D, at: Vector2, s: float, flip := 1.
 
 
 ## Same base anchoring, for a looping sheet (swaying trees, water rocks).
+## `cols` > 0 slices the sheet on a fixed grid instead of by alpha: the Water
+## Rocks' surf spills across their frame borders, and the alpha scan cut them
+## into slivers and doubles, so the rocks blinked in and out.
 static func anim_sprite(parent: Node, path: String, at: Vector2, s: float, fps := 5.0,
-		flip := 1.0) -> AnimatedSprite2D:
+		flip := 1.0, cols := 0) -> AnimatedSprite2D:
 	var a := AnimatedSprite2D.new()
-	a.sprite_frames = anim_spriteframes({"sway": [path, fps, true]})
+	if cols > 0:
+		a.sprite_frames = SpriteFrames.new()
+		a.sprite_frames.add_animation("sway")
+		a.sprite_frames.set_animation_speed("sway", fps)
+		for f in grid(path, cols, 1):
+			a.sprite_frames.add_frame("sway", f)
+	else:
+		a.sprite_frames = anim_spriteframes({"sway": [path, fps, true]})
 	a.position = at
 	a.scale = Vector2(s * flip, s)
 	var f: Texture2D = a.sprite_frames.get_frame_texture("sway", 0)
@@ -372,6 +382,50 @@ const SHEET_TILE := 64
 ## Tiles keep their native 64px size and the layer is scaled down instead, so
 ## one cell is TILE world px. At the 2x viewport upscale that lands 1:1 on
 ## screen -- the art is never resampled.
+## The pack's animated surf, laid the way its tilemap guide says: one Water
+## Foam sprite on every land cell that touches water, between the water and
+## the land, each starting on its own frame so the shore does not pulse in
+## unison. A frame is three tiles wide centred on its cell, so it spills out
+## from under the grass as the waves; the land drawn over it hides the rest.
+## `land` is the set of land cells (Vector2i -> true). Returns the layer,
+## already added to `parent` -- add it after the water and before the land.
+const WATER_FOAM := "res://assets/terrain/tileset/Water Foam.png"
+const FOAM_FPS := 8.0
+
+
+static func shore_foam(parent: Node, land: Dictionary, tile: float) -> Node2D:
+	var layer := Node2D.new()
+	parent.add_child(layer)
+	var frames := SpriteFrames.new()
+	frames.remove_animation("default")
+	frames.add_animation("surf")
+	frames.set_animation_speed("surf", FOAM_FPS)
+	frames.set_animation_loop("surf", true)
+	var cells := grid(WATER_FOAM, 16, 1)
+	for c in cells:
+		frames.add_frame("surf", c)
+	var k := tile * 3.0 / float(cells[0].region.size.x)
+	for cell: Vector2i in land:
+		var shore := false
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+				Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+			if not land.has(cell + d):
+				shore = true
+				break
+		if not shore:
+			continue
+		var foam := AnimatedSprite2D.new()
+		foam.sprite_frames = frames
+		foam.position = (Vector2(cell) + Vector2(0.5, 0.5)) * tile
+		foam.scale = Vector2(k, k)
+		foam.play("surf")
+		# Out of step, cell by cell -- the guide's "start the animation at a
+		# different frame" -- but fixed, so every launch looks the same.
+		foam.frame = absi(cell.x * 7 + cell.y * 13) % 16
+		layer.add_child(foam)
+	return layer
+
+
 static func terrain_layer(tex_path: String, tile: int, coords: Array = []) -> TileMapLayer:
 	var region := Vector2i(SHEET_TILE, SHEET_TILE)
 	var src := TileSetAtlasSource.new()
