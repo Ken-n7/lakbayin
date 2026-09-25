@@ -41,8 +41,10 @@ var _result_title: Label
 var _result_rule: Label
 var _delta_label: Label
 var _continue_btn: Button
-var _gems_row: Label
-var _time_row: Label
+var _gems_row: Label          # the value on the gem plank
+var _time_row: Label          # the value on the clock plank
+var _answer_box: PanelContainer   # "Correct answer: 5", on a wrong result
+var _answer_label: Label
 var _digits := RegEx.create_from_string("[^0-9]")
 var _station_end := 0        # items_done once this station's last item is resolved
 
@@ -71,26 +73,35 @@ func _exit_tree() -> void:
 
 
 func _build() -> void:
-	_panel = Ui.screen_panel(self, Vector2(560, 300), meta.title)
+	# No panel title: the header row says where you are, in the same pieces
+	# the top bar uses -- the station's ribbon, then gems and the clock on
+	# planks -- rather than a heading and a line of small text.
+	_panel = Ui.screen_panel(self, Vector2(600, 310), "")
 	_panel.alignment = BoxContainer.ALIGNMENT_CENTER
 	_panel.add_theme_constant_override("separation", 7)
 
-	var hud := HBoxContainer.new()
-	hud.add_theme_constant_override("separation", 26)
-	_gems_row = Art.label("Gems: %d" % Game.gems, Pal.SMALL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
-	_time_row = Art.label("Time: %s" % Ui.mmss(int(Game.time_left)),
-			13, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
-	hud.add_child(_gems_row)
-	hud.add_child(_time_row)
-	_panel.add_child(hud)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 6)
+	_q_index = Art.label("", Pal.SMALL, Pal.WOOD)
+	_q_index.custom_minimum_size = Vector2(130, 0)
+	_q_index.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	head.add_child(_q_index)
+	var ribbon_box := CenterContainer.new()
+	ribbon_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ribbon_box.add_child(Ui.ribbon(Ui.STATION_RIBBON[station_index], "Station %d" % meta.id))
+	head.add_child(ribbon_box)
+	var gems := Ui.stat_plank("res://assets/ui/Icon_03.png", str(Game.gems), Pal.SMALL)
+	_gems_row = gems.find_child("Value", true, false)
+	head.add_child(gems)
+	var clock := Ui.stat_plank("", Ui.mmss(int(Game.time_left)), Pal.SMALL)
+	_time_row = clock.find_child("Value", true, false)
+	head.add_child(clock)
+	_panel.add_child(head)
 
-	_q_index = Art.label("", Pal.SMALL, Pal.WOOD, HORIZONTAL_ALIGNMENT_CENTER)
-	_panel.add_child(_q_index)
-
-	_q_prompt = Art.label("", 30, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_q_prompt = Art.label("", 32, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_q_prompt)
 
-	# Built here, right after the "MISSION" heading, and just shown/hidden by
+	# Built here, right after the heading, and just shown/hidden by
 	# `_layout()` -- `_show_intro()` used to `add_child` a fresh label instead,
 	# which always lands at the END of the VBox (after Continue, already a
 	# child from here), rendering the welcome paragraph below the button.
@@ -102,26 +113,23 @@ func _build() -> void:
 	var inrow := HBoxContainer.new()
 	inrow.alignment = BoxContainer.ALIGNMENT_CENTER
 	inrow.add_theme_constant_override("separation", 8)
-	_input = Ui.line_edit("", 150, 36, 22)
+	_input = Ui.line_edit("", 150, 40, 24)
 	_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_input.max_length = 12
 	# No OS keyboard on this field. The answers are numbers, and forty cheap
 	# phones means forty keyboard apps -- different heights, different "done"
 	# keys, some with autocorrect that would helpfully mangle "-5". The keypad
-	# below is the input, and it cannot cover the Submit button.
+	# beside it is the input, and it cannot cover the Submit button.
 	_input.virtual_keyboard_enabled = false
 	_input.text_changed.connect(_filter_input)
 	_input.text_submitted.connect(func(_t: String) -> void: _submit())
-	var go_lbl := Art.label("=", 24, Pal.INK)
-	var img := Art.texrect("res://assets/ui/Icon_03.png", 28, 28)
-	inrow.add_child(go_lbl)
+	inrow.add_child(Art.label("=", 26, Pal.INK))
 	inrow.add_child(_input)
-	inrow.add_child(img)
 	_inrow = inrow
 
 	var pad_row := HBoxContainer.new()
 	pad_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	pad_row.add_theme_constant_override("separation", 16)
+	pad_row.add_theme_constant_override("separation", 20)
 	inrow.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	pad_row.add_child(inrow)
 	pad_row.add_child(_build_keypad())
@@ -132,45 +140,64 @@ func _build() -> void:
 	_hint_text.custom_minimum_size = Vector2(500, 0)
 	_panel.add_child(_hint_text)
 
+	# The helps on the left, quiet; Submit alone on the right, and the only
+	# red. Skip was red too, and two reds made the escape look like the goal.
 	var action := HBoxContainer.new()
 	action.alignment = BoxContainer.ALIGNMENT_CENTER
-	action.add_theme_constant_override("separation", 10)
-	_btn_hint = Ui.button("Hint (−5)", 120, Ui.H, Ui.SMALL)
+	action.add_theme_constant_override("separation", 8)
+	_btn_hint = Ui.button("Hint  −5", 100, Ui.H, Ui.SMALL)
 	_btn_hint.pressed.connect(_use_hint)
-	_btn_submit = Ui.button("Submit Answer", 150, Ui.H, Ui.RED)
-	_btn_submit.pressed.connect(_submit)
-	var btn_skip := Ui.button("Skip (−15)", 120, Ui.H, Ui.SMALL_RED)
+	var btn_skip := Ui.button("Skip  −15", 100, Ui.H, Ui.SMALL)
 	btn_skip.pressed.connect(_skip)
-	_rescue = Ui.menu_button("Rescue", 92, Ui.H, Ui.SMALL)
+	_rescue = Ui.menu_button("Rescue ▾", 100, Ui.H, Ui.SMALL)
 	_rescue.disabled = true
 	_rescue.tooltip_text = "Needs a team-mate to transfer gems to"
 	_rescue.get_popup().id_pressed.connect(_send_rescue)
+	_btn_submit = Ui.button("Submit Answer", 170, Ui.H, Ui.RED)
+	_btn_submit.pressed.connect(_submit)
 	action.add_child(_btn_hint)
-	action.add_child(_btn_submit)
 	action.add_child(btn_skip)
 	action.add_child(_rescue)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(12, 0)
+	action.add_child(gap)
+	action.add_child(_btn_submit)
 	_btn_skip = btn_skip
 	_action = action
 	_panel.add_child(action)
 
-	# Feedback sub-panel (hidden until a result is shown)
+	# The result: what happened, what it cost or paid, the right answer on a
+	# card of its own, then the rule -- in that order of size.
 	_result_title = Art.label("", Pal.H1, Pal.CORRECT, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_result_title)
 	_delta_label = Art.label("", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_delta_label)
-	_result_rule = Art.label("", Pal.LABEL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_answer_box = PanelContainer.new()
+	var card := StyleBoxFlat.new()
+	card.bg_color = Pal.PARCHMENT.darkened(0.06)
+	card.border_color = Pal.WRONG
+	card.set_border_width_all(2)
+	card.set_corner_radius_all(4)
+	card.set_content_margin_all(6)
+	_answer_box.add_theme_stylebox_override("panel", card)
+	_answer_label = Art.label("", Pal.H2, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_answer_box.add_child(_answer_label)
+	var answer_row := CenterContainer.new()
+	answer_row.add_child(_answer_box)
+	_panel.add_child(answer_row)
+	_result_rule = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_result_rule.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_result_rule.custom_minimum_size = Vector2(520, 0)
 	_panel.add_child(_result_rule)
-	_continue_btn = Ui.button("Continue", 160, 44, Ui.RED)
+	_continue_btn = Ui.button("Continue", 220, 44, Ui.RED)
 	_continue_btn.pressed.connect(_advance)
-	_panel.add_child(_continue_btn)
+	Ui.centre_row(_panel, _continue_btn)
 
 
 func _show_intro() -> void:
 	phase = Phase.INTRO
-	_q_index.text = "Station %d — %s" % [meta.id, meta.short]
-	_q_prompt.text = "MISSION"
+	_q_index.text = "Mission briefing"      # the card's "Mission" line, per SPECS §5
+	_q_prompt.text = str(meta.title).get_slice(": ", 1)
 	_mission_text.text = meta.mission
 	_layout()
 	_continue_btn.text = "Continue"
@@ -186,8 +213,10 @@ func _layout() -> void:
 		(c as Control).visible = asking
 	for c in [_result_title, _delta_label, _result_rule]:
 		(c as Control).visible = phase == Phase.FEEDBACK or phase == Phase.DONE
+	# The answer card appears with a result; `_show_result` fills it.
+	_answer_box.get_parent().visible = false
 	_mission_text.visible = phase == Phase.INTRO
-	_continue_btn.visible = not asking
+	_continue_btn.get_parent().visible = not asking
 
 
 func _next_question() -> void:
@@ -197,7 +226,7 @@ func _next_question() -> void:
 	item_index = Game.item_in_station(Game.items_done)
 	current = QuestionStore.item_for(station_index, item_index)
 	answer = current.answer
-	_q_index.text = "Item %d / %d" % [item_index + 1, total]
+	_q_index.text = "Question %d of %d" % [item_index + 1, total]
 	_q_prompt.text = current.prompt
 	_layout()
 	_hint_text.text = ""
@@ -292,15 +321,25 @@ func _show_result(correct: bool) -> void:
 		_result_title.add_theme_color_override("font_color", Pal.CORRECT)
 		_delta_label.text = "+%d gems" % Game.GEM_CORRECT
 		_delta_label.add_theme_color_override("font_color", Pal.AMBER)
-		_result_rule.text = current.hint
+		_result_rule.text = "You applied the correct rule!"
+		_show_answer("Answer:  %s" % str(answer), Pal.CORRECT)
 		_burst()
 	else:
 		_result_title.text = "Almost there!  Keep trying!"
 		_result_title.add_theme_color_override("font_color", Pal.WRONG)
 		_delta_label.text = "%d gems" % Game.GEM_WRONG
 		_delta_label.add_theme_color_override("font_color", Pal.WRONG)
-		_result_rule.text = "Correct answer: %s\n%s" % [str(answer), current.rule]
+		_show_answer("Correct answer:  %s" % str(answer), Pal.WRONG)
+		_result_rule.text = str(current.rule)
 	_continue_btn.grab_focus()
+
+
+## The answer on a card of its own -- the mockups show it on both results --
+## edged in the result's colour.
+func _show_answer(text: String, edge: Color) -> void:
+	_answer_label.text = text
+	(_answer_box.get_theme_stylebox("panel") as StyleBoxFlat).border_color = edge
+	_answer_box.get_parent().visible = true
 
 
 func _advance() -> void:
@@ -365,12 +404,14 @@ func _skip() -> void:
 
 func _on_time(sec: int) -> void:
 	if is_instance_valid(_time_row):
-		_time_row.text = "Time: %s" % Ui.mmss(sec)
+		_time_row.text = Ui.mmss(sec)
+		_time_row.add_theme_color_override("font_color",
+			Pal.WRONG_BRIGHT if sec <= 60 else Pal.CREAM)
 
 
 func _on_gems(g: int) -> void:
 	if is_instance_valid(_gems_row):
-		_gems_row.text = "Gems: %d" % g
+		_gems_row.text = str(g)
 
 
 ## Android's number pad has no minus key, and plenty of the answers here are

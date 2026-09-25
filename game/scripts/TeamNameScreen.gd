@@ -91,11 +91,21 @@ func _begin_offline() -> void:
 # --- Online: the code -------------------------------------------------------
 func _build_code() -> void:
 	_background()
-	var box := Ui.screen_panel(self, PANEL, "Join Adventure")
+	# The sign-in screens' layout: the game's name on the scene, the form
+	# beside it -- this is the third form a student meets, and it should look
+	# like the other two.
+	var box := Ui.auth_layout(self, "Join Adventure", 300)
 	box.add_child(Art.label("Type the code your teacher shows.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	_code = Ui.field(box, "Code", "e.g. K7QM")
+	# The code as a code: four big spaced letters, the way it is read off the
+	# board, not a line of small text in a form field.
+	_code = Ui.line_edit("K7QM", 200, 52, 32)
+	_code.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_code.max_length = 4
+	_code.add_theme_constant_override("minimum_character_width", 4)
+	var code_row := CenterContainer.new()
+	code_row.add_child(_code)
+	box.add_child(code_row)
 	_code.text_changed.connect(func(t: String) -> void:
 		var up := t.to_upper()
 		if up != t:
@@ -104,11 +114,15 @@ func _build_code() -> void:
 			_code.caret_column = at)
 	_code.text_submitted.connect(func(_t: String) -> void: _enter())
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
+	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_msg.custom_minimum_size = Vector2(260, 0)
 	box.add_child(_msg)
-	_go = Ui.button("Join", 300, Ui.H, Ui.RED)
+	_go = Ui.button("Join", 260, Ui.H, Ui.RED)
 	_go.pressed.connect(_enter)
 	Ui.centre_row(box, _go)
-	_back_button(box)
+	var back := Ui.link("Back")
+	back.pressed.connect(go_back)
+	Ui.centre_row(box, back)
 
 
 ## `quiet`: the code came from memory, not from the student, so a failure

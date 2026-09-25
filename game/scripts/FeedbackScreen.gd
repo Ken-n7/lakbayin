@@ -23,10 +23,14 @@ func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 
-	var box := Ui.screen_panel(self, PANEL, "Feedback and Rule Reminder")
-	box.add_child(Art.label("Shown on the player's result screen when they answer "
-			+ "a question incorrectly.", Pal.TINY, Pal.INK_MUTED,
-			HORIZONTAL_ALIGNMENT_CENTER))
+	# Back is the ← in the title; SAVE FEEDBACK is the one button on the page.
+	var box := Ui.back_panel(self, PANEL, "Feedback and Rule Reminder", go_back)
+	var about := Art.label("Set specific feedback or rule reminders that will appear on the "
+			+ "player's point screen when they answer a question incorrectly.", Pal.SMALL,
+			Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	about.custom_minimum_size = Vector2(500, 0)
+	box.add_child(about)
 
 	box.add_child(Art.label("1. Select Question", Pal.LABEL, Pal.TITLE))
 	_pick = Ui.option(500.0)
@@ -38,19 +42,15 @@ func setup(_data: Dictionary) -> void:
 	_text.text_changed.connect(_on_typed)
 	box.add_child(_text)
 
-	_count = Art.label("0/%d" % LIMIT, Pal.TINY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
+	_count = Art.label("0/%d" % LIMIT, Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
 	box.add_child(_count)
 
 	_msg = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_msg)
 
-	var save := Ui.button("SAVE FEEDBACK", Ui.W_WIDE, Ui.H, Ui.RED)
+	var save := Ui.button("SAVE FEEDBACK", 240, Ui.H, Ui.RED)
 	save.pressed.connect(_save)
 	Ui.centre_row(box, save)
-
-	var back := Ui.button("Back", Ui.W_WIDE, Ui.H, Ui.SMALL)
-	back.pressed.connect(go_back)
-	Ui.centre_row(box, back)
 
 	_load()
 

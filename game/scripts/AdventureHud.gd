@@ -23,7 +23,6 @@ var dev: Control = null      # the cheat drawer, debug builds only
 var _gems: Label
 var _time: Label
 var _time_plate: PanelContainer
-var _station: Label
 var _ribbon: HBoxContainer        # the station banner, re-coloured per station
 var _pips: HBoxContainer          # one dot per item in this station
 var _bar: HBoxContainer           # the three plates and the ribbon between
@@ -107,11 +106,10 @@ func build() -> void:
 ## WoodTable and paper sheets carry 30px+ corners at any readable scale, which
 ## made every plate twice the height of the bar.
 const PLANK := "res://assets/ui/BigBar_Base.png"
-const RIBBONS := "res://assets/ui/BigRibbons.png"
 ## BigRibbons rows, per station, matching the towers on the map: blue, the
 ## yellow that stands in for the mockups' orange, red. The gate gets purple.
-const RIBBON_ROW := [0, 2, 1]
-const GATE_ROW := 3
+const RIBBON_ROW := Ui.STATION_RIBBON
+const GATE_ROW := Ui.RIBBON_PURPLE
 const BAR_H := 40.0
 const LAST_MINUTE := 60
 
@@ -176,8 +174,6 @@ func _build_top_bar() -> void:
 	_ribbon.add_theme_constant_override("separation", 0)
 	ribbon_centre.add_child(_ribbon)
 	mid.add_child(ribbon_centre)
-	_station = Art.label("", Pal.SMALL, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	Art.shadow(_station)
 	var pips_centre := CenterContainer.new()
 	pips_centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pips = HBoxContainer.new()
@@ -215,45 +211,14 @@ func _fits() -> bool:
 	return _bar.get_combined_minimum_size().x <= adv.get_viewport_rect().size.x - 12.0
 
 
-## The station ribbon: its two ends and a tiled middle as wide as the text,
-## in the row of BigRibbons that is this station's colour.
+## The station ribbon, in the row of BigRibbons that is this station's colour.
 func _paint_ribbon(row: int, text: String) -> void:
 	if not is_instance_valid(_ribbon):
 		return
 	for c in _ribbon.get_children():
-		if c != _station:
-			c.queue_free()
-	if _station.get_parent() != null:
-		_station.get_parent().remove_child(_station)
-	_station.text = text
-	var h := 22.0
-	var left := Art.cell(RIBBONS, 0, row)
-	var middle := Art.cell(RIBBONS, 1, row)
-	var right := Art.cell(RIBBONS, 2, row)
-	var k := h / left.region.size.y
-	var l := TextureRect.new()
-	l.texture = left
-	l.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	l.custom_minimum_size = Vector2(left.region.size.x * k, h)
-	_ribbon.add_child(l)
-	var body := TextureRect.new()
-	body.texture = middle
-	body.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	body.stretch_mode = TextureRect.STRETCH_SCALE
-	var w := _station.get_theme_font("font").get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT,
-		-1, _station.get_theme_font_size("font_size")).x + 12.0
-	body.custom_minimum_size = Vector2(w, h)
-	_station.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_station.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	body.add_child(_station)
-	_ribbon.add_child(body)
-	var r := TextureRect.new()
-	r.texture = right
-	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	r.custom_minimum_size = Vector2(right.region.size.x * k, h)
-	_ribbon.add_child(r)
-	for c in _ribbon.get_children():
-		(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_ribbon.remove_child(c)
+		c.queue_free()
+	_ribbon.add_child(Ui.ribbon(row, text))
 
 
 ## A dot per item in the current station: done, the one being played, to come.
@@ -445,18 +410,27 @@ func open_menu() -> void:
 	adv._close_card()
 	close_dev()
 	set_pad(false)
-	var box := Ui.screen_panel(ui_layer, Vector2(300, 250), "Menu")
+	var box := Ui.screen_panel(ui_layer, Vector2(300, 270), "Menu")
 	var menu := box.get_parent()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	# label, kind, height, screen to open ("" = stay on the map), what to do with
-	# the run in progress.
-	for spec in [["Resume", Ui.BLUE, 44, "", ""], ["Home", Ui.SMALL, 38, "home", "end"],
-			["Restart", Ui.SMALL, 38, "adventure", "restart"],
-			["Leaderboard", Ui.SMALL_RED, 38, "board", ""],
-			["New Game", Ui.SMALL_RED, 38, "hero", "abandon"]]:
-		var b := Ui.button(spec[0], 170, spec[2], spec[1])
-		b.pressed.connect(_leave_menu.bind(menu, spec[3], spec[4]))
-		box.add_child(b)
+	box.add_theme_constant_override("separation", 6)
+	# Not a pause -- only the teacher stops the clock -- and it has to say so,
+	# or a student reads the menu as a breather.
+	var note := Art.label("The clock keeps running.", Pal.SMALL, Pal.WRONG,
+		HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(note)
+	# label, kind, screen to open ("" = stay on the map), what to do with the
+	# run in progress. Resume is the one primary; New Game throws the run
+	# away, so it is last and the only red -- it was red beside Leaderboard,
+	# which made a harmless look match a destructive one.
+	for spec in [["Resume", Ui.RED, "", ""],
+			["Leaderboard", Ui.SMALL, "board", ""],
+			["Home", Ui.SMALL, "home", "end"],
+			["Restart", Ui.SMALL, "adventure", "restart"],
+			["New Game", Ui.SMALL_RED, "hero", "abandon"]]:
+		var b := Ui.button(spec[0], 200, Ui.H, spec[1])
+		b.pressed.connect(_leave_menu.bind(menu, spec[2], spec[3]))
+		Ui.centre_row(box, b)
 
 
 ## Every exit closes the menu. `drop` decides the fate of the run in

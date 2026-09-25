@@ -62,6 +62,10 @@ func _find_line_edit(root: Node) -> LineEdit:
 
 func _click(root: Node, text: String) -> void:
 	var b := _find_button(root, text)
+	# A bare glyph -- the "←" in a screen's title -- is found by what it says
+	# it does: its tooltip.
+	if b == null:
+		b = _find_button_tooltip(root, text)
 	if b == null:
 		check("button exists: %s" % text, false)
 		return

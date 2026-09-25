@@ -74,7 +74,9 @@ static func menu_button(text: String, w: float, h: float, kind := BLUE) -> MenuB
 	off.modulate_color = Color(0.62, 0.62, 0.66, 0.85)
 	m.add_theme_stylebox_override("disabled", off)
 	m.add_theme_color_override("font_color", Pal.WHITE_STRONG)
-	m.add_theme_color_override("font_disabled_color", Pal.WHITE_FAINT)
+	# Legible while disabled: Rescue is greyed most of the time, and at the
+	# old near-transparent white it read as missing, not unavailable.
+	m.add_theme_color_override("font_disabled_color", Color(1, 1, 1, 0.7))
 	m.add_theme_font_size_override("font_size", maxi(int(KINDS[kind][2]), Art.MIN_FONT))
 	return m
 
@@ -253,6 +255,93 @@ static func screen_panel(parent: Node, s: Vector2, title := "",
 	parent.add_child(centre)
 	centre.add_child(pc)
 	return pc.get_child(0) as VBoxContainer
+
+
+## BigRibbons rows, by colour. Stations wear 0 / 2 / 1 (blue, yellow, red),
+## in the map's and the HUD's order.
+const RIBBONS := "res://assets/ui/BigRibbons.png"
+const RIBBON_BLUE := 0
+const RIBBON_RED := 1
+const RIBBON_YELLOW := 2
+const RIBBON_PURPLE := 3
+const RIBBON_GREY := 4
+const STATION_RIBBON := [RIBBON_BLUE, RIBBON_YELLOW, RIBBON_RED]
+
+
+## A banner from the pack: two ends and a middle as wide as the words, in one
+## row (colour) of BigRibbons. What the HUD names its station with, and what a
+## heading that should read as a game rather than a form wears.
+static func ribbon(row: int, text: String, h := 22.0, size := Pal.SMALL) -> HBoxContainer:
+	var r := HBoxContainer.new()
+	r.add_theme_constant_override("separation", 0)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var left := Art.cell(RIBBONS, 0, row)
+	var middle := Art.cell(RIBBONS, 1, row)
+	var right := Art.cell(RIBBONS, 2, row)
+	var k := h / left.region.size.y
+	var label := Art.label(text, size, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	Art.shadow(label)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var w := label.get_theme_font("font").get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT,
+		-1, size).x + 12.0
+	for piece: Array in [[left, left.region.size.x * k], [middle, w], [right, right.region.size.x * k]]:
+		var t := TextureRect.new()
+		t.texture = piece[0]
+		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		t.stretch_mode = TextureRect.STRETCH_SCALE
+		t.custom_minimum_size = Vector2(piece[1], h)
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		r.add_child(t)
+	r.get_child(1).add_child(label)
+	return r
+
+
+## A slim wooden plate (the pack's BigBar_Base) round a number -- gems, time,
+## a score. The HUD's plates, for anywhere else a number should read the same.
+static func plank(content: Control, pad_x := 6.0) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", Art.panel("res://assets/ui/BigBar_Base.png",
+		Vector2(pad_x, 0), 0.6))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(content)
+	return p
+
+
+## A coin (or any icon) and a value on a plank.
+static func stat_plank(icon: String, value: String, size := Pal.BODY) -> PanelContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	if icon != "":
+		row.add_child(Art.texrect(icon, 20, 20))
+	var l := Art.label(value, size, Pal.CREAM)
+	l.name = "Value"
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(l)
+	return plank(row)
+
+
+## A full-screen panel whose title line carries a ← back, on the left, in the
+## panel -- the one way back on every screen, where Back used to be a second
+## big button competing with the real one. Returns the content box.
+static func back_panel(parent: Node, s: Vector2, title: String, on_back: Callable) -> VBoxContainer:
+	var box := screen_panel(parent, s, title)
+	var title_row := HBoxContainer.new()
+	var back := glyph("←", 24, Pal.TITLE)
+	back.custom_minimum_size = Vector2(40, 30)
+	back.tooltip_text = "Back"
+	back.pressed.connect(on_back)
+	title_row.add_child(back)
+	var head: Control = box.get_child(0)         # the panel's own title label
+	box.add_child(title_row)
+	box.move_child(title_row, 0)
+	head.reparent(title_row)
+	head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var balance := Control.new()                 # keeps the title centred
+	balance.custom_minimum_size = Vector2(40, 0)
+	title_row.add_child(balance)
+	return box
 
 
 ## The sign-in family's layout: the game's name on the left, standing on the

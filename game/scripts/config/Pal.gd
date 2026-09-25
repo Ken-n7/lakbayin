@@ -51,6 +51,8 @@ const WRONG := Color("b03a1e")
 ## clock's last minute.
 const WRONG_BRIGHT := Color("ff6b5a")
 const CORRECT_BRIGHT := Color("7ee35a")
+## The leaderboard podium's three steps.
+const PODIUM := [Color("f4b93e"), Color("b9c2cc"), Color("c98a4b")]
 ## Station blue, for topic lines and the Learn tabs.
 const INFO := Color("3a5a8c")
 const INFO_DEEP := Color("1c5b8c")

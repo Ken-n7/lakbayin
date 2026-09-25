@@ -30,8 +30,9 @@ func _build() -> void:
 		_sid = await _find_session()
 	# No scrim: Main's moving scene is the background (Backdrop.gd), and a
 	# 90% dim over it would show nothing on this screen alone.
-	var box := Ui.screen_panel(self, Vector2(560, 330), "Live Leaderboard"
-		if _is_admin() else "Team Ranking")
+	# Back is the ← in the title, not a big red button competing with nothing.
+	var box := Ui.back_panel(self, Vector2(600, 330), "Live Leaderboard"
+		if _is_admin() else "Team Ranking", go_back)
 	box.add_theme_constant_override("separation", 6)
 
 	# Two tabs, per the mockup -- but only for the teacher. A student's board
@@ -39,29 +40,30 @@ func _build() -> void:
 	if _is_admin():
 		var tabs := HBoxContainer.new()
 		tabs.alignment = BoxContainer.ALIGNMENT_CENTER
-		tabs.add_theme_constant_override("separation", 6)
+		tabs.add_theme_constant_override("separation", 18)
 		for i in 2:
-			var label: String = "Team Ranking" if i == 0 else "Player Ranking"
-			var b := Ui.button(label, 150, Ui.H, Ui.RED if _tab == i else Ui.SMALL)
+			var t := Ui.tab_text("Team Ranking" if i == 0 else "Player Ranking", _tab == i)
 			var which := i
-			b.pressed.connect(func() -> void:
+			Ui.tab_button(t).pressed.connect(func() -> void:
 				_tab = which
 				_rebuild())
-			tabs.add_child(b)
+			tabs.add_child(t)
 		box.add_child(tabs)
 
-	var scroll := Ui.scroll(box, 165)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
 	_list = VBoxContainer.new()
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 4)
 	scroll.add_child(_list)
 
 	var note := Art.label("Gems reset to %d for every adventure. Finish all stations to avoid the −%d penalty." %
-			[Game.START_GEMS, -(Game.GEM_TEAM_FINISH_PENALTY)], Pal.TINY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+			[Game.START_GEMS, -(Game.GEM_TEAM_FINISH_PENALTY)], Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.custom_minimum_size = Vector2(540, 0)
 	box.add_child(note)
-
-	var back := Ui.button("Back", Ui.W_WIDE, Ui.H, Ui.RED)
-	back.pressed.connect(func() -> void: main.open("admin" if _is_admin() else "home"))
-	Ui.centre_row(box, back)
 
 	_fill()
 	_watch()
@@ -118,7 +120,6 @@ func _fill() -> void:
 
 
 func _fill_teams() -> void:
-	_row(["Rank", "Team", "Gems"], [12, 40, 12])
 	var rows: Array = []
 	if _sid != "":
 		rows = await Board.teams(_sid)
@@ -128,10 +129,58 @@ func _fill_teams() -> void:
 		_list.add_child(Art.label("No scores yet.", Pal.SMALL, Pal.INK_MUTED,
 				HORIZONTAL_ALIGNMENT_CENTER))
 		return
-	for i in rows.size():
-		var r: Dictionary = rows[i]
-		_row([str(i + 1), str(r.get("name", "")), str(r.get("gems", 0))], [12, 40, 12],
-			_row_is_me(r))
+	if not is_instance_valid(_list):
+		return
+	_list.add_child(_podium(rows.slice(0, 3)))
+	# Fourth place and below, as rows under the podium.
+	if rows.size() > 3:
+		_row(["Rank", "Team", "Gems"], [12, 40, 12])
+		for i in range(3, rows.size()):
+			var r: Dictionary = rows[i]
+			_row([str(i + 1), str(r.get("name", "")), str(int(r.get("gems", 0)))], [12, 40, 12],
+				_row_is_me(r))
+
+
+## The mockup's podium: first in the middle and tallest, second to its left,
+## third to its right -- gold, silver, bronze -- each team's gems on a plank
+## over its step, and the player's own team starred.
+func _podium(top: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	var heights := [74.0, 52.0, 36.0]
+	for place in [1, 0, 2]:
+		if place >= top.size():
+			continue
+		var r: Dictionary = top[place]
+		var col := VBoxContainer.new()
+		col.alignment = BoxContainer.ALIGNMENT_END
+		col.add_theme_constant_override("separation", 3)
+		col.custom_minimum_size = Vector2(140, 150)
+		var mine := _row_is_me(r)
+		var name := Art.label(("★ " if mine else "") + str(r.get("name", "")), Pal.LABEL,
+			Pal.INFO_DEEP if mine else Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+		name.clip_text = true
+		name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		col.add_child(name)
+		var gems := CenterContainer.new()
+		gems.add_child(Ui.stat_plank("res://assets/ui/Icon_03.png", str(int(r.get("gems", 0))), Pal.BODY))
+		col.add_child(gems)
+		var step := PanelContainer.new()
+		var face := StyleBoxFlat.new()
+		face.bg_color = Pal.PODIUM[place]
+		face.border_color = Pal.WOOD
+		face.set_border_width_all(2)
+		face.corner_radius_top_left = 4
+		face.corner_radius_top_right = 4
+		step.add_theme_stylebox_override("panel", face)
+		step.custom_minimum_size = Vector2(130, heights[place])
+		var num := Art.label(str(place + 1), Pal.H1, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+		num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		step.add_child(num)
+		col.add_child(step)
+		row.add_child(col)
+	return row
 
 
 ## What a spectating teacher actually reads: who is scoring, who is answering,
@@ -173,6 +222,10 @@ func _cell(text: String, weight: int, color: int = -1) -> Label:
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.size_flags_stretch_ratio = weight
 	return l
+
+
+func go_back() -> void:
+	main.open("admin" if _is_admin() else "home")
 
 
 func _row_is_me(row: Dictionary) -> bool:
