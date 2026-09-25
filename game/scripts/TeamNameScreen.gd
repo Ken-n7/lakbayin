@@ -13,10 +13,13 @@ extends Control
 ## headless suites still reach the map.
 
 const PANEL := Vector2(360, 230)
-const LOBBY := Vector2(600, 300)
+const LOBBY := Vector2(600, 330)
 ## A team box: its name, its count, and a line per player on it.
 const CARD := Vector2(132, 64)
-const NAME_LINE := 15.0
+const NAME_LINE := 18.0
+## Names shown per box before "+N more": four fit the 360px canvas with
+## everything else on the screen; a team of six would push Ready off it.
+const SHOW_NAMES := 4
 
 var main: Control
 
@@ -30,6 +33,8 @@ var _lobby := Lobby.new()
 var _mine := ""              # the team this player is on, "" for none yet
 var _cards: HBoxContainer
 var _status: Label
+var _steps: Label            # "1 Pick a team -> 2 Ready!", the current one lit
+var _banner: PanelContainer  # the status line's backing, coloured by state
 
 
 func setup(_data: Dictionary) -> void:
@@ -151,30 +156,53 @@ func _enter(quiet := false) -> void:
 func _build_lobby() -> void:
 	_background()
 	var box := Ui.screen_panel(self, LOBBY, "Pick Your Team")
-	box.add_child(Art.label("Adventure code  %s" % Game.joined_code, Pal.LABEL,
-			Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+	box.add_theme_constant_override("separation", 6)
+	# Two steps, and which one you are on: a Grade 8 student should not have
+	# to work out that entering the map is what "ready" means. The code rides
+	# the same line -- a line of its own pushed Ready off a 360px screen.
+	var head := HBoxContainer.new()
+	var code := Art.label("Code %s" % Game.joined_code, Pal.SMALL, Pal.INK_MUTED)
+	code.custom_minimum_size = Vector2(110, 0)
+	head.add_child(code)
+	_steps = Art.label("", Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	_steps.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(_steps)
+	var balance := Control.new()
+	balance.custom_minimum_size = Vector2(110, 0)
+	head.add_child(balance)
+	box.add_child(head)
+
 	var centre := CenterContainer.new()
 	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(centre)
 	_cards = HBoxContainer.new()
-	_cards.add_theme_constant_override("separation", 8)
+	_cards.add_theme_constant_override("separation", 10)
 	_cards.alignment = BoxContainer.ALIGNMENT_CENTER
 	centre.add_child(_cards)
+
+	_banner = PanelContainer.new()
 	_status = Art.label("", Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status.custom_minimum_size = Vector2(540, 0)
-	box.add_child(_status)
+	_status.custom_minimum_size = Vector2(520, 0)
+	_banner.add_child(_status)
+	var banner_row := CenterContainer.new()
+	banner_row.add_child(_banner)
+	box.add_child(banner_row)
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
+	_msg.visible = false          # shown only with something to say (_say)
 	box.add_child(_msg)
+
+	# Leave on the left, the one thing to do on the right and biggest -- the
+	# thumb's side, and the same order as every other two-button choice here.
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
-	_go = Ui.button("Enter Map", Ui.W_WIDE, Ui.H, Ui.RED)
-	_go.pressed.connect(_to_map)
-	row.add_child(_go)
+	row.add_theme_constant_override("separation", 12)
 	var leave := Ui.button("Leave", Ui.W_MED, Ui.H, Ui.SMALL)
 	leave.pressed.connect(_leave)
 	row.add_child(leave)
+	_go = Ui.button("Ready — Enter Map", 230, Ui.H, Ui.RED)
+	_go.pressed.connect(_to_map)
+	row.add_child(_go)
 	box.add_child(row)
 	_draw_lobby()
 
@@ -198,39 +226,58 @@ func _draw_lobby() -> void:
 		_cards.remove_child(c)
 		c.queue_free()
 	var locked := str(_session.get("state", "")) != "lobby"
+	# Every box the same height, so a team with more players does not read
+	# as the "bigger" choice.
+	var most := 2
+	for t: Dictionary in _lobby.teams:
+		most = maxi(most, mini(_lobby.members_of(t.id).size(), SHOW_NAMES + 1))
 	for t: Dictionary in _lobby.teams:
 		# Locked: only somebody with no team (never picked, or theirs was
 		# removed) may still pick. The server holds the same line.
-		_cards.add_child(_team_box(t, locked and _mine != ""))
+		_cards.add_child(_team_box(t, locked and _mine != "", most))
 	if _lobby.teams.is_empty():
 		_cards.add_child(Art.label("Your teacher has not made any teams yet.",
 				Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
 	var team_name := _lobby.name_of(_mine)
+	var tone := Pal.INK
 	if _mine == "":
-		_status.text = "Tap a team's box to join it."
+		_status.text = "Tap a team to join it."
+		_steps.text = "▶ 1  Pick a team      2  Ready!"
 	elif locked:
-		_status.text = "You're on %s. Teams are locked — the adventure has started." % team_name
+		_status.text = "The adventure has started — you're on %s. Go!" % team_name
+		_steps.text = "✓ 1  Pick a team      ▶ 2  Ready!"
+		tone = Pal.CORRECT
 	else:
-		_status.text = "You're on %s. Tap another box to switch until your teacher starts." % team_name
+		_status.text = "You're on %s. Tap another team to switch, or press Ready." % team_name
+		_steps.text = "✓ 1  Pick a team      ▶ 2  Ready!"
+	_status.add_theme_color_override("font_color", tone)
+	var face := StyleBoxFlat.new()
+	face.bg_color = Pal.PARCHMENT.darkened(0.06)
+	face.set_corner_radius_all(3)
+	face.set_content_margin_all(4)
+	_banner.add_theme_stylebox_override("panel", face)
 	Game.team_name = team_name
 	_go.disabled = _mine == ""
 
 
 ## One team as a box to tap: its name, how many, and who -- the same list the
-## teacher sees. Tapping it puts this player's name in it.
-func _team_box(t: Dictionary, locked: bool) -> Control:
+## teacher sees. Tapping it puts this player's name in it. Yours is marked
+## YOU in words as well as in red, never by colour alone.
+func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	var id: String = t.id
 	var mine := id == _mine
 	var members := _lobby.members_of(id)
 	var box := Button.new()
-	box.custom_minimum_size = CARD + Vector2(0, NAME_LINE * members.size())
+	box.custom_minimum_size = Vector2(CARD.x, 44 + NAME_LINE * most + 18)
 	box.focus_mode = Control.FOCUS_NONE
 	box.disabled = mine or locked
 	box.tooltip_text = "" if box.disabled else "Join " + str(t.name)
 	for st in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var face := StyleBoxFlat.new()
 		face.bg_color = Pal.PARCHMENT if st != "hover" else Pal.PARCHMENT.lightened(0.25)
+		if st == "pressed":
+			face.bg_color = Pal.PARCHMENT.darkened(0.1)
 		face.border_color = Pal.WRONG if mine else (Pal.WOOD if st != "hover" else Pal.TITLE)
 		face.set_border_width_all(3 if mine else 2)
 		face.set_corner_radius_all(3)
@@ -242,25 +289,43 @@ func _team_box(t: Dictionary, locked: bool) -> Control:
 	col.offset_left = 6.0
 	col.offset_top = 4.0
 	col.offset_right = -6.0
+	col.offset_bottom = -4.0
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(col)
 	var title := Art.label(str(t.name), Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(title)
-	var count := Art.label("%d joined" % members.size(), Pal.TINY,
+	var count := Art.label("%d joined" % members.size(), Pal.SMALL,
 			Pal.WRONG if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(count)
-	for who: Dictionary in members:
+	# You first, so your own name is never the one cut off.
+	var ordered := members.filter(func(w: Dictionary) -> bool: return w.profile_id == Net.user_id) \
+		+ members.filter(func(w: Dictionary) -> bool: return w.profile_id != Net.user_id)
+	for i in mini(ordered.size(), SHOW_NAMES):
+		var who: Dictionary = ordered[i]
 		var me: bool = who.profile_id == Net.user_id
-		var line := Art.label(("★ " if me else "• ") + str(who.username), Pal.TINY,
+		var line := Art.label(("★ " if me else "• ") + str(who.username), Pal.SMALL,
 				Pal.WRONG if me else Pal.INK, HORIZONTAL_ALIGNMENT_LEFT)
 		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		col.add_child(line)
+	if ordered.size() > SHOW_NAMES:
+		var more := Art.label("+%d more" % (ordered.size() - SHOW_NAMES), Pal.SMALL,
+				Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_LEFT)
+		more.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(more)
+	var fill := Control.new()
+	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(fill)
+	# What tapping does, on the box itself.
+	var foot := Art.label("YOU" if mine else "Locked" if locked else "Tap to join", Pal.SMALL,
+			Pal.WRONG if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(foot)
 	if not box.disabled:
 		box.pressed.connect(func() -> void: _pick(id))
 	return box
-
 
 
 ## Shown picked at once; the server's answer only matters if it says no, and
@@ -355,6 +420,7 @@ func _back_button(box: Control) -> void:
 
 func _say(text: String, col: Color) -> void:
 	if is_instance_valid(_msg):
+		_msg.visible = text != ""
 		_msg.text = text
 		_msg.add_theme_color_override("font_color", col)
 

@@ -15,12 +15,16 @@ extends Control
 ## Start Game refuses on an incomplete bank rather than generating the
 ## difference -- the teacher authored those questions and gets to know.
 
-const PANEL := Vector2(600, 310)
+const PANEL := Vector2(624, 344)
+## The session column's width; the teams board takes the rest.
+const SIDE_W := 196.0
 ## Four is the ceiling the client asked for, and they sit in one row: at this
 ## width four fit across a 640 canvas and the group stays centred however many
 ## there are.
 const MAX_TEAMS := 4
-const CARD := Vector2(132, 54)
+const CARD_W := 188.0
+## A player's line on a card: tall enough to tap, which the 14px rows were not.
+const CHIP_H := 26.0
 const SESSIONS := "/rest/v1/sessions"
 const TEAMS := "/rest/v1/teams"
 
@@ -31,17 +35,19 @@ var duration_seconds := 600
 var _min_field: LineEdit
 var _sec_field: LineEdit
 var _msg: Label
-var _code_label: Label
+var _code_label: Label        # the join code, large
+var _status: Label            # lobby · N/M ready / running / paused
+var _clock: Label             # time left, once it is running
+var _time_row: Control        # duration fields, before Start
+var _why: Label               # what Start is waiting for
 var _start_btn: Button
 var _hold_btn: Button
 var _end_btn: Button
 var _teams_grid: GridContainer
-var _body: VBoxContainer
 var _add_btn: Button
 var _shuffle_btn: Button
-var _players: MenuButton       # everyone in the session, left of the tabs
-var _loose: HBoxContainer      # players who have not picked a team
-var _tab := 0
+var _players: MenuButton       # everyone in the session, in the title bar
+var _loose: HFlowContainer     # players who have not picked a team
 var _session := {}
 ## The session's teams and players, kept current off the socket -- see `Lobby`.
 var _lobby := Lobby.new()
@@ -68,11 +74,11 @@ func setup(data: Dictionary) -> void:
 
 	var box := Ui.screen_panel(self, PANEL, "Game Controls")
 
-	# The back arrow on the title's own line, inside the panel: on the
-	# screen's corner it sat in the dark margin, half under the dev tab.
+	# Title bar: ← on the title's own line (on the screen's corner it sat in
+	# the dark margin, under the dev tab), the roll call on the right.
 	var title_row := HBoxContainer.new()
 	var back := Ui.glyph("←", 24, Pal.TITLE)
-	back.custom_minimum_size = Vector2(40, 0)
+	back.custom_minimum_size = Vector2(40, 30)
 	back.tooltip_text = "Leave (ends the session)"
 	back.pressed.connect(go_back)
 	title_row.add_child(back)
@@ -81,56 +87,23 @@ func setup(data: Dictionary) -> void:
 	box.move_child(title_row, 0)
 	title.reparent(title_row)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var title_balance := Control.new()   # keeps the title centred
-	title_balance.custom_minimum_size = Vector2(40, 0)
-	title_row.add_child(title_balance)
-
-	# Everyone in the session, whatever tab: the teacher's roll call.
-	var head := HBoxContainer.new()
 	_players = _players_menu()
-	head.add_child(_players)
-	var tabs := HBoxContainer.new()
-	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
-	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tabs.add_theme_constant_override("separation", 18)
-	for i in 2:
-		var t := Ui.tab_text("Controls" if i == 0 else "Teams", _tab == i)
-		var which := i
-		Ui.tab_button(t).pressed.connect(func() -> void:
-			_tab = which
-			_rebuild())
-		tabs.add_child(t)
-	head.add_child(tabs)
-	var balance := Control.new()          # keeps the tabs centred
-	balance.custom_minimum_size = _players.custom_minimum_size
-	head.add_child(balance)
-	box.add_child(head)
+	title_row.add_child(_players)
 
-	# The code, on both tabs: it is what the teacher reads out, and what they
-	# glance at when a student asks "what was it again?".
-	_code_label = Art.label("", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(_code_label)
-
-	_body = VBoxContainer.new()
-	_body.add_theme_constant_override("separation", 6)
-	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(_body)
+	# One screen, not two tabs. Whether Start will go depends on the teams,
+	# so the teams sit beside it: the teacher used to flip tabs to find out.
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 10)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(body)
+	body.add_child(_build_session_side())
+	body.add_child(_build_teams_board())
 
 	_msg = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_msg.custom_minimum_size = Vector2(540, 0)
+	_msg.custom_minimum_size = Vector2(560, 0)
 	box.add_child(_msg)
 
-	if _tab == 0:
-		_build_duration(_body)
-		_build_buttons(_body)
-	else:
-		_build_teams_tab(_body)
-
-	# A tab switch rebuilds the screen: draw what is already known at once,
-	# and let the read below catch anything missed.
-	if not _session.is_empty():
-		_draw_teams()
 	# Every button in its real state from the first frame. Built enabled and
 	# left that way until the session arrived, Start and End both looked
 	# pressable for the second it took.
@@ -143,60 +116,126 @@ func setup(data: Dictionary) -> void:
 		_load()
 
 
-## Rebuilt rather than hidden: the two tabs share no widgets, and keeping both
-## alive means keeping both in sync for no reason.
-func _rebuild() -> void:
-	for c in get_children():
-		c.queue_free()
-	setup({})
+## The paper a card sits on -- a shade off the panel, so it reads as a thing.
+func _card_face(border: Color = Pal.WOOD, width := 2) -> StyleBoxFlat:
+	var face := StyleBoxFlat.new()
+	face.bg_color = Pal.PARCHMENT
+	face.border_color = border
+	face.set_border_width_all(width)
+	face.set_corner_radius_all(3)
+	face.set_content_margin_all(6)
+	return face
 
 
-# --- Teams tab --------------------------------------------------------------
-## Four teams in one row, small enough to fit. Add Team sits under them.
-func _build_teams_tab(col: VBoxContainer) -> void:
-	var centre := CenterContainer.new()
-	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	col.add_child(centre)
-	_teams_grid = GridContainer.new()
-	_teams_grid.columns = MAX_TEAMS
-	_teams_grid.add_theme_constant_override("h_separation", 8)
-	centre.add_child(_teams_grid)
+## Left column: the code to read out, where things stand, the clock, and the
+## buttons -- Start first and biggest, since it is the one decision here.
+func _build_session_side() -> Control:
+	var side := PanelContainer.new()
+	side.custom_minimum_size = Vector2(SIDE_W, 0)
+	side.add_theme_stylebox_override("panel", _card_face())
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	side.add_child(col)
 
-	_loose = HBoxContainer.new()
-	_loose.alignment = BoxContainer.ALIGNMENT_CENTER
-	_loose.add_theme_constant_override("separation", 4)
-	col.add_child(_loose)
+	col.add_child(Art.label("JOIN CODE", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+	# Read out to a room of thirty: as big as the column allows.
+	_code_label = Art.label("····", 32, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	col.add_child(_code_label)
+	_status = Art.label("", Pal.LABEL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	col.add_child(_status)
 
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
-	_add_btn = Ui.button("Add Team", Ui.W_MED, Ui.H, Ui.SMALL)
-	_add_btn.pressed.connect(_add_team)
-	row.add_child(_add_btn)
-	# For when picking freely has put all the friends on one side.
-	_shuffle_btn = Ui.button("Shuffle", Ui.W_MED, Ui.H, Ui.SMALL)
-	_shuffle_btn.pressed.connect(_shuffle)
-	row.add_child(_shuffle_btn)
-	col.add_child(row)
-
-
-## Minutes and seconds, typed. The steppers were eleven taps to reach half an
-## hour, and Apply Time is gone with them: Start Game is when the duration is
-## set, which is the moment it can actually matter.
-func _build_duration(col: VBoxContainer) -> void:
-	col.add_child(Art.label("Set Adventure Duration", Pal.H2, Pal.TITLE,
-			HORIZONTAL_ALIGNMENT_CENTER))
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 6)
-	_min_field = Ui.number_field(52)
-	_sec_field = Ui.number_field(52)
-	row.add_child(_min_field)
-	row.add_child(Art.label("min", Pal.SMALL, Pal.INK_MUTED))
-	row.add_child(_sec_field)
-	row.add_child(Art.label("sec", Pal.SMALL, Pal.INK_MUTED))
-	col.add_child(row)
+	# Before Start: how long it will run. After: how long is left.
+	var fields := HBoxContainer.new()
+	fields.alignment = BoxContainer.ALIGNMENT_CENTER
+	fields.add_theme_constant_override("separation", 4)
+	_min_field = Ui.number_field(46)
+	_sec_field = Ui.number_field(46)
+	fields.add_child(_min_field)
+	fields.add_child(Art.label("min", Pal.SMALL, Pal.INK_MUTED))
+	fields.add_child(_sec_field)
+	fields.add_child(Art.label("sec", Pal.SMALL, Pal.INK_MUTED))
+	# The fields and the clock swap in one fixed-height slot, and the reason
+	# under Start keeps its two lines even when empty: the column is the same
+	# height in every state, so the panel never grows past the canvas.
+	var slot := Control.new()
+	slot.custom_minimum_size = Vector2(0, 30)
+	col.add_child(slot)
+	fields.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_time_row = fields
+	slot.add_child(fields)
 	_show_time()
+	_clock = Art.label("", 24, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	_clock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_clock.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_clock.visible = false
+	slot.add_child(_clock)
+
+	var gap := Control.new()
+	gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(gap)
+
+	_start_btn = Ui.button("Start Game", SIDE_W - 12, Ui.H, Ui.RED)
+	_start_btn.pressed.connect(func() -> void: _set_state("running", true))
+	col.add_child(_start_btn)
+	# The reason, where the eye already is -- not only in a popup after a
+	# press that did nothing.
+	_why = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	_why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_why.custom_minimum_size = Vector2(SIDE_W - 12, 36)
+	col.add_child(_why)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	_hold_btn = Ui.button("⏸ Pause", (SIDE_W - 18) / 2.0, Ui.H, Ui.SMALL)
+	_hold_btn.pressed.connect(_toggle_hold)
+	row.add_child(_hold_btn)
+	_end_btn = Ui.button("End Game", (SIDE_W - 18) / 2.0, Ui.H, Ui.SMALL_RED)
+	_end_btn.pressed.connect(_confirm_end)
+	row.add_child(_end_btn)
+	col.add_child(row)
+	return side
+
+
+## Right side: every team as a card of its players, the unassigned below, and
+## the two team tools in the header, where they act on the whole board.
+func _build_teams_board() -> Control:
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 4)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	var label := Art.label("Teams", Pal.H2, Pal.TITLE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(label)
+	_add_btn = Ui.button("+ Team", 90, Ui.H, Ui.SMALL)
+	_add_btn.pressed.connect(_add_team)
+	head.add_child(_add_btn)
+	# For when picking freely has put all the friends on one side.
+	_shuffle_btn = Ui.button("Shuffle", 90, Ui.H, Ui.SMALL)
+	_shuffle_btn.pressed.connect(_shuffle)
+	head.add_child(_shuffle_btn)
+	col.add_child(head)
+
+	# Four teams of six outgrow the board, so it scrolls rather than spills.
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.add_child(scroll)
+	var inner := VBoxContainer.new()
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inner.add_theme_constant_override("separation", 6)
+	scroll.add_child(inner)
+	# The unassigned first: they are the ones who need the teacher, and below
+	# a scrolled board they were out of sight.
+	_loose = HFlowContainer.new()
+	inner.add_child(_loose)
+	_teams_grid = GridContainer.new()
+	_teams_grid.columns = 2
+	_teams_grid.add_theme_constant_override("h_separation", 8)
+	_teams_grid.add_theme_constant_override("v_separation", 8)
+	inner.add_child(_teams_grid)
+	return col
 
 
 ## The schema's floor and ceiling, so a typed duration cannot compose one
@@ -213,26 +252,6 @@ func _show_time() -> void:
 	var total := int(duration_seconds)
 	_min_field.text = str(total / 60)
 	_sec_field.text = "%02d" % (total % 60)
-
-
-## Start, one button that is Pause or Resume depending on the state, and a way
-## to end a run early. Start disables once the adventure is running: pressing
-## it again would hand the class a fresh deadline mid-question.
-func _build_buttons(col: VBoxContainer) -> void:
-	_start_btn = Ui.button("Start Game", Ui.W_WIDE, Ui.H, Ui.RED)
-	_start_btn.pressed.connect(func() -> void: _set_state("running", true))
-	Ui.centre_row(col, _start_btn)
-
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 6)
-	_hold_btn = Ui.button("⏸  Pause Game", 120, Ui.H, Ui.SMALL)
-	_hold_btn.pressed.connect(_toggle_hold)
-	row.add_child(_hold_btn)
-	_end_btn = Ui.button("End Game", 120, Ui.H, Ui.SMALL_RED)
-	_end_btn.pressed.connect(_confirm_end)
-	row.add_child(_end_btn)
-	col.add_child(row)
 
 
 ## One control for the same decision seen twice. The label carries the state,
@@ -503,7 +522,13 @@ func _players_menu() -> MenuButton:
 		m.add_theme_color_override(c, Pal.INK)
 	for state in ["normal", "hover", "pressed", "focus"]:
 		m.add_theme_stylebox_override(state, Ui._paper_box(state != "normal"))
-	var pop := m.get_popup()
+	_paper_popup(m.get_popup())
+	m.text = "Players (0) ▾"
+	return m
+
+
+## Parchment on a dropdown's list too, hover included.
+static func _paper_popup(pop: PopupMenu) -> void:
 	pop.add_theme_stylebox_override("panel", Ui._paper_box(false))
 	pop.add_theme_color_override("font_color", Pal.INK)
 	pop.add_theme_color_override("font_hover_color", Pal.TITLE)
@@ -512,8 +537,6 @@ func _players_menu() -> MenuButton:
 	lit.bg_color = Pal.PARCHMENT.darkened(0.12)
 	lit.set_border_width_all(0)
 	pop.add_theme_stylebox_override("hover", lit)
-	m.text = "Players (0) ▾"
-	return m
 
 
 ## Everyone in the session: ✓ ready (on the map), ● in the lobby, ○ not
@@ -633,36 +656,92 @@ func _patch(fields: Dictionary) -> Dictionary:
 	return done
 
 
-## The buttons carry the state, so there is nothing else to label it with.
+## Everything on the session side follows the state from here: the code, the
+## status line, the clock or the duration, Start and why it waits, and the
+## two run buttons.
 func _refresh_state() -> void:
 	var state := str(_session.get("state", ""))
 	# Out of time is over, whatever the row says -- the same rule the players
 	# go by, so nothing is offered for a dead clock.
 	if _session.is_empty() or Teams.expired(_session):
 		state = "ended"
+	var r := _readiness()
+	var total: int = _lobby.players.size()
 	if is_instance_valid(_code_label):
+		_code_label.text = str(_session.get("code", "····")) if state != "ended" else "····"
 		if _making:
-			_code_label.text = "Making a session…"
+			_status.text = "Making a session…"
 		elif state == "ended":
-			_code_label.text = "Session ended — go back to start a new one"
+			_status.text = "Session ended — ← to start again"
 		elif state == "lobby":
-			# Before Start, the number that decides whether Start will go.
-			var r := _readiness()
-			_code_label.text = "Code:  %s   ·   %d/%d ready" % [str(_session.get("code", "")),
-				r.ready.size(), _lobby.players.size()]
+			_status.text = "Lobby  ·  %d/%d ready" % [r.ready.size(), total]
 		else:
-			_code_label.text = "Code:  %s   ·   %s" % [str(_session.get("code", "")), state.capitalize()]
+			_status.text = state.capitalize() + ("  ·  %d playing" % total)
+		_status.add_theme_color_override("font_color",
+			Pal.CORRECT if state == "running" else Pal.WRONG if state == "paused" else Pal.INK)
+		# The duration is set before Start; after it, the clock takes its place.
+		var live := state == "running" or state == "paused"
+		_time_row.visible = not live
+		_clock.visible = live
+		_tick_clock()
 	if is_instance_valid(_shuffle_btn):
 		_shuffle_btn.disabled = state != "lobby"
+		_add_btn.disabled = state == "ended" or _lobby.teams.size() >= MAX_TEAMS
 	_fill_players()
 	if not is_instance_valid(_start_btn):
 		return
-	_start_btn.disabled = state != "lobby"
+	# Start waits for everyone connected to be on the map, and says so here.
+	# Only the not-connected is left to the dialog ("Start without them").
+	_start_btn.disabled = state != "lobby" or total == 0 or not r.lobby.is_empty()
+	_why.text = _start_reason(state, r, total)
 	_hold_btn.disabled = state != "running" and state != "paused"
-	_hold_btn.text = "▶  Resume" if state == "paused" else "⏸  Pause Game"
+	_hold_btn.text = "▶ Resume" if state == "paused" else "⏸ Pause"
 	# Nothing to end until it has started: before Start, leaving is how a
 	# session goes.
 	_end_btn.disabled = state != "running" and state != "paused"
+
+
+func _start_reason(state: String, r: Dictionary, total: int) -> String:
+	if _making or state != "lobby":
+		return ""
+	if total == 0:
+		return "Waiting for students to join"
+	if not r.lobby.is_empty():
+		return "Waiting for %s to enter the map" % _names(r.lobby)
+	if not r.away.is_empty():
+		return "%s not connected" % _names(r.away)
+	return "Everyone is ready!"
+
+
+## "a, b and 3 more" -- a line, not a paragraph, however big the class.
+static func _names(list: Array) -> String:
+	if list.size() <= 2:
+		return " and ".join(list)
+	return "%s, %s and %d more" % [list[0], list[1], list.size() - 2]
+
+
+## Time left, off the session row: the deadline while running, what the
+## pause banked while paused. The same numbers the players' clocks read.
+func _tick_clock() -> void:
+	if not is_instance_valid(_clock) or not _clock.visible:
+		return
+	var left := 0
+	if str(_session.get("state", "")) == "paused":
+		var banked: Variant = _session.get("remaining_s")
+		left = int(banked) if banked != null else 0
+	else:
+		left = maxi(Teams._stamp(_session.get("ends_at")) - int(Time.get_unix_time_from_system()), 0)
+	_clock.text = Ui.mmss(left) + (" paused" if str(_session.get("state", "")) == "paused" else " left")
+
+
+var _since_tick := 0.0
+
+
+func _process(delta: float) -> void:
+	_since_tick += delta
+	if _since_tick >= 0.5:
+		_since_tick = 0.0
+		_tick_clock()
 
 
 # --- Teams ------------------------------------------------------------------
@@ -697,64 +776,50 @@ func _draw_teams() -> void:
 			c.queue_free()
 		var loose: Array = _lobby.members_of("")
 		if not loose.is_empty():
-			_loose.add_child(Art.label("No team:", Pal.TINY, Pal.WRONG))
+			_loose.add_child(Art.label("No team yet:", Pal.SMALL, Pal.WRONG))
 			for who: Dictionary in loose:
 				_loose.add_child(_player_chip(who, "", teams))
-	if is_instance_valid(_add_btn):
-		_add_btn.disabled = teams.size() >= MAX_TEAMS
-		_add_btn.text = "Add Team" if teams.size() < MAX_TEAMS else "4 teams is the most"
+	if teams.is_empty() and is_instance_valid(_teams_grid):
+		_teams_grid.add_child(Art.label("No teams — press + Team.", Pal.SMALL, Pal.INK_MUTED))
+	_refresh_state()      # "+ Team" and the ready counts follow the board
 
 
 func _team_card(t: Dictionary, members: Array, teams: Array) -> Control:
 	var id: String = str(t.get("id", ""))
-	# A wrapper so the × can sit ON the corner rather than inside the box,
-	# where a boxed button was eating a third of a card this narrow.
-	var wrap := Control.new()
-	# A plain Control does not grow with what is in it, so the card is sized
-	# for its names: a line each under the name field and the count.
-	wrap.custom_minimum_size = CARD + Vector2(0, 15 * members.size())
-
 	var card := PanelContainer.new()
-	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var face := StyleBoxFlat.new()
-	face.bg_color = Pal.PARCHMENT
-	face.border_color = Pal.WOOD
-	face.set_border_width_all(2)
-	face.set_corner_radius_all(3)
-	face.set_content_margin_all(5)
-	card.add_theme_stylebox_override("panel", face)
-	wrap.add_child(card)
-
+	card.custom_minimum_size = Vector2(CARD_W, 0)
+	card.add_theme_stylebox_override("panel", _card_face())
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 2)
 	card.add_child(col)
 
-	var field := Ui.line_edit("Team Name", CARD.x - 16, 22, 12)
+	# The name, editable -- it is what the class sees -- with remove beside
+	# it at a size a thumb can hit (the corner × was 16px).
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 4)
+	var field := Ui.line_edit("Team Name", CARD_W - 50, 26, 14)
 	field.text = str(t.get("name", ""))
 	field.max_length = 18
 	# Saved on Enter and on leaving the field, so a teacher who taps away does
 	# not silently lose the name they just typed.
 	field.text_submitted.connect(func(v: String) -> void: _rename(id, v))
 	field.focus_exited.connect(func() -> void: _rename(id, field.text))
-	col.add_child(field)
+	top.add_child(field)
+	var del := Ui.glyph("×", 20, Pal.WRONG)
+	del.custom_minimum_size = Vector2(30, 28)
+	del.tooltip_text = "Remove team"
+	del.pressed.connect(func() -> void: _remove_team(id, str(t.get("name", "")), members))
+	top.add_child(del)
+	col.add_child(top)
 
 	# The count is what a teacher scans: five of six means somebody is still on
 	# the login screen. Each name is a menu, for Move.
 	var ready := members.filter(func(m: Dictionary) -> bool: return _is_ready(m.profile_id)).size()
-	col.add_child(Art.label("Joined %d · %d ready" % [members.size(), ready], Pal.TINY,
+	col.add_child(Art.label("%d joined  ·  %d ready" % [members.size(), ready], Pal.SMALL,
 			Pal.INK_MUTED if members.is_empty() else Pal.CORRECT))
 	for who: Dictionary in members:
 		col.add_child(_player_chip(who, id, teams))
-
-	var del := Ui.glyph("×", 16, Pal.WRONG)
-	del.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	del.offset_left = -18.0
-	del.offset_top = -9.0
-	del.offset_right = 4.0
-	del.offset_bottom = 13.0
-	del.pressed.connect(func() -> void: _remove_team(id, str(t.get("name", "")), members))
-	wrap.add_child(del)
-	return wrap
+	return card
 
 
 ## An empty team goes straight away; one with players in it asks first. Its
@@ -854,31 +919,34 @@ func _add_team() -> void:
 
 ## A player's name, which opens "Move to ..." for every other team. Before
 ## Start only -- after it the teams are locked, and the server says so too.
+## ✓ ready (on the map), ● in the lobby, ○ not connected: a mark and a colour,
+## never the colour alone.
 func _player_chip(who: Dictionary, on_team: String, teams: Array) -> Control:
 	var chip := MenuButton.new()
 	chip.flat = true
-	# ✓ ready (on the map), ● connected but still in the lobby, ○ joined but
-	# not connected -- a phone that died, or a student who wandered off.
 	var pid: String = str(who.get("profile_id", ""))
 	var here: bool = _is_here(pid)
 	var ready := _is_ready(pid)
 	chip.text = ("✓ " if ready else "● " if here else "○ ") + str(who.get("username", "?"))
-	chip.add_theme_font_size_override("font_size", Pal.TINY)
-	chip.add_theme_color_override("font_color",
-		Pal.CORRECT if ready else Pal.INK if here else Pal.INK_MUTED)
+	chip.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	var ink: Color = Pal.CORRECT if ready else Pal.INK if here else Pal.INK_MUTED
+	for c in ["font_color", "font_pressed_color", "font_focus_color"]:
+		chip.add_theme_color_override(c, ink)
 	chip.add_theme_color_override("font_hover_color", Pal.WRONG)
+	chip.add_theme_color_override("font_disabled_color", ink)
 	chip.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	chip.custom_minimum_size = Vector2(0, 14)
+	chip.custom_minimum_size = Vector2(0, CHIP_H)
 	chip.disabled = str(_session.get("state", "")) != "lobby"
 	chip.tooltip_text = "Move to another team" if not chip.disabled else "Teams are locked"
 	var menu := chip.get_popup()
+	_paper_popup(menu)
 	var ids: Array = []
 	for t: Dictionary in teams:
 		if str(t.get("id", "")) == on_team:
 			continue
 		menu.add_item("Move to " + str(t.get("name", "")), ids.size())
 		ids.append(str(t.get("id", "")))
-	menu.id_pressed.connect(func(i: int) -> void: _move(str(who.get("profile_id", "")), ids[i]))
+	menu.id_pressed.connect(func(i: int) -> void: _move(pid, ids[i]))
 	return chip
 
 
