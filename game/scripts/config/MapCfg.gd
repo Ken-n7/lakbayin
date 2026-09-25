@@ -214,7 +214,7 @@ const CIRCLE_SIDE_LIFT := 40.0
 ## How close the play camera sits. 1.0 is the crispest -- the art is never
 ## resampled -- but shows only a screenful of a world this size; 0.75 trades a
 ## little sharpness for a third more trail in view. Try both on the device.
-const PLAY_ZOOM := 0.75
+const PLAY_ZOOM := 0.95
 
 # --- Decor ------------------------------------------------------------------
 ## How many of a kind stand together at most. A wood is a wood, a rock field is

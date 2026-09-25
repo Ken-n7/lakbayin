@@ -78,9 +78,45 @@ func _show_portrait() -> bool:
 	return true
 
 
-## Hook for anything a subclass wants under the buttons.
-func _after_menu(_col: VBoxContainer) -> void:
-	pass
+## Under the buttons: what the player's adventures have come to (client:
+## the gems should be there to see on Home after every game, not only on the
+## summary that closes a moment later). Filled once the server answers; the
+## admin dashboard puts its bank status here instead.
+func _after_menu(col: VBoxContainer) -> void:
+	if not Net.signed_in():
+		return
+	# One line on one plank: the column has room for exactly that under Learn.
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 3)
+	var plank := Ui.plank(line, 8.0)
+	plank.custom_minimum_size = Vector2(COL_W, 0)
+	plank.visible = false
+	col.add_child(plank)
+	var results: Array = await Teams.my_results()
+	if not is_instance_valid(plank) or results.is_empty():
+		return
+	var total := 0
+	for r: Dictionary in results:
+		total += int(r.gems)
+	_gem_pair(line, "Last", int(results[0].gems))
+	var dot := Art.label("·", Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	dot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(dot)
+	_gem_pair(line, "Total", total)
+	plank.tooltip_text = "%d adventures played" % results.size()
+	plank.visible = true
+
+
+func _gem_pair(row: HBoxContainer, what: String, gems: int) -> void:
+	var l := Art.label(what, Pal.SMALL, Pal.CREAM)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(l)
+	var icon := Art.texrect(Ui.GEM, 16, 16)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(icon)
+	var n := Art.label(str(gems), Pal.BODY, Pal.GOLD)
+	n.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(n)
 
 
 # --- Scene ------------------------------------------------------------------

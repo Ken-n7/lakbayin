@@ -164,7 +164,7 @@ func _podium(top: Array) -> Control:
 		name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		col.add_child(name)
 		var gems := CenterContainer.new()
-		gems.add_child(Ui.stat_plank("res://assets/ui/Icon_03.png", str(int(r.get("gems", 0))), Pal.BODY))
+		gems.add_child(Ui.stat_plank(Ui.GEM, str(int(r.get("gems", 0))), Pal.BODY))
 		col.add_child(gems)
 		var step := PanelContainer.new()
 		var face := StyleBoxFlat.new()

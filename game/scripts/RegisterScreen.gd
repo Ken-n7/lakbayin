@@ -44,7 +44,7 @@ func setup(_data: Dictionary) -> void:
 	# Who each role is, in the words of a classroom -- "Admin" alone does not
 	# tell a student not to pick it.
 	_role.add_item("Player (student)")
-	_role.add_item("Admin (teacher)")
+	_role.add_item("Admin (Quest Keeper)")
 	right.add_child(_role)
 	_pass = Ui.password_field(box, "Password", "at least %d characters" % MIN_PASSWORD, FORM_W)
 

@@ -67,6 +67,9 @@ var _card: Control = null       # the tapped circle's info card
 ## Dev knobs the drawer drives: a walk-speed multiplier, and the flag that stops
 ## `_process()` dragging the camera back to the hero while the board is framed.
 var _speed_mult := 1.0
+## The walking camera's zoom. MapCfg.PLAY_ZOOM, unless the dev drawer's Zoom
+## is trying another on a real phone.
+var play_zoom := MapCfg.PLAY_ZOOM
 var _dev_aerial := false
 var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable with [ and ], see _nudge_hero_scale()
 ## How much one press of [ or ] moves the hero's scale, and the range it may
@@ -332,7 +335,7 @@ func _take_team(row: Dictionary) -> void:
 		return
 	_my_team = team
 	if team != "":
-		hud.flash("Your teacher moved you to another team")
+		hud.flash("Your Quest Keeper moved you to another team")
 		return
 	if _ending:
 		return
@@ -427,7 +430,7 @@ func _show_waiting() -> void:
 	for pid: String in _peer_rows:
 		if Net.realtime().where_is(pid, Game.session_id) == "map":
 			ready += 1
-	_start_hint.text = "Waiting for your teacher to start  ·  %d of %d ready" % [ready, total]
+	_start_hint.text = "Waiting for your Quest Keeper to start  ·  %d of %d ready" % [ready, total]
 
 
 ## One place deciding what the session's state means on the board.
@@ -443,10 +446,10 @@ func _apply_session_state() -> void:
 			# `hud.paused` is what stops the hero walking; the clock is already
 			# stopped by `apply_session`.
 			hud.paused = true
-			hud.set_prompt("Paused by your teacher")
+			hud.set_prompt("Paused by your Quest Keeper")
 		"ended":
 			hud.paused = true
-			hud.set_prompt("Your teacher ended the adventure")
+			hud.set_prompt("Your Quest Keeper ended the adventure")
 			_leave_ended()
 		_:
 			hud.paused = true
@@ -620,7 +623,7 @@ func _start_intro() -> void:
 	# The controls crib goes with the joystick -- there is nothing to drive yet.
 	hud.set_crib(false)
 	# Right under the prompt, lower centre -- nothing sits on the board itself.
-	_start_hint = Art.label("Waiting for your teacher to start" if _wait_for_admin
+	_start_hint = Art.label("Waiting for your Quest Keeper to start" if _wait_for_admin
 			else "Tap anywhere to start", 13, Color(1, 1, 1, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
 	_start_hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_start_hint.offset_top = -74.0
@@ -637,7 +640,7 @@ func _swoop() -> void:
 	hud.set_prompt("")
 	_intro_tw = create_tween()
 	_intro_tw.set_parallel(true)
-	_intro_tw.tween_property(_cam, "zoom", Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM), MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
+	_intro_tw.tween_property(_cam, "zoom", Vector2(play_zoom, play_zoom), MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
 	_intro_tw.tween_property(_cam, "position", player.position, MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
 	_intro_tw.chain().tween_callback(skip_intro)
 
@@ -660,7 +663,7 @@ func skip_intro() -> void:
 	hud.set_crib(true)
 	_frozen = false
 	Game.clock_paused = false
-	_cam.zoom = Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM)
+	_cam.zoom = Vector2(play_zoom, play_zoom)
 	_clamp_cam(true)
 	_cam.position = player.position
 	_cam.position_smoothing_enabled = true

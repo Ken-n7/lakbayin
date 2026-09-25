@@ -70,10 +70,33 @@ static func find(code: String) -> Dictionary:
 		if not expired(row):
 			return {"error": "", "session": row}
 	if not rows.is_empty():
-		return {"error": "Adventure %s has ended. Ask your teacher for the new code." % want,
+		return {"error": "Adventure %s has ended. Ask your Quest Keeper for the new code." % want,
 			"session": {}}
-	return {"error": "No adventure with the code %s. Check it with your teacher." % want,
+	return {"error": "No adventure with the code %s. Check it with your Quest Keeper." % want,
 		"session": {}}
+
+
+## Every adventure this player finished, newest first: [{gems, at}]. `gems`
+## is what the adventure left them with, counted the way `team_scores`
+## counts it -- the -25 for circles left and the -50 for being out -- so Home,
+## the summary and the board agree. A run still going is not a result yet.
+static func my_results() -> Array:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		MEMBERS + "?select=gems,items_done,eliminated,sessions(state,created_at,ends_at)"
+		+ "&profile_id=eq." + Net.user_id)
+	var out: Array = []
+	for row: Dictionary in (got.data if got.data is Array else []):
+		var s: Variant = row.get("sessions")
+		if not (s is Dictionary) or not expired(s):
+			continue
+		var g := int(row.get("gems", 0))
+		if bool(row.get("eliminated", false)):
+			g -= 50
+		if int(row.get("items_done", 0)) < Game.TOTAL_ITEMS:
+			g += Game.GEM_TEAM_FINISH_PENALTY
+		out.append({"gems": g, "at": _stamp((s as Dictionary).get("created_at"))})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at > b.at)
+	return out
 
 
 ## A random (v4) uuid, made here so a new row can be announced before the
@@ -151,7 +174,7 @@ static func enter(code: String) -> Dictionary:
 		if mine.has("error"):
 			return {"error": str(mine.error), "session": {}}
 		if mine.is_empty():
-			return {"error": "That adventure has already started. Ask your teacher.", "session": {}}
+			return {"error": "That adventure has already started. Ask your Quest Keeper.", "session": {}}
 		return found
 	# Insert if missing, keep if there: one request, not look-then-add.
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST,

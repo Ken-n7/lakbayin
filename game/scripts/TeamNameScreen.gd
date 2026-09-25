@@ -61,7 +61,7 @@ func _background() -> void:
 func _build_offline() -> void:
 	_background()
 	var box := Ui.screen_panel(self, PANEL, "Enter Team Name")
-	box.add_child(Art.label("Type the team name your teacher gave you.",
+	box.add_child(Art.label("Type the team name your Quest Keeper gave you.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	_team = Ui.field(box, "Team", "e.g. Math Mavericks")
 	_team.text = Game.team_name
@@ -95,7 +95,7 @@ func _build_code() -> void:
 	# beside it -- this is the third form a student meets, and it should look
 	# like the other two.
 	var box := Ui.auth_layout(self, "Join Adventure", 300)
-	box.add_child(Art.label("Type the code your teacher shows.",
+	box.add_child(Art.label("Type the code your Quest Keeper shows.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	# The code as a code: four big spaced letters, the way it is read off the
 	# board, not a line of small text in a form field.
@@ -252,7 +252,7 @@ func _draw_lobby() -> void:
 		# removed) may still pick. The server holds the same line.
 		_cards.add_child(_team_box(t, locked and _mine != "", most))
 	if _lobby.teams.is_empty():
-		_cards.add_child(Art.label("Your teacher has not made any teams yet.",
+		_cards.add_child(Art.label("Your Quest Keeper has not made any teams yet.",
 				Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
 	var team_name := _lobby.name_of(_mine)

@@ -21,6 +21,9 @@ const PANEL_Y := 4.0
 const TAB := Vector2(18.0, 40.0)
 const TAB_Y := 150.0
 const FAST_WALK := 3.0
+## What Zoom steps through, from the shipped MapCfg.PLAY_ZOOM up -- for picking
+## a camera on the phone itself rather than guessing at a desk.
+const ZOOMS := [0.75, 0.85, 0.95, 1.05, 1.2]
 
 ## One row per button: label, and the method it calls. Adding a tool is a line
 ## here plus the method. A toggle rewrites its own label with a trailing dot.
@@ -33,6 +36,7 @@ const TOOLS := [
 	["Freeze", "_freeze"],
 	["+1:00", "_add_minute"],
 	["Show Walls", "_show_walls"],
+	["Zoom 0.75", "_zoom"],
 	["End Run", "_end_run"],
 ]
 
@@ -155,7 +159,7 @@ func _aerial() -> void:
 		cam.zoom = Vector2(z, z)
 		cam.position = Vector2(MapCfg.WORLD_W * MapCfg.TILE, MapCfg.WORLD_H * MapCfg.TILE) * 0.5
 	else:
-		cam.zoom = Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM)
+		cam.zoom = Vector2(_adv.play_zoom, _adv.play_zoom)
 		_adv._clamp_cam(true)
 		cam.position = _adv.player.position
 		cam.position_smoothing_enabled = true
@@ -206,5 +210,15 @@ func _show_walls() -> void:
 
 
 ## Straight to the summary, for testing the end of a run without playing one.
+## The next zoom along, applied at once and kept for the rest of the run.
+func _zoom() -> void:
+	var at := ZOOMS.find(_adv.play_zoom)
+	var z: float = ZOOMS[(at + 1) % ZOOMS.size()]
+	_adv.play_zoom = z
+	if not _adv._dev_aerial and not _adv._frozen:
+		(_adv._cam as Camera2D).zoom = Vector2(z, z)
+	_buttons["_zoom"].text = "Zoom %.2f" % z
+
+
 func _end_run() -> void:
 	Game.end_adventure()

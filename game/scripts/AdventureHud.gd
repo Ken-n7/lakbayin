@@ -187,7 +187,7 @@ func _build_top_bar() -> void:
 	var gems_row := HBoxContainer.new()
 	gems_row.add_theme_constant_override("separation", 3)
 	gems.add_child(gems_row)
-	gems_row.add_child(Art.texrect("res://assets/ui/Icon_03.png", 22, 22))
+	gems_row.add_child(Art.texrect(Ui.GEM, 22, 22))
 	_gems = Art.label(str(Game.START_GEMS), Pal.BODY, Pal.CREAM)
 	_gems.custom_minimum_size = Vector2(30, 0)
 	_gems.vertical_alignment = VERTICAL_ALIGNMENT_CENTER

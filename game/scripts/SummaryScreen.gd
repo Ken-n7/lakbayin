@@ -54,7 +54,7 @@ func _build() -> void:
 	var total := VBoxContainer.new()
 	total.alignment = BoxContainer.ALIGNMENT_CENTER
 	total.add_child(Art.label("Final gems", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	var gems := Ui.stat_plank("res://assets/ui/Icon_03.png", str(int(result.get("gems", Game.gems))), 26)
+	var gems := Ui.stat_plank(Ui.GEM, str(int(result.get("gems", Game.gems))), 26)
 	total.add_child(gems)
 	mid.add_child(total)
 	for tile in [["Correct", "correct", Pal.CORRECT], ["Wrong", "wrong", Pal.WRONG],

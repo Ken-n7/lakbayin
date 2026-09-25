@@ -13,6 +13,9 @@ const KINDS := [
 	["res://assets/ui/SmallRedSquareButton_Regular.png", "res://assets/ui/SmallRedSquareButton_Pressed.png", 14],
 ]
 const PAPER := "res://assets/ui/RegularPaper.png"
+## The gem, everywhere gems are counted: the client's blue diamond, glinting
+## now and then (an AnimatedTexture, so it animates wherever an image goes).
+const GEM := "res://assets/ui/Gem.tres"
 
 ## One button height, everywhere. Not a preference: the nine-patch these
 ## buttons are cut from has a ~31px minimum, so every screen that asked for

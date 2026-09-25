@@ -22,6 +22,11 @@ var current: Dictionary = {}
 var answer := ""
 var meta: Dictionary = {}
 
+## The question, one size up from the 32 it was (client). The left column's
+## width is what the keypad and the panel leave.
+const PROMPT_SIZE := 33
+const ASK_W := 330.0
+
 var _panel: VBoxContainer
 var _q_prompt: Label
 var _q_index: Label
@@ -32,6 +37,8 @@ var _btn_submit: Button
 var _btn_hint: Button
 var _btn_skip: Button
 var _inrow: HBoxContainer
+var _ask: Label                # the question, over its answer box
+var _ask_row: Control          # question + answer on the left, keypad right
 var _keypad: CenterContainer
 var _rescue: MenuButton
 ## The team-mates the dropdown is currently offering.
@@ -90,7 +97,7 @@ func _build() -> void:
 	ribbon_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ribbon_box.add_child(Ui.ribbon(Ui.STATION_RIBBON[station_index], "Station %d" % meta.id))
 	head.add_child(ribbon_box)
-	var gems := Ui.stat_plank("res://assets/ui/Icon_03.png", str(Game.gems), Pal.SMALL)
+	var gems := Ui.stat_plank(Ui.GEM, str(Game.gems), Pal.SMALL)
 	_gems_row = gems.find_child("Value", true, false)
 	head.add_child(gems)
 	var clock := Ui.stat_plank("", Ui.mmss(int(Game.time_left)), Pal.SMALL)
@@ -98,7 +105,7 @@ func _build() -> void:
 	head.add_child(clock)
 	_panel.add_child(head)
 
-	_q_prompt = Art.label("", 32, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_q_prompt = Art.label("", PROMPT_SIZE, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_q_prompt)
 
 	# Built here, right after the heading, and just shown/hidden by
@@ -113,7 +120,7 @@ func _build() -> void:
 	var inrow := HBoxContainer.new()
 	inrow.alignment = BoxContainer.ALIGNMENT_CENTER
 	inrow.add_theme_constant_override("separation", 8)
-	_input = Ui.line_edit("", 150, 40, 24)
+	_input = Ui.line_edit("", 150, 40, 25)
 	_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_input.max_length = 12
 	# No OS keyboard on this field. The answers are numbers, and forty cheap
@@ -123,22 +130,33 @@ func _build() -> void:
 	_input.virtual_keyboard_enabled = false
 	_input.text_changed.connect(_filter_input)
 	_input.text_submitted.connect(func(_t: String) -> void: _submit())
-	inrow.add_child(Art.label("=", 26, Pal.INK))
+	inrow.add_child(Art.label("=", 27, Pal.INK))
 	inrow.add_child(_input)
 	_inrow = inrow
 
+	# Two halves while a question is up (client): the question with its
+	# answer box under it on the left, where the eye reads down from one to
+	# the other, and the keypad on the right, under the thumb.
 	var pad_row := HBoxContainer.new()
 	pad_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	pad_row.add_theme_constant_override("separation", 20)
-	inrow.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	pad_row.add_child(inrow)
+	pad_row.add_theme_constant_override("separation", 24)
+	var left := VBoxContainer.new()
+	left.alignment = BoxContainer.ALIGNMENT_CENTER
+	left.add_theme_constant_override("separation", 8)
+	left.custom_minimum_size = Vector2(ASK_W, 0)
+	_ask = Art.label("", PROMPT_SIZE, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_ask.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ask.custom_minimum_size = Vector2(ASK_W, 0)
+	left.add_child(_ask)
+	left.add_child(inrow)
+	_hint_text = Art.label("", Pal.SMALL + 1, Pal.INFO, HORIZONTAL_ALIGNMENT_CENTER)
+	_hint_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint_text.custom_minimum_size = Vector2(ASK_W, 0)
+	left.add_child(_hint_text)
+	pad_row.add_child(left)
 	pad_row.add_child(_build_keypad())
 	_panel.add_child(pad_row)
-
-	_hint_text = Art.label("", Pal.SMALL, Pal.INFO, HORIZONTAL_ALIGNMENT_CENTER)
-	_hint_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint_text.custom_minimum_size = Vector2(500, 0)
-	_panel.add_child(_hint_text)
+	_ask_row = pad_row
 
 	# The helps on the left, quiet; Submit alone on the right, and the only
 	# red. Skip was red too, and two reds made the escape look like the goal.
@@ -209,8 +227,11 @@ func _show_intro() -> void:
 ## the mission text and Continue. Every caller sets `phase` first.
 func _layout() -> void:
 	var asking := phase == Phase.QUESTION
-	for c in [_inrow, _action, _btn_hint, _btn_submit, _btn_skip, _input, _hint_text, _keypad]:
+	for c in [_ask_row, _inrow, _action, _btn_hint, _btn_submit, _btn_skip, _input, _hint_text, _keypad]:
 		(c as Control).visible = asking
+	# The heading line is the briefing's title and the result's question;
+	# while asking, the question sits in its own column instead.
+	_q_prompt.visible = not asking
 	for c in [_result_title, _delta_label, _result_rule]:
 		(c as Control).visible = phase == Phase.FEEDBACK or phase == Phase.DONE
 	# The answer card appears with a result; `_show_result` fills it.
@@ -228,6 +249,7 @@ func _next_question() -> void:
 	answer = current.answer
 	_q_index.text = "Question %d of %d" % [item_index + 1, total]
 	_q_prompt.text = current.prompt
+	_ask.text = current.prompt
 	_layout()
 	_hint_text.text = ""
 	_input.text = ""
@@ -257,7 +279,7 @@ func _submit() -> void:
 func _may_score() -> bool:
 	if Game.can_score():
 		return true
-	_flash_trouble("Paused by your teacher — wait for Resume")
+	_flash_trouble("Paused by your Quest Keeper — wait for Resume")
 	return false
 
 
@@ -432,7 +454,7 @@ func _build_keypad() -> Control:
 
 	for key in ["7", "8", "9", "⌫", "4", "5", "6", "±", "1", "2", "3", "0"]:
 		var b := Ui.button(key, 46, 28, Ui.SMALL if key.is_valid_int() else Ui.SMALL_RED)
-		b.add_theme_font_size_override("font_size", 17)
+		b.add_theme_font_size_override("font_size", 18)
 		var k: String = key
 		b.pressed.connect(func() -> void: _key(k))
 		grid.add_child(b)
