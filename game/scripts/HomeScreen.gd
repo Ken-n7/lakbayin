@@ -89,8 +89,8 @@ func _show_portrait() -> bool:
 
 ## Every gem the player's adventures have come to, ahead of their name: the
 ## glinting gem and the total, then a bar (client). Sized as it was under the
-## menu -- a 16px gem, the number in body text. Shown once the server answers,
-## and not at all for a player with no finished adventure yet.
+## menu -- a 16px gem, the number in body text. Shown once the server
+## answers; 0 until the first adventure is over.
 func _load_gems(head: HBoxContainer) -> void:
 	var icon := Art.texrect(Ui.GEM, 16, 16)
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -104,8 +104,9 @@ func _load_gems(head: HBoxContainer) -> void:
 		c.visible = false
 		head.add_child(c)
 	var results: Array = await Teams.my_results()
-	if not is_instance_valid(n) or results.is_empty():
+	if not is_instance_valid(n):
 		return
+	# A new player shows 0 rather than nothing: the count is there to grow.
 	var total := 0
 	for r: Dictionary in results:
 		total += int(r.gems)
