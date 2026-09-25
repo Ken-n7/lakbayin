@@ -14,21 +14,66 @@ const TEAMS := "/rest/v1/teams"
 const MEMBERS := "/rest/v1/members"
 
 
+## What a code can be made of -- `session_code()` in schema.sql, the same
+## string. No O/0, I/1 or L, and one of each pair the game's pixel font draws
+## alike: its Z *is* a 2, and S/5, B/8, V/U, G/6 are a pixel apart. A student
+## reading "Z" off the board typed a code that did not exist.
+const CODE_CHARS := "ACDEFHJKMNPQRTUWXY23456789"
+## The twin a code never contains -> the one it does. Typing either works.
+const TWINS := {"Z": "2", "S": "5", "B": "8", "V": "U", "G": "6"}
+
+
+## What a student typed, as a code: capitals, no spaces or dashes, and each
+## look-alike as the character codes actually use.
+static func clean_code(typed: String) -> String:
+	var out := ""
+	for ch in typed.to_upper():
+		if ch != " " and ch != "-":
+			out += TWINS.get(ch, ch)
+	return out
+
+
+## The characters in `code` no code ever contains, "" if none.
+static func bad_chars(code: String) -> String:
+	var out := ""
+	for ch in code:
+		if not CODE_CHARS.contains(ch) and not out.contains(ch):
+			out += ch
+	return out
+
+
+## What to tell a student who typed one of those.
+static func bad_note(bad: String) -> String:
+	var spaced := PackedStringArray()
+	for ch in bad:
+		spaced.append(ch)
+	return "Codes never use %s — check that character." % " ".join(spaced)
+
+
 ## The open session with this code. Codes are only unique among sessions still
-## in play, so it is the newest one, and one that has run out does not count.
+## in play, so it is the newest open one, and one that has run out does not
+## count. Each way of not finding it gets its own message: "ended" sends a
+## student to ask for the new code, "no such code" to check what they typed.
 static func find(code: String) -> Dictionary:
-	var want := code.strip_edges().to_upper()
+	var want := clean_code(code)
+	var bad := bad_chars(want)
+	if bad != "":
+		return {"error": bad_note(bad), "session": {}}
 	if want.length() != 4:
 		return {"error": "The code is 4 letters and numbers.", "session": {}}
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		SESSIONS + "?select=*&code=eq." + want.uri_encode()
-		+ "&state=neq.ended&order=created_at.desc&limit=1")
+		SESSIONS + "?select=*&code=eq." + want.uri_encode() + "&order=created_at.desc&limit=5")
 	if got.error != "":
 		return {"error": got.error, "session": {}}
 	var rows: Array = got.data if got.data is Array else []
-	if rows.is_empty() or expired(rows[0]):
-		return {"error": "No adventure with that code. Check with your teacher.", "session": {}}
-	return {"error": "", "session": rows[0]}
+	for row: Dictionary in rows:
+		if not expired(row):
+			return {"error": "", "session": row}
+	if not rows.is_empty():
+		return {"error": "Adventure %s has ended. Ask your teacher for the new code." % want,
+			"session": {}}
+	return {"error": "No adventure with the code %s. Check it with your teacher." % want,
+		"session": {}}
 
 
 ## A random (v4) uuid, made here so a new row can be announced before the

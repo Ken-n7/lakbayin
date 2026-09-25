@@ -4,8 +4,10 @@ extends Control
 ## Resume / End, and the Teams panel.
 ##
 ## The dashboard's Start Session opens this with `{"new": true}`: the
-## teacher's previous session is ended and a fresh one made, with a
-## four-character code to read out. Leaving this screen ends the session,
+## teacher's session still in its lobby is picked up again, code and all, and
+## only when there is none is a fresh one made, with a four-character code to
+## read out. Replacing it silently was how a code the class was typing died
+## under them -- a second press, a second window, an app restart. Leaving this screen ends the session,
 ## after asking -- the dashboard is where the next one starts. Students type the code,
 ## then pick their own team; the teacher can Move anyone or Shuffle everyone
 ## until Start, which locks the teams. The clock is stored the way the schema
@@ -77,6 +79,9 @@ var _bar_msg: Label            # the last thing said, for a few seconds
 var _fresh := false
 ## A session is being made right now -- the first second after Start Session.
 var _making := false
+## The session this screen is ending itself, so its own "ended" coming back
+## over the socket is not mistaken for somebody else ending it.
+var _ending_id := ""
 
 
 func setup(data: Dictionary) -> void:
@@ -383,6 +388,11 @@ func _open_fresh() -> void:
 	if not is_instance_valid(self):
 		return
 	var state := str(live.get("state", ""))
+	if state == "lobby":
+		_making = false
+		_adopt(live)
+		_say("Your session is still open — same code.", Pal.CORRECT)
+		return
 	if state != "running" and state != "paused":
 		_new_session()
 		return
@@ -435,6 +445,7 @@ func _new_session() -> void:
 		_say("Sign in as an admin first.", Pal.WRONG)
 		return
 	if not _session.is_empty():
+		_ending_id = str(_session.get("id", ""))
 		_tell("sessions", "UPDATE", {"id": _session.get("id", ""), "state": "ended"})
 	await Net.rest(HTTPClient.METHOD_PATCH,
 		SESSIONS + "?admin_id=eq." + Net.user_id + "&state=neq.ended", {"state": "ended"})
@@ -509,12 +520,17 @@ func _watch_roster() -> void:
 		rt.presence_changed.connect(_on_presence)
 	rt.watch("members", "session_id=eq." + sid)
 	rt.watch("teams", "session_id=eq." + sid)
+	# Its own row too: the code on this screen has to be a code that works.
+	rt.watch("sessions", "id=eq." + sid)
 
 
 ## Applied from the message: a student joining or switching shows at once,
 ## with no fetch. Only a newcomer, whose name the message lacks, costs one.
 func _on_roster_row(table: String, type: String, record: Dictionary) -> void:
-	if not is_instance_valid(self) or table == "sessions":
+	if not is_instance_valid(self):
+		return
+	if table == "sessions":
+		_on_own_session(type, record)
 		return
 	match _lobby.apply(table, type, record):
 		"changed":
@@ -654,6 +670,8 @@ func _set_state(want: String, is_start: bool, without_away := false) -> void:
 	# The lobbies show Start as teams locking; announced as it is written.
 	# The whole change, deadline included: a bare {state: running} left the
 	# lobbies holding a running session with no deadline at all.
+	if want == "ended":
+		_ending_id = str(_session.get("id", ""))
 	var told := fields.duplicate()
 	told["id"] = _session.get("id", "")
 	_tell("sessions", "UPDATE", told)
@@ -1058,6 +1076,7 @@ func go_back() -> void:
 
 func _end_and_leave() -> void:
 	var sid: String = str(_session.get("id", ""))
+	_ending_id = sid
 	_tell("sessions", "UPDATE", {"id": sid, "state": "ended"})
 	var done: Dictionary = await Net.rest(HTTPClient.METHOD_PATCH,
 		SESSIONS + "?id=eq." + sid, {"state": "ended"})
@@ -1177,3 +1196,65 @@ func _sync_bar() -> void:
 	_bar_dot.add_theme_stylebox_override("panel", dot)
 	_bar_end.disabled = _end_btn.disabled
 	_bar_note.text = _why.text
+
+
+# --- The code has to work ----------------------------------------------------
+## The session row, changed anywhere -- another window paused it, or ended
+## it. Ended by somebody else means the code on this screen is dead, and the
+## teacher is told at once rather than finding out from thirty students.
+func _on_own_session(type: String, record: Dictionary) -> void:
+	var sid := str(_session.get("id", ""))
+	if sid == "" or str(record.get("id", sid)) != sid:
+		return
+	if type == "DELETE" or str(record.get("state", "")) == "ended":
+		_session["state"] = "ended"
+		_refresh_state()
+		if sid != _ending_id:
+			_lost_session()
+		return
+	_session.merge(record, true)
+	_refresh_state()
+
+
+## Back from the background, or the socket was down: read the row again.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		_recheck()
+
+
+func _recheck() -> void:
+	var sid := str(_session.get("id", ""))
+	if sid == "" or str(_session.get("state", "")) == "ended" or not Net.signed_in():
+		return
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET, SESSIONS + "?select=*&id=eq." + sid)
+	if not is_instance_valid(self) or got.error != "":
+		return
+	var rows: Array = got.data if got.data is Array else []
+	_on_own_session("DELETE" if rows.is_empty() else "UPDATE",
+		{"id": sid} if rows.is_empty() else rows[0])
+
+
+func _lost_session() -> void:
+	var dim := Ui.dim(self)
+	var ask := Ui.screen_panel(dim, Vector2(390, 190), "This code no longer works")
+	var body := Art.label(("Session %s was ended somewhere else — another screen signed in "
+			% str(_session.get("code", "")) + "as you started or ended one. Students cannot "
+			+ "join it any more."), Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.custom_minimum_size = Vector2(350, 0)
+	ask.add_child(body)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	var go := Ui.button("Open a session", 170, Ui.H, Ui.RED)
+	go.pressed.connect(func() -> void:
+		dim.queue_free()
+		_session = {}
+		_making = true
+		_refresh_state()
+		_open_fresh())
+	row.add_child(go)
+	var home := Ui.button("Dashboard", 110, Ui.H, Ui.SMALL)
+	home.pressed.connect(func() -> void: main.open("admin"))
+	row.add_child(home)
+	ask.add_child(row)

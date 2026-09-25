@@ -542,6 +542,25 @@ func _run() -> void:
 	await _wait(3)
 	check("learn back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
+	print("== 12a. join codes ==")
+	check("codes are cleaned as typed", Teams.clean_code(" k7-qm ") == "K7QM", Teams.clean_code(" k7-qm "))
+	check("a look-alike twin becomes the character codes use",
+		Teams.clean_code("zsbvg") == "258U6", Teams.clean_code("zsbvg"))
+	for twin: String in Teams.TWINS:
+		check("codes never contain %s" % twin, not Teams.CODE_CHARS.contains(twin))
+		check("but do contain its twin %s" % Teams.TWINS[twin],
+			Teams.CODE_CHARS.contains(Teams.TWINS[twin]))
+	check("look-alikes are caught", Teams.bad_chars("O0I1L") == "O0I1L", Teams.bad_chars("O0I1L"))
+	check("a real code has none", Teams.bad_chars("K7QM") == "")
+	check("the note names them", Teams.bad_note("O0") == "Codes never use O 0 — check that character.",
+		Teams.bad_note("O0"))
+	# The game's alphabet and the server's must be one string, or the game
+	# would refuse codes the server hands out.
+	var schema := FileAccess.get_file_as_string(
+		ProjectSettings.globalize_path("res://") + "../supabase/schema.sql")
+	check("the code alphabet matches session_code() in schema.sql",
+		schema.contains("abc text := '%s';" % Teams.CODE_CHARS))
+
 	print("== 12. the teacher's map view ==")
 	_main_scene.call("open", "controls")
 	await _wait(3)

@@ -154,9 +154,11 @@ func _ready() -> void:
 	_sessions.append(sid)
 	_check("the session has a four-character code",
 		"" if code.length() == 4 else "got '%s'" % code)
-	_check("it has none of the look-alikes",
-		"" if not (code.contains("0") or code.contains("O") or code.contains("1")
-			or code.contains("I") or code.contains("L")) else "got '%s'" % code)
+	# Only what the game's font keeps apart -- a stale session_code() in the
+	# database (schema.sql not re-run) is caught here.
+	_check("it is made only of characters the font keeps apart",
+		"" if Teams.bad_chars(code) == "" and Teams.clean_code(code) == code
+		else "got '%s' -- re-run supabase/schema.sql" % code)
 
 	var team_ids := {}
 	for tname in ["Math Mavericks", "Number Ninjas"]:
@@ -253,6 +255,52 @@ func _ready() -> void:
 	_check("Teams.expired() spots it",
 		"" if Teams.expired(stale_row) else "a passed deadline read as live")
 
+	# --- Codes as students really type them --------------------------------
+	var spaced := " " + code.left(2).to_lower() + "-" + code.substr(2) + " "
+	_check("spaces, dashes and small letters still find it",
+		"" if str((await Teams.find(spaced)).session.get("id", "")) == sid else "not found: '%s'" % spaced)
+	var looks: String = (await Teams.find("O0I1")).error
+	_check("look-alike characters are named, not searched for",
+		"" if looks.contains("never use") and looks.contains("O") else looks)
+	var gone: String = (await Teams.find(str(dead_row.get("code", "")))).error
+	_check("an ended code says it has ended", "" if gone.contains("has ended") else gone)
+	var nobody: String = (await Teams.find("ZZZ9")).error
+	_check("an unknown code says so", "" if nobody.contains("No adventure with the code") else nobody)
+
+	# --- Start Session twice keeps the code; a code killed elsewhere is said -
+	await Net.sign_in(_admin_email, "letmein123")
+	await Net.rest(HTTPClient.METHOD_PATCH, "/rest/v1/sessions?admin_id=eq." + Net.user_id
+		+ "&state=neq.ended", {"state": "ended"})
+	var screen_a := await _controls()
+	var screen_b := await _controls()
+	var code_a := str(screen_a._session.get("code", ""))
+	_sessions.append(str(screen_a._session.get("id", "")))
+	_sessions.append(str(screen_b._session.get("id", "")))
+	_check("Start Session makes a session", "" if code_a.length() == 4 else "no code")
+	_check("Start Session again (a second window) keeps the same code",
+		"" if str(screen_b._session.get("code", "")) == code_a
+		else "%s then %s -- the first code died" % [code_a, screen_b._session.get("code", "")])
+	# Ended behind both screens' backs: both must say the code is dead.
+	await Net.rest(HTTPClient.METHOD_PATCH, "/rest/v1/sessions?id=eq." + str(screen_a._session.get("id", "")),
+		{"state": "ended"})
+	var shown := false
+	for _i in 40:
+		await get_tree().create_timer(0.25).timeout
+		shown = _says(screen_a, "This code no longer works") and _says(screen_b, "This code no longer works")
+		if shown:
+			break
+	_check("a code ended elsewhere is announced on every screen showing it",
+		"" if shown else "the screens still show a dead code")
+	# A screen ending its own session is not told it was ended elsewhere.
+	var screen_own := await _controls()
+	_sessions.append(str(screen_own._session.get("id", "")))
+	await screen_own._set_state("ended", false)
+	await get_tree().create_timer(3.0).timeout
+	_check("ending your own session is not reported as lost",
+		"" if not _says(screen_own, "This code no longer works") else "false alarm")
+	for gc in [screen_a, screen_b, screen_own]:
+		gc.queue_free()
+
 	await _cleanup()
 	print("---- ADMIN %s ----" % ("PASS" if _failures == 0 else "FAIL"))
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -269,6 +317,25 @@ func _cleanup() -> void:
 	# Deleting the session cascades its teams and members away with it.
 	for sid in _sessions:
 		await Net.rest(HTTPClient.METHOD_DELETE, "/rest/v1/sessions?id=eq." + sid)
+
+
+## Game Controls as the dashboard's Start Session opens it, once it has a code.
+func _controls() -> Control:
+	var gc: Control = load("res://scripts/GameControlsScreen.gd").new()
+	add_child(gc)
+	gc.setup({"new": true})
+	for _i in 60:
+		await get_tree().create_timer(0.1).timeout
+		if str(gc.get("_session").get("code", "")) != "" and not gc.get("_making"):
+			break
+	return gc
+
+
+func _says(root: Node, text: String) -> bool:
+	for l in root.find_children("*", "Label", true, false):
+		if (l as Label).text.contains(text):
+			return true
+	return false
 
 
 func _check(name: String, err: String) -> void:

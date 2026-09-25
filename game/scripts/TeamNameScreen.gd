@@ -106,12 +106,17 @@ func _build_code() -> void:
 	var code_row := CenterContainer.new()
 	code_row.add_child(_code)
 	box.add_child(code_row)
+	# Capitals as they type, and a character no code has is said at once,
+	# not after a trip to the server.
+	# A look-alike becomes the character codes use (a typed Z shows as 2).
 	_code.text_changed.connect(func(t: String) -> void:
-		var up := t.to_upper()
+		var up := Teams.clean_code(t)
 		if up != t:
-			var at := _code.caret_column
+			var at := mini(_code.caret_column, up.length())
 			_code.text = up
-			_code.caret_column = at)
+			_code.caret_column = at
+		var bad := Teams.bad_chars(up)
+		_say(Teams.bad_note(bad) if bad != "" else "", Pal.WRONG))
 	_code.text_submitted.connect(func(_t: String) -> void: _enter())
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

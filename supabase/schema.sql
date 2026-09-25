@@ -101,7 +101,9 @@ create table if not exists public.sessions (
 create or replace function public.session_code() returns text
 language plpgsql volatile set search_path = '' as $$
 declare
-  abc text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  -- No O/0, I/1, L, nor one of each pair the game's pixel font draws alike
+  -- (Z/2, S/5, B/8, V/U, G/6): the game maps a typed twin onto these.
+  abc text := 'ACDEFHJKMNPQRTUWXY23456789';
   c   text;
 begin
   loop
