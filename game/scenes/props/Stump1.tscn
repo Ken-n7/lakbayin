@@ -1,9 +1,9 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://dmgh1dn6cy6p4"]
 
-[ext_resource type="Texture2D" path="res://assets/terrain/decorations/Stump 1.png" id="1_exm71"]
+[ext_resource type="Texture2D" uid="uid://bt5vtddmj8xfk" path="res://assets/terrain/decorations/Stump 1.png" id="1_exm71"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_qt2dv"]
-size = Vector2(16, 9.6)
+size = Vector2(16, 5)
 
 [node name="Stump1" type="Node2D" unique_id=1778636460]
 
@@ -15,5 +15,5 @@ offset = Vector2(0, -128)
 [node name="Foot" type="StaticBody2D" parent="." unique_id=1399643776]
 
 [node name="Box" type="CollisionShape2D" parent="Foot" unique_id=1086884350]
-position = Vector2(0, -4.8)
+position = Vector2(1, -12.5)
 shape = SubResource("RectangleShape2D_qt2dv")

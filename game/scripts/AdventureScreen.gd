@@ -70,6 +70,9 @@ var _speed_mult := 1.0
 ## The walking camera's zoom. MapCfg.PLAY_ZOOM, unless the dev drawer's Zoom
 ## is trying another on a real phone.
 var play_zoom := MapCfg.PLAY_ZOOM
+## The hero's Foot box, relative to their feet, from scenes/Hero.tscn -- the
+## part of them that walls stop. A point at the feet if the scene has none.
+var hero_box := Rect2()
 var _dev_aerial := false
 var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable with [ and ], see _nudge_hero_scale()
 ## How much one press of [ or ] moves the hero's scale, and the range it may
@@ -534,22 +537,21 @@ func _exit_tree() -> void:
 
 
 func _spawn_player() -> void:
-	player = Node2D.new()
+	# scenes/Hero.tscn: the shadow, the sprite, and the Foot box that is what
+	# bumps into walls -- open it in the editor to change the box.
+	player = load(MapCfg.HERO_SCENE).instantiate()
 	player.position = grid.anchors[0]
-	var shade := Sprite2D.new()
-	shade.texture = Art.tex(MapCfg.SHADOW_SHEET)
-	shade.scale = Vector2(MapCfg.HERO_SHADOW_SCALE, MapCfg.HERO_SHADOW_SCALE)
-	shade.modulate.a = MapCfg.HERO_SHADOW_ALPHA
-	shade.position = MapCfg.HERO_SHADOW_OFFSET
-	player.add_child(shade)
-	var spr := AnimatedSprite2D.new()
-	spr.name = "Spr"
+	var foot := player.get_node_or_null("Foot")
+	if foot != null:
+		var box := foot.get_node("Box") as CollisionShape2D
+		var size := (box.shape as RectangleShape2D).size
+		hero_box = Rect2((foot as Node2D).position + box.position - size * 0.5, size)
+		foot.free()
+	var spr: AnimatedSprite2D = player.get_node("Spr")
 	spr.scale = Vector2(_hero_scale, _hero_scale)
-	spr.offset = MapCfg.HERO_FOOT_OFFSET
 	spr.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id))
 	spr.play("down")
 	spr.pause()
-	player.add_child(spr)
 	# "There is something here you can actually do." Clears the hero's head: the
 	# 20px frame sits at `offset` -10 and scales by `_hero_scale`. Bobs so it
 	# catches the eye without a marker on the ground under it.
@@ -700,10 +702,10 @@ func _process(delta: float) -> void:
 		# footprint stopped being rounded to tile centres.
 		var step := dir * MapCfg.PLAYER_SPEED * _speed_mult * delta
 		player.position.x += step.x
-		if not grid.is_walkable(player.position):
+		if not grid.box_walkable(player.position, hero_box):
 			player.position.x -= step.x
 		player.position.y += step.y
-		if not grid.is_walkable(player.position):
+		if not grid.box_walkable(player.position, hero_box):
 			player.position.y -= step.y
 		var face := _facing(dir)
 		if spr.animation != face or not spr.is_playing():

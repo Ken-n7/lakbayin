@@ -1,0 +1,1540 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/terrain/decorations/Water Rocks_03.png" id="1_303ks"]
+[ext_resource type="Texture2D" path="res://assets/terrain/decorations/Water Rocks_01.png" id="2_ci43x"]
+[ext_resource type="Texture2D" path="res://assets/terrain/decorations/Water Rocks_02.png" id="3_g3c0f"]
+[ext_resource type="PackedScene" path="res://scenes/props/Tree1.tscn" id="4_dbja3"]
+[ext_resource type="PackedScene" path="res://scenes/props/Tree3.tscn" id="5_bcf8v"]
+[ext_resource type="PackedScene" path="res://scenes/props/Tree2.tscn" id="6_61p64"]
+[ext_resource type="PackedScene" path="res://scenes/props/Rock3.tscn" id="7_eghia"]
+[ext_resource type="PackedScene" path="res://scenes/props/Rock1.tscn" id="8_gl5uj"]
+[ext_resource type="PackedScene" path="res://scenes/props/Stump1.tscn" id="9_85yyl"]
+[ext_resource type="PackedScene" path="res://scenes/props/Stump4.tscn" id="10_eh5n5"]
+[ext_resource type="PackedScene" path="res://scenes/props/Rock2.tscn" id="11_fqf4h"]
+[ext_resource type="PackedScene" path="res://scenes/props/Tree4.tscn" id="12_7eu1a"]
+[ext_resource type="PackedScene" path="res://scenes/props/Stump2.tscn" id="13_vctws"]
+[ext_resource type="PackedScene" path="res://scenes/props/Stump3.tscn" id="14_2lrp3"]
+[ext_resource type="PackedScene" path="res://scenes/props/Rock4.tscn" id="15_ehbye"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_fuqqq"]
+atlas = ExtResource("1_303ks")
+region = Rect2(0, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ppdxn"]
+atlas = ExtResource("1_303ks")
+region = Rect2(64, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_a1c0o"]
+atlas = ExtResource("1_303ks")
+region = Rect2(128, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_i3ml6"]
+atlas = ExtResource("1_303ks")
+region = Rect2(192, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qjicf"]
+atlas = ExtResource("1_303ks")
+region = Rect2(256, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jiyqi"]
+atlas = ExtResource("1_303ks")
+region = Rect2(320, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_veriq"]
+atlas = ExtResource("1_303ks")
+region = Rect2(384, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tl0i5"]
+atlas = ExtResource("1_303ks")
+region = Rect2(448, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bod68"]
+atlas = ExtResource("1_303ks")
+region = Rect2(512, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ew6nk"]
+atlas = ExtResource("1_303ks")
+region = Rect2(576, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_d8pk5"]
+atlas = ExtResource("1_303ks")
+region = Rect2(640, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jvnrm"]
+atlas = ExtResource("1_303ks")
+region = Rect2(704, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_lb0ne"]
+atlas = ExtResource("1_303ks")
+region = Rect2(768, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_6hso5"]
+atlas = ExtResource("1_303ks")
+region = Rect2(832, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_4bxf4"]
+atlas = ExtResource("1_303ks")
+region = Rect2(896, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bplc7"]
+atlas = ExtResource("1_303ks")
+region = Rect2(960, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_ikgda"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_fuqqq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ppdxn")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_a1c0o")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_i3ml6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qjicf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jiyqi")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_veriq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tl0i5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bod68")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ew6nk")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_d8pk5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jvnrm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lb0ne")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6hso5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_4bxf4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bplc7")
+}],
+"loop": true,
+"name": &"sway",
+"speed": 4.0
+}]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3ivpa"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(0, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_x3otm"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(64, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_q3e33"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(128, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_d1o1g"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(192, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_rsuie"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(256, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tqarx"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(320, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_00vp4"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(384, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_8xet3"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(448, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_pyx26"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(512, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_v8gxf"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(576, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_y2rtf"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(640, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_4rkvc"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(704, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_x1a8d"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(768, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kyio5"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(832, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vl0m8"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(896, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ehlyu"]
+atlas = ExtResource("2_ci43x")
+region = Rect2(960, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_214mm"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3ivpa")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_x3otm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_q3e33")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_d1o1g")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_rsuie")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tqarx")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_00vp4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_8xet3")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_pyx26")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_v8gxf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_y2rtf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_4rkvc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_x1a8d")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kyio5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vl0m8")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ehlyu")
+}],
+"loop": true,
+"name": &"sway",
+"speed": 4.0
+}]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_kjmxm"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_fuqqq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ppdxn")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_a1c0o")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_i3ml6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qjicf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jiyqi")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_veriq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tl0i5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bod68")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ew6nk")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_d8pk5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jvnrm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lb0ne")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6hso5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_4bxf4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bplc7")
+}],
+"loop": true,
+"name": &"sway",
+"speed": 4.0
+}]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_xjme0"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_fuqqq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ppdxn")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_a1c0o")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_i3ml6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qjicf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jiyqi")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_veriq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tl0i5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bod68")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ew6nk")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_d8pk5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jvnrm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lb0ne")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6hso5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_4bxf4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bplc7")
+}],
+"loop": true,
+"name": &"sway",
+"speed": 4.0
+}]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_v6ny5"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(0, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3cfdu"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(64, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_a5u2y"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(128, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_q83si"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(192, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_cv7lp"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(256, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ol81h"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(320, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ygo1l"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(384, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hkpu4"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(448, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qify6"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(512, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tnf27"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(576, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_nkdgg"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(640, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_6o82n"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(704, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_86r4i"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(768, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1bwv2"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(832, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_60bjs"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(896, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ih31y"]
+atlas = ExtResource("3_g3c0f")
+region = Rect2(960, 0, 64, 64)
+filter_clip = true
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_chyir"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_v6ny5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3cfdu")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_a5u2y")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_q83si")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_cv7lp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ol81h")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ygo1l")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_hkpu4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qify6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tnf27")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_nkdgg")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6o82n")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_86r4i")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1bwv2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_60bjs")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ih31y")
+}],
+"loop": true,
+"name": &"sway",
+"speed": 4.0
+}]
+
+[node name="Props" type="Node2D" unique_id=778277049]
+y_sort_enabled = true
+
+[node name="WaterRocks" type="Node2D" parent="." unique_id=891550968]
+y_sort_enabled = true
+
+[node name="WaterRock" type="AnimatedSprite2D" parent="WaterRocks" unique_id=1570625473]
+position = Vector2(46.079945, 1391.04)
+scale = Vector2(1.4, 1.4)
+sprite_frames = SubResource("SpriteFrames_ikgda")
+animation = &"sway"
+autoplay = "sway"
+offset = Vector2(0, -32)
+
+[node name="WaterRock2" type="AnimatedSprite2D" parent="WaterRocks" unique_id=1166232690]
+position = Vector2(30.71996, 535.68)
+scale = Vector2(1.4, 1.4)
+sprite_frames = SubResource("SpriteFrames_214mm")
+animation = &"sway"
+autoplay = "sway"
+offset = Vector2(0, -32)
+
+[node name="WaterRock3" type="AnimatedSprite2D" parent="WaterRocks" unique_id=1994357118]
+position = Vector2(1566.72, 535.68)
+scale = Vector2(1.4, 1.4)
+sprite_frames = SubResource("SpriteFrames_kjmxm")
+animation = &"sway"
+autoplay = "sway"
+offset = Vector2(0, -32)
+
+[node name="WaterRock4" type="AnimatedSprite2D" parent="WaterRocks" unique_id=107803359]
+position = Vector2(1505.28, 599.616)
+scale = Vector2(1.4, 1.4)
+sprite_frames = SubResource("SpriteFrames_xjme0")
+animation = &"sway"
+autoplay = "sway"
+offset = Vector2(0, -32)
+
+[node name="WaterRock5" type="AnimatedSprite2D" parent="WaterRocks" unique_id=1828881076]
+position = Vector2(3041.28, 599.616)
+scale = Vector2(1.4, 1.4)
+sprite_frames = SubResource("SpriteFrames_chyir")
+animation = &"sway"
+autoplay = "sway"
+offset = Vector2(0, -32)
+
+[node name="Island1" type="Node2D" parent="." unique_id=1527012360]
+y_sort_enabled = true
+
+[node name="Tree1" type="Node2D" parent="Island1" unique_id=940420147 instance=ExtResource("4_dbja3")]
+position = Vector2(1320, 1453)
+
+[node name="Tree3" type="Node2D" parent="Island1" unique_id=1472256339 instance=ExtResource("5_bcf8v")]
+position = Vector2(784, 1263)
+
+[node name="Tree2" type="Node2D" parent="Island1" unique_id=1998099958 instance=ExtResource("4_dbja3")]
+position = Vector2(871, 1376)
+scale = Vector2(-1, 1)
+
+[node name="Tree4" type="Node2D" parent="Island1" unique_id=908483923 instance=ExtResource("6_61p64")]
+position = Vector2(928, 1308)
+scale = Vector2(-1, 1)
+
+[node name="Tree5" type="Node2D" parent="Island1" unique_id=1257616469 instance=ExtResource("6_61p64")]
+position = Vector2(759, 1303)
+
+[node name="Rock3" type="Node2D" parent="Island1" unique_id=2131467440 instance=ExtResource("7_eghia")]
+position = Vector2(1332, 1090)
+
+[node name="Tree6" type="Node2D" parent="Island1" unique_id=250140472 instance=ExtResource("6_61p64")]
+position = Vector2(1114, 1493)
+
+[node name="Rock1" type="Node2D" parent="Island1" unique_id=1181909032 instance=ExtResource("8_gl5uj")]
+position = Vector2(1222, 1292)
+
+[node name="Tree7" type="Node2D" parent="Island1" unique_id=1864079185 instance=ExtResource("4_dbja3")]
+position = Vector2(908, 1407)
+
+[node name="Tree8" type="Node2D" parent="Island1" unique_id=1344665692 instance=ExtResource("5_bcf8v")]
+position = Vector2(1624, 1351)
+scale = Vector2(-1, 1)
+
+[node name="Tree9" type="Node2D" parent="Island1" unique_id=522020397 instance=ExtResource("6_61p64")]
+position = Vector2(1376, 1170)
+scale = Vector2(-1, 1)
+
+[node name="Tree10" type="Node2D" parent="Island1" unique_id=1237326700 instance=ExtResource("6_61p64")]
+position = Vector2(777, 1335)
+scale = Vector2(-1, 1)
+
+[node name="Tree11" type="Node2D" parent="Island1" unique_id=1698917444 instance=ExtResource("5_bcf8v")]
+position = Vector2(1284, 1199)
+
+[node name="Tree12" type="Node2D" parent="Island1" unique_id=270645252 instance=ExtResource("6_61p64")]
+position = Vector2(1409, 1473)
+
+[node name="Tree13" type="Node2D" parent="Island1" unique_id=931956943 instance=ExtResource("6_61p64")]
+position = Vector2(1520, 1202)
+
+[node name="Stump1" type="Node2D" parent="Island1" unique_id=1778636460 instance=ExtResource("9_85yyl")]
+position = Vector2(1128, 1267)
+
+[node name="Tree14" type="Node2D" parent="Island1" unique_id=2064119867 instance=ExtResource("6_61p64")]
+position = Vector2(758, 1080)
+
+[node name="Tree15" type="Node2D" parent="Island1" unique_id=1983500311 instance=ExtResource("5_bcf8v")]
+position = Vector2(1634, 1386)
+
+[node name="Tree16" type="Node2D" parent="Island1" unique_id=1790980576 instance=ExtResource("5_bcf8v")]
+position = Vector2(1624, 1254)
+
+[node name="Tree17" type="Node2D" parent="Island1" unique_id=1590169405 instance=ExtResource("5_bcf8v")]
+position = Vector2(1598, 1339)
+
+[node name="Tree18" type="Node2D" parent="Island1" unique_id=2086377539 instance=ExtResource("6_61p64")]
+position = Vector2(1688, 1282)
+
+[node name="Stump4" type="Node2D" parent="Island1" unique_id=868822923 instance=ExtResource("10_eh5n5")]
+position = Vector2(663, 1423)
+
+[node name="Tree19" type="Node2D" parent="Island1" unique_id=1461549443 instance=ExtResource("5_bcf8v")]
+position = Vector2(1606, 1381)
+
+[node name="Tree20" type="Node2D" parent="Island1" unique_id=1001194888 instance=ExtResource("6_61p64")]
+position = Vector2(1459, 1152)
+
+[node name="Tree21" type="Node2D" parent="Island1" unique_id=1399944528 instance=ExtResource("6_61p64")]
+position = Vector2(1506, 1161)
+
+[node name="Rock4" type="Node2D" parent="Island1" unique_id=297944993 instance=ExtResource("7_eghia")]
+position = Vector2(1547, 1296)
+
+[node name="Rock2" type="Node2D" parent="Island1" unique_id=866182180 instance=ExtResource("11_fqf4h")]
+position = Vector2(1112, 1317)
+
+[node name="Stump5" type="Node2D" parent="Island1" unique_id=1803683131 instance=ExtResource("10_eh5n5")]
+position = Vector2(721, 1378)
+
+[node name="Rock5" type="Node2D" parent="Island1" unique_id=1711785083 instance=ExtResource("8_gl5uj")]
+position = Vector2(897, 1299)
+
+[node name="Tree22" type="Node2D" parent="Island1" unique_id=1522351452 instance=ExtResource("6_61p64")]
+position = Vector2(1529, 1152)
+
+[node name="Tree23" type="Node2D" parent="Island1" unique_id=555033752 instance=ExtResource("4_dbja3")]
+position = Vector2(1628, 1212)
+
+[node name="Tree24" type="Node2D" parent="Island1" unique_id=664203352 instance=ExtResource("5_bcf8v")]
+position = Vector2(753, 1347)
+
+[node name="Tree25" type="Node2D" parent="Island1" unique_id=2105569531 instance=ExtResource("5_bcf8v")]
+position = Vector2(1377, 1137)
+
+[node name="Tree26" type="Node2D" parent="Island1" unique_id=590994401 instance=ExtResource("5_bcf8v")]
+position = Vector2(554, 1390)
+scale = Vector2(-1, 1)
+
+[node name="Tree27" type="Node2D" parent="Island1" unique_id=1716340032 instance=ExtResource("5_bcf8v")]
+position = Vector2(1341, 1225)
+
+[node name="Tree28" type="Node2D" parent="Island1" unique_id=1891930772 instance=ExtResource("6_61p64")]
+position = Vector2(821, 1404)
+
+[node name="Tree29" type="Node2D" parent="Island1" unique_id=115170658 instance=ExtResource("4_dbja3")]
+position = Vector2(701, 1261)
+scale = Vector2(-1, 1)
+
+[node name="Tree30" type="Node2D" parent="Island1" unique_id=1432017113 instance=ExtResource("5_bcf8v")]
+position = Vector2(1300, 1258)
+
+[node name="Tree31" type="Node2D" parent="Island1" unique_id=2119069110 instance=ExtResource("5_bcf8v")]
+position = Vector2(1328, 1492)
+
+[node name="Tree32" type="Node2D" parent="Island1" unique_id=914519544 instance=ExtResource("4_dbja3")]
+position = Vector2(830, 1365)
+
+[node name="Tree33" type="Node2D" parent="Island1" unique_id=21161403 instance=ExtResource("5_bcf8v")]
+position = Vector2(693, 1315)
+
+[node name="Tree34" type="Node2D" parent="Island1" unique_id=1240118433 instance=ExtResource("4_dbja3")]
+position = Vector2(893, 1497)
+scale = Vector2(-1, 1)
+
+[node name="Tree35" type="Node2D" parent="Island1" unique_id=145961963 instance=ExtResource("5_bcf8v")]
+position = Vector2(1016, 1228)
+
+[node name="Tree36" type="Node2D" parent="Island1" unique_id=2136949489 instance=ExtResource("12_7eu1a")]
+position = Vector2(623, 1265)
+
+[node name="Rock6" type="Node2D" parent="Island1" unique_id=1699175558 instance=ExtResource("8_gl5uj")]
+position = Vector2(1396, 1312)
+
+[node name="Tree37" type="Node2D" parent="Island1" unique_id=372058359 instance=ExtResource("6_61p64")]
+position = Vector2(1478, 1184)
+
+[node name="Tree38" type="Node2D" parent="Island1" unique_id=668648661 instance=ExtResource("6_61p64")]
+position = Vector2(824, 1316)
+scale = Vector2(-1, 1)
+
+[node name="Tree39" type="Node2D" parent="Island1" unique_id=1458247634 instance=ExtResource("6_61p64")]
+position = Vector2(783, 1299)
+
+[node name="Stump6" type="Node2D" parent="Island1" unique_id=174116207 instance=ExtResource("10_eh5n5")]
+position = Vector2(1494, 1054)
+
+[node name="Tree40" type="Node2D" parent="Island1" unique_id=8997976 instance=ExtResource("6_61p64")]
+position = Vector2(1406, 1140)
+
+[node name="Tree41" type="Node2D" parent="Island1" unique_id=1560339188 instance=ExtResource("6_61p64")]
+position = Vector2(952, 1275)
+
+[node name="Tree42" type="Node2D" parent="Island1" unique_id=831947394 instance=ExtResource("12_7eu1a")]
+position = Vector2(1442, 1177)
+
+[node name="Tree43" type="Node2D" parent="Island1" unique_id=1482257049 instance=ExtResource("6_61p64")]
+position = Vector2(1053, 1260)
+
+[node name="Tree44" type="Node2D" parent="Island1" unique_id=2138845806 instance=ExtResource("6_61p64")]
+position = Vector2(976, 1306)
+
+[node name="Tree45" type="Node2D" parent="Island1" unique_id=1712285353 instance=ExtResource("5_bcf8v")]
+position = Vector2(708, 1077)
+scale = Vector2(-1, 1)
+
+[node name="Tree46" type="Node2D" parent="Island1" unique_id=1861270176 instance=ExtResource("5_bcf8v")]
+position = Vector2(1647, 1353)
+
+[node name="Tree47" type="Node2D" parent="Island1" unique_id=1437143435 instance=ExtResource("6_61p64")]
+position = Vector2(1487, 1205)
+
+[node name="Tree48" type="Node2D" parent="Island1" unique_id=952817935 instance=ExtResource("5_bcf8v")]
+position = Vector2(1683, 1317)
+
+[node name="Tree49" type="Node2D" parent="Island1" unique_id=735387002 instance=ExtResource("4_dbja3")]
+position = Vector2(883, 1395)
+
+[node name="Stump2" type="Node2D" parent="Island1" unique_id=726967939 instance=ExtResource("13_vctws")]
+position = Vector2(632, 1394)
+
+[node name="Tree50" type="Node2D" parent="Island1" unique_id=1319433631 instance=ExtResource("6_61p64")]
+position = Vector2(1359, 1410)
+
+[node name="Tree51" type="Node2D" parent="Island1" unique_id=366582294 instance=ExtResource("4_dbja3")]
+position = Vector2(1341, 1426)
+
+[node name="Tree52" type="Node2D" parent="Island1" unique_id=541521463 instance=ExtResource("12_7eu1a")]
+position = Vector2(794, 1359)
+scale = Vector2(-1, 1)
+
+[node name="Tree53" type="Node2D" parent="Island1" unique_id=1472107908 instance=ExtResource("4_dbja3")]
+position = Vector2(1309, 1412)
+
+[node name="Tree54" type="Node2D" parent="Island1" unique_id=1222857672 instance=ExtResource("6_61p64")]
+position = Vector2(1383, 1407)
+scale = Vector2(-1, 1)
+
+[node name="Tree55" type="Node2D" parent="Island1" unique_id=973431713 instance=ExtResource("4_dbja3")]
+position = Vector2(1105, 1444)
+
+[node name="Tree56" type="Node2D" parent="Island1" unique_id=1257523090 instance=ExtResource("5_bcf8v")]
+position = Vector2(1616, 1318)
+scale = Vector2(-1, 1)
+
+[node name="Tree57" type="Node2D" parent="Island1" unique_id=949481174 instance=ExtResource("6_61p64")]
+position = Vector2(1471, 1109)
+
+[node name="Tree58" type="Node2D" parent="Island1" unique_id=764405246 instance=ExtResource("5_bcf8v")]
+position = Vector2(1103, 1421)
+
+[node name="Tree59" type="Node2D" parent="Island1" unique_id=1931308803 instance=ExtResource("6_61p64")]
+position = Vector2(1559, 1186)
+
+[node name="Stump3" type="Node2D" parent="Island1" unique_id=1409185881 instance=ExtResource("9_85yyl")]
+position = Vector2(1024, 1494)
+
+[node name="Tree60" type="Node2D" parent="Island1" unique_id=578821054 instance=ExtResource("6_61p64")]
+position = Vector2(1489, 1123)
+scale = Vector2(-1, 1)
+
+[node name="Rock7" type="Node2D" parent="Island1" unique_id=1007020461 instance=ExtResource("11_fqf4h")]
+position = Vector2(1209, 1406)
+
+[node name="Tree61" type="Node2D" parent="Island1" unique_id=990107270 instance=ExtResource("6_61p64")]
+position = Vector2(1360, 1448)
+scale = Vector2(-1, 1)
+
+[node name="Tree62" type="Node2D" parent="Island1" unique_id=1041176839 instance=ExtResource("5_bcf8v")]
+position = Vector2(1023, 1258)
+
+[node name="Tree63" type="Node2D" parent="Island1" unique_id=304404715 instance=ExtResource("5_bcf8v")]
+position = Vector2(1561, 1235)
+
+[node name="Tree64" type="Node2D" parent="Island1" unique_id=853994711 instance=ExtResource("4_dbja3")]
+position = Vector2(870, 1328)
+
+[node name="Tree65" type="Node2D" parent="Island1" unique_id=165992728 instance=ExtResource("4_dbja3")]
+position = Vector2(785, 1415)
+scale = Vector2(-1, 1)
+
+[node name="Rock8" type="Node2D" parent="Island1" unique_id=1447110798 instance=ExtResource("7_eghia")]
+position = Vector2(1683, 1150)
+
+[node name="Tree66" type="Node2D" parent="Island1" unique_id=204152871 instance=ExtResource("6_61p64")]
+position = Vector2(852, 1361)
+scale = Vector2(-1, 1)
+
+[node name="Tree67" type="Node2D" parent="Island1" unique_id=1129036115 instance=ExtResource("5_bcf8v")]
+position = Vector2(1312, 1172)
+
+[node name="Tree68" type="Node2D" parent="Island1" unique_id=689072178 instance=ExtResource("5_bcf8v")]
+position = Vector2(1339, 1273)
+
+[node name="Tree69" type="Node2D" parent="Island1" unique_id=283424946 instance=ExtResource("6_61p64")]
+position = Vector2(1356, 1356)
+scale = Vector2(-1, 1)
+
+[node name="Tree70" type="Node2D" parent="Island1" unique_id=1287718301 instance=ExtResource("6_61p64")]
+position = Vector2(1592, 1243)
+scale = Vector2(-1, 1)
+
+[node name="Stump7" type="Node2D" parent="Island1" unique_id=1706011769 instance=ExtResource("9_85yyl")]
+position = Vector2(663, 1332)
+
+[node name="Tree71" type="Node2D" parent="Island1" unique_id=1003968181 instance=ExtResource("6_61p64")]
+position = Vector2(1718, 1279)
+
+[node name="Tree72" type="Node2D" parent="Island1" unique_id=1046210834 instance=ExtResource("6_61p64")]
+position = Vector2(686, 1291)
+
+[node name="Tree73" type="Node2D" parent="Island1" unique_id=1873570185 instance=ExtResource("5_bcf8v")]
+position = Vector2(747, 1258)
+scale = Vector2(-1, 1)
+
+[node name="Tree74" type="Node2D" parent="Island1" unique_id=1629301899 instance=ExtResource("6_61p64")]
+position = Vector2(1525, 1097)
+scale = Vector2(-1, 1)
+
+[node name="Tree75" type="Node2D" parent="Island1" unique_id=363236515 instance=ExtResource("6_61p64")]
+position = Vector2(1425, 1192)
+scale = Vector2(-1, 1)
+
+[node name="Tree76" type="Node2D" parent="Island1" unique_id=1216207211 instance=ExtResource("6_61p64")]
+position = Vector2(1067, 1241)
+scale = Vector2(-1, 1)
+
+[node name="Tree77" type="Node2D" parent="Island1" unique_id=1678569119 instance=ExtResource("6_61p64")]
+position = Vector2(561, 1350)
+scale = Vector2(-1, 1)
+
+[node name="Tree78" type="Node2D" parent="Island1" unique_id=1527892 instance=ExtResource("6_61p64")]
+position = Vector2(1539, 1213)
+
+[node name="Tree79" type="Node2D" parent="Island1" unique_id=2000686940 instance=ExtResource("6_61p64")]
+position = Vector2(1674, 1221)
+
+[node name="Tree80" type="Node2D" parent="Island1" unique_id=1727599586 instance=ExtResource("6_61p64")]
+position = Vector2(1395, 1189)
+
+[node name="Tree81" type="Node2D" parent="Island1" unique_id=200452854 instance=ExtResource("6_61p64")]
+position = Vector2(1823, 1182)
+scale = Vector2(-1, 1)
+
+[node name="Tree82" type="Node2D" parent="Island1" unique_id=1704959637 instance=ExtResource("6_61p64")]
+position = Vector2(853, 1313)
+
+[node name="Tree83" type="Node2D" parent="Island1" unique_id=385116804 instance=ExtResource("6_61p64")]
+position = Vector2(1081, 1444)
+
+[node name="Tree84" type="Node2D" parent="Island1" unique_id=2068186573 instance=ExtResource("12_7eu1a")]
+position = Vector2(627, 1427)
+scale = Vector2(-1, 1)
+
+[node name="Tree85" type="Node2D" parent="Island1" unique_id=1324027968 instance=ExtResource("6_61p64")]
+position = Vector2(992, 1254)
+
+[node name="Tree86" type="Node2D" parent="Island1" unique_id=1872389258 instance=ExtResource("5_bcf8v")]
+position = Vector2(1316, 1214)
+
+[node name="Tree87" type="Node2D" parent="Island1" unique_id=318546582 instance=ExtResource("12_7eu1a")]
+position = Vector2(1068, 1500)
+
+[node name="Tree88" type="Node2D" parent="Island1" unique_id=324436885 instance=ExtResource("6_61p64")]
+position = Vector2(1582, 1209)
+
+[node name="Tree89" type="Node2D" parent="Island1" unique_id=13072170 instance=ExtResource("5_bcf8v")]
+position = Vector2(1681, 1359)
+scale = Vector2(-1, 1)
+
+[node name="Tree90" type="Node2D" parent="Island1" unique_id=1906186978 instance=ExtResource("4_dbja3")]
+position = Vector2(898, 1357)
+
+[node name="Rock9" type="Node2D" parent="Island1" unique_id=813585305 instance=ExtResource("7_eghia")]
+position = Vector2(834, 1274)
+
+[node name="Tree91" type="Node2D" parent="Island1" unique_id=141692036 instance=ExtResource("6_61p64")]
+position = Vector2(654, 1277)
+
+[node name="Tree92" type="Node2D" parent="Island1" unique_id=934924231 instance=ExtResource("6_61p64")]
+position = Vector2(933, 1345)
+
+[node name="Tree93" type="Node2D" parent="Island1" unique_id=1516161135 instance=ExtResource("5_bcf8v")]
+position = Vector2(1251, 1225)
+
+[node name="Tree94" type="Node2D" parent="Island1" unique_id=632565855 instance=ExtResource("12_7eu1a")]
+position = Vector2(1605, 1276)
+
+[node name="Tree95" type="Node2D" parent="Island1" unique_id=1172537807 instance=ExtResource("12_7eu1a")]
+position = Vector2(1315, 1130)
+
+[node name="Tree96" type="Node2D" parent="Island1" unique_id=1947358517 instance=ExtResource("6_61p64")]
+position = Vector2(1388, 1480)
+
+[node name="Rock10" type="Node2D" parent="Island1" unique_id=518381846 instance=ExtResource("8_gl5uj")]
+position = Vector2(608, 1339)
+
+[node name="Tree97" type="Node2D" parent="Island1" unique_id=1799927935 instance=ExtResource("5_bcf8v")]
+position = Vector2(712, 1283)
+
+[node name="Tree98" type="Node2D" parent="Island1" unique_id=1646384365 instance=ExtResource("5_bcf8v")]
+position = Vector2(1297, 1224)
+
+[node name="Tree99" type="Node2D" parent="Island1" unique_id=1061262099 instance=ExtResource("6_61p64")]
+position = Vector2(1061, 1454)
+
+[node name="Tree100" type="Node2D" parent="Island1" unique_id=1886282377 instance=ExtResource("5_bcf8v")]
+position = Vector2(761, 1383)
+scale = Vector2(-1, 1)
+
+[node name="Tree101" type="Node2D" parent="Island1" unique_id=1073148711 instance=ExtResource("5_bcf8v")]
+position = Vector2(1558, 1113)
+
+[node name="Tree102" type="Node2D" parent="Island1" unique_id=1679927617 instance=ExtResource("6_61p64")]
+position = Vector2(1571, 1083)
+scale = Vector2(-1, 1)
+
+[node name="Rock11" type="Node2D" parent="Island1" unique_id=154211450 instance=ExtResource("8_gl5uj")]
+position = Vector2(1451, 1453)
+
+[node name="Tree103" type="Node2D" parent="Island1" unique_id=439329826 instance=ExtResource("5_bcf8v")]
+position = Vector2(1639, 1330)
+scale = Vector2(-1, 1)
+
+[node name="Tree104" type="Node2D" parent="Island1" unique_id=2066885677 instance=ExtResource("6_61p64")]
+position = Vector2(1654, 1263)
+
+[node name="Tree105" type="Node2D" parent="Island1" unique_id=2123958130 instance=ExtResource("6_61p64")]
+position = Vector2(1495, 1232)
+
+[node name="Tree106" type="Node2D" parent="Island1" unique_id=1576187039 instance=ExtResource("6_61p64")]
+position = Vector2(663, 1086)
+
+[node name="Tree107" type="Node2D" parent="Island1" unique_id=1036514097 instance=ExtResource("5_bcf8v")]
+position = Vector2(1368, 1232)
+
+[node name="Tree108" type="Node2D" parent="Island1" unique_id=706292956 instance=ExtResource("6_61p64")]
+position = Vector2(1436, 1152)
+
+[node name="Tree109" type="Node2D" parent="Island1" unique_id=703943342 instance=ExtResource("6_61p64")]
+position = Vector2(1329, 1380)
+scale = Vector2(-1, 1)
+
+[node name="Tree110" type="Node2D" parent="Island1" unique_id=156032519 instance=ExtResource("6_61p64")]
+position = Vector2(1518, 1130)
+
+[node name="Tree111" type="Node2D" parent="Island1" unique_id=1366824148 instance=ExtResource("5_bcf8v")]
+position = Vector2(1329, 1193)
+
+[node name="Tree112" type="Node2D" parent="Island1" unique_id=2013173592 instance=ExtResource("6_61p64")]
+position = Vector2(1085, 1471)
+
+[node name="Tree113" type="Node2D" parent="Island1" unique_id=217077273 instance=ExtResource("6_61p64")]
+position = Vector2(1367, 1384)
+scale = Vector2(-1, 1)
+
+[node name="Tree114" type="Node2D" parent="Island1" unique_id=565755212 instance=ExtResource("5_bcf8v")]
+position = Vector2(973, 1220)
+scale = Vector2(-1, 1)
+
+[node name="Tree115" type="Node2D" parent="Island1" unique_id=1953673281 instance=ExtResource("4_dbja3")]
+position = Vector2(907, 1383)
+scale = Vector2(-1, 1)
+
+[node name="Rock12" type="Node2D" parent="Island1" unique_id=377865611 instance=ExtResource("8_gl5uj")]
+position = Vector2(1666, 1188)
+
+[node name="Tree116" type="Node2D" parent="Island1" unique_id=1282292956 instance=ExtResource("12_7eu1a")]
+position = Vector2(1381, 1053)
+
+[node name="Tree117" type="Node2D" parent="Island1" unique_id=429345967 instance=ExtResource("6_61p64")]
+position = Vector2(1708, 1382)
+
+[node name="Tree118" type="Node2D" parent="Island1" unique_id=1490835791 instance=ExtResource("5_bcf8v")]
+position = Vector2(1038, 1223)
+
+[node name="Stump8" type="Node2D" parent="Island1" unique_id=1184404705 instance=ExtResource("14_2lrp3")]
+position = Vector2(1170, 1224)
+
+[node name="Tree119" type="Node2D" parent="Island1" unique_id=1097400206 instance=ExtResource("6_61p64")]
+position = Vector2(953, 1325)
+
+[node name="Tree120" type="Node2D" parent="Island1" unique_id=1283722529 instance=ExtResource("6_61p64")]
+position = Vector2(939, 1256)
+
+[node name="Tree121" type="Node2D" parent="Island1" unique_id=630520928 instance=ExtResource("6_61p64")]
+position = Vector2(1169, 1337)
+
+[node name="Tree122" type="Node2D" parent="Island1" unique_id=990831128 instance=ExtResource("6_61p64")]
+position = Vector2(606, 1406)
+scale = Vector2(-1, 1)
+
+[node name="Tree123" type="Node2D" parent="Island1" unique_id=1670598584 instance=ExtResource("6_61p64")]
+position = Vector2(1354, 1501)
+
+[node name="Tree124" type="Node2D" parent="Island1" unique_id=597108764 instance=ExtResource("6_61p64")]
+position = Vector2(1116, 1241)
+scale = Vector2(-1, 1)
+
+[node name="Rock13" type="Node2D" parent="Island1" unique_id=287142482 instance=ExtResource("8_gl5uj")]
+position = Vector2(956, 1438)
+
+[node name="Rock14" type="Node2D" parent="Island1" unique_id=980743174 instance=ExtResource("8_gl5uj")]
+position = Vector2(1403, 1360)
+
+[node name="Tree125" type="Node2D" parent="Island1" unique_id=1756029488 instance=ExtResource("5_bcf8v")]
+position = Vector2(1155, 1309)
+
+[node name="Tree126" type="Node2D" parent="Island1" unique_id=1720183436 instance=ExtResource("5_bcf8v")]
+position = Vector2(578, 1381)
+
+[node name="Tree127" type="Node2D" parent="Island1" unique_id=458701946 instance=ExtResource("6_61p64")]
+position = Vector2(1605, 1222)
+
+[node name="Tree128" type="Node2D" parent="Island1" unique_id=783467058 instance=ExtResource("5_bcf8v")]
+position = Vector2(1659, 1303)
+scale = Vector2(-1, 1)
+
+[node name="Tree129" type="Node2D" parent="Island1" unique_id=93007977 instance=ExtResource("5_bcf8v")]
+position = Vector2(1677, 1399)
+
+[node name="Tree130" type="Node2D" parent="Island1" unique_id=1162362516 instance=ExtResource("5_bcf8v")]
+position = Vector2(1352, 1203)
+
+[node name="Stump9" type="Node2D" parent="Island1" unique_id=423635749 instance=ExtResource("13_vctws")]
+position = Vector2(1191, 1301)
+
+[node name="Tree131" type="Node2D" parent="Island1" unique_id=1908446118 instance=ExtResource("6_61p64")]
+position = Vector2(1145, 1433)
+
+[node name="Tree132" type="Node2D" parent="Island1" unique_id=1061003089 instance=ExtResource("4_dbja3")]
+position = Vector2(1653, 1233)
+
+[node name="Tree133" type="Node2D" parent="Island1" unique_id=1262703620 instance=ExtResource("12_7eu1a")]
+position = Vector2(540, 1282)
+scale = Vector2(-1, 1)
+
+[node name="Tree134" type="Node2D" parent="Island1" unique_id=2120852092 instance=ExtResource("5_bcf8v")]
+position = Vector2(786, 1392)
+
+[node name="Tree135" type="Node2D" parent="Island1" unique_id=1222483128 instance=ExtResource("5_bcf8v")]
+position = Vector2(1384, 1107)
+
+[node name="Tree136" type="Node2D" parent="Island1" unique_id=1839884191 instance=ExtResource("5_bcf8v")]
+position = Vector2(687, 1109)
+
+[node name="Tree137" type="Node2D" parent="Island1" unique_id=1539410167 instance=ExtResource("12_7eu1a")]
+position = Vector2(1408, 1170)
+scale = Vector2(-1, 1)
+
+[node name="Tree138" type="Node2D" parent="Island1" unique_id=2142598221 instance=ExtResource("5_bcf8v")]
+position = Vector2(722, 1307)
+
+[node name="Tree139" type="Node2D" parent="Island1" unique_id=1071316615 instance=ExtResource("5_bcf8v")]
+position = Vector2(1124, 1368)
+scale = Vector2(-1, 1)
+
+[node name="Rock15" type="Node2D" parent="Island1" unique_id=743986424 instance=ExtResource("15_ehbye")]
+position = Vector2(928, 1473)
+
+[node name="Tree140" type="Node2D" parent="Island1" unique_id=1931440578 instance=ExtResource("6_61p64")]
+position = Vector2(1301, 1491)
+
+[node name="Rock16" type="Node2D" parent="Island1" unique_id=529757779 instance=ExtResource("11_fqf4h")]
+position = Vector2(1425, 1422)
+
+[node name="Tree141" type="Node2D" parent="Island1" unique_id=1115078415 instance=ExtResource("6_61p64")]
+position = Vector2(1088, 1219)
+scale = Vector2(-1, 1)
+
+[node name="Stump10" type="Node2D" parent="Island1" unique_id=1811573663 instance=ExtResource("10_eh5n5")]
+position = Vector2(1686, 1113)
+
+[node name="Tree142" type="Node2D" parent="Island1" unique_id=1097797940 instance=ExtResource("5_bcf8v")]
+position = Vector2(1353, 1168)
+
+[node name="Tree143" type="Node2D" parent="Island1" unique_id=1506370495 instance=ExtResource("6_61p64")]
+position = Vector2(1385, 1211)
+
+[node name="Stump11" type="Node2D" parent="Island1" unique_id=1598259270 instance=ExtResource("14_2lrp3")]
+position = Vector2(1464, 1263)
+
+[node name="Tree144" type="Node2D" parent="Island1" unique_id=990615233 instance=ExtResource("12_7eu1a")]
+position = Vector2(1596, 1361)
+
+[node name="Tree145" type="Node2D" parent="Island1" unique_id=1758618465 instance=ExtResource("6_61p64")]
+position = Vector2(1639, 1286)
+
+[node name="Tree146" type="Node2D" parent="Island1" unique_id=642049023 instance=ExtResource("6_61p64")]
+position = Vector2(644, 1257)
+scale = Vector2(-1, 1)
+
+[node name="Tree147" type="Node2D" parent="Island1" unique_id=1069109787 instance=ExtResource("6_61p64")]
+position = Vector2(980, 1282)
+
+[node name="Rock17" type="Node2D" parent="Island1" unique_id=1506730137 instance=ExtResource("8_gl5uj")]
+position = Vector2(1435, 1106)
+
+[node name="Tree148" type="Node2D" parent="Island1" unique_id=1659437474 instance=ExtResource("5_bcf8v")]
+position = Vector2(724, 1343)
+
+[node name="Tree149" type="Node2D" parent="Island1" unique_id=686784099 instance=ExtResource("6_61p64")]
+position = Vector2(1396, 1445)
+
+[node name="Tree150" type="Node2D" parent="Island1" unique_id=78161899 instance=ExtResource("5_bcf8v")]
+position = Vector2(665, 1299)
+scale = Vector2(-1, 1)
+
+[node name="Rock18" type="Node2D" parent="Island1" unique_id=6820036 instance=ExtResource("8_gl5uj")]
+position = Vector2(1566, 1394)
+
+[node name="Tree151" type="Node2D" parent="Island1" unique_id=1744179485 instance=ExtResource("4_dbja3")]
+position = Vector2(1516, 1075)
+scale = Vector2(-1, 1)
+
+[node name="Tree152" type="Node2D" parent="Island1" unique_id=523153042 instance=ExtResource("4_dbja3")]
+position = Vector2(1696, 1228)
+scale = Vector2(-1, 1)
+
+[node name="Stump12" type="Node2D" parent="Island1" unique_id=621446182 instance=ExtResource("13_vctws")]
+position = Vector2(1453, 1212)
+
+[node name="Rock19" type="Node2D" parent="Island1" unique_id=1371568595 instance=ExtResource("8_gl5uj")]
+position = Vector2(577, 1299)
+
+[node name="Stump13" type="Node2D" parent="Island1" unique_id=1423702775 instance=ExtResource("14_2lrp3")]
+position = Vector2(1150, 1361)
+
+[node name="Tree153" type="Node2D" parent="Island1" unique_id=63845968 instance=ExtResource("6_61p64")]
+position = Vector2(1703, 1329)
+
+[node name="Rock20" type="Node2D" parent="Island1" unique_id=1138662748 instance=ExtResource("8_gl5uj")]
+position = Vector2(1621, 1176)
+
+[node name="Tree154" type="Node2D" parent="Island1" unique_id=1611529011 instance=ExtResource("6_61p64")]
+position = Vector2(1687, 1250)
+
+[node name="Stump14" type="Node2D" parent="Island1" unique_id=2124487785 instance=ExtResource("14_2lrp3")]
+position = Vector2(1580, 1285)
+
+[node name="Stump15" type="Node2D" parent="Island1" unique_id=771377146 instance=ExtResource("13_vctws")]
+position = Vector2(1360, 1297)
+
+[node name="Tree155" type="Node2D" parent="Island1" unique_id=57455497 instance=ExtResource("6_61p64")]
+position = Vector2(1484, 1083)
+
+[node name="Tree156" type="Node2D" parent="Island1" unique_id=788388436 instance=ExtResource("5_bcf8v")]
+position = Vector2(1292, 1163)
+
+[node name="Tree157" type="Node2D" parent="Island1" unique_id=1634207567 instance=ExtResource("5_bcf8v")]
+position = Vector2(1269, 1247)
+scale = Vector2(-1, 1)
+
+[node name="Tree158" type="Node2D" parent="Island1" unique_id=99306948 instance=ExtResource("12_7eu1a")]
+position = Vector2(1344, 1466)
+
+[node name="Tree159" type="Node2D" parent="Island1" unique_id=1464360174 instance=ExtResource("12_7eu1a")]
+position = Vector2(734, 1280)
+
+[node name="Tree160" type="Node2D" parent="Island1" unique_id=132781175 instance=ExtResource("4_dbja3")]
+position = Vector2(1498, 1102)
+
+[node name="Tree161" type="Node2D" parent="Island1" unique_id=389343790 instance=ExtResource("6_61p64")]
+position = Vector2(851, 1403)
+scale = Vector2(-1, 1)
+
+[node name="Tree162" type="Node2D" parent="Island1" unique_id=343225382 instance=ExtResource("6_61p64")]
+position = Vector2(970, 1261)
+
+[node name="Rock21" type="Node2D" parent="Island1" unique_id=1457849308 instance=ExtResource("15_ehbye")]
+position = Vector2(1472, 1357)
+
+[node name="Stump16" type="Node2D" parent="Island1" unique_id=322513423 instance=ExtResource("14_2lrp3")]
+position = Vector2(1422, 1060)
+
+[node name="Tree163" type="Node2D" parent="Island1" unique_id=803221308 instance=ExtResource("6_61p64")]
+position = Vector2(678, 1258)
+scale = Vector2(-1, 1)
+
+[node name="Tree164" type="Node2D" parent="Island1" unique_id=83854339 instance=ExtResource("5_bcf8v")]
+position = Vector2(1576, 1328)
+
+[node name="Stump17" type="Node2D" parent="Island1" unique_id=1511145278 instance=ExtResource("13_vctws")]
+position = Vector2(1723, 1216)
+
+[node name="Island3" type="Node2D" parent="." unique_id=202432189]
+y_sort_enabled = true
+
+[node name="Rock4" type="Node2D" parent="Island3" unique_id=1236709275 instance=ExtResource("15_ehbye")]
+position = Vector2(2411, 829)
+
+[node name="Stump2" type="Node2D" parent="Island3" unique_id=330098541 instance=ExtResource("13_vctws")]
+position = Vector2(2221, 741)
+
+[node name="Tree3" type="Node2D" parent="Island3" unique_id=1060869642 instance=ExtResource("5_bcf8v")]
+position = Vector2(2434, 497)
+
+[node name="Tree4" type="Node2D" parent="Island3" unique_id=504952486 instance=ExtResource("5_bcf8v")]
+position = Vector2(2334, 771)
+
+[node name="Tree5" type="Node2D" parent="Island3" unique_id=1126412130 instance=ExtResource("5_bcf8v")]
+position = Vector2(2224, 456)
+
+[node name="Tree6" type="Node2D" parent="Island3" unique_id=1656921576 instance=ExtResource("12_7eu1a")]
+position = Vector2(2290, 470)
+
+[node name="Tree7" type="Node2D" parent="Island3" unique_id=1616079090 instance=ExtResource("5_bcf8v")]
+position = Vector2(2513, 796)
+scale = Vector2(-1, 1)
+
+[node name="Rock2" type="Node2D" parent="Island3" unique_id=2085972230 instance=ExtResource("11_fqf4h")]
+position = Vector2(1933, 706)
+
+[node name="Tree8" type="Node2D" parent="Island3" unique_id=744115323 instance=ExtResource("5_bcf8v")]
+position = Vector2(2222, 433)
+
+[node name="Stump4" type="Node2D" parent="Island3" unique_id=1008153341 instance=ExtResource("10_eh5n5")]
+position = Vector2(2383, 510)
+
+[node name="Rock3" type="Node2D" parent="Island3" unique_id=16325697 instance=ExtResource("11_fqf4h")]
+position = Vector2(2513, 725)
+
+[node name="Rock5" type="Node2D" parent="Island3" unique_id=2085599427 instance=ExtResource("7_eghia")]
+position = Vector2(1840, 704)
+
+[node name="Stump3" type="Node2D" parent="Island3" unique_id=262991161 instance=ExtResource("14_2lrp3")]
+position = Vector2(2346, 372)
+
+[node name="Tree9" type="Node2D" parent="Island3" unique_id=381048454 instance=ExtResource("12_7eu1a")]
+position = Vector2(2391, 414)
+
+[node name="Tree10" type="Node2D" parent="Island3" unique_id=1580592867 instance=ExtResource("5_bcf8v")]
+position = Vector2(2529, 812)
+
+[node name="Rock1" type="Node2D" parent="Island3" unique_id=502531975 instance=ExtResource("8_gl5uj")]
+position = Vector2(2672, 754)
+
+[node name="Stump1" type="Node2D" parent="Island3" unique_id=1101043101 instance=ExtResource("9_85yyl")]
+position = Vector2(1852, 736)
+
+[node name="Stump5" type="Node2D" parent="Island3" unique_id=1500597642 instance=ExtResource("10_eh5n5")]
+position = Vector2(2586, 808)
+
+[node name="Stump6" type="Node2D" parent="Island3" unique_id=1791935504 instance=ExtResource("13_vctws")]
+position = Vector2(2414, 481)
+
+[node name="Tree11" type="Node2D" parent="Island3" unique_id=1805534692 instance=ExtResource("5_bcf8v")]
+position = Vector2(2263, 478)
+
+[node name="Tree12" type="Node2D" parent="Island3" unique_id=1223889376 instance=ExtResource("12_7eu1a")]
+position = Vector2(2403, 390)
+scale = Vector2(-1, 1)
+
+[node name="Stump7" type="Node2D" parent="Island3" unique_id=263826892 instance=ExtResource("13_vctws")]
+position = Vector2(2439, 473)
+
+[node name="Rock6" type="Node2D" parent="Island3" unique_id=83031739 instance=ExtResource("15_ehbye")]
+position = Vector2(2512, 453)
+
+[node name="Tree13" type="Node2D" parent="Island3" unique_id=263364716 instance=ExtResource("5_bcf8v")]
+position = Vector2(2331, 795)
+
+[node name="Stump8" type="Node2D" parent="Island3" unique_id=1485907857 instance=ExtResource("10_eh5n5")]
+position = Vector2(1897, 713)
+
+[node name="Tree14" type="Node2D" parent="Island3" unique_id=102385773 instance=ExtResource("5_bcf8v")]
+position = Vector2(2200, 475)
+
+[node name="Stump9" type="Node2D" parent="Island3" unique_id=1833731659 instance=ExtResource("13_vctws")]
+position = Vector2(2254, 440)
+
+[node name="Rock7" type="Node2D" parent="Island3" unique_id=931535917 instance=ExtResource("11_fqf4h")]
+position = Vector2(2582, 750)
+
+[node name="Tree2" type="Node2D" parent="Island3" unique_id=808113156 instance=ExtResource("6_61p64")]
+position = Vector2(2490, 827)
+
+[node name="Tree15" type="Node2D" parent="Island3" unique_id=531491351 instance=ExtResource("12_7eu1a")]
+position = Vector2(2371, 386)
+
+[node name="Tree16" type="Node2D" parent="Island3" unique_id=2068294992 instance=ExtResource("6_61p64")]
+position = Vector2(2102, 734)
+
+[node name="Tree17" type="Node2D" parent="Island3" unique_id=382656133 instance=ExtResource("5_bcf8v")]
+position = Vector2(2394, 722)
+scale = Vector2(-1, 1)
+
+[node name="Tree18" type="Node2D" parent="Island3" unique_id=1575930277 instance=ExtResource("6_61p64")]
+position = Vector2(2197, 749)
+
+[node name="Tree19" type="Node2D" parent="Island3" unique_id=1177051640 instance=ExtResource("12_7eu1a")]
+position = Vector2(2710, 725)
+scale = Vector2(-1, 1)
+
+[node name="Tree20" type="Node2D" parent="Island3" unique_id=1022006329 instance=ExtResource("6_61p64")]
+position = Vector2(2712, 674)
+scale = Vector2(-1, 1)
+
+[node name="Rock8" type="Node2D" parent="Island3" unique_id=608144492 instance=ExtResource("11_fqf4h")]
+position = Vector2(2430, 249)
+
+[node name="Stump10" type="Node2D" parent="Island3" unique_id=1016517882 instance=ExtResource("10_eh5n5")]
+position = Vector2(2304, 775)
+
+[node name="Tree21" type="Node2D" parent="Island3" unique_id=549082818 instance=ExtResource("5_bcf8v")]
+position = Vector2(2487, 794)
+
+[node name="Tree22" type="Node2D" parent="Island3" unique_id=843098573 instance=ExtResource("6_61p64")]
+position = Vector2(2472, 496)
+
+[node name="Tree23" type="Node2D" parent="Island3" unique_id=1308440980 instance=ExtResource("6_61p64")]
+position = Vector2(2672, 687)
+scale = Vector2(-1, 1)
+
+[node name="Tree24" type="Node2D" parent="Island3" unique_id=191808351 instance=ExtResource("6_61p64")]
+position = Vector2(2700, 694)
+
+[node name="Rock9" type="Node2D" parent="Island3" unique_id=2147055016 instance=ExtResource("7_eghia")]
+position = Vector2(2391, 775)
+
+[node name="Tree25" type="Node2D" parent="Island3" unique_id=602508374 instance=ExtResource("6_61p64")]
+position = Vector2(2353, 796)
+
+[node name="Tree26" type="Node2D" parent="Island3" unique_id=1583678280 instance=ExtResource("5_bcf8v")]
+position = Vector2(2459, 515)
+
+[node name="Tree27" type="Node2D" parent="Island3" unique_id=1905915452 instance=ExtResource("5_bcf8v")]
+position = Vector2(2560, 791)
+scale = Vector2(-1, 1)
+
+[node name="Rock10" type="Node2D" parent="Island3" unique_id=1516347156 instance=ExtResource("11_fqf4h")]
+position = Vector2(2373, 471)
+
+[node name="Tree28" type="Node2D" parent="Island3" unique_id=2003265245 instance=ExtResource("6_61p64")]
+position = Vector2(2515, 829)
+scale = Vector2(-1, 1)
+
+[node name="Stump11" type="Node2D" parent="Island3" unique_id=421978860 instance=ExtResource("13_vctws")]
+position = Vector2(2406, 537)
+
+[node name="Tree29" type="Node2D" parent="Island3" unique_id=1148998411 instance=ExtResource("5_bcf8v")]
+position = Vector2(2559, 817)
+
+[node name="Tree30" type="Node2D" parent="Island3" unique_id=386321324 instance=ExtResource("5_bcf8v")]
+position = Vector2(2214, 410)
+
+[node name="Stump12" type="Node2D" parent="Island3" unique_id=1821045673 instance=ExtResource("9_85yyl")]
+position = Vector2(2343, 748)
+
+[node name="Stump13" type="Node2D" parent="Island3" unique_id=714577440 instance=ExtResource("13_vctws")]
+position = Vector2(2642, 691)
+
+[node name="Rock11" type="Node2D" parent="Island3" unique_id=669300101 instance=ExtResource("8_gl5uj")]
+position = Vector2(2513, 763)
+
+[node name="Island0" type="Node2D" parent="." unique_id=768379969]
+y_sort_enabled = true
+
+[node name="Tree3" type="Node2D" parent="Island0" unique_id=7973705 instance=ExtResource("5_bcf8v")]
+position = Vector2(2799, 1258)
+
+[node name="Tree4" type="Node2D" parent="Island0" unique_id=1911601081 instance=ExtResource("5_bcf8v")]
+position = Vector2(2860, 1215)
+scale = Vector2(-1, 1)
+
+[node name="Tree5" type="Node2D" parent="Island0" unique_id=1613969621 instance=ExtResource("5_bcf8v")]
+position = Vector2(2869, 1237)
+
+[node name="Tree6" type="Node2D" parent="Island0" unique_id=1069795991 instance=ExtResource("5_bcf8v")]
+position = Vector2(2793, 1302)
+
+[node name="Tree7" type="Node2D" parent="Island0" unique_id=1906328184 instance=ExtResource("12_7eu1a")]
+position = Vector2(2847, 1242)
+
+[node name="Tree8" type="Node2D" parent="Island0" unique_id=181807698 instance=ExtResource("5_bcf8v")]
+position = Vector2(2767, 1301)
+scale = Vector2(-1, 1)
+
+[node name="Tree9" type="Node2D" parent="Island0" unique_id=856165544 instance=ExtResource("12_7eu1a")]
+position = Vector2(2761, 1354)
+
+[node name="Tree10" type="Node2D" parent="Island0" unique_id=1990312926 instance=ExtResource("5_bcf8v")]
+position = Vector2(2895, 1317)
+
+[node name="Tree2" type="Node2D" parent="Island0" unique_id=1967038440 instance=ExtResource("6_61p64")]
+position = Vector2(2770, 1262)
+
+[node name="Tree11" type="Node2D" parent="Island0" unique_id=1735366823 instance=ExtResource("5_bcf8v")]
+position = Vector2(2776, 1327)
+scale = Vector2(-1, 1)
+
+[node name="Tree12" type="Node2D" parent="Island0" unique_id=685088694 instance=ExtResource("5_bcf8v")]
+position = Vector2(2824, 1312)
+
+[node name="Tree13" type="Node2D" parent="Island0" unique_id=556399032 instance=ExtResource("5_bcf8v")]
+position = Vector2(2823, 1259)
+
+[node name="Tree14" type="Node2D" parent="Island0" unique_id=1707478772 instance=ExtResource("5_bcf8v")]
+position = Vector2(2861, 1303)
+
+[node name="Tree15" type="Node2D" parent="Island0" unique_id=1475986027 instance=ExtResource("5_bcf8v")]
+position = Vector2(2831, 1290)
+
+[node name="Tree16" type="Node2D" parent="Island0" unique_id=683253636 instance=ExtResource("5_bcf8v")]
+position = Vector2(2845, 1272)
+scale = Vector2(-1, 1)
+
+[node name="Rock3" type="Node2D" parent="Island0" unique_id=1540920938 instance=ExtResource("7_eghia")]
+position = Vector2(2842, 1377)
+
+[node name="Island2" type="Node2D" parent="." unique_id=760876874]
+y_sort_enabled = true
+
+[node name="Stump4" type="Node2D" parent="Island2" unique_id=1200039384 instance=ExtResource("10_eh5n5")]
+position = Vector2(662, 484)
+
+[node name="Rock4" type="Node2D" parent="Island2" unique_id=1383535093 instance=ExtResource("15_ehbye")]
+position = Vector2(653, 446)
+
+[node name="Tree2" type="Node2D" parent="Island2" unique_id=951394108 instance=ExtResource("6_61p64")]
+position = Vector2(625, 498)
+
+[node name="Rock3" type="Node2D" parent="Island2" unique_id=916559803 instance=ExtResource("7_eghia")]
+position = Vector2(518, 547)
+
+[node name="Tree3" type="Node2D" parent="Island2" unique_id=1961485291 instance=ExtResource("6_61p64")]
+position = Vector2(424, 471)
+scale = Vector2(-1, 1)
+
+[node name="Tree4" type="Node2D" parent="Island2" unique_id=796066628 instance=ExtResource("12_7eu1a")]
+position = Vector2(602, 510)
+
+[node name="Tree5" type="Node2D" parent="Island2" unique_id=593442778 instance=ExtResource("6_61p64")]
+position = Vector2(590, 533)
+
+[node name="Rock1" type="Node2D" parent="Island2" unique_id=1906134149 instance=ExtResource("8_gl5uj")]
+position = Vector2(573, 491)
+
+[node name="Tree6" type="Node2D" parent="Island2" unique_id=2008271083 instance=ExtResource("5_bcf8v")]
+position = Vector2(284, 444)
+
+[node name="Tree7" type="Node2D" parent="Island2" unique_id=1042156525 instance=ExtResource("6_61p64")]
+position = Vector2(558, 538)
+
+[node name="Stump1" type="Node2D" parent="Island2" unique_id=1449855297 instance=ExtResource("9_85yyl")]
+position = Vector2(461, 531)
+
+[node name="Rock5" type="Node2D" parent="Island2" unique_id=1189198911 instance=ExtResource("7_eghia")]
+position = Vector2(659, 561)
+
+[node name="Tree8" type="Node2D" parent="Island2" unique_id=955738811 instance=ExtResource("5_bcf8v")]
+position = Vector2(249, 409)
+scale = Vector2(-1, 1)
+
+[node name="Rock6" type="Node2D" parent="Island2" unique_id=1708714691 instance=ExtResource("7_eghia")]
+position = Vector2(669, 519)
+
+[node name="Stump5" type="Node2D" parent="Island2" unique_id=1557251181 instance=ExtResource("10_eh5n5")]
+position = Vector2(608, 453)

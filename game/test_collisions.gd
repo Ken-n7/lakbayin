@@ -59,11 +59,34 @@ func _initialize() -> void:
 	# Props are solid at the base -- a trunk, a rock's body -- and the road is
 	# not: the hero used to walk straight through the forest.
 	var feet: Array[Rect2] = screen.decor.feet
-	assert(feet.size() > 50, "props have no solid bases (%d)" % feet.size())
+	# Placed by hand now, so any number is fine -- but a prop scene with a
+	# collision box must come out solid. Count what should have.
+	var boxed := 0
+	var placed: Node = (load(MapCfg.MAP_PROPS) as PackedScene).instantiate()
+	for p in placed.find_children("*", "StaticBody2D", true, false):
+		boxed += p.find_children("*", "CollisionShape2D", true, false).size()
+	placed.free()
+	assert(feet.size() >= boxed, "only %d walls from %d collision shapes" % [feet.size(), boxed])
+	# A circle becomes bands that stay inside it and span it at the middle.
+	var disc := CircleShape2D.new()
+	disc.radius = 10.0
+	var bands: Array[Rect2] = Decor._walls_of(disc, Transform2D(0.0, Vector2(100, 100)))
+	assert(bands.size() == 5, "a circle made %d bands" % bands.size())
+	for b: Rect2 in bands:
+		assert(Rect2(90, 90, 20, 20).encloses(b), "a band leaves the circle's square: %s" % b)
+	assert(is_equal_approx(bands[2].size.x, 20.0), "the middle band is not the full width")
+	var on_road := 0
 	for r: Rect2 in feet:
 		assert(not screen.grid.is_walkable(r.get_center()), "a prop's base is walkable")
-		assert(not screen.grid.trail.has(_cell(screen, r.get_center())),
-			"a prop stands on the road")
+		# Boxes are placed and sized by hand now (scenes/map/MapProps.tscn), and
+		# one reaching over the road's edge is not a failure: the reach checks
+		# below -- the cell flood and the hero's own box -- are what say whether
+		# the way is still open. Named, so a box that shuts it is easy to find.
+		if screen.grid.trail.has(_cell(screen, r.get_center())):
+			on_road += 1
+			print("  note: a prop's box is over the road at %s" % r)
+	if on_road > 0:
+		print("  %d prop box(es) over the road -- fine while every stop stays reachable" % on_road)
 
 	# Strictly sequential: nothing is answerable until the tower is briefed, then
 	# only the one circle the player is actually on.
@@ -141,6 +164,11 @@ func _initialize() -> void:
 				"station %d's wall outlived its guard" % (st + 1))
 		_assert_line(screen, g)
 		_assert_islands(screen, G, st)
+
+	# With every gate open, the hero's actual Foot box (scenes/Hero.tscn) gets
+	# everywhere it has to: the cell flood above is a point per 32px, and a box
+	# can stick in a gap a point slips through.
+	_assert_box_reach(screen, G)
 
 	# ...and each one waits on its own station's briefing and nothing else:
 	# clearing the station before his does not move him.
@@ -297,6 +325,64 @@ func _assert_line(screen: Control, g: Dictionary) -> void:
 
 
 ## Cells walkable from the base camp, by flood fill over cell centres.
+## Floods the board in 8px steps as the hero's Foot box, from the base camp,
+## and asserts every station doorstep, circle and the gate is within
+## INTERACT_RADIUS of somewhere it got to.
+func _assert_box_reach(screen: Control, G: Node) -> void:
+	var box: Rect2 = screen.hero_box
+	assert(box.size != Vector2.ZERO, "the hero has no Foot box")
+	var grid: MapGrid = screen.grid
+	# Walls by 64px bucket, or 80k steps x 350 walls is a long test.
+	var buckets := {}
+	for w: Rect2 in grid.solid:
+		for bx in range(floori(w.position.x / 64.0), floori(w.end.x / 64.0) + 1):
+			for by in range(floori(w.position.y / 64.0), floori(w.end.y / 64.0) + 1):
+				var k := Vector2i(bx, by)
+				if not buckets.has(k):
+					buckets[k] = []
+				buckets[k].append(w)
+	var fits := func(p: Vector2) -> bool:
+		var r := Rect2(box.position + p, box.size)
+		for bx in range(floori(r.position.x / 64.0), floori(r.end.x / 64.0) + 1):
+			for by in range(floori(r.position.y / 64.0), floori(r.end.y / 64.0) + 1):
+				for w: Rect2 in buckets.get(Vector2i(bx, by), []):
+					if w.intersects(r):
+						return false
+		for c in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+			if grid.grass.get_cell_source_id(MapGrid.cell_at(c)) == -1:
+				return false
+		return true
+	var start: Vector2 = grid.anchors[0]
+	assert(fits.call(start), "the hero's box does not fit where they start")
+	var seen := {Vector2i.ZERO: true}
+	var queue: Array[Vector2i] = [Vector2i.ZERO]
+	var reached: Array[Vector2] = []
+	while not queue.is_empty():
+		var c: Vector2i = queue.pop_back()
+		reached.append(start + Vector2(c) * 8.0)
+		for d in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
+			var n: Vector2i = c + d
+			if seen.has(n):
+				continue
+			seen[n] = true
+			if fits.call(start + Vector2(n) * 8.0):
+				queue.append(n)
+	var stops: Array = []
+	for st in 3:
+		stops.append(["station %d" % (st + 1), (screen.stations.nodes[st] as Node2D).position])
+	for n in G.TOTAL_ITEMS:
+		stops.append(["circle %d" % (n + 1), (screen._circles[n] as Node2D).position])
+	stops.append(["the Victory Gate", screen.stations.gate.position])
+	for stop: Array in stops:
+		var near := false
+		for p: Vector2 in reached:
+			if p.distance_to(stop[1]) <= MapCfg.INTERACT_RADIUS:
+				near = true
+				break
+		assert(near, "%s is out of the hero's reach with a %s Foot box" % [stop[0], box.size])
+	print("hero box %s reaches all %d stops (%d spots)" % [box.size, stops.size(), reached.size()])
+
+
 func _reachable(screen: Control) -> Dictionary:
 	var start: Vector2 = screen.grid.anchors[0]
 	var seen := {}

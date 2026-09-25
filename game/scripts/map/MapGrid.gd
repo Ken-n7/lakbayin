@@ -106,6 +106,20 @@ func is_walkable(pos: Vector2) -> bool:
 	return grass != null and grass.get_cell_source_id(cell_at(pos)) != -1
 
 
+## Can the hero stand at `pos`? `box` is their Foot box, relative to their
+## feet (scenes/Hero.tscn): clear of every wall, and all four corners on grass.
+## A point check let the hero's feet squeeze between two rocks 6px apart.
+func box_walkable(pos: Vector2, box: Rect2) -> bool:
+	var r := Rect2(box.position + pos, box.size)
+	for w in solid:
+		if w.intersects(r):
+			return false
+	for corner in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+		if grass == null or grass.get_cell_source_id(cell_at(corner)) == -1:
+			return false
+	return true
+
+
 ## Nearest land walking inward from a normalized spot, for props that must not
 ## end up in the sea.
 func first_land(nx: float, ny: float, toward: Vector2) -> Vector2:
@@ -116,27 +130,6 @@ func first_land(nx: float, ny: float, toward: Vector2) -> Vector2:
 		nx = lerpf(nx, toward.x, MapCfg.LAND_SEARCH_STEP)
 		ny = lerpf(ny, toward.y, MapCfg.LAND_SEARCH_STEP)
 	return norm(MapCfg.ISLANDS[0].c)
-
-
-## Ground a prop may stand on: this island's, inland of the shore, off the road,
-## off the stations and not already occupied. Everything that makes the board
-## read as a place rather than as noise is this one predicate.
-func plantable(c: Vector2i, isl: int) -> bool:
-	if taken.has(c) or trail.has(c):
-		return false
-	if not land.has(c) or beach.has(c):
-		return false
-	if int(island_of.get(c, -1)) != isl:
-		return false
-	return not near_station(c)
-
-
-func near_station(c: Vector2i) -> bool:
-	var p := cell_mid(c)
-	for r: Rect2 in station_rects:
-		if r.has_point(p):
-			return true
-	return false
 
 
 static func clear_of(r: Rect2, boxes: Array) -> bool:

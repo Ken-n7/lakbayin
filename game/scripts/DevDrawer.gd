@@ -45,6 +45,7 @@ var _panel: PanelContainer
 var _handle: Button
 var _buttons := {}          # method name -> Button, for the toggles' labels
 var _walls: Node2D = null   # the `_solid` overlay, while it is up
+var _hero_box: Node2D = null   # and the hero's Foot box with it
 var _open := false
 
 
@@ -196,6 +197,8 @@ func _show_walls() -> void:
 	if _walls != null and is_instance_valid(_walls):
 		_walls.queue_free()
 		_walls = null
+		if is_instance_valid(_hero_box):
+			_hero_box.queue_free()
 		_mark("_show_walls", false)
 		return
 	var n := Node2D.new()
@@ -206,6 +209,13 @@ func _show_walls() -> void:
 			n.draw_rect(r, Color(1.0, 0.4, 0.4, 0.85), false, 1.0))
 	_adv.world.add_child(n)
 	_walls = n
+	# The hero's own Foot box, riding along with them (scenes/Hero.tscn).
+	_hero_box = Node2D.new()
+	_hero_box.z_index = 6
+	_hero_box.draw.connect(func() -> void:
+		_hero_box.draw_rect(_adv.hero_box, Color(0.3, 0.9, 1.0, 0.35))
+		_hero_box.draw_rect(_adv.hero_box, Color(0.3, 0.9, 1.0, 0.95), false, 1.0))
+	_adv.player.add_child(_hero_box)
 	_mark("_show_walls", true)
 
 
