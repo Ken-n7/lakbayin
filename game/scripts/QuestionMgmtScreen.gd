@@ -50,6 +50,7 @@ func setup(_data: Dictionary) -> void:
 	box.add_child(_msg)
 
 	var scroll := ScrollContainer.new()
+	DragScroll.attach(scroll)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(scroll)

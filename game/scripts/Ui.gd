@@ -444,6 +444,7 @@ static func scroll(parent: Node, h: float) -> ScrollContainer:
 	sc.custom_minimum_size = Vector2(0, h)
 	sc.add_theme_constant_override("scrollbar_margin", 0)
 	parent.add_child(sc)
+	DragScroll.attach(sc)
 	return sc
 
 

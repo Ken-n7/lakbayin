@@ -242,6 +242,7 @@ func _build_teams_board() -> Control:
 
 	# Four teams of six outgrow the board, so it scrolls rather than spills.
 	var scroll := ScrollContainer.new()
+	DragScroll.attach(scroll)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	col.add_child(scroll)
