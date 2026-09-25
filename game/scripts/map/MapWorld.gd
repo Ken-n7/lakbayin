@@ -1,0 +1,91 @@
+class_name MapWorld
+extends Node2D
+
+## The whole board, built: ground, islands, stations, circles, the gate,
+## barricades, decor and clouds. One build for two screens -- the player's
+## `AdventureScreen` walks it, the teacher's `MapWatch` flies over it -- so the
+## board the teacher watches is the board the class is on.
+##
+## Progress (which circles are done, which barricades are open) is the
+## player's screen's business; this only lays the board out as it stands
+## before anyone has played it.
+
+var grid := MapGrid.new()
+var builder: MapBuilder
+var stations: Stations
+var barricades: Barricades
+var decor: Decor
+var circles: Array = []         # Game.TOTAL_ITEMS PathCircle nodes, path order
+
+
+func build() -> void:
+	y_sort_enabled = true
+	builder = MapBuilder.new(self, grid)
+	stations = Stations.new(self, grid)
+	barricades = Barricades.new(self, grid)
+	decor = Decor.new(self, grid)
+	grid.anchors = builder.path_anchors()
+	builder.build_terrain()
+	grid.grass = builder.grass
+	set_meta("grass", builder.grass)
+	set_meta("tile", MapCfg.TILE)
+	builder.build_island()
+	_build_path()
+	decor.build()
+	# Clouds drifting along the open sea at the top of the board -- over the
+	# water, never over play (see MapCfg.MAP_CLOUD_Y).
+	var clouds := Clouds.new(MapCfg.WORLD_W * MapCfg.TILE, MapCfg.MAP_CLOUD_Y, 0.0,
+		MapCfg.MAP_CLOUDS, MapCfg.MAP_CLOUD_ALPHA)
+	clouds.z_index = 50
+	add_child(clouds)
+
+
+func _build_path() -> void:
+	var PathCircle := preload("res://scripts/PathCircle.gd")
+	var k := 1                       # anchor 0 is the base camp
+	for st in Game.ITEMS_PER_STATION.size():
+		var meta := QuestionGen.station_meta(st)
+		stations.build_keep(st, grid.anchors[k], meta.accent, builder.tower_lift(k))
+		k += 1
+		# Every circle is a tower in its station's livery -- native colors, no
+		# tint -- so size the decor keep-out box off it too.
+		var building: String = MapCfg.CIRCLE_BUILDINGS[st]
+		var ctex := Art.cell(building, 0, 0)
+		var chw := ctex.region.size.x * 0.5 * PathCircle.TOWER_SCALE
+		var cbh := ctex.region.size.y * PathCircle.TOWER_SCALE
+		for _i in Game.ITEMS_PER_STATION[st]:
+			var c: Node2D = PathCircle.new()
+			c.position = grid.anchors[k]
+			add_child(c)
+			var lift := builder.circle_lift(k)
+			c.setup(circles.size(), building, lift, self)
+			# The middle of the drawn building, for anything aiming at what the
+			# player can see rather than at the anchor it steps off of. Same
+			# `set_meta` channel `Stations.build_keep()` uses for its wall.
+			c.set_meta("tower_mid", grid.anchors[k] + lift - Vector2(0, cbh * 0.5))
+			circles.append(c)
+			# The wall PathCircle computed is local to the anchor; place it in
+			# world space and keep decor off the lifted tower's real footprint.
+			var w: Rect2 = c.wall
+			w.position += grid.anchors[k]
+			grid.block(w)
+			grid.keep_out(Rect2(
+					grid.anchors[k] + lift - Vector2(chw + MapCfg.TILE * 0.5, cbh),
+					Vector2(chw * 2.0 + MapCfg.TILE, cbh + MapCfg.TILE * 0.5)))
+			k += 1
+	stations.build_camp(grid.anchors[0])
+	stations.build_gate(grid.anchors[k])
+	barricades.build(builder.tower_anchors())
+
+
+## Where everybody's markers stand when their position is unknown: one anchor
+## per circle, then the gate. What `Peers.refresh()` takes.
+func peer_anchors() -> Array:
+	var out: Array = []
+	for c in circles:
+		out.append((c as Node2D).position)
+	return out
+
+
+func gate_at() -> Vector2:
+	return stations.gate.position if stations.gate != null else peer_anchors()[-1]

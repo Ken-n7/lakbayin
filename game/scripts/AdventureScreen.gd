@@ -40,7 +40,7 @@ var player: Node2D
 var hud: AdventureHud
 
 ## Every cell and every box on the board. See `map/MapGrid.gd`.
-var grid := MapGrid.new()
+var grid: MapGrid
 ## The four that build it, in the order `setup()` runs them. Each owns one
 ## concern and writes into `grid`; this screen owns the walk and the play.
 var builder: MapBuilder
@@ -393,11 +393,8 @@ func _refresh_peers() -> void:
 func _draw_peers() -> void:
 	if _peers == null or not is_instance_valid(_peers) or _circles.is_empty():
 		return
-	var anchors: Array = []
-	for c in _circles:
-		anchors.append((c as Node2D).position)
-	var gate_at: Vector2 = stations.gate.position if stations.gate != null else anchors[-1]
-	_peers.refresh(_peer_rows.values(), anchors, gate_at, Net.user_id)
+	var board := world as MapWorld
+	_peers.refresh(_peer_rows.values(), board.peer_anchors(), board.gate_at(), Net.user_id)
 	_show_waiting()      # the roster is the other half of "N of M ready"
 
 
@@ -487,27 +484,17 @@ func setup(data: Dictionary) -> void:
 	_sync_session()
 	if not Game.adventure_active:
 		Game.begin_adventure()
-	world = Node2D.new()
+	# The board itself is `MapWorld`, shared with the teacher's map view.
+	var board := MapWorld.new()
+	world = board
 	add_child(world)
-	world.y_sort_enabled = true
-	builder = MapBuilder.new(world, grid)
-	stations = Stations.new(world, grid)
-	barricades = Barricades.new(world, grid)
-	decor = Decor.new(world, grid)
-	grid.anchors = builder.path_anchors()
-	builder.build_terrain()
-	grid.grass = builder.grass
-	world.set_meta("grass", builder.grass)
-	world.set_meta("tile", MapCfg.TILE)
-	builder.build_island()
-	_build_path()
-	decor.build()
-	# Clouds drifting along the open sea at the top of the board -- over the
-	# water, never over play (see MapCfg.MAP_CLOUD_Y).
-	var clouds := Clouds.new(MapCfg.WORLD_W * MapCfg.TILE, MapCfg.MAP_CLOUD_Y, 0.0,
-		MapCfg.MAP_CLOUDS, MapCfg.MAP_CLOUD_ALPHA)
-	clouds.z_index = 50
-	world.add_child(clouds)
+	board.build()
+	grid = board.grid
+	builder = board.builder
+	stations = board.stations
+	barricades = board.barricades
+	decor = board.decor
+	_circles = board.circles
 	_spawn_player()
 	Game.time_changed.connect(hud.on_time)
 	Game.gems_changed.connect(hud.on_gems)
@@ -535,44 +522,6 @@ func _exit_tree() -> void:
 	Game.time_changed.disconnect(hud.on_time)
 	Game.gems_changed.disconnect(hud.on_gems)
 	Game.adventure_ended.disconnect(_on_adventure_end)
-
-
-func _build_path() -> void:
-	var PathCircle := preload("res://scripts/PathCircle.gd")
-	var k := 1                       # anchor 0 is the base camp
-	for st in Game.ITEMS_PER_STATION.size():
-		var meta := QuestionGen.station_meta(st)
-		stations.build_keep(st, grid.anchors[k], meta.accent, builder.tower_lift(k))
-		k += 1
-		# Every circle is a tower in its station's livery -- native colors, no
-		# tint -- so size the decor keep-out box off it too.
-		var building: String = MapCfg.CIRCLE_BUILDINGS[st]
-		var ctex := Art.cell(building, 0, 0)
-		var chw := ctex.region.size.x * 0.5 * PathCircle.TOWER_SCALE
-		var cbh := ctex.region.size.y * PathCircle.TOWER_SCALE
-		for _i in Game.ITEMS_PER_STATION[st]:
-			var c: Node2D = PathCircle.new()
-			c.position = grid.anchors[k]
-			world.add_child(c)
-			var lift := builder.circle_lift(k)
-			c.setup(_circles.size(), building, lift, world)
-			# The middle of the drawn building, for anything aiming at what the
-			# player can see rather than at the anchor it steps off of. Same
-			# `set_meta` channel `Stations.build_keep()` uses for its wall.
-			c.set_meta("tower_mid", grid.anchors[k] + lift - Vector2(0, cbh * 0.5))
-			_circles.append(c)
-			# The wall PathCircle computed is local to the anchor; place it in
-			# world space and keep decor off the lifted tower's real footprint.
-			var w: Rect2 = c.wall
-			w.position += grid.anchors[k]
-			grid.block(w)
-			grid.keep_out(Rect2(
-					grid.anchors[k] + lift - Vector2(chw + MapCfg.TILE * 0.5, cbh),
-					Vector2(chw * 2.0 + MapCfg.TILE, cbh + MapCfg.TILE * 0.5)))
-			k += 1
-	stations.build_camp(grid.anchors[0])
-	stations.build_gate(grid.anchors[k])
-	barricades.build(builder.tower_anchors())
 
 
 # --- Stations ---------------------------------------------------------------

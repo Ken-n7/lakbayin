@@ -56,6 +56,22 @@ var _lobby := Lobby.new()
 var _watching := ""
 
 
+## The map view (`MapWatch`) and the slim bar that stands in for the panel
+## while it is up -- built the first time the teacher opens the map, then
+## kept, so going back and forth costs nothing.
+var _map: MapWatch = null
+var _panel_root: Control
+var _bar: Control
+var _bar_status: Label
+var _bar_code: Label
+var _bar_start: Button         # the lobby's one red button
+var _bar_hold: Button          # Pause / Resume, once it runs
+var _bar_dot: Panel            # the state as a colour, beside its word
+var _bar_end: Button
+var _bar_note: Label           # why Start waits
+var _bar_msg: Label            # the last thing said, for a few seconds
+
+
 ## Set by `setup({"new": true})` for the first build only; a tab switch
 ## rebuilds with `{}` and must not make another session.
 var _fresh := false
@@ -70,6 +86,7 @@ func setup(data: Dictionary) -> void:
 	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 
 	var box := Ui.screen_panel(self, PANEL, "Game Controls")
+	_panel_root = get_child(get_child_count() - 1)
 
 	# Title bar: ← on the title's own line (on the screen's corner it sat in
 	# the dark margin, under the dev tab), the roll call on the right.
@@ -84,6 +101,10 @@ func setup(data: Dictionary) -> void:
 	box.move_child(title_row, 0)
 	title.reparent(title_row)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var view := Ui.button("View Map", 100, Ui.H, Ui.SMALL)
+	view.tooltip_text = "Watch the class on the map"
+	view.pressed.connect(_show_map.bind(true))
+	title_row.add_child(view)
 	_players = _players_menu()
 	title_row.add_child(_players)
 
@@ -458,6 +479,8 @@ func _load() -> void:
 
 func _adopt(row: Dictionary) -> void:
 	_session = row
+	if _map != null:
+		_map.watch(str(row.get("id", "")))
 	if not row.is_empty():
 		duration_seconds = int(row.get("duration_s", 600))
 		_show_time()
@@ -641,6 +664,9 @@ func _set_state(want: String, is_start: bool, without_away := false) -> void:
 		_say("Game %s." % want if not is_start
 			else "Game running. Teams are locked now.", Pal.CORRECT)
 	_refresh_state()
+	# Teams are locked from here on: the map is the thing to watch.
+	if is_start and done.error == "":
+		_show_map(true)
 
 
 func _patch(fields: Dictionary) -> Dictionary:
@@ -696,6 +722,7 @@ func _refresh_state() -> void:
 	# Nothing to end until it has started: before Start, leaving is how a
 	# session goes.
 	_end_btn.disabled = state != "running" and state != "paused"
+	_sync_bar()
 
 
 func _start_reason(state: String, r: Dictionary, total: int) -> String:
@@ -729,6 +756,7 @@ func _tick_clock() -> void:
 	else:
 		left = maxi(Teams._stamp(_session.get("ends_at")) - int(Time.get_unix_time_from_system()), 0)
 	_clock.text = Ui.mmss(left) + (" paused" if str(_session.get("state", "")) == "paused" else " left")
+	_sync_bar()
 
 
 var _since_tick := 0.0
@@ -989,11 +1017,20 @@ func _shuffle() -> void:
 func _say(text: String, col: Color) -> void:
 	_msg.text = text
 	_msg.add_theme_color_override("font_color", col)
+	# On the map the panel is away: say it in the bar, then let it go.
+	if _bar != null and _bar.visible:
+		_bar_msg.text = text
+		_bar_msg.modulate.a = 1.0
+		_bar_msg.create_tween().tween_property(_bar_msg, "modulate:a", 0.0, 1.0).set_delay(4.0)
 
 
 ## Leaving ends the session, so it asks -- the code stops working and anyone
 ## still in it is sent out. A session already over just leaves.
 func go_back() -> void:
+	# From the map, back is back to the controls -- not "end the session?".
+	if _map != null and _map.visible:
+		_show_map(false)
+		return
 	if _session.is_empty() or Teams.expired(_session):
 		main.open("admin")
 		return
@@ -1030,3 +1067,113 @@ func _end_and_leave() -> void:
 		_say(done.error, Pal.WRONG)
 		return
 	main.open("admin")
+
+
+# --- Map view ---------------------------------------------------------------
+## The map in place of the panel, with what the teacher needs mid-game kept
+## in a bar across the top: the code, where things stand, Start / Pause /
+## Resume, End, and the way back to everything else.
+func _show_map(on: bool) -> void:
+	if on and _map == null:
+		_map = MapWatch.new()
+		add_child(_map)
+		move_child(_map, 0)             # under the bar and every dialog
+		_build_bar()
+	if _map == null:
+		return
+	if on:
+		_map.watch(str(_session.get("id", "")))
+	_map.set_shown(on)
+	_bar.visible = on
+	_panel_root.visible = not on
+	if main != null:
+		main.backdrop.set_shown(not on)
+	_sync_bar()
+
+
+func _build_bar() -> void:
+	var top := VBoxContainer.new()
+	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top.offset_left = 8.0
+	top.offset_right = -8.0
+	top.offset_top = 6.0
+	top.add_theme_constant_override("separation", 2)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(top)
+	_bar = top
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(row)
+	# Back where back is on every screen: the top left.
+	var back := Ui.button("← Controls", 100, Ui.H, Ui.SMALL)
+	back.tooltip_text = "Teams, duration and the full controls"
+	back.pressed.connect(_show_map.bind(false))
+	row.add_child(back)
+	_bar_code = Art.label("", Pal.BODY, Pal.GOLD)
+	row.add_child(Ui.plank(_bar_code, 10.0))
+	var state := HBoxContainer.new()
+	state.add_theme_constant_override("separation", 6)
+	_bar_dot = Panel.new()
+	_bar_dot.custom_minimum_size = Vector2(10, 10)
+	_bar_dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	state.add_child(_bar_dot)
+	_bar_status = Art.label("", Pal.SMALL, Pal.CREAM)
+	state.add_child(_bar_status)
+	row.add_child(Ui.plank(state, 10.0))
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gap)
+	_bar_start = Ui.button("Start Game", 100, Ui.H, Ui.SMALL_RED)
+	_bar_start.pressed.connect(func() -> void: _set_state("running", true))
+	row.add_child(_bar_start)
+	_bar_hold = Ui.button("⏸ Pause", 92, Ui.H, Ui.SMALL)
+	_bar_hold.pressed.connect(_toggle_hold)
+	row.add_child(_bar_hold)
+	# The one that cannot be undone, set apart from the one that can.
+	var apart := Control.new()
+	apart.custom_minimum_size = Vector2(6, 0)
+	apart.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(apart)
+	_bar_end = Ui.button("End", 56, Ui.H, Ui.SMALL_RED)
+	_bar_end.pressed.connect(_confirm_end)
+	row.add_child(_bar_end)
+
+	_bar_note = Art.label("", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_RIGHT)
+	Art.shadow(_bar_note)
+	_bar_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(_bar_note)
+	_bar_msg = Art.label("", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_RIGHT)
+	Art.shadow(_bar_msg)
+	_bar_msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(_bar_msg)
+
+
+## The bar says what the panel says -- read off the panel's own labels and
+## buttons, so the two can never disagree about the state.
+func _sync_bar() -> void:
+	if _bar == null or not _bar.visible:
+		return
+	var state := str(_session.get("state", ""))
+	_bar_code.text = "Code " + _code_label.text
+	var lobby := state == "lobby"
+	# Short, so the bar fits a 640-wide phone: the head count is on Controls.
+	_bar_status.text = state.capitalize() + "  ·  " + _clock.text.get_slice(" ", 0) \
+		if _clock.visible else _status.text
+	_bar_start.visible = lobby
+	_bar_start.disabled = _start_btn.disabled
+	_bar_hold.visible = not lobby
+	_bar_hold.text = _hold_btn.text
+	_bar_hold.disabled = _hold_btn.disabled
+	_bar_end.visible = not lobby
+	var dot := StyleBoxFlat.new()
+	dot.set_corner_radius_all(5)
+	dot.border_color = Color(0, 0, 0, 0.6)
+	dot.set_border_width_all(1)
+	dot.bg_color = Pal.CORRECT_BRIGHT if state == "running" \
+		else Pal.GOLD if state == "paused" or lobby else Pal.INK_MUTED
+	_bar_dot.add_theme_stylebox_override("panel", dot)
+	_bar_end.disabled = _end_btn.disabled
+	_bar_note.text = _why.text

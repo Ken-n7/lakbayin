@@ -541,6 +541,36 @@ func _run() -> void:
 	_click(learn, "Back")
 	await _wait(3)
 	check("learn back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+
+	print("== 12. the teacher's map view ==")
+	_main_scene.call("open", "controls")
+	await _wait(3)
+	var gc := _screen()
+	_click(gc, "View Map")
+	await _wait(3)
+	var watch: Control = gc.get("_map")
+	check("View Map opens the map", watch != null and watch.visible)
+	check("the panel steps aside", not (gc.get("_panel_root") as Control).visible)
+	check("the bar keeps the controls", _find_button(gc, "Controls") != null)
+	var board: Node2D = watch.get("world")
+	check("the map starts on the whole board",
+		is_equal_approx(board.scale.x, watch.call("_min_zoom")), str(board.scale.x))
+	# Zooming keeps the point under the finger where it was.
+	var at := Vector2(300, 200)
+	var under: Vector2 = (at - board.position) / board.scale.x
+	watch.call("_set_zoom", 0.9, at)
+	check("zoom holds the point under the finger",
+		((at - board.position) / board.scale.x).distance_to(under) < 0.5)
+	check("zoom stops at the closest", (watch.call("_set_zoom", 99.0, at) == null)
+		and is_equal_approx(board.scale.x, MapWatch.MAX_ZOOM))
+	watch.call("_pan", Vector2(100000, 100000))
+	check("the board cannot be dragged off screen", board.position == Vector2.ZERO)
+	gc.call("go_back")
+	await _wait(2)
+	check("back from the map is back to the controls",
+		not watch.visible and (gc.get("_panel_root") as Control).visible)
+	_main_scene.call("open", "home")
+	await _wait(3)
 	# The last line of _run(): anything that aborts the coroutine early leaves
 	# this unset and `finish()` fails the suite.
 	completed = true
