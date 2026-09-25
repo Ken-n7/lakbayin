@@ -28,6 +28,9 @@ func _build() -> void:
 	var outer := Ui.screen_panel(self, Vector2(600, 330), "Choose Your Adventurer")
 	outer.add_theme_constant_override("separation", 6)
 
+	# The heading over the preview, and under it the preview and the grid
+	# side by side, level at the top (client).
+	outer.add_child(Art.label("Choose your hero", Pal.H2, Pal.TITLE))
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 14)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -47,7 +50,6 @@ func _build() -> void:
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 4)
 	body.add_child(right)
-	right.add_child(Art.label("Choose your hero", Pal.H2, Pal.TITLE))
 	var grid_scroll := ScrollContainer.new()
 	DragScroll.attach(grid_scroll)
 	grid_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
