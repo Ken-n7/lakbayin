@@ -315,8 +315,9 @@ const CAMP_FIRE_OFFSET := Vector2(0, -26)
 const CAMP_FIRE_SCALE := 0.7
 const CAMP_FIRE_FPS := 9.0
 const CAMP_KEEPOUT := Rect2(-48, -60, 96, 80)
-const GATE_RIBBON := "res://assets/ui/BigRibbons.png"
-const GATE_RIBBON_SCALE := 0.42
+const GATE_RIBBON_ROW := 1        # BigRibbons: red, the castle's livery
+const GATE_RIBBON_H := 30.0
+const GATE_RIBBON_GAP := 4.0      # px of air between roof and banner
 
 ## One fixed seed for the whole decor pass: the board is the same every run.
 ## There is nothing to win from a different mess each time, and a lot to lose.

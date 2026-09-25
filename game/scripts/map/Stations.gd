@@ -70,18 +70,13 @@ func build_gate(at: Vector2) -> void:
 	# actually stands rather than by the gate's own transform.
 	var b := _building(MapCfg.GATE_BUILDING, at)
 	var bh: float = b.bh
-	var rib := Art.cell("res://assets/ui/BigRibbons.png", 0, 1)
-	var spr := Sprite2D.new()
-	spr.texture = rib
-	spr.scale = Vector2(0.42, 0.42)
-	spr.offset = Vector2(0, -rib.region.size.y * 0.5)
-	spr.position = Vector2(0, -bh - 10.0)
-	gate.add_child(spr)
-	var l := Art.label("VICTORY GATE", 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-	l.position = Vector2(-80, -bh - 6.0)
-	l.size = Vector2(160, 20)
-	Art.shadow(l)
-	gate.add_child(l)
+	# The whole three-piece banner (the HUD's `Ui.ribbon`), clear above the
+	# roof. It used to be one `Art.cell` -- only the ribbon's left end, which
+	# read as a stray red flag -- with small text laid over the roof tiles.
+	var rib := Ui.ribbon(MapCfg.GATE_RIBBON_ROW, "Victory Gate", MapCfg.GATE_RIBBON_H, Pal.H2)
+	rib.reset_size()
+	rib.position = Vector2(-rib.size.x * 0.5, -bh - MapCfg.GATE_RIBBON_H - MapCfg.GATE_RIBBON_GAP)
+	gate.add_child(rib)
 	grid.keep_out(MapGrid.building_keepout(at, b.hw, bh))
 
 
