@@ -39,6 +39,7 @@ var _teams_grid: GridContainer
 var _body: VBoxContainer
 var _add_btn: Button
 var _shuffle_btn: Button
+var _players: MenuButton       # everyone in the session, left of the tabs
 var _loose: HBoxContainer      # players who have not picked a team
 var _tab := 0
 var _session := {}
@@ -67,14 +68,27 @@ func setup(data: Dictionary) -> void:
 
 	var box := Ui.screen_panel(self, PANEL, "Game Controls")
 
-	# The back arrow rides the tab row, inside the panel: on the screen's
-	# corner it sat in the dark margin, half under the dev tab.
-	var head := HBoxContainer.new()
+	# The back arrow on the title's own line, inside the panel: on the
+	# screen's corner it sat in the dark margin, half under the dev tab.
+	var title_row := HBoxContainer.new()
 	var back := Ui.glyph("←", 24, Pal.TITLE)
 	back.custom_minimum_size = Vector2(40, 0)
 	back.tooltip_text = "Leave (ends the session)"
 	back.pressed.connect(go_back)
-	head.add_child(back)
+	title_row.add_child(back)
+	var title: Control = box.get_child(0)      # the panel's own title label
+	box.add_child(title_row)
+	box.move_child(title_row, 0)
+	title.reparent(title_row)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var title_balance := Control.new()   # keeps the title centred
+	title_balance.custom_minimum_size = Vector2(40, 0)
+	title_row.add_child(title_balance)
+
+	# Everyone in the session, whatever tab: the teacher's roll call.
+	var head := HBoxContainer.new()
+	_players = _players_menu()
+	head.add_child(_players)
 	var tabs := HBoxContainer.new()
 	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -88,7 +102,7 @@ func setup(data: Dictionary) -> void:
 		tabs.add_child(t)
 	head.add_child(tabs)
 	var balance := Control.new()          # keeps the tabs centred
-	balance.custom_minimum_size = Vector2(40, 0)
+	balance.custom_minimum_size = _players.custom_minimum_size
 	head.add_child(balance)
 	box.add_child(head)
 
@@ -477,6 +491,49 @@ func _on_presence() -> void:
 		_refresh_state()
 
 
+## A parchment dropdown -- the engine's grey read as an OS widget dropped onto
+## the artwork, the complaint `Ui.option()` was written for.
+func _players_menu() -> MenuButton:
+	var m := MenuButton.new()
+	m.flat = false
+	m.custom_minimum_size = Vector2(120, 24)
+	m.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	m.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		m.add_theme_color_override(c, Pal.INK)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		m.add_theme_stylebox_override(state, Ui._paper_box(state != "normal"))
+	var pop := m.get_popup()
+	pop.add_theme_stylebox_override("panel", Ui._paper_box(false))
+	pop.add_theme_color_override("font_color", Pal.INK)
+	pop.add_theme_color_override("font_hover_color", Pal.TITLE)
+	pop.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	var lit := Ui._paper_box(false)
+	lit.bg_color = Pal.PARCHMENT.darkened(0.12)
+	lit.set_border_width_all(0)
+	pop.add_theme_stylebox_override("hover", lit)
+	m.text = "Players (0) ▾"
+	return m
+
+
+## Everyone in the session: ✓ ready (on the map), ● in the lobby, ○ not
+## connected -- and which team, or none yet.
+func _fill_players() -> void:
+	if not is_instance_valid(_players):
+		return
+	var menu := _players.get_popup()
+	menu.clear()
+	var ids: Array = _lobby.players.keys()
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		return str(_lobby.players[a].username) < str(_lobby.players[b].username))
+	for pid: String in ids:
+		var p: Dictionary = _lobby.players[pid]
+		var mark := "✓" if _is_ready(pid) else "●" if _is_here(pid) else "○"
+		var team := _lobby.name_of(str(p.team_id))
+		menu.add_item("%s %s  —  %s" % [mark, p.username, team if team != "" else "no team"])
+	_players.text = "Players (%d) ▾" % ids.size()
+
+
 func _on_hint(event: String, data: Dictionary) -> void:
 	if not is_instance_valid(self):
 		return
@@ -597,6 +654,7 @@ func _refresh_state() -> void:
 			_code_label.text = "Code:  %s   ·   %s" % [str(_session.get("code", "")), state.capitalize()]
 	if is_instance_valid(_shuffle_btn):
 		_shuffle_btn.disabled = state != "lobby"
+	_fill_players()
 	if not is_instance_valid(_start_btn):
 		return
 	_start_btn.disabled = state != "lobby"

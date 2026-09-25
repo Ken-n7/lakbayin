@@ -30,7 +30,6 @@ var _lobby := Lobby.new()
 var _mine := ""              # the team this player is on, "" for none yet
 var _cards: HBoxContainer
 var _status: Label
-var _players: MenuButton     # everyone in the session, top-left of the lobby
 
 
 func setup(_data: Dictionary) -> void:
@@ -152,37 +151,8 @@ func _enter(quiet := false) -> void:
 func _build_lobby() -> void:
 	_background()
 	var box := Ui.screen_panel(self, LOBBY, "Pick Your Team")
-	# Everyone in the session on the left, the code in the middle.
-	var head := HBoxContainer.new()
-	# The parchment dropdown face `Ui.option()` wears -- the engine's grey read
-	# as an OS widget dropped onto the artwork.
-	_players = MenuButton.new()
-	_players.flat = false
-	_players.custom_minimum_size = Vector2(130, 26)
-	_players.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_players.add_theme_font_size_override("font_size", Art.MIN_FONT)
-	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
-		_players.add_theme_color_override(c, Pal.INK)
-	for state in ["normal", "hover", "pressed", "focus"]:
-		_players.add_theme_stylebox_override(state, Ui._paper_box(state != "normal"))
-	var pop := _players.get_popup()
-	pop.add_theme_stylebox_override("panel", Ui._paper_box(false))
-	pop.add_theme_color_override("font_color", Pal.INK)
-	pop.add_theme_color_override("font_hover_color", Pal.TITLE)
-	pop.add_theme_font_size_override("font_size", Art.MIN_FONT)
-	var lit := Ui._paper_box(false)
-	lit.bg_color = Pal.PARCHMENT.darkened(0.12)
-	lit.set_border_width_all(0)
-	pop.add_theme_stylebox_override("hover", lit)
-	head.add_child(_players)
-	var code := Art.label("Adventure code  %s" % Game.joined_code, Pal.LABEL,
-			Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	code.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(code)
-	var balance := Control.new()          # keeps the code centred
-	balance.custom_minimum_size = Vector2(130, 0)
-	head.add_child(balance)
-	box.add_child(head)
+	box.add_child(Art.label("Adventure code  %s" % Game.joined_code, Pal.LABEL,
+			Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	var centre := CenterContainer.new()
 	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(centre)
@@ -206,9 +176,6 @@ func _build_lobby() -> void:
 	leave.pressed.connect(_leave)
 	row.add_child(leave)
 	box.add_child(row)
-	var rt: Realtime = Net.realtime()
-	if not rt.presence_changed.is_connected(_draw_lobby):
-		rt.presence_changed.connect(_draw_lobby)
 	_draw_lobby()
 
 
@@ -238,7 +205,6 @@ func _draw_lobby() -> void:
 	if _lobby.teams.is_empty():
 		_cards.add_child(Art.label("Your teacher has not made any teams yet.",
 				Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	_fill_players()
 
 	var team_name := _lobby.name_of(_mine)
 	if _mine == "":
@@ -295,25 +261,6 @@ func _team_box(t: Dictionary, locked: bool) -> Control:
 		box.pressed.connect(func() -> void: _pick(id))
 	return box
 
-
-## Everyone in the session, with their team and whether they are connected.
-func _fill_players() -> void:
-	if not is_instance_valid(_players):
-		return
-	var menu := _players.get_popup()
-	menu.clear()
-	var names: Array = []
-	for pid: String in _lobby.players:
-		names.append(pid)
-	names.sort_custom(func(a: String, b: String) -> bool:
-		return str(_lobby.players[a].username) < str(_lobby.players[b].username))
-	for pid: String in names:
-		var p: Dictionary = _lobby.players[pid]
-		var here: bool = Net.realtime().where_is(pid, str(_session.get("id", ""))) != ""
-		var team := _lobby.name_of(str(p.team_id))
-		menu.add_item("%s %s  —  %s" % ["●" if here else "○", p.username,
-			team if team != "" else "no team"])
-	_players.text = "Players (%d) ▾" % names.size()
 
 
 ## Shown picked at once; the server's answer only matters if it says no, and
