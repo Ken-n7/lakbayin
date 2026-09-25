@@ -66,7 +66,7 @@ func solidify(props: Node, xf := Transform2D.IDENTITY) -> void:
 			body.free()
 		# In its parent's space. ponytail: groups are moved, never scaled or
 		# turned; a turned group would need the full inverse here.
-		_sort_at(prop as Node2D, top - xf.origin.y)
+		sort_at(prop as Node2D, top - xf.origin.y)
 
 
 func _take(at: Vector2) -> void:
@@ -103,7 +103,8 @@ static func _walls_of(shape: Shape2D, xf: Transform2D) -> Array[Rect2]:
 ## over a hero it had just stopped from the front; at the box's bottom edge,
 ## over one standing beside it (client, both). The prop's origin moves to the
 ## edge and its children move back as much, so nothing on screen shifts.
-func _sort_at(prop: Node2D, edge: float) -> void:
+## The barricades' boulders go through here too.
+static func sort_at(prop: Node2D, edge: float) -> void:
 	var dy := edge - prop.position.y
 	if is_inf(dy) or absf(dy) < 0.5:
 		return

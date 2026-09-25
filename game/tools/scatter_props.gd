@@ -25,11 +25,16 @@ const ROCKS := ["Rock1", "Rock2", "Rock3", "Rock4"]
 const SPACING := {"tree": 22.0, "stump": 22.0, "rock": 30.0}
 ## Darts thrown per land cell; more is a denser, slower, better-spaced pick.
 const DARTS := 5
-## A rock in the water off either side of each island, to break up the sea:
-## how far past the island's own ellipse, as a share of the world.
+## Rocks in the water off every shore, to break up the sea: this many, one to
+## four tiles out, far enough apart not to clump, and clear of the bridges.
 const WATER_ROCK := "res://assets/terrain/decorations/Water Rocks_0%d.png"
-const WATER_ROCK_OUT := 0.035
-const WATER_ROCK_DOWN := 0.04
+const WATER_ROCKS := 24
+const WATER_ROCK_OFFSHORE := Vector2i(1, 4)    # tiles from land, nearest to farthest
+const WATER_ROCK_APART := 5                    # tiles between two of them
+const WATER_ROCK_BRIDGE := 3                   # tiles kept clear of the road
+## ...and of the barricade fences, or one off a fence's end reads as the fence
+## running on into the sea.
+const WATER_ROCK_FENCE := 4
 const WATER_ROCK_SCALE := 1.4
 const WATER_ROCK_FPS := 4.0
 
@@ -38,6 +43,7 @@ var rng := RandomNumberGenerator.new()
 var _feet := {}                 # variant -> its collision rects, about its origin
 var _placed: Array[Dictionary] = []    # {kind, name, at, flip, rects}
 var _trail_dist := {}           # cell -> cells to the nearest road cell
+var _fences: Array = []         # the barricades' gates, for their rocks
 
 
 func _ready() -> void:
@@ -52,6 +58,7 @@ func _ready() -> void:
 	add_child(world)
 	world.build()
 	grid = world.grid
+	_fences = world.barricades.list
 	_measure_feet()
 	_measure_trail()
 
@@ -147,6 +154,70 @@ static func _level(values: Array, share: float) -> float:
 	var v := values.duplicate()
 	v.sort()
 	return float(v[clampi(int((1.0 - share) * v.size()), 0, v.size() - 1)])
+
+
+## Sea cells one to four tiles off land and away from the road, picked in a
+## random order, each a good stretch from the last.
+func _water_rock_spots() -> Array[Vector2]:
+	var shore := {}                    # sea cell -> tiles from the nearest land
+	var queue: Array[Vector2i] = []
+	for c: Vector2i in grid.land:
+		shore[c] = 0
+		queue.append(c)
+	var head := 0
+	while head < queue.size():
+		var c := queue[head]
+		head += 1
+		if int(shore[c]) >= WATER_ROCK_OFFSHORE.y:
+			continue
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = c + d
+			if shore.has(n) or not MapGrid.in_bounds(n):
+				continue
+			shore[n] = int(shore[c]) + 1
+			queue.append(n)
+	var spots: Array[Vector2i] = []
+	for c: Vector2i in shore:
+		var far := int(shore[c])
+		if far < WATER_ROCK_OFFSHORE.x or far > WATER_ROCK_OFFSHORE.y:
+			continue
+		var near_road := false
+		for t: Vector2i in grid.trail:
+			if absi(t.x - c.x) <= WATER_ROCK_BRIDGE and absi(t.y - c.y) <= WATER_ROCK_BRIDGE:
+				near_road = true
+				break
+		if not near_road and not _near_fence(c):
+			spots.append(c)
+	spots.sort()                       # a set order before the seeded shuffle
+	for i in range(spots.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var t := spots[i]
+		spots[i] = spots[j]
+		spots[j] = t
+	var out: Array[Vector2] = []
+	var taken: Array[Vector2i] = []
+	for c in spots:
+		if out.size() >= WATER_ROCKS:
+			break
+		var clear := true
+		for o in taken:
+			if absi(o.x - c.x) + absi(o.y - c.y) < WATER_ROCK_APART * 2 \
+					and Vector2(o).distance_to(Vector2(c)) < WATER_ROCK_APART:
+				clear = false
+				break
+		if clear:
+			taken.append(c)
+			out.append(MapGrid.cell_mid(c) + Vector2(rng.randf_range(-8, 8), rng.randf_range(-8, 8)))
+	return out
+
+
+func _near_fence(c: Vector2i) -> bool:
+	var p := MapGrid.cell_mid(c)
+	for g: Dictionary in _fences:
+		for r: Rect2 in g.rocks:
+			if r.get_center().distance_to(p) < WATER_ROCK_FENCE * MapCfg.TILE:
+				return true
+	return false
 
 
 func _noise(seed: int, freq: float) -> FastNoiseLite:
@@ -253,18 +324,15 @@ func _save(world: MapWorld) -> void:
 	sea.y_sort_enabled = true
 	root.add_child(sea)
 	sea.owner = root
-	for isl in MapCfg.ISLANDS.size():
-		var c: Vector2 = MapCfg.ISLANDS[isl].c
-		var r: Vector2 = MapCfg.ISLANDS[isl].r
-		for side in [-1.0, 1.0]:
-			var at := MapGrid.norm(Vector2(c.x + side * (r.x + WATER_ROCK_OUT), c.y + WATER_ROCK_DOWN))
-			if not MapGrid.in_bounds(MapGrid.cell_at(at)) or grid.is_walkable(at):
-				continue
-			var rock := Art.anim_sprite(sea, WATER_ROCK % rng.randi_range(1, 4), at,
-				WATER_ROCK_SCALE, WATER_ROCK_FPS, 1.0, 16)
-			rock.name = "WaterRock"
-			rock.autoplay = rock.animation
-			rock.owner = root
+	for at in _water_rock_spots():
+		var rock := Art.anim_sprite(sea, WATER_ROCK % rng.randi_range(1, 4), at,
+			WATER_ROCK_SCALE * rng.randf_range(0.8, 1.1), WATER_ROCK_FPS,
+			-1.0 if rng.randf() < 0.5 else 1.0, 16)
+		rock.name = "WaterRock"
+		rock.autoplay = rock.animation
+		# Each one on its own beat, or the whole sea breathes in step.
+		rock.frame = rng.randi_range(0, 15)
+		rock.owner = root
 
 	var groups := {}
 	for d: Dictionary in _placed:

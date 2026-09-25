@@ -20,6 +20,8 @@ var circles: Array = []         # Game.TOTAL_ITEMS PathCircle nodes, path order
 var props: Node2D
 ## For `tools/scatter_props`: the board with no props at all, to plan them on.
 var bare := false
+## The cloud layers, for the screen to tell them what to keep clear of.
+var cloud_bands: Array[Clouds] = []
 
 
 func build() -> void:
@@ -45,12 +47,15 @@ func build() -> void:
 	add_child(props)
 	decor.solidify(props)
 	decor.sheep()
-	# Clouds drifting along the open sea at the top of the board -- over the
-	# water, never over play (see MapCfg.MAP_CLOUD_Y).
-	var clouds := Clouds.new(MapCfg.WORLD_W * MapCfg.TILE, MapCfg.MAP_CLOUD_Y, 0.0,
-		MapCfg.MAP_CLOUDS, MapCfg.MAP_CLOUD_ALPHA)
-	clouds.z_index = 50
-	add_child(clouds)
+	# Clouds drifting in bands, over the sea and over the islands; see
+	# MapCfg.MAP_CLOUD_BANDS.
+	for band: Array in MapCfg.MAP_CLOUD_BANDS:
+		var clouds := Clouds.new(MapCfg.WORLD_W * MapCfg.TILE,
+			float(band[0]) * MapCfg.WORLD_H * MapCfg.TILE, 0.0, int(band[1]),
+			MapCfg.MAP_CLOUD_ALPHA, float(band[2]))
+		clouds.z_index = 50
+		add_child(clouds)
+		cloud_bands.append(clouds)
 
 
 func _build_path() -> void:

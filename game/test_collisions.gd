@@ -170,6 +170,23 @@ func _initialize() -> void:
 	# can stick in a gap a point slips through.
 	_assert_box_reach(screen, G)
 
+	# Each knight steps aside round his boulders, never over them.
+	var boots: Rect2 = MapCfg.GUARD_BOOTS
+	for st in 3:
+		var g: Dictionary = screen.barricades.list[st]
+		var path: Array[Vector2] = screen.barricades.walk_path(g, g.post, g.stand)
+		assert(screen.barricades.path_stones(g, g.post).size() >= (g.rocks as Array).size() - 2,
+			"knight %d starts touching more than the stones beside his gap" % (st + 1))
+		assert(path[-1] == g.stand, "knight %d's walk does not end where he rests" % (st + 1))
+		var at: Vector2 = g.post
+		for p in path:
+			for k in range(1, 21):
+				var q := at.lerp(p, k / 20.0)
+				assert(MapGrid.clear_of(Rect2(boots.position + q, boots.size),
+					screen.barricades.path_stones(g, g.post)),
+					"knight %d walks over a boulder at %s" % [st + 1, q])
+			at = p
+
 	# ...and each one waits on its own station's briefing and nothing else:
 	# clearing the station before his does not move him.
 	var fresh: Control = load("res://scripts/AdventureScreen.gd").new()

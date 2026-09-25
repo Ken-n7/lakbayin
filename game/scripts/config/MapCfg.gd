@@ -178,6 +178,8 @@ const GUARD_SCALE := 0.9
 ## steps diagonally and their cells are a cell and a half apart: below that the
 ## fence reads as scattered pebbles with walls between them.
 const ROCK_SCALE := 1.2
+## Mixed into each fence cell's roll of stone, size, flip and pebbles.
+const FENCE_SEED := 4177
 ## The stretch of fence the guard stands in for, as a box round his boots: his
 ## shoulders either side, his chest above, and just enough below to keep the cell
 ## he stands on. He is base-anchored like everything else here, so all of him is
@@ -193,6 +195,8 @@ const GUARD_REACH := Rect2(-35.0, -42.0, 70.0, 59.0)
 ## high, base-anchored like everything else. What `_stands_clear()` asks its
 ## questions of, and what `tools/check_guards.gd` re-asks them of afterwards.
 const GUARD_BODY := Rect2(-34.0, -64.0, 68.0, 64.0)
+## His feet, for the walk out of the gap: what must not cross a boulder's wall.
+const GUARD_BOOTS := Rect2(-18.0, -10.0, 36.0, 12.0)
 ## A boulder's wall, like a building's, is the foot of what you can see and not
 ## the cell it was laid on. `Art.sprite()` base-anchors a 64px stone, so the
 ## stone is drawn a whole texture-height *above* its cell: a box centred on the
@@ -331,9 +335,13 @@ const HERO_SCENE := "res://scenes/Hero.tscn"
 ## Clouds on the play map keep to the open sea along the top of the world.
 ## Over grass the pack's clouds turn a muddy beige at any see-through alpha,
 ## and opaque they would hide a circle or the hero passing under them.
-const MAP_CLOUDS := 4
 const MAP_CLOUD_ALPHA := 0.9
-const MAP_CLOUD_Y := TILE * 1.2
+## Bands of cloud, as [height as a share of the world, clouds, phase]: the top
+## edge, over the north islands, the channel, over the south island, the bottom
+## edge. Each band slides by its phase so they never line up. Over land a cloud
+## fades as it nears the hero (`Clouds.keep_clear`), so it never hides them.
+const MAP_CLOUD_BANDS := [[0.022, 6, 0.0], [0.26, 3, 0.2], [0.48, 5, 0.45],
+	[0.72, 3, 0.85], [0.985, 4, 0.7]]
 ## The sea's colour, everywhere the world is drawn: the raw tile is a pale
 ## teal (#47aba9) that the pack's white surf all but vanishes against, so it
 ## is multiplied toward a deeper blue -- the map, Home and the menu backdrop

@@ -119,8 +119,9 @@ func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float
 				# boulder, which leaves the boulder's own cell -- the ground at
 				# its foot -- open, and at the end of an arm that foot is the way
 				# round the whole fence. So the fence takes one more step, into
-				# the shallows: the last stone stands in the water with its wall
-				# over the beach behind it, and the arm ends where the map does.
+				# the shallows, for its wall: that wall covers the beach behind
+				# it. The stone is drawn standing on that beach, at the wall's
+				# foot, not out in the water (client: rocks in the sea).
 				if MapGrid.in_bounds(c):
 					_lay_rock(g, c, MapGrid.rock_wall(c))
 				break
@@ -133,12 +134,85 @@ func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float
 	g.wall = wall
 
 
+## One boulder of the fence, and the loose stones at its foot. The wall is
+## `rect` whatever happens to the stone; the stone is dressing, placed only
+## where every pixel of it stands over land. On a north shore a stone at its
+## cell hung out over the sea (it is drawn upward from its foot), so each is
+## tried at its cell and then a little inland, and smaller; if none fits the
+## wall stands bare -- only ever at the waterline, where the sea is the wall.
+## Each cell rolls its own stone, size, flip and pebbles, off the cell, so
+## every run lays the same fence.
 func _lay_rock(g: Dictionary, c: Vector2i, rect: Rect2) -> void:
 	(g.rocks as Array).append(rect)
 	grid.block(rect)
-	# Round-robin off the cell so the wall is not four of the same stone.
-	Art.sprite(world, Art.tex(MapCfg.ROCK_SHEET % (1 + posmod(c.x + c.y, MapCfg.ROCK_VARIANTS))),
-			MapGrid.cell_mid(c), MapCfg.ROCK_SCALE)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(c) ^ MapCfg.FENCE_SEED
+	var v := 1 + (posmod(c.x * 3 + c.y, MapCfg.ROCK_VARIANTS) + rng.randi_range(0, 1)) % MapCfg.ROCK_VARIANTS
+	var k := MapCfg.ROCK_SCALE * rng.randf_range(0.85, 1.12)
+	var flip := -1.0 if rng.randf() < 0.5 else 1.0
+	var nudge := Vector2(rng.randf_range(-4.0, 4.0), rng.randf_range(-3.0, 2.0))
+	var home := MapGrid.cell_mid(c)
+	var base := Vector2.INF
+	for shrink in [1.0, 0.8, 0.62]:
+		for d: Vector2 in STONE_SHIFTS:
+			var at := home + nudge + d
+			if _on_land(_stone_art(v, k * shrink, flip, at)):
+				base = at
+				k *= shrink
+				break
+		if base != Vector2.INF:
+			break
+	if base == Vector2.INF:
+		return
+	var stone := Node2D.new()
+	stone.position = base
+	world.add_child(stone)
+	var big := Art.sprite(stone, Art.tex(MapCfg.ROCK_SHEET % v), Vector2.ZERO, k, flip)
+	big.name = "Stone"
+	# A pebble or two at its foot now and then, to break the line -- on land too.
+	for _i in (rng.randi_range(0, 2) if rng.randf() < 0.55 else 0):
+		var pv := rng.randi_range(1, MapCfg.ROCK_VARIANTS)
+		var pk := MapCfg.ROCK_SCALE * rng.randf_range(0.35, 0.5)
+		var pf := -1.0 if rng.randf() < 0.5 else 1.0
+		var off := Vector2(rng.randf_range(-20.0, 20.0), rng.randf_range(2.0, 8.0))
+		if _on_land(_stone_art(pv, pk, pf, base + off)):
+			Art.sprite(stone, Art.tex(MapCfg.ROCK_SHEET % pv), off, pk, pf)
+	# Sorted where it blocks, like every prop: in front from the front and
+	# sides, behind only from the back (Decor.sort_at).
+	Decor.sort_at(stone, rect.position.y)
+
+
+## Where a stone may go instead of its own cell, in order: a little either
+## side, then inland (down the screen -- the art rises from its foot).
+const STONE_SHIFTS := [Vector2(0, 0), Vector2(0, 8), Vector2(-8, 0), Vector2(8, 0),
+	Vector2(0, 16), Vector2(-10, 10), Vector2(10, 10), Vector2(0, 24)]
+## Each Rock sheet's drawn pixels in its 64px texture (x, y, w, h).
+const ROCK_PIXELS := [Rect2(15, 25, 32, 26), Rect2(7, 17, 50, 36),
+	Rect2(14, 23, 39, 29), Rect2(2, 14, 59, 42)]
+
+
+## The world rect a base-anchored stone's pixels cover.
+static func _stone_art(v: int, k: float, flip: float, base: Vector2) -> Rect2:
+	var px: Rect2 = ROCK_PIXELS[v - 1]
+	var x0 := (px.position.x - 32.0) * k
+	var x1 := (px.end.x - 32.0) * k
+	if flip < 0.0:
+		var t := -x1
+		x1 = -x0
+		x0 = t
+	return Rect2(base + Vector2(x0, (px.position.y - 64.0) * k), Vector2(x1 - x0, px.size.y * k))
+
+
+## Every part of `r` over grass -- sampled every 6px, corners included.
+func _on_land(r: Rect2) -> bool:
+	var nx := maxi(1, ceili(r.size.x / 6.0))
+	var ny := maxi(1, ceili(r.size.y / 6.0))
+	for ix in nx + 1:
+		for iy in ny + 1:
+			var p := r.position + Vector2(r.size.x * ix / nx, r.size.y * iy / ny)
+			if grid.grass.get_cell_source_id(MapGrid.cell_at(p)) == -1:
+				return false
+	return true
 
 
 ## Has this run already earned its way past `g`? One rule: the briefing.
@@ -256,11 +330,26 @@ func open(g: Dictionary) -> void:
 	if k == null or not is_instance_valid(k):
 		return
 	var to: Vector2 = g.stand
-	# Facing the way he is about to go -- the sheets' own direction is east.
-	k.scale.x = MapCfg.GUARD_SCALE * (1.0 if to.x >= k.position.x else -1.0)
+	# Round the rubble, not through it: a straight line from the gap to where
+	# he rests crossed the fence, and he walked over the boulders (client).
+	var path := walk_path(g, k.position, to)
+	var total := 0.0
+	var at := k.position
+	for p in path:
+		total += at.distance_to(p)
+		at = p
 	k.play("walk")
 	var tw := k.create_tween()
-	tw.tween_property(k, "position", to, MapCfg.GUARD_STEP_TIME).set_ease(Tween.EASE_IN_OUT)
+	at = k.position
+	for p in path:
+		var leg := at.distance_to(p)
+		var dir := p.x - at.x
+		# Facing the way each leg goes -- the sheets' own direction is east.
+		tw.tween_callback(func() -> void:
+			if is_instance_valid(k) and absf(dir) > 1.0:
+				k.scale.x = MapCfg.GUARD_SCALE * (1.0 if dir > 0.0 else -1.0))
+		tw.tween_property(k, "position", p, MapCfg.GUARD_STEP_TIME * leg / maxf(total, 1.0))
+		at = p
 	# Arriving, he turns back to face his station, which is where `_post_guard()`
 	# leaves him on a restart. Without this the walk's own direction sticks, and
 	# the same knight faced two ways depending on whether you saw him step aside.
@@ -268,6 +357,72 @@ func open(g: Dictionary) -> void:
 		if is_instance_valid(k):
 			k.play("idle")
 			_face(g, to))
+
+
+## The knight's way from the gap to where he rests, as points to walk through:
+## the shortest run of cells whose ground his boots clear every boulder of,
+## straightened wherever a straight line is just as clear. Ends at `to`.
+func walk_path(g: Dictionary, from: Vector2, to: Vector2) -> Array[Vector2]:
+	var boots := MapCfg.GUARD_BOOTS
+	var stones := path_stones(g, from)
+	var clear := func(p: Vector2) -> bool:
+		return MapGrid.clear_of(Rect2(boots.position + p, boots.size), stones)
+	var start := MapGrid.cell_at(from)
+	var goal := MapGrid.cell_at(to)
+	var came := {start: start}
+	var queue: Array[Vector2i] = [start]
+	var head := 0
+	while head < queue.size() and not came.has(goal):
+		var c := queue[head]
+		head += 1
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+				Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+			var n: Vector2i = c + d
+			if came.has(n) or not grid.land.has(n) or absi(n.x - start.x) + absi(n.y - start.y) > 40:
+				continue
+			if n != goal and not clear.call(MapGrid.cell_mid(n)):
+				continue
+			came[n] = c
+			queue.append(n)
+	if not came.has(goal):
+		return [to] as Array[Vector2]
+	var cells: Array[Vector2i] = []
+	var c := goal
+	while c != start:
+		cells.push_front(c)
+		c = came[c]
+	# Straighten: from each point, skip ahead to the farthest one in plain view.
+	var pts: Array[Vector2] = []
+	for cell in cells:
+		pts.append(MapGrid.cell_mid(cell))
+	pts[-1] = to
+	var out: Array[Vector2] = []
+	var here := from
+	var i := 0
+	while i < pts.size():
+		var j := pts.size() - 1
+		while j > i and not _line_clear(here, pts[j], clear):
+			j -= 1
+		out.append(pts[j])
+		here = pts[j]
+		i = j + 1
+	return out
+
+
+## The boulders his walk must not cross: all of them but the ones his boots
+## already touch where he starts -- his post is set into the fence, and the
+## stones either side of the gap are what he steps away from.
+static func path_stones(g: Dictionary, from: Vector2) -> Array:
+	var at := Rect2(MapCfg.GUARD_BOOTS.position + from, MapCfg.GUARD_BOOTS.size)
+	return (g.rocks as Array).filter(func(r: Rect2) -> bool: return not r.intersects(at))
+
+
+static func _line_clear(a: Vector2, b: Vector2, clear: Callable) -> bool:
+	var steps := maxi(1, int(a.distance_to(b) / 8.0))
+	for s in range(1, steps + 1):
+		if not clear.call(a.lerp(b, float(s) / steps)):
+			return false
+	return true
 
 
 ## Called wherever progress is made: setup, and every overlay that closes.

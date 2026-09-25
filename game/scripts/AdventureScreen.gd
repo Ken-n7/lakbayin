@@ -502,6 +502,8 @@ func setup(data: Dictionary) -> void:
 	decor = board.decor
 	_circles = board.circles
 	_spawn_player()
+	for band in board.cloud_bands:
+		band.keep_clear = player
 	Game.time_changed.connect(hud.on_time)
 	Game.gems_changed.connect(hud.on_gems)
 	Game.adventure_ended.connect(_on_adventure_end)

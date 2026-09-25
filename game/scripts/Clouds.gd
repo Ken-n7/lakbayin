@@ -14,23 +14,40 @@ const SCALE := 0.55
 
 ## How far right a cloud goes before it comes back in from the left.
 var span := 1000.0
+## A cloud drifting near this thing fades nearly out, so it never hides it --
+## the hero, on the map. Unset, clouds keep their alpha.
+var keep_clear: Node2D = null
+const CLEAR_NEAR := 110.0     # px: fully faded inside this
+const CLEAR_FAR := 220.0      # px: fully there beyond this
+const CLEAR_ALPHA := 0.12
+var _alpha := ALPHA
 
 
 ## `count` clouds spread across `width`, alternating between `top` and
-## `top + gap`; more of them, at `alpha`, over a bigger scene.
-func _init(width := 1000.0, top := 40.0, gap := 110.0, count := 3, alpha := ALPHA) -> void:
+## `top + gap`; more of them, at `alpha`, over a bigger scene. `phase` (0..1)
+## slides the whole row along, so two rows do not line up.
+func _init(width := 1000.0, top := 40.0, gap := 110.0, count := 3, alpha := ALPHA,
+		phase := 0.0) -> void:
 	span = width
+	_alpha = alpha
 	for i in count:
 		var c := Sprite2D.new()
 		c.texture = Art.tex(PATHS[i % PATHS.size()])
 		c.scale = Vector2(SCALE, SCALE)
 		c.modulate = Color(1, 1, 1, alpha)
-		c.position = Vector2(i * width / count, top + (i % 3) * gap)
+		c.position = Vector2((i + phase) * width / count, top + (i % 3) * gap)
 		add_child(c)
 
 
 func _process(delta: float) -> void:
+	var near := Vector2.INF
+	if keep_clear != null and is_instance_valid(keep_clear):
+		near = to_local(keep_clear.global_position)
 	for c: Sprite2D in get_children():
 		c.position.x += SPEED * delta
 		if c.position.x > span + 200.0:
 			c.position.x = -200.0
+		if near != Vector2.INF:
+			var d := c.position.distance_to(near)
+			var want := lerpf(CLEAR_ALPHA, _alpha, smoothstep(CLEAR_NEAR, CLEAR_FAR, d))
+			c.modulate.a = move_toward(c.modulate.a, want, delta * 1.5)
