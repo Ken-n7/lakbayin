@@ -7,7 +7,6 @@ extends Control
 ## project's OTP setting says, so nothing here assumes one. See
 ## `supabase/README.md`.
 
-const PANEL := Vector2(380, 290)
 const MIN_PASSWORD := 8
 
 var main: Control
@@ -18,42 +17,61 @@ var _pass: LineEdit
 var _msg: Label
 var _send: Button
 var _save: Button
+var _steps: Label
+var _step1: VBoxContainer
+var _step2: VBoxContainer
 
 
 func setup(data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = Pal.BG
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
+	var box := Ui.auth_layout(self, "Reset Password")
+	# One step at a time: all four controls at once asked for a code before
+	# the student had been told one was coming.
+	_steps = Art.label("", Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_steps)
 
-	var box := Ui.screen_panel(self, PANEL, "Forgot Password")
-	_email = Ui.field(box, "Email", "you@example.com")
+	_step1 = VBoxContainer.new()
+	_step1.add_theme_constant_override("separation", 5)
+	box.add_child(_step1)
+	_email = Ui.field(_step1, "Email", "you@example.com")
 	_email.text = data.get("email", "")   # carried over from the login form
-
-	_send = Ui.button("Email Me a Code", 300, Ui.H, Ui.SMALL_RED)
-	_send.pressed.connect(_request)
-	Ui.centre_row(box, _send)
-
 	_email.text_submitted.connect(func(_t: String) -> void: _request())
+	_send = Ui.button("Email Me a Code", 300, Ui.H, Ui.RED)
+	_send.pressed.connect(_request)
+	Ui.centre_row(_step1, _send)
+	var have := Ui.link("I already have a code")
+	have.pressed.connect(func() -> void: _show_step(2))
+	Ui.centre_row(_step1, have)
+
+	_step2 = VBoxContainer.new()
+	_step2.add_theme_constant_override("separation", 5)
+	box.add_child(_step2)
 	# No length claimed: Supabase's OTP length is a project setting (6-10), and
 	# a real reset code arrived as 8 digits while this said "6 digits".
-	_code = Ui.field(box, "Code from the email", "the code we sent you")
-	_pass = Ui.field(box, "New password", "at least %d characters" % MIN_PASSWORD, true)
+	_code = Ui.field(_step2, "Code from the email", "the code we sent you")
+	_pass = Ui.password_field(_step2, "New password", "at least %d characters" % MIN_PASSWORD)
 	_pass.text_submitted.connect(func(_t: String) -> void: _apply())
+	_save = Ui.button("Set New Password", 300, Ui.H, Ui.RED)
+	_save.pressed.connect(_apply)
+	Ui.centre_row(_step2, _save)
 
 	_msg = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_msg.custom_minimum_size = Vector2(320, 0)
+	_msg.custom_minimum_size = Vector2(300, 0)
 	box.add_child(_msg)
 
-	_save = Ui.button("Set New Password", 300, Ui.H, Ui.RED)
-	_save.pressed.connect(_apply)
-	Ui.centre_row(box, _save)
-
-	var back := Ui.button("Back to Sign In", 300, Ui.H, Ui.SMALL)
+	var back := Ui.link("Back to Sign In")
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
+	_show_step(1)
+
+
+func _show_step(n: int) -> void:
+	_step1.visible = n == 1
+	_step2.visible = n == 2
+	_steps.text = ("▶ 1  Email      2  New password" if n == 1
+		else "✓ 1  Email      ▶ 2  New password")
 
 
 func _request() -> void:
@@ -68,10 +86,14 @@ func _request() -> void:
 		return
 	# Deliberately says the same thing whether or not the address is registered.
 	_say("If that email has an account, a code is on its way.", Pal.INK_MUTED)
-	_code.grab_focus()
+	_show_step(2)
 
 
 func _apply() -> void:
+	if _email.text.strip_edges().is_empty():
+		_show_step(1)
+		_say("Enter your email first.", Pal.WRONG)
+		return
 	if _code.text.strip_edges().is_empty():
 		_say("Enter the code from the email.", Pal.WRONG)
 		return

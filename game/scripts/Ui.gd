@@ -255,6 +255,82 @@ static func screen_panel(parent: Node, s: Vector2, title := "",
 	return pc.get_child(0) as VBoxContainer
 
 
+## The sign-in family's layout: the game's name on the left, standing on the
+## moving scene, and the form on a parchment panel to its right. A landscape
+## phone has width to spare and no height -- one tall centred form ran into
+## the soft keyboard; two columns keep every form short. Returns the form's
+## content box.
+static func auth_layout(parent: Node, title: String, form_w := 330.0) -> VBoxContainer:
+	var split := HBoxContainer.new()
+	split.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	split.offset_left = 20.0
+	split.offset_right = -20.0
+	split.add_theme_constant_override("separation", 16)
+	split.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(split)
+
+	var brand := VBoxContainer.new()
+	brand.alignment = BoxContainer.ALIGNMENT_CENTER
+	brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	brand.add_theme_constant_override("separation", 4)
+	brand.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 34, not the splash's 44: beside a 330px form on a 640 canvas the column
+	# is ~250 wide, and the full-size name ran past it.
+	var logo := Art.label("NumXventure", 34, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
+	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
+	brand.add_child(logo)
+	var tag := Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	Art.shadow(tag)
+	brand.add_child(tag)
+	split.add_child(brand)
+
+	var centre := CenterContainer.new()
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pc := panel(Vector2(form_w, 0), title)
+	centre.add_child(pc)
+	split.add_child(centre)
+	var box := pc.get_child(0) as VBoxContainer
+	box.add_theme_constant_override("separation", 5)
+	return box
+
+
+## A password field with its Show toggle beside it, where the eye is -- not a
+## separate button floating under the form.
+static func password_field(parent: Node, caption: String, placeholder: String,
+		w := 300.0) -> LineEdit:
+	parent.add_child(Art.label(caption, Pal.LABEL, Pal.INK_MUTED))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var le := line_edit(placeholder, w - 70.0)
+	le.secret = true
+	le.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(le)
+	var show := button("Show", 64, H, SMALL)
+	show.toggle_mode = true
+	show.focus_mode = Control.FOCUS_NONE
+	show.toggled.connect(func(on: bool) -> void:
+		le.secret = not on
+		show.text = "Hide" if on else "Show")
+	row.add_child(show)
+	parent.add_child(row)
+	return le
+
+
+## A quiet text action -- "Forgot password?" -- for the paths that should not
+## compete with the one primary button on a form.
+static func link(text: String, color: Color = Pal.INFO_DEEP) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(0, 28)          # still a thumb's worth to hit
+	b.add_theme_font_size_override("font_size", Pal.SMALL)
+	for c in ["font_color", "font_focus_color", "font_pressed_color"]:
+		b.add_theme_color_override(c, color)
+	b.add_theme_color_override("font_hover_color", Pal.TITLE)
+	return b
+
+
 ## The scrim that darkens whatever is behind a screen.
 static func dim(parent: Node) -> ColorRect:
 	var d := ColorRect.new()

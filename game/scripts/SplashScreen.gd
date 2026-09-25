@@ -17,10 +17,8 @@ var _done := false
 func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var back := ColorRect.new()
-	back.color = Pal.BG
-	back.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(back)
+	# Main's moving scene is the splash's background (Backdrop.gd) -- the
+	# first thing a student sees is the world they are about to play in.
 
 	var col := VBoxContainer.new()
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -31,8 +29,10 @@ func setup(_data: Dictionary) -> void:
 	var logo := Art.label("NumXventure", Pal.LOGO, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
 	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(logo)
-	col.add_child(Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD,
-			HORIZONTAL_ALIGNMENT_CENTER))
+	var tag := Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD,
+			HORIZONTAL_ALIGNMENT_CENTER)
+	Art.shadow(tag)      # over a moving scene now, not a flat colour
+	col.add_child(tag)
 
 	var pad := Control.new()
 	pad.custom_minimum_size = Vector2(0, 18)
@@ -49,8 +49,10 @@ func setup(_data: Dictionary) -> void:
 	_bar.size = Vector2(0, BAR_H)
 	track.add_child(_bar)
 
-	col.add_child(Art.label("Loading...", Pal.BODY, Color(1, 1, 1, 0.7),
-			HORIZONTAL_ALIGNMENT_CENTER))
+	var loading := Art.label("Loading...", Pal.BODY, Color(1, 1, 1, 0.8),
+			HORIZONTAL_ALIGNMENT_CENTER)
+	Art.shadow(loading)
+	col.add_child(loading)
 
 	var tw := create_tween()
 	tw.tween_property(_bar, "size:x", BAR_W, HOLD)
@@ -79,7 +81,9 @@ func skip() -> void:
 		return
 	# An app stays signed in. Trade the stored refresh token for a new access
 	# token before deciding, so a returning student never sees the form.
-	if not Net.signed_in():
+	# Not for a tool run: the live checks leave a throwaway account's login in
+	# the tools' own file, and a screenshot tool should not open signed in as it.
+	if not Net.signed_in() and Game.profile_suffix() != "-tools":
 		await Net.restore_session()
 	if not Net.signed_in():
 		main.open("login")

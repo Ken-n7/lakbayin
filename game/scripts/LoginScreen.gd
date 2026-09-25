@@ -7,8 +7,6 @@ extends Control
 ## submit button disables for the duration of the request, because a second tap
 ## on a slow classroom connection is otherwise a second signup.
 
-const PANEL := Vector2(360, 260)
-
 var main: Control
 
 var _email: LineEdit
@@ -19,25 +17,26 @@ var _go: Button
 
 func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = Pal.BG
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-
-	var box := Ui.screen_panel(self, PANEL, "NumXventure")
-	box.add_child(Art.label("Sign in to begin", Pal.SMALL, Pal.INK_MUTED,
-			HORIZONTAL_ALIGNMENT_CENTER))
+	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
+	# The game's name stands on the scene; the form sits beside it.
+	var box := Ui.auth_layout(self, "Sign In")
 
 	_email = Ui.field(box, "Email or Username", "you@example.com  or  yourname")
 	_email.keep_editing_on_text_submit = true
-	_pass = Ui.field(box, "Password", "at least 8 characters", true)
+	_pass = Ui.password_field(box, "Password", "at least 8 characters")
 
-	var show := Ui.button("Show", Ui.W_TINY, Ui.H, Ui.SMALL)
-	show.toggle_mode = true
-	show.toggled.connect(func(on: bool) -> void: _pass.secret = not on)
-	Ui.centre_row(box, show)
+	# Recovery is a quiet link under the field it is about, not a red button
+	# competing with Sign In.
+	var forgot := Ui.link("Forgot Password?")
+	forgot.pressed.connect(func() -> void: main.open("reset", {"email": _email.text}))
+	var forgot_row := HBoxContainer.new()
+	forgot_row.alignment = BoxContainer.ALIGNMENT_END
+	forgot_row.add_child(forgot)
+	box.add_child(forgot_row)
 
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
+	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_msg.custom_minimum_size = Vector2(300, 0)
 	box.add_child(_msg)
 
 	_go = Ui.button("Sign In", 300, Ui.H, Ui.RED)
@@ -52,14 +51,11 @@ func setup(_data: Dictionary) -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 8)
-	var reg := Ui.button("Create Account", 146, Ui.H, Ui.SMALL)
-	var forgot := Ui.button("Forgot Password", 146, Ui.H, Ui.SMALL_RED)
+	row.add_child(Art.label("New here?", Pal.SMALL, Pal.INK_MUTED))
+	var reg := Ui.button("Create Account", 150, Ui.H, Ui.SMALL)
 	reg.pressed.connect(func() -> void: main.open("register"))
-	forgot.pressed.connect(func() -> void: main.open("reset", {"email": _email.text}))
 	row.add_child(reg)
-	row.add_child(forgot)
 	box.add_child(row)
-
 	# Deliberately no grab_focus(): on a phone that opens the soft keyboard
 	# immediately, over the form the student has not read yet.
 

@@ -275,9 +275,10 @@ func _remember(reply: Dictionary) -> String:
 
 
 func _save_session() -> void:
-	# The tools sign up throwaway accounts every run; remembering one only
-	# signs the next (offline) tool into a session it never asked for.
-	if refresh_token == "" or Game.profile_suffix() == "-tools":
+	# Saved for the tools too -- into their own profile's file, never the real
+	# login's -- because staying signed in is itself one of the things the
+	# live checks test. The splash is what declines to restore it for a tool.
+	if refresh_token == "":
 		return
 	var cfg := ConfigFile.new()
 	cfg.set_value("auth", "refresh_token", refresh_token)

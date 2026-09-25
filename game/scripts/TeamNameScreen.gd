@@ -54,10 +54,7 @@ func setup(_data: Dictionary) -> void:
 func _background() -> void:
 	for c in get_children():
 		c.queue_free()
-	var bg := ColorRect.new()
-	bg.color = Pal.BG
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 
 
 # --- Offline: a team name ---------------------------------------------------

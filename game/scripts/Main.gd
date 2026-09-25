@@ -22,12 +22,19 @@ const SCREENS := {
 }
 
 var current: Control = null
+## The moving scene behind the menu screens, kept here rather than in each
+## screen so it carries on across screen changes instead of restarting.
+var backdrop: Backdrop
+## Screens with a scene of their own: the map, and Home's island diorama.
+const OWN_SCENE := ["adventure", "home", "admin"]
 
 
 func _ready() -> void:
 	Art.apply_font_fallback()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	focus_mode = Control.FOCUS_ALL
+	backdrop = Backdrop.new()
+	add_child(backdrop)
 	open("splash")
 	if OS.is_debug_build():
 		_build_dev_nav()
@@ -95,6 +102,7 @@ func _dev_open(name: String) -> void:
 func open(name: String, data: Dictionary = {}) -> void:
 	if current != null:
 		current.queue_free()
+	backdrop.set_shown(not name in OWN_SCENE)
 	current = SCREENS[name].new()
 	current.set("main", self)
 	add_child(current)

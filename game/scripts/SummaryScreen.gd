@@ -13,7 +13,8 @@ func setup(data: Dictionary) -> void:
 
 
 func _build() -> void:
-	Ui.dim(self)
+	# No scrim: Main's moving scene is the background (Backdrop.gd), and a
+	# 90% dim over it would show nothing on this screen alone.
 
 	# Online the ranking is the class's, team totals from the server. The
 	# local board only knows this phone's runs, and listed the player's own

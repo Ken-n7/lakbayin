@@ -24,10 +24,7 @@ var _editing := ""
 
 func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = Pal.BG
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 
 	var box := Ui.screen_panel(self, PANEL, "Question Management")
 

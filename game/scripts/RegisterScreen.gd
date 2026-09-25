@@ -3,7 +3,11 @@ extends Control
 ## Email + Username + Password + Role, per SPECS §2. Anyone may register as an
 ## admin, no approval -- that is the client's stated rule, not an oversight.
 
-const PANEL := Vector2(380, 300)
+const FORM_W := 290.0
+## Username and Role share a row; Role gets the wider half, because
+## "Player (student)" is longer than any username hint needs.
+const USER_W := 118.0
+const ROLE_W := 162.0
 const MIN_PASSWORD := 8
 
 var main: Control
@@ -18,30 +22,35 @@ var _go: Button
 
 func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = Pal.BG
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
+	var box := Ui.auth_layout(self, "Create Account", 320)
 
-	var box := Ui.screen_panel(self, PANEL, "Create Account")
-	_email = Ui.field(box, "Email", "you@example.com")
-	_user = Ui.field(box, "Username", "3-20 letters, digits, _ or -")
-	_pass = Ui.field(box, "Password", "at least %d characters" % MIN_PASSWORD, true)
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	var show := Ui.button("Show", Ui.W_TINY, Ui.H, Ui.SMALL)
-	show.toggle_mode = true
-	show.toggled.connect(func(on: bool) -> void: _pass.secret = not on)
-	row.add_child(show)
-	row.add_child(Art.label("Role", Pal.LABEL, Pal.INK_MUTED))
-	_role = Ui.option(110.0, 26.0)
-	_role.add_item("Player")
-	_role.add_item("Admin")
-	row.add_child(_role)
-	box.add_child(row)
+	# Three rows, not five: Email, then Username beside Role, then Password.
+	# Stacked, the form ran into a phone keyboard; two full columns ran off a
+	# 640px screen beside the logo, and squeezed the password under its Show.
+	_email = Ui.field(box, "Email", "you@example.com", false, FORM_W)
+	var pair := HBoxContainer.new()
+	pair.add_theme_constant_override("separation", 10)
+	box.add_child(pair)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 2)
+	pair.add_child(left)
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 2)
+	pair.add_child(right)
+	_user = Ui.field(left, "Username", "3-20 letters", false, USER_W)
+	right.add_child(Art.label("Role", Pal.LABEL, Pal.INK_MUTED))
+	_role = Ui.option(ROLE_W, 30.0)
+	# Who each role is, in the words of a classroom -- "Admin" alone does not
+	# tell a student not to pick it.
+	_role.add_item("Player (student)")
+	_role.add_item("Admin (teacher)")
+	right.add_child(_role)
+	_pass = Ui.password_field(box, "Password", "at least %d characters" % MIN_PASSWORD, FORM_W)
 
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
+	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_msg.custom_minimum_size = Vector2(FORM_W, 0)
 	box.add_child(_msg)
 
 	# Enter walks the form and the last field registers -- the button is under
@@ -50,13 +59,18 @@ func setup(_data: Dictionary) -> void:
 	_user.text_submitted.connect(func(_t: String) -> void: _pass.grab_focus())
 	_pass.text_submitted.connect(func(_t: String) -> void: _submit())
 
-	_go = Ui.button("Register", 300, Ui.H, Ui.RED)
+	_go = Ui.button("Register", FORM_W, Ui.H, Ui.RED)
 	Ui.centre_row(box, _go)
 	_go.pressed.connect(_submit)
 
-	var back := Ui.button("Back to Sign In", 300, Ui.H, Ui.SMALL)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(Art.label("Already have an account?", Pal.SMALL, Pal.INK_MUTED))
+	var back := Ui.link("Sign In")
 	back.pressed.connect(go_back)
-	Ui.centre_row(box, back)
+	row.add_child(back)
+	box.add_child(row)
 	# Deliberately no grab_focus(): on a phone that opens the soft keyboard
 	# immediately, over the form the student has not read yet.
 

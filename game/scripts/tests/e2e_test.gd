@@ -189,7 +189,7 @@ func _run() -> void:
 	check("a fresh launch asks you to sign in",
 		_script_of(_screen(), "res://scripts/LoginScreen.gd"))
 	check("login offers a way to register", _find_button(_screen(), "Create Account") != null)
-	check("login offers recovery", _find_button(_screen(), "Forgot Password") != null)
+	check("login offers recovery", _find_button(_screen(), "Forgot Password?") != null)
 	_main_scene.call("open", "home")
 	await _wait(3)
 	check("splash routes to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))

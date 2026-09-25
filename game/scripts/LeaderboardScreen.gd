@@ -28,7 +28,8 @@ func setup(_data: Dictionary) -> void:
 func _build() -> void:
 	if _sid == "":
 		_sid = await _find_session()
-	Ui.dim(self)
+	# No scrim: Main's moving scene is the background (Backdrop.gd), and a
+	# 90% dim over it would show nothing on this screen alone.
 	var box := Ui.screen_panel(self, Vector2(560, 330), "Live Leaderboard"
 		if _is_admin() else "Team Ranking")
 	box.add_theme_constant_override("separation", 6)
