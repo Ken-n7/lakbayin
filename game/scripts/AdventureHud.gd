@@ -22,9 +22,13 @@ var dev: Control = null      # the cheat drawer, debug builds only
 
 var _gems: Label
 var _time: Label
+var _time_plate: PanelContainer
 var _station: Label
-var _pips: Label
-var _gem_bar: ProgressBar
+var _ribbon: HBoxContainer        # the station banner, re-coloured per station
+var _pips: HBoxContainer          # one dot per item in this station
+var _bar: HBoxContainer           # the three plates and the ribbon between
+var _shown_gems := -99999         # what the plate last showed, to flash the change
+var _gem_tw: Tween = null
 var _hint_bar: Label = null  # the controls crib, hidden while the board is frozen
 ## The stick and the GO/MENU buttons. Null on desktop, where there is no pad.
 var pad: Node2D = null
@@ -50,47 +54,7 @@ func build() -> void:
 	ui_layer = CanvasLayer.new()
 	ui_layer.layer = 2
 	adv.add_child(ui_layer)
-	var top := PanelContainer.new()
-	# Anchored, not 632 wide: with `keep_height` the canvas is 640 at 16:9 and
-	# ~800 at 20:9, and a fixed width left a quarter of a phone's top edge bare.
-	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top.offset_left = 4.0
-	top.offset_right = -4.0
-	top.offset_top = 4.0
-	top.offset_bottom = 48.0
-	top.add_theme_stylebox_override("panel", Art.panel("res://assets/ui/BigBar_Base.png", Vector2(10, 2), 0.5))
-	hud_layer.add_child(top)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	top.add_child(row)
-
-	var av := Art.texrect("res://assets/ui/Avatar_01.png", 32, 32)
-	row.add_child(av)
-	var name_col := VBoxContainer.new()
-	var nm := Art.label(Game.player_name, Pal.SMALL, Pal.CREAM)
-	name_col.add_child(nm)
-	var cls := Art.label("Adventurer #%d" % Game.hero_id, Pal.TINY, Pal.WHITE_SOFT)
-	name_col.add_child(cls)
-	row.add_child(name_col)
-
-	var stats := VBoxContainer.new()
-	stats.alignment = BoxContainer.ALIGNMENT_CENTER
-	stats.custom_minimum_size = Vector2(150, 0)
-	_station = Art.label("Station 1", Pal.SMALL, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	stats.add_child(_station)
-	_pips = Art.label("— — —", Pal.SMALL, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	stats.add_child(_pips)
-	row.add_child(stats)
-
-	row.add_child(Control.new()) # spacer
-	var gems_icon := Art.texrect("res://assets/ui/Icon_03.png", 26, 26)
-	row.add_child(gems_icon)
-	var gems_col := VBoxContainer.new()
-	_gems = Art.label(str(Game.START_GEMS), Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	gems_col.add_child(_gems)
-	_time = Art.label(Ui.mmss(int(Game.time_left)), Pal.SMALL, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	gems_col.add_child(_time)
-	row.add_child(gems_col)
+	_build_top_bar()
 
 	# Full-width, not centre-anchored: PRESET_CENTER_BOTTOM puts the box's left
 	# edge at mid-screen, so a 640-wide label started in the middle and ran off
@@ -122,29 +86,6 @@ func build() -> void:
 	for l in [prompt, hint_bar]:
 		Art.shadow(l)
 
-	var gemrow := HBoxContainer.new()
-	gemrow.position = Vector2(4, 50)
-	gemrow.add_theme_constant_override("separation", 4)
-	hud_layer.add_child(gemrow)
-	# SmallBar_Fill is a 3px sliver and SmallBar_Base a 3x1 patch; they never
-	# lined up as a TextureProgressBar. A flat gauge in the pack's palette is
-	# both correct at any size and legible at a glance.
-	_gem_bar = ProgressBar.new()
-	_gem_bar.custom_minimum_size = Vector2(140, 10)
-	_gem_bar.show_percentage = false
-	_gem_bar.max_value = 100.0
-	_gem_bar.value = 0.0
-	var trough := StyleBoxFlat.new()
-	trough.bg_color = Color(0.08, 0.06, 0.10, 0.75)
-	trough.set_corner_radius_all(4)
-	trough.set_border_width_all(1)
-	trough.border_color = Pal.SHADOW
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Pal.GOLD
-	fill.set_corner_radius_all(4)
-	_gem_bar.add_theme_stylebox_override("background", trough)
-	_gem_bar.add_theme_stylebox_override("fill", fill)
-	gemrow.add_child(_gem_bar)
 	_build_pad()
 	# The cheat drawer, and only where cheating is free: a release export never
 	# builds the node, so there is nothing in it to reach.
@@ -152,6 +93,197 @@ func build() -> void:
 		dev = preload("res://scripts/DevDrawer.gd").new()
 		ui_layer.add_child(dev)
 		dev.setup(adv)
+
+
+# --- The top bar ------------------------------------------------------------
+## Three plates floating over the board, not one plank across it: the map
+## shows between them, and each plate is one thing to read.
+##   left   -- the player's own hero in a wooden frame, name and team
+##   centre -- the station as a ribbon in its own livery, a dot per item
+##   right  -- gems (flashes on a change) and the clock (red in the last minute,
+##             "Paused" while the teacher holds it)
+## All from the Tiny Swords UI pack already in `assets/ui`.
+## The pack's wooden bar: thin end caps, made for a strip this height. The
+## WoodTable and paper sheets carry 30px+ corners at any readable scale, which
+## made every plate twice the height of the bar.
+const PLANK := "res://assets/ui/BigBar_Base.png"
+const RIBBONS := "res://assets/ui/BigRibbons.png"
+## BigRibbons rows, per station, matching the towers on the map: blue, the
+## yellow that stands in for the mockups' orange, red. The gate gets purple.
+const RIBBON_ROW := [0, 2, 1]
+const GATE_ROW := 3
+const BAR_H := 40.0
+const LAST_MINUTE := 60
+
+
+func _plate(pad_x: float) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", Art.panel(PLANK, Vector2(pad_x, 0), 0.6))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return p
+
+
+func _build_top_bar() -> void:
+	# Anchored across the top, not a fixed width: at 20:9 the canvas is ~800
+	# wide and a 632px bar left a quarter of a phone's top edge bare.
+	var bar := HBoxContainer.new()
+	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	bar.offset_left = 6.0
+	bar.offset_right = -6.0
+	bar.offset_top = 4.0
+	bar.offset_bottom = 4.0 + BAR_H
+	bar.add_theme_constant_override("separation", 4)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_layer.add_child(bar)
+	_bar = bar
+
+	# Left: who is playing. The hero is the one they picked and the one
+	# walking on the board -- a stock portrait here matched neither.
+	var who := _plate(4)
+	var who_row := HBoxContainer.new()
+	who_row.add_theme_constant_override("separation", 6)
+	who.add_child(who_row)
+	var face := TextureRect.new()
+	face.texture = Art.grid(Game.hero_sheet(Game.hero_id), 3, 4)[1]   # facing out, standing
+	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	face.custom_minimum_size = Vector2(26, 32)
+	who_row.add_child(face)
+	var names := VBoxContainer.new()
+	names.alignment = BoxContainer.ALIGNMENT_CENTER
+	names.add_theme_constant_override("separation", -2)
+	# A fixed column: an 18-letter team name must not widen the plate and
+	# squeeze the ribbon off the far end of a 640px screen.
+	var team := Game.team_name if Game.team_name != "" else "Adventurer"
+	for spec in [[Game.player_name, Pal.CREAM], [team, Pal.WHITE_SOFT]]:
+		var l := Art.label(str(spec[0]), Pal.SMALL, spec[1])
+		l.clip_text = true
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		l.custom_minimum_size = Vector2(100, 0)
+		names.add_child(l)
+	who_row.add_child(names)
+	bar.add_child(who)
+
+	# Centre: where they are. The ribbon takes the station's colour.
+	var mid := VBoxContainer.new()
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.alignment = BoxContainer.ALIGNMENT_CENTER
+	mid.add_theme_constant_override("separation", 2)
+	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ribbon_centre := CenterContainer.new()
+	ribbon_centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ribbon = HBoxContainer.new()
+	_ribbon.add_theme_constant_override("separation", 0)
+	ribbon_centre.add_child(_ribbon)
+	mid.add_child(ribbon_centre)
+	_station = Art.label("", Pal.SMALL, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	Art.shadow(_station)
+	var pips_centre := CenterContainer.new()
+	pips_centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pips = HBoxContainer.new()
+	_pips.add_theme_constant_override("separation", 3)
+	pips_centre.add_child(_pips)
+	mid.add_child(pips_centre)
+	bar.add_child(mid)
+
+	# Right: the two numbers that change -- gems, then the clock.
+	var gems := _plate(4)
+	var gems_row := HBoxContainer.new()
+	gems_row.add_theme_constant_override("separation", 3)
+	gems.add_child(gems_row)
+	gems_row.add_child(Art.texrect("res://assets/ui/Icon_03.png", 22, 22))
+	_gems = Art.label(str(Game.START_GEMS), Pal.BODY, Pal.CREAM)
+	_gems.custom_minimum_size = Vector2(30, 0)
+	_gems.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	gems_row.add_child(_gems)
+	bar.add_child(gems)
+
+	_time_plate = _plate(6)
+	_time = Art.label(Ui.mmss(int(Game.time_left)), Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	_time.custom_minimum_size = Vector2(58, 0)   # "Paused" and "10:00" alike
+	_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_time_plate.add_child(_time)
+	bar.add_child(_time_plate)
+
+
+## Whether the bar, ribbon and all, fits the screen as painted. Measured, not
+## estimated: the ribbon's end caps and the plates' own margins are whatever
+## the art makes them.
+func _fits() -> bool:
+	if not is_instance_valid(_bar):
+		return true
+	return _bar.get_combined_minimum_size().x <= adv.get_viewport_rect().size.x - 12.0
+
+
+## The station ribbon: its two ends and a tiled middle as wide as the text,
+## in the row of BigRibbons that is this station's colour.
+func _paint_ribbon(row: int, text: String) -> void:
+	if not is_instance_valid(_ribbon):
+		return
+	for c in _ribbon.get_children():
+		if c != _station:
+			c.queue_free()
+	if _station.get_parent() != null:
+		_station.get_parent().remove_child(_station)
+	_station.text = text
+	var h := 22.0
+	var left := Art.cell(RIBBONS, 0, row)
+	var middle := Art.cell(RIBBONS, 1, row)
+	var right := Art.cell(RIBBONS, 2, row)
+	var k := h / left.region.size.y
+	var l := TextureRect.new()
+	l.texture = left
+	l.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	l.custom_minimum_size = Vector2(left.region.size.x * k, h)
+	_ribbon.add_child(l)
+	var body := TextureRect.new()
+	body.texture = middle
+	body.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	body.stretch_mode = TextureRect.STRETCH_SCALE
+	var w := _station.get_theme_font("font").get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT,
+		-1, _station.get_theme_font_size("font_size")).x + 12.0
+	body.custom_minimum_size = Vector2(w, h)
+	_station.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_station.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	body.add_child(_station)
+	_ribbon.add_child(body)
+	var r := TextureRect.new()
+	r.texture = right
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.custom_minimum_size = Vector2(right.region.size.x * k, h)
+	_ribbon.add_child(r)
+	for c in _ribbon.get_children():
+		(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+## A dot per item in the current station: done, the one being played, to come.
+## Shape as well as colour -- done is filled, current is ringed.
+func _paint_pips(station: int, done_in_station: int) -> void:
+	if not is_instance_valid(_pips):
+		return
+	for c in _pips.get_children():
+		c.queue_free()
+	var total: int = Game.ITEMS_PER_STATION[station] if station >= 0 else 0
+	for i in total:
+		var dot := Panel.new()
+		dot.custom_minimum_size = Vector2(9, 9)
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var face := StyleBoxFlat.new()
+		face.set_corner_radius_all(5)
+		if i < done_in_station:
+			face.bg_color = Pal.GOLD
+			face.border_color = Pal.SHADOW
+			face.set_border_width_all(1)
+		elif i == done_in_station:
+			face.bg_color = Color(1, 1, 1, 0.25)
+			face.border_color = Pal.WHITE
+			face.set_border_width_all(2)
+		else:
+			face.bg_color = Color(0, 0, 0, 0.45)
+			face.border_color = Color(1, 1, 1, 0.35)
+			face.set_border_width_all(1)
+		dot.add_theme_stylebox_override("panel", face)
+		_pips.add_child(dot)
 
 
 # --- Touch controls ---------------------------------------------------------
@@ -243,17 +375,34 @@ func set_prompt(text: String) -> void:
 	prompt.text = text
 
 
+## The gem plate, and a flash of the change: green up, red down. A number
+## that just changes is easy to miss mid-walk.
 func on_gems(g: int) -> void:
-	if is_instance_valid(_gems):
-		_gems.text = str(g)
-	var ratio := clampf(float(g) / float(Game.START_GEMS + 60), 0.0, 1.0)
-	if is_instance_valid(_gem_bar):
-		_gem_bar.value = 100.0 * ratio
+	if not is_instance_valid(_gems):
+		return
+	_gems.text = str(g)
+	if _shown_gems != -99999 and g != _shown_gems:
+		if _gem_tw != null and _gem_tw.is_valid():
+			_gem_tw.kill()
+		_gems.add_theme_color_override("font_color", Pal.CORRECT_BRIGHT if g > _shown_gems else Pal.WRONG_BRIGHT)
+		_gem_tw = _gems.create_tween()
+		_gem_tw.tween_interval(0.6)
+		_gem_tw.tween_callback(func() -> void: _gems.add_theme_color_override("font_color", Pal.CREAM))
+	_shown_gems = g
 
 
+## The clock: red in the last minute, and "Paused" while the teacher holds it
+## -- a frozen number alone reads as the game having hung.
 func on_time(sec: int) -> void:
-	if is_instance_valid(_time):
-		_time.text = Ui.mmss(sec)
+	if not is_instance_valid(_time):
+		return
+	if Game.session_state == "paused":
+		_time.text = "Paused"
+		_time.add_theme_color_override("font_color", Pal.AMBER)
+		return
+	_time.text = Ui.mmss(sec)
+	_time.add_theme_color_override("font_color",
+		Pal.WRONG_BRIGHT if sec <= LAST_MINUTE and Game.adventure_active else Pal.CREAM)
 
 
 func refresh() -> void:
@@ -261,15 +410,20 @@ func refresh() -> void:
 	on_time(int(ceilf(Game.time_left)))
 	var next := Game.completed_stations.find(false)
 	if Game.items_done >= Game.TOTAL_ITEMS:
-		_station.text = "Victory Gate!"
+		_paint_ribbon(GATE_ROW, "Victory Gate!")
+		_paint_pips(-1, 0)
 	else:
 		var st := Game.station_of_item(Game.items_done)
-		_station.text = "Station %d · %d/%d" % [st + 1,
-				Game.item_in_station(Game.items_done), Game.ITEMS_PER_STATION[st]]
-	var marks := ""
-	for i in Game.ITEMS_PER_STATION.size():
-		marks += ["✓", "★", "—"][ 0 if Game.completed_stations[i] else (1 if Game.perfect_stations[i] else 2) ] + " "
-	_pips.text = marks.strip_edges()
+		var meta: Dictionary = QuestionGen.station_meta(st)
+		# "Station 1: Master the Basics!" -> "Station 1 · Master the Basics!",
+		# or the topic's short name when the full title will not fit between
+		# the plates -- at 640 wide, Station 3's pushed the clock off-screen.
+		var full := str(meta.title).replace(": ", "  ·  ")
+		var brief := "Station %d  ·  %s" % [st + 1, str(meta.short)]
+		_paint_ribbon(RIBBON_ROW[st], full)
+		if not _fits():
+			_paint_ribbon(RIBBON_ROW[st], brief)
+		_paint_pips(st, Game.item_in_station(Game.items_done))
 	# Label the boards on the map itself, otherwise all three look identical.
 	for i in adv.stations.locks.size():
 		var mark := "—"

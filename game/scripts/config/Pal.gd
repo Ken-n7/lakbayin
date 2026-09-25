@@ -47,6 +47,10 @@ const BRONZE := Color("7a5216")
 ## Right answer / wrong answer. Also the two result overlays.
 const CORRECT := Color("3f7a1e")
 const WRONG := Color("b03a1e")
+## The same warning on dark wood, where WRONG is too dark to read: the HUD
+## clock's last minute.
+const WRONG_BRIGHT := Color("ff6b5a")
+const CORRECT_BRIGHT := Color("7ee35a")
 ## Station blue, for topic lines and the Learn tabs.
 const INFO := Color("3a5a8c")
 const INFO_DEEP := Color("1c5b8c")
