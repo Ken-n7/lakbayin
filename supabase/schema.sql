@@ -378,6 +378,12 @@ begin
        select 1 from public.teams where id = new.team_id and session_id = new.session_id) then
     raise exception 'that team is not in this adventure';
   end if;
+  -- Nobody new once it has started, the way a match that has begun takes no
+  -- one from the queue. A rejoin is an existing row, never an insert.
+  if tg_op = 'INSERT' and exists (select 1 from public.sessions
+                                  where id = new.session_id and state <> 'lobby') then
+    raise exception 'the adventure has already started';
+  end if;
   if tg_op = 'UPDATE' and new.team_id is distinct from old.team_id
      and old.team_id is not null and new.team_id is not null
      and exists (select 1 from public.sessions

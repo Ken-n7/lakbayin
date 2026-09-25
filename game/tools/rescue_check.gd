@@ -23,9 +23,7 @@ func _ready() -> void:
 	_admin = "rs-admin-" + st + "@numxventure-test.dev"
 	_check("admin", await Net.sign_up(_admin, "rsa" + st, "letmein123", "admin"))
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/sessions",
-		{"admin_id": Net.user_id, "duration_s": 600, "state": "running",
-		 "ends_at": Time.get_datetime_string_from_unix_time(
-			int(Time.get_unix_time_from_system()) + 600) + "Z"})
+		{"admin_id": Net.user_id, "duration_s": 600})
 	_session = str(made.data[0].get("id", "")) if made.data is Array \
 		and not (made.data as Array).is_empty() else ""
 	_code = str(made.data[0].get("code", "")) if made.data is Array \
@@ -39,6 +37,22 @@ func _ready() -> void:
 	var a := await _player("a" + st, "Reds")
 	var b := await _player("b" + st, "Reds")
 	var c := await _player("c" + st, "Blues")
+
+	# Everyone is in; the teacher starts it. Nobody new may join after this.
+	await Net.sign_in(_admin, "letmein123")
+	_check("start", (await Net.rest(HTTPClient.METHOD_PATCH, "/rest/v1/sessions?id=eq." + _session,
+		{"state": "running", "ends_at": Time.get_datetime_string_from_unix_time(
+			int(Time.get_unix_time_from_system()) + 600) + "Z"})).error)
+	var late_email := "rs-late" + st + "@numxventure-test.dev"
+	await Net.sign_up(late_email, "rslate" + st, "letmein123", "player")
+	_check("nobody new joins once it has started",
+		"" if (await Teams.enter(_code)).error != "" else "the late join went through")
+	var sneak: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/members",
+		{"session_id": _session, "profile_id": Net.user_id})
+	_check("and the server refuses it too, not just the app",
+		"" if sneak.error != "" else "the insert went through")
+	await _as(a)
+	_check("someone already in gets back in", (await Teams.enter(_code)).error)
 
 	# A sees only their own team, and not themselves.
 	await _as(a)

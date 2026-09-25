@@ -3,7 +3,7 @@ extends Control
 ## A session, from start to finish: Set Adventure Duration · Start / Pause /
 ## Resume / End, and the Teams panel.
 ##
-## The dashboard's Start New Session opens this with `{"new": true}`: the
+## The dashboard's Start Session opens this with `{"new": true}`: the
 ## teacher's previous session is ended and a fresh one made, with a
 ## four-character code to read out. Leaving this screen ends the session,
 ## after asking -- the dashboard is where the next one starts. Students type the code,
@@ -52,6 +52,8 @@ var _watching := ""
 ## Set by `setup({"new": true})` for the first build only; a tab switch
 ## rebuilds with `{}` and must not make another session.
 var _fresh := false
+## A session is being made right now -- the first second after Start Session.
+var _making := false
 
 
 func setup(data: Dictionary) -> void:
@@ -63,21 +65,19 @@ func setup(data: Dictionary) -> void:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
-	# The back arrow sits on the screen, not in the panel: a boxed "Back" at the
-	# bottom was a whole row of panel for one word.
-	var back := Ui.glyph("←", 26, Pal.PARCHMENT)
-	back.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	back.offset_left = 8.0
-	back.offset_top = 6.0
-	back.offset_right = 44.0
-	back.offset_bottom = 40.0
-	back.pressed.connect(go_back)
-	add_child(back)
-
 	var box := Ui.screen_panel(self, PANEL, "Game Controls")
 
+	# The back arrow rides the tab row, inside the panel: on the screen's
+	# corner it sat in the dark margin, half under the dev tab.
+	var head := HBoxContainer.new()
+	var back := Ui.glyph("←", 24, Pal.TITLE)
+	back.custom_minimum_size = Vector2(40, 0)
+	back.tooltip_text = "Leave (ends the session)"
+	back.pressed.connect(go_back)
+	head.add_child(back)
 	var tabs := HBoxContainer.new()
 	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
+	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tabs.add_theme_constant_override("separation", 18)
 	for i in 2:
 		var t := Ui.tab_text("Controls" if i == 0 else "Teams", _tab == i)
@@ -86,7 +86,11 @@ func setup(data: Dictionary) -> void:
 			_tab = which
 			_rebuild())
 		tabs.add_child(t)
-	box.add_child(tabs)
+	head.add_child(tabs)
+	var balance := Control.new()          # keeps the tabs centred
+	balance.custom_minimum_size = Vector2(40, 0)
+	head.add_child(balance)
+	box.add_child(head)
 
 	# The code, on both tabs: it is what the teacher reads out, and what they
 	# glance at when a student asks "what was it again?".
@@ -112,8 +116,12 @@ func setup(data: Dictionary) -> void:
 	# A tab switch rebuilds the screen: draw what is already known at once,
 	# and let the read below catch anything missed.
 	if not _session.is_empty():
-		_refresh_state()
 		_draw_teams()
+	# Every button in its real state from the first frame. Built enabled and
+	# left that way until the session arrived, Start and End both looked
+	# pressable for the second it took.
+	_making = _making or _fresh
+	_refresh_state()
 	if _fresh:
 		_fresh = false
 		_open_fresh()
@@ -222,6 +230,71 @@ func _toggle_hold() -> void:
 		_set_state("paused", false)
 
 
+## Where each player is, by Presence: on the map (ready), in the lobby, or
+## not connected at all. Usernames in each.
+func _readiness() -> Dictionary:
+	var out := {"ready": [], "lobby": [], "away": []}
+	for pid: String in _lobby.players:
+		var name: String = _lobby.players[pid].username
+		if not _is_here(pid):
+			out.away.append(name)
+		elif _is_ready(pid) and _lobby.players[pid].team_id != "":
+			out.ready.append(name)
+		else:
+			out.lobby.append(name)
+	return out
+
+
+## Start waits for everyone, the way a match lobby waits for every Ready.
+## Ready is being on the map. Anyone connected but still in the lobby holds
+## the start, and the teacher is told who. Someone not connected at all -- a
+## dead phone -- can be left behind on purpose ("Start without them"), or one
+## flat battery would hold the whole class; they can still come in later.
+func _everyone_ready(without_away: bool) -> bool:
+	var r := _readiness()
+	if r.ready.is_empty() and r.lobby.is_empty():
+		_notice("Nobody is ready yet",
+			"No one has entered the map. Students join with code %s, pick a team, "
+			% str(_session.get("code", "")) + "then press Enter Map.", "")
+		return false
+	if not r.lobby.is_empty():
+		_notice("Not everyone is ready",
+			"%s still in the lobby: %s. Start opens once everyone has entered the map."
+			% ["1 player is" if r.lobby.size() == 1 else "%d players are" % r.lobby.size(),
+				", ".join(r.lobby)], "")
+		return false
+	if not r.away.is_empty() and not without_away:
+		_notice("Some players are not connected",
+			"%s: %s. Start without them? They can still join the adventure later."
+			% ["Not connected" if r.away.size() == 1 else "%d not connected" % r.away.size(),
+				", ".join(r.away)], "Start without them")
+		return false
+	return true
+
+
+## A message with an OK, and optionally one action that starts anyway.
+func _notice(title: String, text: String, action: String) -> void:
+	var dim := Ui.dim(self)
+	var ask := Ui.screen_panel(dim, Vector2(380, 180), title)
+	var body := Art.label(text, Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.custom_minimum_size = Vector2(340, 0)
+	ask.add_child(body)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	if action != "":
+		var go := Ui.button(action, 170, Ui.H, Ui.RED)
+		go.pressed.connect(func() -> void:
+			dim.queue_free()
+			_set_state("running", true, true))
+		row.add_child(go)
+	var ok := Ui.button("OK" if action == "" else "Wait", 110, Ui.H, Ui.SMALL)
+	ok.pressed.connect(func() -> void: dim.queue_free())
+	row.add_child(ok)
+	ask.add_child(row)
+
+
 ## Ending early takes the run away from everyone at once, so it asks.
 func _confirm_end() -> void:
 	var dim := Ui.dim(self)
@@ -245,12 +318,14 @@ func _confirm_end() -> void:
 	ask.add_child(row)
 
 
-## Start New Session, from the dashboard. Usually that is simply a new
+## Start Session, from the dashboard. Usually that is simply a new
 ## session. The one exception is an adventure still being played -- the app
 ## closed mid-lesson and reopened -- where making a new one would end it for
 ## the whole class, so it asks: carry on with it, or end it.
 func _open_fresh() -> void:
 	if not Net.signed_in():
+		_making = false
+		_refresh_state()
 		_say("Sign in as an admin to run a session.", Pal.INK_MUTED)
 		return
 	var live := await _live_session()
@@ -260,6 +335,8 @@ func _open_fresh() -> void:
 	if state != "running" and state != "paused":
 		_new_session()
 		return
+	_making = false
+	_refresh_state()
 	var dim := Ui.dim(self)
 	var ask := Ui.screen_panel(dim, Vector2(380, 180), "An adventure is still going")
 	var warn := Art.label("Session %s is %s. Carry on with it, or end it for everyone "
@@ -314,8 +391,10 @@ func _new_session() -> void:
 		{"admin_id": Net.user_id, "duration_s": _seconds()})
 	if not is_instance_valid(self):
 		return
+	_making = false
 	if made.error != "" or not (made.data is Array) or (made.data as Array).is_empty():
 		_say(made.error if made.error != "" else "Could not make a session.", Pal.WRONG)
+		_refresh_state()
 		return
 	_session = made.data[0]
 	_watch_roster()
@@ -373,8 +452,8 @@ func _watch_roster() -> void:
 	if not rt.broadcast.is_connected(_on_hint):
 		rt.broadcast.connect(_on_hint)
 	# Who is actually here -- a dot by each name.
-	if not rt.presence_changed.is_connected(_draw_teams):
-		rt.presence_changed.connect(_draw_teams)
+	if not rt.presence_changed.is_connected(_on_presence):
+		rt.presence_changed.connect(_on_presence)
 	rt.watch("members", "session_id=eq." + sid)
 	rt.watch("teams", "session_id=eq." + sid)
 
@@ -387,8 +466,15 @@ func _on_roster_row(table: String, type: String, record: Dictionary) -> void:
 	match _lobby.apply(table, type, record):
 		"changed":
 			_draw_teams()
+			_refresh_state()
 		"reload":
 			_load_teams()
+
+
+func _on_presence() -> void:
+	if is_instance_valid(self):
+		_draw_teams()
+		_refresh_state()
 
 
 func _on_hint(event: String, data: Dictionary) -> void:
@@ -417,16 +503,18 @@ func _ensure_session() -> String:
 	if not Net.signed_in():
 		return "Sign in as an admin first."
 	if _session.is_empty() or Teams.expired(_session):
-		return "This session has ended. Go back and press Start New Session."
+		return "This session has ended. Go back and press Start Session."
 	return ""
 
 
 ## Start writes the deadline every phone will read; pause stores what was left
 ## of it, so resuming does not hand the class extra time.
-func _set_state(want: String, is_start: bool) -> void:
+func _set_state(want: String, is_start: bool, without_away := false) -> void:
 	var err := await _ensure_session()
 	if err != "":
 		_say(err, Pal.WRONG)
+		return
+	if is_start and not _everyone_ready(without_away):
 		return
 	if is_start:
 		# The typed duration goes up with the start, which is why there is no
@@ -450,15 +538,25 @@ func _set_state(want: String, is_start: bool) -> void:
 			int(now) + duration_seconds) + "Z"
 		fields["duration_s"] = duration_seconds
 		fields["remaining_s"] = null
+	elif want == "ended":
+		# Only the state. It used to fall through to the Resume branch below,
+		# whose `int(remaining_s)` is an error while the clock runs (a running
+		# session has no banked time) -- so End only worked after a Pause.
+		pass
 	else:
 		# Resume: hand back exactly what the pause banked.
-		var left: int = int(_session.get("remaining_s", duration_seconds))
+		var banked: Variant = _session.get("remaining_s")
+		var left: int = int(banked) if banked != null else duration_seconds
 		fields["ends_at"] = Time.get_datetime_string_from_unix_time(
 			int(now) + left) + "Z"
 		fields["remaining_s"] = null
 
 	# The lobbies show Start as teams locking; announced as it is written.
-	_tell("sessions", "UPDATE", {"id": _session.get("id", ""), "state": want})
+	# The whole change, deadline included: a bare {state: running} left the
+	# lobbies holding a running session with no deadline at all.
+	var told := fields.duplicate()
+	told["id"] = _session.get("id", "")
+	_tell("sessions", "UPDATE", told)
 	var done: Dictionary = await _patch(fields)
 	if done.error != "":
 		_tell("sessions", "UPDATE", _session)
@@ -486,8 +584,17 @@ func _refresh_state() -> void:
 	if _session.is_empty() or Teams.expired(_session):
 		state = "ended"
 	if is_instance_valid(_code_label):
-		_code_label.text = "Session ended — go back to start a new one" if state == "ended" \
-			else "Code:  %s   ·   %s" % [str(_session.get("code", "")), state.capitalize()]
+		if _making:
+			_code_label.text = "Making a session…"
+		elif state == "ended":
+			_code_label.text = "Session ended — go back to start a new one"
+		elif state == "lobby":
+			# Before Start, the number that decides whether Start will go.
+			var r := _readiness()
+			_code_label.text = "Code:  %s   ·   %d/%d ready" % [str(_session.get("code", "")),
+				r.ready.size(), _lobby.players.size()]
+		else:
+			_code_label.text = "Code:  %s   ·   %s" % [str(_session.get("code", "")), state.capitalize()]
 	if is_instance_valid(_shuffle_btn):
 		_shuffle_btn.disabled = state != "lobby"
 	if not is_instance_valid(_start_btn):
@@ -495,7 +602,9 @@ func _refresh_state() -> void:
 	_start_btn.disabled = state != "lobby"
 	_hold_btn.disabled = state != "running" and state != "paused"
 	_hold_btn.text = "▶  Resume" if state == "paused" else "⏸  Pause Game"
-	_end_btn.disabled = state == "" or state == "ended"
+	# Nothing to end until it has started: before Start, leaving is how a
+	# session goes.
+	_end_btn.disabled = state != "running" and state != "paused"
 
 
 # --- Teams ------------------------------------------------------------------
@@ -511,6 +620,7 @@ func _load_teams() -> void:
 	if err != "":
 		_say(err, Pal.WRONG)
 	_draw_teams()
+	_refresh_state()
 
 
 ## The Teams tab, drawn from `_lobby` -- never waits on the network.
@@ -572,8 +682,8 @@ func _team_card(t: Dictionary, members: Array, teams: Array) -> Control:
 
 	# The count is what a teacher scans: five of six means somebody is still on
 	# the login screen. Each name is a menu, for Move.
-	var here := members.filter(func(m: Dictionary) -> bool: return _is_here(m.profile_id)).size()
-	col.add_child(Art.label("Joined %d · %d here" % [members.size(), here], Pal.TINY,
+	var ready := members.filter(func(m: Dictionary) -> bool: return _is_ready(m.profile_id)).size()
+	col.add_child(Art.label("Joined %d · %d ready" % [members.size(), ready], Pal.TINY,
 			Pal.INK_MUTED if members.is_empty() else Pal.CORRECT))
 	for who: Dictionary in members:
 		col.add_child(_player_chip(who, id, teams))
@@ -689,12 +799,15 @@ func _add_team() -> void:
 func _player_chip(who: Dictionary, on_team: String, teams: Array) -> Control:
 	var chip := MenuButton.new()
 	chip.flat = true
-	# ● here now (lobby or map), ○ joined but not connected -- a phone that
-	# died, or a student who wandered off to another screen.
-	var here: bool = _is_here(str(who.get("profile_id", "")))
-	chip.text = ("● " if here else "○ ") + str(who.get("username", "?"))
+	# ✓ ready (on the map), ● connected but still in the lobby, ○ joined but
+	# not connected -- a phone that died, or a student who wandered off.
+	var pid: String = str(who.get("profile_id", ""))
+	var here: bool = _is_here(pid)
+	var ready := _is_ready(pid)
+	chip.text = ("✓ " if ready else "● " if here else "○ ") + str(who.get("username", "?"))
 	chip.add_theme_font_size_override("font_size", Pal.TINY)
-	chip.add_theme_color_override("font_color", Pal.CORRECT if here else Pal.INK_MUTED)
+	chip.add_theme_color_override("font_color",
+		Pal.CORRECT if ready else Pal.INK if here else Pal.INK_MUTED)
 	chip.add_theme_color_override("font_hover_color", Pal.WRONG)
 	chip.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	chip.custom_minimum_size = Vector2(0, 14)
@@ -712,9 +825,12 @@ func _player_chip(who: Dictionary, on_team: String, teams: Array) -> Control:
 
 
 ## Moved on screen at once; read back only if the server says no.
+func _is_ready(profile_id: String) -> bool:
+	return Net.realtime().where_is(profile_id, str(_session.get("id", ""))) == "map"
+
+
 func _is_here(profile_id: String) -> bool:
-	var meta: Variant = Net.realtime().online.get(profile_id)
-	return meta is Dictionary and str((meta as Dictionary).get("sid", "")) == str(_session.get("id", ""))
+	return Net.realtime().where_is(profile_id, str(_session.get("id", ""))) != ""
 
 
 func _move(profile_id: String, team_id: String) -> void:

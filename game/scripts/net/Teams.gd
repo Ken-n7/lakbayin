@@ -68,19 +68,27 @@ static func expired(session: Dictionary) -> bool:
 	if str(session.get("state", "")) == "ended":
 		return true
 	var now := Time.get_unix_time_from_system()
-	var made: String = str(session.get("created_at", ""))
-	if made != "" and Time.get_unix_time_from_datetime_string(made) + MAX_AGE_S <= now:
+	var made := _stamp(session.get("created_at"))
+	if made > 0 and made + MAX_AGE_S <= now:
 		return true
 	if str(session.get("state", "")) != "running":
 		return false
-	var ends: String = str(session.get("ends_at", ""))
-	if ends == "":
-		return false
-	return Time.get_unix_time_from_datetime_string(ends) <= now
+	var ends := _stamp(session.get("ends_at"))
+	return ends > 0 and ends <= now
+
+
+## A timestamp column as unix seconds, 0 for none. A JSON null reached
+## `str()` as "<null>", which parses as 1970 -- so a running session whose
+## deadline had not arrived yet read as long over, and the lobby sent its
+## students back to the code screen the moment the teacher pressed Start.
+static func _stamp(v: Variant) -> int:
+	if v == null or str(v) == "":
+		return 0
+	return Time.get_unix_time_from_datetime_string(str(v))
 
 
 ## Into the session by its code, with no team yet. Coming back in -- a rejoin,
-## Continue Quest -- finds the membership already there and keeps it, team,
+## Join Quest -- finds the membership already there and keeps it, team,
 ## gems and all. `{error, session}`.
 static func enter(code: String) -> Dictionary:
 	if not Net.signed_in():
@@ -88,8 +96,19 @@ static func enter(code: String) -> Dictionary:
 	var found: Dictionary = await find(code)
 	if found.error != "":
 		return found
-	# Insert if missing, keep if there: one request, not look-then-add.
 	var sid: String = str(found.session.get("id", ""))
+	# Once it has started nobody new comes in -- the way a match that has
+	# begun takes no one from the queue. Somebody already in it (a dead
+	# phone, the app reopened) still gets back in. The server holds the same
+	# line; this only words it.
+	if str(found.session.get("state", "")) != "lobby":
+		var mine: Dictionary = await membership(sid)
+		if mine.has("error"):
+			return {"error": str(mine.error), "session": {}}
+		if mine.is_empty():
+			return {"error": "That adventure has already started. Ask your teacher.", "session": {}}
+		return found
+	# Insert if missing, keep if there: one request, not look-then-add.
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST,
 		MEMBERS + "?on_conflict=session_id,profile_id",
 		{"session_id": sid, "profile_id": Net.user_id},

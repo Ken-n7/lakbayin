@@ -144,8 +144,10 @@ func _sync_session() -> void:
 	# the fan-out is the session's size -- see `Teams.everyone()` for the
 	# number that decides whether this stays affordable.
 	rt.watch("members", "session_id=eq." + sid)
-	# On the teacher's list as here, on the board.
+	# On the teacher's list as here, on the board -- which is what "ready" is.
 	rt.track({"sid": sid, "where": "map", "name": Net.username})
+	if not rt.presence_changed.is_connected(_show_waiting):
+		rt.presence_changed.connect(_show_waiting)
 	_refresh_peers()
 
 
@@ -396,6 +398,7 @@ func _draw_peers() -> void:
 		anchors.append((c as Node2D).position)
 	var gate_at: Vector2 = stations.gate.position if stations.gate != null else anchors[-1]
 	_peers.refresh(_peer_rows.values(), anchors, gate_at, Net.user_id)
+	_show_waiting()      # the roster is the other half of "N of M ready"
 
 
 ## The run is over and it was not this player's doing, so say so and score
@@ -413,6 +416,21 @@ func _leave_ended() -> void:
 		Game.end_adventure()      # opens the summary through `_on_adventure_end`
 	else:
 		main.open("home")
+
+
+## Before Start: who else has made it onto the board. The teacher's Start
+## waits for all of them, so this is the line everybody is waiting on.
+func _show_waiting() -> void:
+	if not is_instance_valid(self) or not is_instance_valid(_start_hint) \
+			or Game.session_state != "lobby":
+		return
+	# `_peer_rows` is everyone in the session, this player included.
+	var total := maxi(_peer_rows.size(), 1)
+	var ready := 0
+	for pid: String in _peer_rows:
+		if Net.realtime().where_is(pid, Game.session_id) == "map":
+			ready += 1
+	_start_hint.text = "Waiting for your teacher to start  ·  %d of %d ready" % [ready, total]
 
 
 ## One place deciding what the session's state means on the board.
@@ -435,8 +453,7 @@ func _apply_session_state() -> void:
 			_leave_ended()
 		_:
 			hud.paused = true
-			if is_instance_valid(_start_hint):
-				_start_hint.text = "Waiting for your teacher to start"
+			_show_waiting()
 
 
 ## The admin's questions for this run. A failure is reported, not swallowed:

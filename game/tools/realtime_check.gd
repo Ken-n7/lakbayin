@@ -114,11 +114,36 @@ func _ready() -> void:
 	# when that socket closes -- nobody has to notice a phone leave.
 	other.track({"sid": sid, "where": "lobby", "name": "rt-check"})
 	_check("a tracked phone shows as here",
-		"" if await _until(func() -> bool: return str(rt.online.get(Net.user_id, {}).get("sid", "")) == sid)
+		"" if await _until(func() -> bool: return rt.where_is(Net.user_id, sid) == "lobby")
 		else "never appeared in %ds: %s" % [int(WAIT_S), str(rt.online)])
+	# A re-join is reported as a leave and a join a moment apart -- in which
+	# order is the server's business, so this feeds the order seen in a
+	# three-phone run against the live project (leave first) straight in,
+	# rather than hoping the network repeats it.
+	var probe := Realtime.new()
+	var key := "probe-user"
+	var meta := {"sid": sid, "where": "lobby", "name": "probe"}
+	probe._handle({"event": "presence_state", "payload": {key: {"metas": [meta.merged({"phx_ref": "a"})]}}})
+	probe._handle({"event": "presence_diff", "payload": {"joins": {},
+		"leaves": {key: {"metas": [meta.merged({"phx_ref": "a"})]}}}})
+	_check("a leave is held for the grace period",
+		"" if probe.where_is(key, sid) == "lobby" else "dropped at once")
+	probe._handle({"event": "presence_diff", "payload": {"leaves": {},
+		"joins": {key: {"metas": [meta.merged({"phx_ref": "b", "where": "map"}, true)]}}}})
+	_check("and the join that follows lands", "" if probe.where_is(key, sid) == "map" else "not seen")
+	probe._handle({"event": "presence_diff", "payload": {"joins": {},
+		"leaves": {key: {"metas": [meta.merged({"phx_ref": "b"})]}}}})
+	for k: String in probe._leaving:           # age the held leaves past the grace
+		for r: String in probe._leaving[k]:
+			probe._leaving[k][r][1] -= Realtime.PRESENCE_GRACE_S + 1.0
+	probe._expire_leaves()
+	_check("a leave with no return is gone after the grace",
+		"" if probe.where_is(key, sid) == "" else "still listed")
+	probe.free()
+
 	other.close_socket()
 	_check("and is gone when it disconnects",
-		"" if await _until(func() -> bool: return not rt.online.has(Net.user_id))
+		"" if await _until(func() -> bool: return rt.where_is(Net.user_id, sid) == "")
 		else "still listed after %ds" % int(WAIT_S))
 
 	rt.close_socket()

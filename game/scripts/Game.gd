@@ -219,7 +219,7 @@ func can_score() -> bool:
 
 
 ## Back into a run already under way -- a phone that died, an app restarted,
-## "Continue Quest" after leaving the board. The server's member row is the
+## "Join Quest" after leaving the board. The server's member row is the
 ## progress; a fresh local run would put the player back on circle 1 while
 ## every answer still moved the server's counter on from where it was.
 func restore_from(row: Dictionary) -> void:

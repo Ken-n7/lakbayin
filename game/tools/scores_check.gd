@@ -34,17 +34,24 @@ func _ready() -> void:
 		{"session_id": _session, "name": "Score Test"})
 	_check("create a team", team.error)
 
+	# A student joins in the lobby -- nobody new may join once it has started.
+	_check("register a player", await Net.sign_up(
+		"sc-player-" + stamp + "@numxventure-test.dev", "scp" + stamp, "letmein123", "player"))
+	_check("join by code and pick the team", await Teams.join(code, "Score Test"))
+
+	# Then the teacher starts it.
+	await Net.sign_in(_admin_email, "letmein123")
 	var ends := Time.get_datetime_string_from_unix_time(
 		int(Time.get_unix_time_from_system()) + 600) + "Z"
 	_check("start the game", (await Net.rest(HTTPClient.METHOD_PATCH,
 		"/rest/v1/sessions?id=eq." + _session,
 		{"state": "running", "ends_at": ends})).error)
-
-	# Now be a student in that session.
-	_check("register a player", await Net.sign_up(
-		"sc-player-" + stamp + "@numxventure-test.dev", "scp" + stamp, "letmein123", "player"))
-	# After Start, which is fine for someone with no team yet.
-	_check("join by code and pick the team", await Teams.join(code, "Score Test"))
+	_check("a running session is not expired (null-safe)",
+		"" if not Teams.expired({"state": "running", "ends_at": ends, "created_at": null})
+		else "read as over")
+	_check("nor one whose deadline is not set yet",
+		"" if not Teams.expired({"state": "running", "ends_at": null}) else "read as over")
+	await Net.sign_in("sc-player-" + stamp + "@numxventure-test.dev", "letmein123")
 
 	# 50 to start, per SPECS §4.
 	_check("a correct answer pays +10", _gems(await Scores.apply_answer(_session, true), 60))

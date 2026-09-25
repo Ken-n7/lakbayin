@@ -14,7 +14,9 @@ extends Control
 
 const PANEL := Vector2(360, 230)
 const LOBBY := Vector2(600, 300)
-const CARD := Vector2(132, 58)
+## A team box: its name, its count, and a line per player on it.
+const CARD := Vector2(132, 64)
+const NAME_LINE := 15.0
 
 var main: Control
 
@@ -28,6 +30,7 @@ var _lobby := Lobby.new()
 var _mine := ""              # the team this player is on, "" for none yet
 var _cards: HBoxContainer
 var _status: Label
+var _players: MenuButton     # everyone in the session, top-left of the lobby
 
 
 func setup(_data: Dictionary) -> void:
@@ -36,10 +39,12 @@ func setup(_data: Dictionary) -> void:
 		_build_offline()
 		return
 	_build_code()
-	# Already in a session that is still going: straight back to the lobby.
+	# Joined a session before: try it quietly. Still going -> straight back to
+	# the lobby. Over -> forgotten, and the student sees an empty field, not a
+	# warning about a code they never typed.
 	if Game.joined_code != "":
 		_code.text = Game.joined_code
-		_enter()
+		_enter(true)
 
 
 func _background() -> void:
@@ -105,7 +110,9 @@ func _build_code() -> void:
 	_back_button(box)
 
 
-func _enter() -> void:
+## `quiet`: the code came from memory, not from the student, so a failure
+## just clears the field instead of warning about it.
+func _enter(quiet := false) -> void:
 	if _code.text.strip_edges().is_empty():
 		_say("Enter the code.", Pal.WRONG)
 		return
@@ -117,7 +124,10 @@ func _enter() -> void:
 	if got.error != "":
 		_go.disabled = false
 		_go.text = "Join"
-		_say(got.error, Pal.WRONG)
+		if quiet:
+			_code.text = ""
+		else:
+			_say(got.error, Pal.WRONG)
 		# A remembered code that has since ended is simply forgotten.
 		Game.joined_code = ""
 		Game.joined_session = ""
@@ -142,13 +152,43 @@ func _enter() -> void:
 func _build_lobby() -> void:
 	_background()
 	var box := Ui.screen_panel(self, LOBBY, "Pick Your Team")
-	box.add_child(Art.label("Adventure code  %s" % Game.joined_code, Pal.LABEL,
-			Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+	# Everyone in the session on the left, the code in the middle.
+	var head := HBoxContainer.new()
+	# The parchment dropdown face `Ui.option()` wears -- the engine's grey read
+	# as an OS widget dropped onto the artwork.
+	_players = MenuButton.new()
+	_players.flat = false
+	_players.custom_minimum_size = Vector2(130, 26)
+	_players.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_players.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		_players.add_theme_color_override(c, Pal.INK)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		_players.add_theme_stylebox_override(state, Ui._paper_box(state != "normal"))
+	var pop := _players.get_popup()
+	pop.add_theme_stylebox_override("panel", Ui._paper_box(false))
+	pop.add_theme_color_override("font_color", Pal.INK)
+	pop.add_theme_color_override("font_hover_color", Pal.TITLE)
+	pop.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	var lit := Ui._paper_box(false)
+	lit.bg_color = Pal.PARCHMENT.darkened(0.12)
+	lit.set_border_width_all(0)
+	pop.add_theme_stylebox_override("hover", lit)
+	head.add_child(_players)
+	var code := Art.label("Adventure code  %s" % Game.joined_code, Pal.LABEL,
+			Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	code.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(code)
+	var balance := Control.new()          # keeps the code centred
+	balance.custom_minimum_size = Vector2(130, 0)
+	head.add_child(balance)
+	box.add_child(head)
 	var centre := CenterContainer.new()
 	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(centre)
 	_cards = HBoxContainer.new()
 	_cards.add_theme_constant_override("separation", 8)
+	_cards.alignment = BoxContainer.ALIGNMENT_CENTER
 	centre.add_child(_cards)
 	_status = Art.label("", Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -166,12 +206,15 @@ func _build_lobby() -> void:
 	leave.pressed.connect(_leave)
 	row.add_child(leave)
 	box.add_child(row)
+	var rt: Realtime = Net.realtime()
+	if not rt.presence_changed.is_connected(_draw_lobby):
+		rt.presence_changed.connect(_draw_lobby)
 	_draw_lobby()
 
 
 ## The teams, who is on each, and which one is this player's -- drawn from
 ## `_lobby`, which the socket keeps current, so this never waits on the
-## network. Rebuilt whole on every change: four cards at most.
+## network. Rebuilt whole on every change: four boxes at most.
 func _draw_lobby() -> void:
 	if not is_instance_valid(_cards):
 		return
@@ -185,30 +228,92 @@ func _draw_lobby() -> void:
 	_session = _lobby.session
 	_mine = _lobby.team_of(Net.user_id)
 	for c in _cards.get_children():
+		_cards.remove_child(c)
 		c.queue_free()
 	var locked := str(_session.get("state", "")) != "lobby"
 	for t: Dictionary in _lobby.teams:
-		var id: String = t.id
-		var card := Ui.button("%s\n%d joined" % [t.name, _lobby.members_of(id).size()],
-				CARD.x, CARD.y, Ui.RED if id == _mine else Ui.SMALL)
 		# Locked: only somebody with no team (never picked, or theirs was
 		# removed) may still pick. The server holds the same line.
-		card.disabled = id == _mine or (locked and _mine != "")
-		card.pressed.connect(func() -> void: _pick(id))
-		_cards.add_child(card)
+		_cards.add_child(_team_box(t, locked and _mine != ""))
 	if _lobby.teams.is_empty():
 		_cards.add_child(Art.label("Your teacher has not made any teams yet.",
 				Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+	_fill_players()
 
 	var team_name := _lobby.name_of(_mine)
 	if _mine == "":
-		_status.text = "Tap the team you want to join."
+		_status.text = "Tap a team's box to join it."
 	elif locked:
 		_status.text = "You're on %s. Teams are locked — the adventure has started." % team_name
 	else:
-		_status.text = "You're on %s. You can switch until your teacher starts." % team_name
+		_status.text = "You're on %s. Tap another box to switch until your teacher starts." % team_name
 	Game.team_name = team_name
 	_go.disabled = _mine == ""
+
+
+## One team as a box to tap: its name, how many, and who -- the same list the
+## teacher sees. Tapping it puts this player's name in it.
+func _team_box(t: Dictionary, locked: bool) -> Control:
+	var id: String = t.id
+	var mine := id == _mine
+	var members := _lobby.members_of(id)
+	var box := Button.new()
+	box.custom_minimum_size = CARD + Vector2(0, NAME_LINE * members.size())
+	box.focus_mode = Control.FOCUS_NONE
+	box.disabled = mine or locked
+	box.tooltip_text = "" if box.disabled else "Join " + str(t.name)
+	for st in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var face := StyleBoxFlat.new()
+		face.bg_color = Pal.PARCHMENT if st != "hover" else Pal.PARCHMENT.lightened(0.25)
+		face.border_color = Pal.WRONG if mine else (Pal.WOOD if st != "hover" else Pal.TITLE)
+		face.set_border_width_all(3 if mine else 2)
+		face.set_corner_radius_all(3)
+		box.add_theme_stylebox_override(st, face)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.offset_left = 6.0
+	col.offset_top = 4.0
+	col.offset_right = -6.0
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(col)
+	var title := Art.label(str(t.name), Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(title)
+	var count := Art.label("%d joined" % members.size(), Pal.TINY,
+			Pal.WRONG if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(count)
+	for who: Dictionary in members:
+		var me: bool = who.profile_id == Net.user_id
+		var line := Art.label(("★ " if me else "• ") + str(who.username), Pal.TINY,
+				Pal.WRONG if me else Pal.INK, HORIZONTAL_ALIGNMENT_LEFT)
+		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(line)
+	if not box.disabled:
+		box.pressed.connect(func() -> void: _pick(id))
+	return box
+
+
+## Everyone in the session, with their team and whether they are connected.
+func _fill_players() -> void:
+	if not is_instance_valid(_players):
+		return
+	var menu := _players.get_popup()
+	menu.clear()
+	var names: Array = []
+	for pid: String in _lobby.players:
+		names.append(pid)
+	names.sort_custom(func(a: String, b: String) -> bool:
+		return str(_lobby.players[a].username) < str(_lobby.players[b].username))
+	for pid: String in names:
+		var p: Dictionary = _lobby.players[pid]
+		var here: bool = Net.realtime().where_is(pid, str(_session.get("id", ""))) != ""
+		var team := _lobby.name_of(str(p.team_id))
+		menu.add_item("%s %s  —  %s" % ["●" if here else "○", p.username,
+			team if team != "" else "no team"])
+	_players.text = "Players (%d) ▾" % names.size()
 
 
 ## Shown picked at once; the server's answer only matters if it says no, and

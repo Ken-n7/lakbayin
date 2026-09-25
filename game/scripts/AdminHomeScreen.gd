@@ -24,7 +24,7 @@ func _entries() -> Array:
 	return [
 		# Straight into a fresh session with its code; Game Controls and the
 		# Teams tab are where it is run, and leaving ends it.
-		["Start New Session", "controls", Ui.RED, {"new": true}],
+		["Start Session", "controls", Ui.RED, {"new": true}],
 		["Question Management", "questions", Ui.SMALL],
 		["Leaderboard", "board", Ui.SMALL],
 		["Feedback", "feedback", Ui.SMALL],

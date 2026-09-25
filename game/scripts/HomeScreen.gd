@@ -63,7 +63,7 @@ func _tagline() -> String:
 func _entries() -> Array:
 	var has_profile := Game.player_name != ""
 	var out: Array = [
-		["Continue Quest" if has_profile else "Start Adventure", "", Ui.RED],
+		["Join Quest" if has_profile else "Start Adventure", "", Ui.RED],
 		["Leaderboard", "board", Ui.SMALL],
 		["Learn", "learn", Ui.SMALL],
 	]

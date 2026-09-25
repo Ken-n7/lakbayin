@@ -53,14 +53,24 @@ var _wanted: Array[Dictionary] = []
 var _joined := false
 ## True once the server confirms the stream, not merely the join.
 var live := false
-## Who is connected right now: user id -> what they last announced with
-## `track()` (session, where they are, name). Supabase keeps this list and
-## drops a phone from it by itself when its connection goes, which is the
-## point -- nothing here has to notice a phone dying.
+## Who is connected right now: user id -> every connection's announcement
+## from `track()` ({sid, where, name}), one per device. Supabase keeps this
+## list and drops a phone from it by itself when its connection goes, which is
+## the point -- nothing here has to notice a phone dying. Ask `where_is()`.
 var online := {}
 ## key -> {phx_ref: meta}. One user can hold two connections (two windows);
 ## they only count as gone when the last one leaves.
 var _presence := {}
+## Leaves held back for PRESENCE_GRACE_S: key -> {phx_ref: [meta, left_at]}.
+## A phone re-joining the channel -- a WiFi blip, or a screen widening what
+## it watches -- is reported as a leave and a join a moment apart; shown as
+## it came, a student flickered "not connected", and a Start pressed in that
+## moment was refused over it. Measured in a three-phone run against the
+## live project.
+var _leaving := {}
+## Longer than a reconnect (RECONNECT_S, then the join) so our own dropped
+## connection coming back does not flicker anyone out either.
+const PRESENCE_GRACE_S := 5.0
 ## What this phone announces, re-sent after every (re)join.
 var _tracked := {}
 
@@ -130,6 +140,7 @@ func close_socket() -> void:
 	_wanted.clear()
 	_tracked = {}
 	_presence = {}
+	_leaving = {}
 	online = {}
 	_retry_in = -1.0
 	_joined = false
@@ -147,6 +158,8 @@ func _process(delta: float) -> void:
 	var now := _ws.get_ready_state()
 	if now != _state:
 		_state = now
+		if OS.get_environment("RT_DEBUG") != "":
+			print("RT socket state -> ", now, " close code ", _ws.get_close_code(), " ", _ws.get_close_reason())
 		if now == WebSocketPeer.STATE_OPEN:
 			_joined = false
 			_join()
@@ -156,12 +169,20 @@ func _process(delta: float) -> void:
 			live = false
 			if not _wanted.is_empty():
 				_retry_in = RECONNECT_S
-			# Nobody can be seen from a dead socket; the rejoin sends the
-			# whole list again.
+			# Our own connection dropped. Everyone goes into the same grace a
+			# single leave gets: a reconnect inside it (the usual case, 2s)
+			# sends the whole list again and nobody is seen to flicker out;
+			# a longer outage lets them go.
+			var at := Time.get_ticks_msec() / 1000.0
+			for key: String in _presence:
+				for ref: String in _presence[key]:
+					if not _leaving.has(key):
+						_leaving[key] = {}
+					_leaving[key][ref] = [_presence[key][ref], at]
 			_presence = {}
-			online = {}
-			presence_changed.emit()
+			_presence_publish()
 			closed.emit(_ws.get_close_code())
+	_expire_leaves()
 	if _retry_in > 0.0:
 		_retry_in -= delta
 		if _retry_in <= 0.0:
@@ -256,6 +277,14 @@ func _handle(msg: Dictionary) -> void:
 				_send_track()
 		"presence_state":
 			var st: Variant = msg.get("payload")
+			# A full list after our own (re)join: anyone missing from it who
+			# was here a moment ago is held in grace like any other leave.
+			var now := Time.get_ticks_msec() / 1000.0
+			for key: String in _presence:
+				for ref: String in _presence[key]:
+					if not _leaving.has(key):
+						_leaving[key] = {}
+					_leaving[key][ref] = [_presence[key][ref], now]
 			_presence = {}
 			if st is Dictionary:
 				_presence_add(st)
@@ -266,10 +295,15 @@ func _handle(msg: Dictionary) -> void:
 				_presence_add((diff as Dictionary).get("joins", {}))
 				var leaves: Variant = (diff as Dictionary).get("leaves", {})
 				if leaves is Dictionary:
+					var now := Time.get_ticks_msec() / 1000.0
 					for key: String in leaves:
 						for m: Variant in (leaves[key] as Dictionary).get("metas", []):
 							if _presence.has(key) and m is Dictionary:
-								(_presence[key] as Dictionary).erase(str(m.get("phx_ref", "")))
+								var ref := str(m.get("phx_ref", ""))
+								if not _leaving.has(key):
+									_leaving[key] = {}
+								_leaving[key][ref] = [m, now]
+								(_presence[key] as Dictionary).erase(ref)
 						if _presence.has(key) and (_presence[key] as Dictionary).is_empty():
 							_presence.erase(key)
 			_presence_publish()
@@ -297,9 +331,48 @@ func _presence_add(joins: Variant) -> void:
 func _presence_publish() -> void:
 	online = {}
 	for key: String in _presence:
-		for ref: String in _presence[key]:
-			online[key] = _presence[key][ref]      # any connection will do
+		online[key] = (_presence[key] as Dictionary).values()
+	# Just left: still listed for the grace period. Always, even when another
+	# connection of theirs is here -- that one may be another session (the
+	# same account open in last lesson's window), which says nothing about
+	# this one.
+	for key: String in _leaving:
+		for ref: String in _leaving[key]:
+			if not online.has(key):
+				online[key] = []
+			online[key].append(_leaving[key][ref][0])
 	presence_changed.emit()
+
+
+## Drops leaves whose grace has run out; republishes if that changed anything.
+func _expire_leaves() -> void:
+	if _leaving.is_empty():
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	var dropped := false
+	for key: String in _leaving.keys():
+		for ref: String in (_leaving[key] as Dictionary).keys():
+			if now - float(_leaving[key][ref][1]) >= PRESENCE_GRACE_S:
+				(_leaving[key] as Dictionary).erase(ref)
+				dropped = true
+		if (_leaving[key] as Dictionary).is_empty():
+			_leaving.erase(key)
+	if dropped:
+		_presence_publish()
+
+
+## Where a user is in one session: "map", "lobby", or "" for not connected to
+## it. All their connections count -- the same account open on two devices,
+## or still open in last session's window, is common, and taking whichever
+## connection came first read a student on the map as not here at all.
+func where_is(user_id: String, session_id: String) -> String:
+	var found := ""
+	for meta: Variant in online.get(user_id, []):
+		if meta is Dictionary and str(meta.get("sid", "")) == session_id:
+			if str(meta.get("where", "")) == "map":
+				return "map"
+			found = "lobby"
+	return found
 
 
 func _send(topic: String, event: String, payload: Dictionary) -> void:

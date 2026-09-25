@@ -159,12 +159,12 @@ func _end_via_time() -> void:
 
 
 ## Start Adventure is two steps now: the home screen, then the team name.
-## Every "Continue Quest" in this suite goes through both.
+## Every "Join Quest" in this suite goes through both.
 ## A player types a name every run, so the default is a name and not "".
 ## Section 8 clears `Game.team_name`, and an empty field is refused -- which
 ## is the screen behaving, not a broken step.
 func _continue_quest(team := "Test Team") -> void:
-	_click(_screen(), "Continue Quest")
+	_click(_screen(), "Join Quest")
 	await _wait(3)
 	_screen()._team.text = team
 	_click(_screen(), "Ready!")
@@ -329,7 +329,7 @@ func _run() -> void:
 	check("main backref wired", true)
 
 	print("== 7. continue quest + pause menu ==")
-	check("continue quest shown", _find_button(_screen(), "Continue Quest") != null)
+	check("continue quest shown", _find_button(_screen(), "Join Quest") != null)
 	# With a profile saved, the title needs its own way back to hero creation.
 	check("title change character shown", _find_button(_screen(), "Change Character") != null)
 	# Quit is gone with the second navigation: on a phone the back button
@@ -341,7 +341,7 @@ func _run() -> void:
 	_click(_screen(), "Back")
 	await _wait(3)
 	# Start Adventure now goes by way of the team name, per SPECS §3.
-	_click(_screen(), "Continue Quest")
+	_click(_screen(), "Join Quest")
 	await _wait(3)
 	check("continue quest asks for the team name",
 		_script_of(_screen(), "res://scripts/TeamNameScreen.gd"))
