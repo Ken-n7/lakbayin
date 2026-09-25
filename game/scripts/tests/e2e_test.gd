@@ -206,11 +206,10 @@ func _run() -> void:
 	await _wait(3)
 	var hero := _screen()
 	check("reached hero select", _script_of(hero, "res://scripts/HeroSelectScreen.gd"))
-	var name_field := _find_line_edit(hero)
-	check("name field present", name_field != null)
-	name_field.text = "E2E Hero"
+	# No name to type: the account's username is the name.
+	check("no name field", _find_line_edit(hero) == null)
 	_find_button_tooltip(hero, "Adventurer #12").pressed.emit()
-	_click(hero, "Begin Adventure")
+	_click(hero, "Set")
 	await _wait(3)
 	# Hero select hands off to the team name, which is what begins the run.
 	_screen()._team.text = "Test Team"
@@ -334,16 +333,32 @@ func _run() -> void:
 
 	print("== 7. continue quest + pause menu ==")
 	check("continue quest shown", _find_button(_screen(), "Join Quest") != null)
-	# With a profile saved, the title needs its own way back to hero creation.
-	check("title change character shown", _find_button(_screen(), "Change Character") != null)
-	# Quit is gone with the second navigation: on a phone the back button
-	# leaves, and Log Out is the action that means something to a student.
-	check("no stray Quit button", _find_button(_screen(), "Quit") == null)
+	# Change Character and Log Out live in Settings; Quit asks first.
+	check("menu has Settings", _find_button(_screen(), "Settings") != null)
+	check("menu has Quit", _find_button(_screen(), "Quit") != null)
+	check("Change Character left the menu", _find_button(_screen(), "Change Character") == null)
+	_click(_screen(), "Quit")
+	await _wait(2)
+	check("Quit asks first", _find_label(_screen(), "Quit NumXventure?") != null)
+	_click(_screen(), "Stay")
+	await _wait(2)
+	check("Stay keeps you here", _find_label(_screen(), "Quit NumXventure?") == null
+		and _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	_screen().call("go_back")
+	await _wait(2)
+	check("back asks as well", _find_label(_screen(), "Quit NumXventure?") != null)
+	_screen().call("go_back")
+	await _wait(2)
+	check("back again closes the question", _find_label(_screen(), "Quit NumXventure?") == null)
+	_click(_screen(), "Settings")
+	await _wait(2)
+	check("Settings offers Change Character", _find_button(_screen(), "Change Character") != null)
 	_click(_screen(), "Change Character")
 	await _wait(3)
 	check("change character opens hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
-	_click(_screen(), "Back")
+	_click(_screen(), "Set")
 	await _wait(3)
+	check("Set from Settings goes back Home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	# Start Adventure now goes by way of the team name, per SPECS §3.
 	_click(_screen(), "Join Quest")
 	await _wait(3)
@@ -426,12 +441,9 @@ func _run() -> void:
 	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	hero = _screen()
-	var name2 := _find_line_edit(hero)
-	check("name field present", name2 != null)
-	name2.text = "E2E Hero"
 	# re-pick after the screen was recreated (Back discarded the locals)
 	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
-	_click(hero, "Begin Adventure")
+	_click(hero, "Set")
 	await _wait(3)
 	# Hero select hands off to the team name, which is what begins the run.
 	_screen()._team.text = "Test Team"

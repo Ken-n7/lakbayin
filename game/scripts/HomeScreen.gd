@@ -15,6 +15,9 @@ const TREE := "res://assets/terrain/decorations/Tree1.png"
 
 const INSET := 16      # safe-area gutter, ~5% of the 360px canvas height
 const COL_W := 186     # menu column width
+const HAIL_SIZE := Pal.BODY      # the welcome line; was Pal.H2
+const SUB_SIZE := Pal.TINY - 1   # the line under it; was Pal.TINY
+const ICONS := "res://assets/ui/icons/%s.png"
 const BTN_H := Ui.H      # 30 x the ~3x phone upscale is ~90 physical px, still a
                        # comfortable touch target; 40 did not leave room for the
                        # welcome copy and five buttons above the tab bar
@@ -58,19 +61,25 @@ func _tagline() -> String:
 	return "Explore.  Solve.  Conquer."
 
 
-## [label, route, button kind]; an empty route means "work it out" via
-## `_adventure_route()`.
+## [label, route, button kind, data, icon]; an empty route means "work it
+## out" via `_adventure_route()`, and a Callable is run instead of opened.
+## Change Character and Log Out live in Settings (client), which is what
+## makes room for Quit.
 func _entries() -> Array:
 	var has_profile := Game.player_name != ""
-	var out: Array = [
+	return [
 		["Join Quest" if has_profile else "Start Adventure", "", Ui.RED],
-		["Leaderboard", "board", Ui.SMALL],
-		["Learn", "learn", Ui.SMALL],
+		["Leaderboard", "board", Ui.SMALL, {}, "trophy"],
+		["Learn", "learn", Ui.SMALL, {}, "book"],
+		["Settings", _open_settings, Ui.SMALL, {}, "gear"],
+		["Quit", _confirm_quit, Ui.SMALL, {}, "exit"],
 	]
-	# The only route back to the character picker once a hero is saved.
-	if has_profile:
-		out.insert(1, ["Change Character", "hero", Ui.SMALL])
-	return out
+
+
+## Log Out on the header, or in Settings. The admin dashboard keeps it on the
+## header: its column has no room for Settings and Quit.
+func _logout_in_settings() -> bool:
+	return true
 
 
 ## A teacher never picked a character, so there is no portrait to stand there.
@@ -78,45 +87,37 @@ func _show_portrait() -> bool:
 	return true
 
 
-## Under the buttons: what the player's adventures have come to (client:
-## the gems should be there to see on Home after every game, not only on the
-## summary that closes a moment later). Filled once the server answers; the
-## admin dashboard puts its bank status here instead.
-func _after_menu(col: VBoxContainer) -> void:
-	if not Net.signed_in():
-		return
-	# One line on one plank: the column has room for exactly that under Learn.
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 3)
-	var plank := Ui.plank(line, 8.0)
-	plank.custom_minimum_size = Vector2(COL_W, 0)
-	plank.visible = false
-	col.add_child(plank)
+## Every gem the player's adventures have come to, ahead of their name: the
+## glinting gem and the total, then a bar (client). Sized as it was under the
+## menu -- a 16px gem, the number in body text. Shown once the server answers,
+## and not at all for a player with no finished adventure yet.
+func _load_gems(head: HBoxContainer) -> void:
+	var icon := Art.texrect(Ui.GEM, 16, 16)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var n := Art.label("", Pal.BODY, Pal.GOLD)
+	n.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	Art.shadow(n, Pal.SHADOW, 2, 0)
+	var bar := Art.label("|", Pal.BODY, Pal.CREAM)
+	bar.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	Art.shadow(bar, Pal.SHADOW, 2, 0)
+	for c: Control in [icon, n, bar]:
+		c.visible = false
+		head.add_child(c)
 	var results: Array = await Teams.my_results()
-	if not is_instance_valid(plank) or results.is_empty():
+	if not is_instance_valid(n) or results.is_empty():
 		return
 	var total := 0
 	for r: Dictionary in results:
 		total += int(r.gems)
-	_gem_pair(line, "Last", int(results[0].gems))
-	var dot := Art.label("·", Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	dot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(dot)
-	_gem_pair(line, "Total", total)
-	plank.tooltip_text = "%d adventures played" % results.size()
-	plank.visible = true
+	n.text = str(total)
+	n.tooltip_text = "Gems from %d adventures" % results.size()
+	for c: Control in [icon, n, bar]:
+		c.visible = true
 
 
-func _gem_pair(row: HBoxContainer, what: String, gems: int) -> void:
-	var l := Art.label(what, Pal.SMALL, Pal.CREAM)
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(l)
-	var icon := Art.texrect(Ui.GEM, 16, 16)
-	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(icon)
-	var n := Art.label(str(gems), Pal.BODY, Pal.GOLD)
-	n.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(n)
+## Hook for anything a subclass wants under the buttons.
+func _after_menu(_col: VBoxContainer) -> void:
+	pass
 
 
 # --- Scene ------------------------------------------------------------------
@@ -228,36 +229,46 @@ func _build_hero() -> void:
 func _build_header() -> void:
 	if not Net.signed_in():
 		return
+	# Room for Log Out at the right, when the header carries it.
+	var edge := INSET + (0.0 if _logout_in_settings() else 86.0)
+	# One line, right-aligned: the player's gems | their name, their character.
+	var head := HBoxContainer.new()
+	head.alignment = BoxContainer.ALIGNMENT_END
+	head.add_theme_constant_override("separation", 6)
+	head.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	head.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	head.offset_right = -edge
+	head.offset_top = INSET
+	head.offset_bottom = INSET + 30
+	head.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(head)
+
+	if _show_portrait():
+		_load_gems(head)
+
+	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
+	who.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	Art.shadow(who, Pal.SHADOW, 2, 0)
+	head.add_child(who)
+
 	# The chosen character stands beside the name, per the mockup's header --
 	# for a player. A teacher never picked one, so the name sits alone.
 	if _show_portrait():
 		var wrap := Control.new()
 		wrap.custom_minimum_size = Vector2(28, 28)
 		wrap.clip_contents = true
-		wrap.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-		wrap.offset_left = -(INSET + 86 + 30)
-		wrap.offset_right = -(INSET + 86 + 2)
-		wrap.offset_top = INSET + 2
-		wrap.offset_bottom = INSET + 30
+		wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var face := AnimatedSprite2D.new()
 		face.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id), 1.0)
 		face.animation = "right"
 		face.scale = Vector2(1.4, 1.4)
-		face.position = Vector2(14, 20)
+		# Centred on the text's line (measured): at y 20 it sat 5px under it.
+		face.position = Vector2(14, 13)
 		wrap.add_child(face)
-		add_child(wrap)
+		head.add_child(wrap)
 
-	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
-	who.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	who.offset_left = -300
-	# Clear of the portrait, which sits at -(INSET + 86 + 30) .. -(INSET + 86 + 2)
-	# and was being drawn over the last letters of the name.
-	who.offset_right = -(INSET + 86 + 36) if _show_portrait() else -(INSET + 86)
-	who.offset_top = INSET + 6
-	who.offset_bottom = INSET + 24
-	Art.shadow(who, Pal.SHADOW, 2, 0)
-	add_child(who)
-
+	if _logout_in_settings():
+		return
 	var out := Ui.button("Log Out", 76, Ui.H, Ui.SMALL_RED)
 	out.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	out.offset_left = -(INSET + 76)
@@ -317,7 +328,8 @@ func _build_menu() -> void:
 
 	# The mockup's welcome copy, word for word -- §1 treats the PDFs as a
 	# wording contract even though the art is ours.
-	var hail := Art.label(_hail(), Pal.H2, Pal.PARCHMENT,
+	# A size down (client), with the line under it: room for one more button.
+	var hail := Art.label(_hail(), HAIL_SIZE, Pal.PARCHMENT,
 			HORIZONTAL_ALIGNMENT_CENTER)
 	# Wrapped and pinned to the column width. Without this a longer heading --
 	# the admin's -- sets the VBox's minimum width, and every button in it
@@ -327,7 +339,7 @@ func _build_menu() -> void:
 	Art.shadow(hail, Pal.SHADOW, 2, 0)
 	col.add_child(hail)
 	var sub := Art.label(_sub(),
-			Pal.TINY, Pal.WHITE_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
+			SUB_SIZE, Pal.WHITE_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sub.custom_minimum_size = Vector2(COL_W, 0)
 	col.add_child(sub)
@@ -345,18 +357,69 @@ func _build_menu() -> void:
 	for spec: Array in _entries():
 		var b := Ui.button(spec[0], COL_W, BTN_H, spec[2])
 		b.clip_text = true
-		var route: String = spec[1]
+		# Solid white pixel icons (tools/make_icons.py), at the left edge.
+		if spec.size() > 4 and str(spec[4]) != "":
+			b.icon = Art.tex(ICONS % spec[4])
+			b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.add_theme_constant_override("h_separation", 6)
+		var route: Variant = spec[1]
 		# An optional fourth field is handed to the screen it opens.
 		var data: Dictionary = spec[3] if spec.size() > 3 else {}
-		b.pressed.connect(func() -> void:
-			main.open(route if route != "" else _adventure_route(), data))
+		if route is Callable:
+			b.pressed.connect(route)
+		else:
+			b.pressed.connect(func() -> void:
+				main.open(route if route != "" else _adventure_route(), data))
 		col.add_child(b)
 	_after_menu(col)
 
 
-## Back on the home screen is the way out of the app.
+## Back on the home screen is the way out of the app -- after asking, as Quit
+## does. An open dialog closes first.
 func go_back() -> void:
-	get_tree().quit()
+	if is_instance_valid(_dialog):
+		_dialog.queue_free()
+		return
+	_confirm_quit()
+
+
+var _dialog: Control = null
+
+
+## Change Character (once there is one to change) and Log Out.
+func _open_settings() -> void:
+	_dialog = Ui.dim(self)
+	var box := Ui.back_panel(_dialog, Vector2(260, 150), "Settings",
+		func() -> void: _dialog.queue_free())
+	box.add_theme_constant_override("separation", 8)
+	if Game.player_name != "":
+		var hero := Ui.button("Change Character", 200, Ui.H, Ui.SMALL)
+		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
+		Ui.centre_row(box, hero)
+	var out := Ui.button("Log Out", 200, Ui.H, Ui.SMALL_RED)
+	out.pressed.connect(func() -> void:
+		Net.sign_out()
+		main.open("login"))
+	Ui.centre_row(box, out)
+
+
+func _confirm_quit() -> void:
+	_dialog = Ui.dim(self)
+	var box := Ui.screen_panel(_dialog, Vector2(300, 150), "Quit NumXventure?")
+	box.add_theme_constant_override("separation", 10)
+	var note := Art.label("Your gems are saved.", Pal.SMALL, Pal.INK_MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(note)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	var stay := Ui.button("Stay", 110, Ui.H, Ui.SMALL)
+	stay.pressed.connect(func() -> void: _dialog.queue_free())
+	var quit := Ui.button("Quit", 110, Ui.H, Ui.SMALL_RED)
+	quit.pressed.connect(func() -> void: get_tree().quit())
+	row.add_child(stay)
+	row.add_child(quit)
+	box.add_child(row)
 
 
 ## Only the version. The name used to live down here too, from before there

@@ -31,6 +31,17 @@ func _entries() -> Array:
 	]
 
 
+## Log Out stays on the header here: this column has no room for Settings
+## and Quit alongside the four destinations.
+func _logout_in_settings() -> bool:
+	return false
+
+
+## Back on the dashboard quits straight away, as it always has.
+func go_back() -> void:
+	get_tree().quit()
+
+
 ## A teacher never picked a character.
 func _show_portrait() -> bool:
 	return false

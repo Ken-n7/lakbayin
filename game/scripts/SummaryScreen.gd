@@ -44,7 +44,7 @@ func _build() -> void:
 	box.add_child(head)
 	var line := "Adventure aborted." if aborted else (
 		"%s finished #%d of %d teams!" % [me, place + 1, rows.size()] if place >= 0
-		else "A brave attempt, %s." % Game.player_name)
+		else "A brave attempt, %s." % (Net.username if Net.signed_in() else Game.player_name))
 	box.add_child(Art.label(line, Pal.LABEL, Pal.BRONZE, HORIZONTAL_ALIGNMENT_CENTER))
 
 	# The number, big on its plank, and how it was made, as four tiles.

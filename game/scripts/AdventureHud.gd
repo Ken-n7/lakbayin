@@ -153,7 +153,9 @@ func _build_top_bar() -> void:
 	# A fixed column: an 18-letter team name must not widen the plate and
 	# squeeze the ribbon off the far end of a 640px screen.
 	var team := Game.team_name if Game.team_name != "" else "Adventurer"
-	for spec in [[Game.player_name, Pal.CREAM], [team, Pal.WHITE_SOFT]]:
+	# The account's username is the player's name; the typed one is gone.
+	var me := Net.username if Net.signed_in() else Game.player_name
+	for spec in [[me, Pal.CREAM], [team, Pal.WHITE_SOFT]]:
 		var l := Art.label(str(spec[0]), Pal.SMALL, spec[1])
 		l.clip_text = true
 		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS

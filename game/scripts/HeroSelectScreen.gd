@@ -1,28 +1,31 @@
 extends Control
 
-## Picking the adventurer: which of the 32 heroes, and the name over it. Then
-## on to the team screen, which is what starts the run.
+## Picking the adventurer: which of the 32 heroes. No name to type -- the
+## username they signed up with is their name everywhere (client). Set saves
+## it and goes back where it came from: Home from Settings, or on to joining
+## an adventure the first time, when there was no character yet.
 
 var main: Control
 
-var _name_field: LineEdit
+var _then := "team"
 var _preview: AnimatedSprite2D
 var _hero_buttons: Dictionary = {}
 var _hero_id := 1
 var _hero_label: Label
 
 
-func setup(_data: Dictionary) -> void:
+func setup(data: Dictionary) -> void:
+	_then = str(data.get("then", "team"))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 
 
-## Two halves: who you are on the left -- the hero large, turning, with your
-## name under it -- and who you could be on the right. The old stack put a
+## Two halves: who you are on the left -- the hero large, turning -- and who
+## you could be on the right. The old stack put a
 ## 64px preview over a strip that showed two rows of heroes at a time.
 func _build() -> void:
 	# No scrim: Main's moving scene is the background (Backdrop.gd).
-	var outer := Ui.screen_panel(self, Vector2(600, 330), "Create Your Adventurer")
+	var outer := Ui.screen_panel(self, Vector2(600, 330), "Choose Your Adventurer")
 	outer.add_theme_constant_override("separation", 6)
 
 	var body := HBoxContainer.new()
@@ -30,7 +33,7 @@ func _build() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	outer.add_child(body)
 
-	# Left: the preview on a little patch of ground, then the name.
+	# Left: the preview on a little patch of ground, and which one it is.
 	var left := VBoxContainer.new()
 	left.custom_minimum_size = Vector2(190, 0)
 	left.add_theme_constant_override("separation", 4)
@@ -38,11 +41,6 @@ func _build() -> void:
 	left.add_child(_preview_stage())
 	_hero_label = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	left.add_child(_hero_label)
-	left.add_child(Art.label("Your name", Pal.LABEL, Pal.INK_MUTED))
-	_name_field = Ui.line_edit("Adventurer name", 190, 30)
-	_name_field.text = Game.player_name
-	_name_field.max_length = 18
-	left.add_child(_name_field)
 
 	# Right: all 32, six across at a size a thumb can pick from.
 	var right := VBoxContainer.new()
@@ -51,6 +49,7 @@ func _build() -> void:
 	body.add_child(right)
 	right.add_child(Art.label("Choose your hero", Pal.H2, Pal.TITLE))
 	var grid_scroll := ScrollContainer.new()
+	DragScroll.attach(grid_scroll)
 	grid_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	grid_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right.add_child(grid_scroll)
@@ -81,8 +80,8 @@ func _build() -> void:
 	var back := Ui.button("Back", Ui.W_MED, Ui.H, Ui.SMALL)
 	back.pressed.connect(func() -> void: main.open("home"))
 	row.add_child(back)
-	var start := Ui.button("Begin Adventure", 240, Ui.H, Ui.RED)
-	start.pressed.connect(_begin)
+	var start := Ui.button("Set", 240, Ui.H, Ui.RED)
+	start.pressed.connect(_save_hero)
 	row.add_child(start)
 	outer.add_child(row)
 
@@ -152,11 +151,13 @@ func _swatch_style(selected: bool, hover := false) -> StyleBox:
 	return tile
 
 
-func _begin() -> void:
-	if _name_field.text.strip_edges() == "":
-		_name_field.text = "Adventurer"
-	Game.player_name = _name_field.text.strip_edges()
+func _save_hero() -> void:
+	# The account's name. Offline (the suites, a dev run) there is none, and
+	# a name already saved is kept.
+	if Net.signed_in():
+		Game.player_name = Net.username
+	elif Game.player_name == "":
+		Game.player_name = "Adventurer"
 	Game.hero_id = _hero_id
 	Game.save_profile()
-	# The team name is its own screen now (G16), and it is what starts the run.
-	main.open("team")
+	main.open(_then)
