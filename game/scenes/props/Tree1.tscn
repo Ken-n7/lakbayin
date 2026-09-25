@@ -1,0 +1,98 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/terrain/decorations/Tree1.png" id="1_s7ogm"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xaoqy"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(35, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_qms6i"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(228, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_fhpi4"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(421, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_bh4q4"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(613, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_mrdvp"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(804, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xjvh6"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(996, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_lhwxq"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(1187, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_83uoo"]
+atlas = ExtResource("1_s7ogm")
+region = Rect2(1379, 49, 123, 194)
+filter_clip = true
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_l6oal"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_xaoqy")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_qms6i")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_fhpi4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_bh4q4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_mrdvp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_xjvh6")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lhwxq")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_83uoo")
+}],
+"loop": true,
+"name": &"sway",
+"speed": 3.0
+}]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1jug4"]
+size = Vector2(14.4, 11.2)
+
+[node name="Tree1" type="Node2D" unique_id=940420147]
+
+[node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1508868201]
+scale = Vector2(0.42, 0.42)
+sprite_frames = SubResource("SpriteFrames_l6oal")
+animation = &"sway"
+autoplay = "sway"
+offset = Vector2(0, -97)
+
+[node name="Foot" type="StaticBody2D" parent="." unique_id=1825657667]
+
+[node name="Box" type="CollisionShape2D" parent="Foot" unique_id=2016191451]
+position = Vector2(0, -5.6)
+shape = SubResource("RectangleShape2D_1jug4")

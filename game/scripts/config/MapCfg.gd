@@ -331,8 +331,9 @@ const DECOR_TRIES := 60
 const PATCH_RADIUS := 2
 const PATCH_HOLE := 0.45
 
-const TREE_SHEET := "res://assets/terrain/decorations/Tree%d.png"
-const STUMP_SHEET := "res://assets/terrain/decorations/Stump %d.png"
+## Trees, stumps and rocks are scenes (`Tree1`..`Rock4`): the sprite, and a
+## `Foot` body whose rectangles are the solid part -- drag them in the editor.
+const PROP_SCENE := "res://scenes/props/%s.tscn"
 const WATER_ROCK_SHEET := "res://assets/terrain/decorations/Water Rocks_0%d.png"
 const LOOT_SHEETS := [
 	"res://assets/terrain/resources/Gold_Resource.png",
@@ -341,12 +342,6 @@ const LOOT_SHEETS := [
 	"res://assets/terrain/resources/Tool_0%d.png",
 ]
 const DECOR_VARIANTS := 4
-## Solid footprints for props, base-anchored like the sprites: the part a hero
-## would really bump into -- a trunk, a rock's body -- not the canopy, which
-## the hero walks *under*. Width x height in px, standing on the prop's base.
-const TREE_WALL := Vector2(TILE * 0.45, TILE * 0.35)
-const ROCK_DECOR_WALL := Vector2(TILE * 0.8, TILE * 0.5)
-const STUMP_WALL := Vector2(TILE * 0.5, TILE * 0.3)
 ## Clouds over the board: fewer and fainter than on the menus, since here
 ## they pass over circles and the hero.
 ## Clouds on the play map keep to the open sea along the top of the world.
@@ -360,13 +355,9 @@ const MAP_CLOUD_Y := TILE * 1.2
 ## is multiplied toward a deeper blue -- the map, Home and the menu backdrop
 ## alike, so the three read as one world.
 const WATER_TINT := Color(0.70, 0.68, 1.0)
-const TREE_SCALE := 0.42
-const TREE_FPS := 3.0
 ## Most trees face the sheet's own way; the rest are mirrored so a wood is not
 ## one tree printed forty times.
 const TREE_FLIP := 0.9
-const STUMP_SCALE := 0.4
-const ROCK_DECOR_SCALE := 1.4
 const LOOT_SCALE := 0.5
 const WATER_ROCK_SCALE := 1.4
 const WATER_ROCK_FPS := 4.0

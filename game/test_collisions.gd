@@ -58,13 +58,12 @@ func _initialize() -> void:
 
 	# Props are solid at the base -- a trunk, a rock's body -- and the road is
 	# not: the hero used to walk straight through the forest.
-	var trunks: Array = screen.grid.solid.filter(func(r: Rect2) -> bool:
-		return r.size.is_equal_approx(MapCfg.TREE_WALL))
-	assert(not trunks.is_empty(), "no tree has a solid trunk")
-	for r: Rect2 in trunks:
-		assert(not screen.grid.is_walkable(r.get_center()), "a tree trunk is walkable")
+	var feet: Array[Rect2] = screen.decor.feet
+	assert(feet.size() > 50, "props have no solid bases (%d)" % feet.size())
+	for r: Rect2 in feet:
+		assert(not screen.grid.is_walkable(r.get_center()), "a prop's base is walkable")
 		assert(not screen.grid.trail.has(_cell(screen, r.get_center())),
-			"a tree trunk stands on the road")
+			"a prop stands on the road")
 
 	# Strictly sequential: nothing is answerable until the tower is briefed, then
 	# only the one circle the player is actually on.

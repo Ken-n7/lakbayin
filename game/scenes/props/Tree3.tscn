@@ -1,0 +1,98 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://assets/terrain/decorations/Tree3.png" id="1_m40qn"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_c00s8"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(49, 22, 94, 150)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_e4518"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(242, 21, 93, 151)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_dmmmx"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(434, 22, 93, 150)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_r4e41"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(626, 23, 93, 149)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_f0m12"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(817, 22, 95, 150)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_446rv"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(1009, 22, 94, 150)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3mmrs"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(1200, 22, 94, 150)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ce5xx"]
+atlas = ExtResource("1_m40qn")
+region = Rect2(1391, 22, 96, 150)
+filter_clip = true
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_pypwm"]
+animations = [{
+"frames": [],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_c00s8")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_e4518")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_dmmmx")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_r4e41")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_f0m12")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_446rv")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3mmrs")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ce5xx")
+}],
+"loop": true,
+"name": &"sway",
+"speed": 3.0
+}]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wyieq"]
+size = Vector2(14.4, 11.2)
+
+[node name="Tree3" type="Node2D" unique_id=1472256339]
+
+[node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=214435579]
+scale = Vector2(0.42, 0.42)
+sprite_frames = SubResource("SpriteFrames_pypwm")
+animation = &"sway"
+autoplay = "sway"
+offset = Vector2(0, -75)
+
+[node name="Foot" type="StaticBody2D" parent="." unique_id=1614375126]
+
+[node name="Box" type="CollisionShape2D" parent="Foot" unique_id=386725753]
+position = Vector2(0, -5.6)
+shape = SubResource("RectangleShape2D_wyieq")

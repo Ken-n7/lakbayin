@@ -11,6 +11,8 @@ extends RefCounted
 
 var world: Node2D
 var grid: MapGrid
+## Every prop's solid rect, for `test_collisions`.
+var feet: Array[Rect2] = []
 
 
 func _init(w: Node2D, g: MapGrid) -> void:
@@ -58,12 +60,31 @@ func build() -> void:
 
 
 
-## A prop's solid base: `size` wide and high, standing on its anchor point
-## (every sprite here is base-anchored). The hero walked straight through
-## trees and rocks before; props keep off the road, so this can never close
-## the walk -- `test_collisions` floods the board to prove it.
-func _foot(base: Vector2, size: Vector2) -> void:
-	grid.block(Rect2(base.x - size.x * 0.5, base.y - size.y, size.x, size.y))
+## Puts a prop scene (`scenes/props/`) on its base point and makes its
+## collision boxes solid: every CollisionShape2D rectangle under its `Foot`
+## body becomes a wall on the grid -- the trunk, a rock's body, not the canopy
+## the hero walks under. The body itself is dropped; nothing here moves by
+## physics, the grid is the only thing the hero bumps into. Props keep off the
+## road, so this can never close the walk -- `test_collisions` floods the board
+## to prove it.
+func _prop(name: String, at: Vector2, flip := 1.0) -> void:
+	var prop: Node2D = load(MapCfg.PROP_SCENE % name).instantiate()
+	prop.position = at
+	prop.scale.x = flip
+	world.add_child(prop)
+	var foot := prop.get_node_or_null("Foot")
+	if foot == null:
+		return
+	for box in foot.get_children():
+		var shape := (box as CollisionShape2D).shape as RectangleShape2D
+		if shape == null:
+			continue
+		var xf: Transform2D = prop.transform * (foot as Node2D).transform * (box as Node2D).transform
+		var size := shape.size * xf.get_scale().abs()
+		var r := Rect2(xf.origin - size * 0.5, size)
+		grid.block(r)
+		feet.append(r)
+	foot.free()
 
 
 ## The same weighted roll as before, but for the patch rather than for one prop.
@@ -99,17 +120,11 @@ func _plant(rng: RandomNumberGenerator, c: Vector2i, kind: String) -> void:
 	match kind:
 		"tree":
 			var fl := 1.0 if rng.randf() < MapCfg.TREE_FLIP else -1.0
-			Art.anim_sprite(world, MapCfg.TREE_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS),
-					p, MapCfg.TREE_SCALE, MapCfg.TREE_FPS, fl)
-			_foot(p, MapCfg.TREE_WALL)
+			_prop("Tree%d" % rng.randi_range(1, MapCfg.DECOR_VARIANTS), p, fl)
 		"stump":
-			Art.sprite(world, Art.tex(MapCfg.STUMP_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS)),
-					p, MapCfg.STUMP_SCALE)
-			_foot(p, MapCfg.STUMP_WALL)
+			_prop("Stump%d" % rng.randi_range(1, MapCfg.DECOR_VARIANTS), p)
 		"rock":
-			Art.sprite(world, Art.tex(MapCfg.ROCK_SHEET % rng.randi_range(1, MapCfg.DECOR_VARIANTS)),
-					p, MapCfg.ROCK_DECOR_SCALE)
-			_foot(p, MapCfg.ROCK_DECOR_WALL)
+			_prop("Rock%d" % rng.randi_range(1, MapCfg.DECOR_VARIANTS), p)
 		_:
 			var loot := (MapCfg.LOOT_SHEETS as Array).duplicate()
 			loot[-1] = str(loot[-1]) % rng.randi_range(1, MapCfg.DECOR_VARIANTS)
