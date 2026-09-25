@@ -61,12 +61,31 @@ var hints_used := 0
 
 var adventure_active := false
 var duration_seconds := 600.0
-var time_left := 0.0
+## Seconds left, read off a deadline rather than counted down frame by frame.
+## Adding up frame deltas ran slow wherever frames stall -- a phone in the
+## background, a window out of focus -- so every board in the room showed a
+## different clock, and none the teacher's. Anything that sets it (a session
+## row, the dev drawer's +60) moves the deadline with it.
+var time_left := 0.0:
+	set(v):
+		time_left = v
+		_deadline = now() + v
+var _deadline := 0.0
+## Server time minus this device's clock, from the `Date` on every reply (see
+## Supabase.gd). Phones in one classroom disagree by seconds to minutes; a
+## deadline read against each one's own clock gave each a different countdown.
+var clock_offset := 0.0
 
 var current_station := 0          # 0-based index of the active quiz station
 var items_done := 0               # global circle progress, 0..TOTAL_ITEMS
 var towers_entered: Array[bool] = [false, false, false]  # station intro card seen
-var clock_paused := false         # frozen aerial POV now; the admin's pause in Phase 3
+## Frozen aerial POV, and the admin's pause. Unpausing starts the deadline
+## again from what was left.
+var clock_paused := false:
+	set(v):
+		clock_paused = v
+		if not v:
+			_deadline = now() + time_left
 var completed_stations: Array[bool] = [false, false, false]
 var perfect_stations: Array[bool] = [false, false, false]
 var station_flawed := false       # flags a "no errors" run inside the current station
@@ -148,13 +167,29 @@ var session_id := ""
 ## `ends_at` is the deadline while running and `remaining_s` is what was banked
 ## at a pause; the local tick in `_process` only fills the gaps between
 ## updates, so a phone that joins late or sleeps still agrees with the room.
+## The time everyone's clock is read against: the server's, as near as this
+## device can tell. Unix seconds.
+func now() -> float:
+	return Time.get_unix_time_from_system() + clock_offset
+
+
+## "Thu, 25 Sep 2026 10:11:56 GMT" -> unix seconds, or 0.
+static func http_date(v: String) -> int:
+	var p := v.split(" ", false)
+	var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	if p.size() < 5 or months.find(p[2]) == -1:
+		return 0
+	return Time.get_unix_time_from_datetime_string("%s-%02d-%02dT%s" % [
+		p[3], months.find(p[2]) + 1, int(p[1]), p[4]])
+
+
 func apply_session(row: Dictionary) -> void:
 	var state := str(row.get("state", ""))
 	duration_seconds = float(int(row.get("duration_s", 600)))
 	match state:
 		"running":
 			var ends := Time.get_unix_time_from_datetime_string(str(row.get("ends_at", "")))
-			time_left = maxf(0.0, float(ends) - Time.get_unix_time_from_system())
+			time_left = maxf(0.0, float(ends) - now())
 			clock_paused = false
 		"paused":
 			# What the pause banked, not what this phone had counted to.
@@ -182,9 +217,9 @@ func apply_session(row: Dictionary) -> void:
 signal scored(kind: String, flag: bool)
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if adventure_active and not clock_paused and time_left > 0.0:
-		time_left = maxf(0.0, time_left - delta)
+		time_left = maxf(0.0, _deadline - now())
 		time_changed.emit(int(ceilf(time_left)))
 		if time_left <= 0.0:
 			end_adventure()

@@ -214,6 +214,31 @@ func _finish(reply: Dictionary) -> String:
 	return ""
 
 
+## How far this device's clock is from the server's, off the reply's `Date`
+## header -- every session clock is read against it (`Game.now()`). Kept from
+## the quickest round trip seen, where the network adds the least doubt.
+##
+## ponytail: `Date` is whole seconds, so boards agree to within about a
+## second; an RPC returning now() in ms would tighten that if it matters.
+var _best_rtt := INF
+
+
+func _learn_clock(headers: PackedStringArray, sent: float) -> void:
+	var got := Time.get_unix_time_from_system()
+	var rtt := got - sent
+	if rtt > _best_rtt:
+		return
+	for h in headers:
+		if h.to_lower().begins_with("date:"):
+			var server := Game.http_date(h.substr(5).strip_edges())
+			if server > 0:
+				_best_rtt = rtt
+				# `Date` truncates to the second: the middle of that second,
+				# against the middle of the round trip.
+				Game.clock_offset = server + 0.5 - (sent + rtt * 0.5)
+			return
+
+
 func _call(method: int, path: String, body: Variant, retry := true, prefer := "") -> Dictionary:
 	if not configured():
 		return {"error": "Supabase is not configured -- see supabase/README.md", "data": null}
@@ -227,12 +252,14 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 		"Prefer: return=representation" + ("," + prefer if prefer != "" else ""),
 	]
 	var payload := "" if body == null else JSON.stringify(body)
+	var sent := Time.get_unix_time_from_system()
 	var err := http.request(url + path, headers, method, payload)
 	if err != OK:
 		http.queue_free()
 		return {"error": "request failed to start (%d)" % err, "data": null}
 	var res: Array = await http.request_completed
 	http.queue_free()
+	_learn_clock(res[2], sent)
 	var code: int = res[1]
 	var text := (res[3] as PackedByteArray).get_string_from_utf8()
 	# A function returning nothing (Shuffle) answers 204 with no body at all.

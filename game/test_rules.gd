@@ -120,6 +120,33 @@ func _init() -> void:
 	assert(G.time_left == 0.0, "a passed deadline clamps at zero: %f" % G.time_left)
 	print("clock: lobby / running / paused / ended all read the session")
 
+	# The countdown reads the deadline, not the frames. Two boards that drew
+	# a different number of frames -- one in the background -- show one time.
+	G.adventure_active = true
+	G.apply_session({"state": "running", "duration_s": 600, "ends_at": deadline})
+	var at_start: float = G.time_left
+	for _i in 50:
+		G._process(1.0)            # fifty "seconds" of frames, no time passed
+	assert(absf(G.time_left - at_start) < 1.0,
+		"frames moved the clock: %f -> %f" % [at_start, G.time_left])
+	# A device whose clock is 4 minutes fast is told so by the server, and
+	# reads the same deadline as everyone else.
+	G.clock_offset = -240.0
+	G.apply_session({"state": "running", "duration_s": 600, "ends_at": deadline})
+	assert(absf(G.time_left - 540.0) < 3.0, "offset ignored: %f" % G.time_left)
+	G.clock_offset = 0.0
+	# Resuming after a pause starts from what was left, not from the old deadline.
+	G.clock_paused = true
+	G.time_left = 100.0
+	G.clock_paused = false
+	G._process(0.0)
+	assert(absf(G.time_left - 100.0) < 1.0, "resume jumped: %f" % G.time_left)
+	G.adventure_active = false
+	assert(G.http_date("Thu, 25 Sep 2026 10:11:56 GMT")
+		== Time.get_unix_time_from_datetime_string("2026-09-25T10:11:56"), "Date header parse")
+	assert(G.http_date("garbage") == 0, "a bad Date is ignored")
+	print("clock: deadline-driven, server-corrected, frame rate irrelevant")
+
 	# Only a running session scores; offline ("") always does.
 	G.apply_session({"state": "paused", "duration_s": 600, "remaining_s": 60})
 	assert(not G.can_score(), "a paused session refuses answers")

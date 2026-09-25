@@ -626,7 +626,7 @@ func _set_state(want: String, is_start: bool, without_away := false) -> void:
 			return
 
 	var fields := {"state": want}
-	var now := Time.get_unix_time_from_system()
+	var now := Game.now()
 	if want == "paused":
 		var ends: float = Time.get_unix_time_from_datetime_string(
 			str(_session.get("ends_at", ""))) if _session.get("ends_at") != null else 0.0
@@ -754,7 +754,7 @@ func _tick_clock() -> void:
 		var banked: Variant = _session.get("remaining_s")
 		left = int(banked) if banked != null else 0
 	else:
-		left = maxi(Teams._stamp(_session.get("ends_at")) - int(Time.get_unix_time_from_system()), 0)
+		left = maxi(Teams._stamp(_session.get("ends_at")) - int(Game.now()), 0)
 	_clock.text = Ui.mmss(left) + (" paused" if str(_session.get("state", "")) == "paused" else " left")
 	_sync_bar()
 

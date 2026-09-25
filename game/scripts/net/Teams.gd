@@ -67,7 +67,7 @@ const MAX_AGE_S := 3 * 3600
 static func expired(session: Dictionary) -> bool:
 	if str(session.get("state", "")) == "ended":
 		return true
-	var now := Time.get_unix_time_from_system()
+	var now := Game.now()
 	var made := _stamp(session.get("created_at"))
 	if made > 0 and made + MAX_AGE_S <= now:
 		return true

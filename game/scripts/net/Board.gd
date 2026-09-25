@@ -31,7 +31,7 @@ static func players(session_id: String) -> Array:
 		+ "&session_id=eq." + session_id + "&order=gems.desc")
 	if got.error != "" or not (got.data is Array):
 		return []
-	var now := Time.get_unix_time_from_system()
+	var now := Game.now()
 	var out: Array = []
 	for row: Dictionary in got.data:
 		var who: Variant = row.get("profiles")
