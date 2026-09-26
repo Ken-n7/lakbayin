@@ -153,9 +153,61 @@ func box_walkable(pos: Vector2, box: Rect2, level := 0, stair_low := -1) -> bool
 		if w.intersects(r):
 			return false
 	for corner in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
-		if not cell_ok(cell_at(corner), level, stair_low):
+		var c := cell_at(corner)
+		if not cell_ok(c, level, stair_low):
+			return false
+		if stairs.has(c) and not on_ramp(corner, c):
+			return false
+	# A man is wider than his feet: keep them a little off a cliff face
+	# beside him, or half of him is drawn over the rock -- except on the
+	# landing under a ramp's foot, which may be no wider than the ramp.
+	var m := MapCfg.CLIFF_SIDE_MARGIN
+	for p in [Vector2(r.position.x - m, r.position.y), Vector2(r.position.x - m, r.end.y),
+			Vector2(r.end.x + m, r.position.y), Vector2(r.end.x + m, r.end.y)]:
+		if cliff.has(cell_at(p)) and not stairs.has(cell_at(Vector2(clampf(p.x, r.position.x, r.end.x), p.y)) + Vector2i(0, -1)):
 			return false
 	return true
+
+
+## Whether `p`, in ramp cell `c`, is on the ramp's grass rather than the open
+## corner of its top tile or the rock of its foot -- measured off the art
+## (Tilemap row 4-5, cols 0 and 3). In the ramp's own frame: x from its low
+## side (0) to its high side (32), y from the top tile's top (0) to the foot's
+## bottom (64).
+func on_ramp(p: Vector2, c: Vector2i) -> bool:
+	var span := _ramp_span(c, p.y)
+	var x := _ramp_x(c, p.x)
+	return x >= span.x and x <= span.y
+
+
+## World x of the middle of the ramp's grass at height `y`: where going up or
+## down it steers the hero (`AdventureScreen._slip`).
+func ramp_mid_x(c: Vector2i, y: float) -> float:
+	var span := _ramp_span(c, y)
+	return c.x * MapCfg.TILE + _flip(c, (span.x + span.y) * 0.5)
+
+
+## World x into the ramp's frame.
+func _ramp_x(c: Vector2i, x: float) -> float:
+	return _flip(c, x - c.x * MapCfg.TILE)
+
+
+## The frame runs low side to high side; a ramp with its high ground to the
+## left runs mirrored. Its own inverse.
+func _flip(c: Vector2i, x: float) -> float:
+	return MapCfg.TILE - x if int(stairs[c].side) > 0 else x
+
+
+## The grass's [from, to] across the ramp's frame at world height `y`.
+func _ramp_span(c: Vector2i, y: float) -> Vector2:
+	var t := float(MapCfg.TILE)
+	var top_y := float(c.y if bool(stairs[c].top) else c.y - 1) * t
+	var ry := clampf(y - top_y, 4.0, t * 2.0)
+	if ry < t:
+		return Vector2(maxf(0.0, t - 1.0 - (ry - 4.0)), t)   # the slope's edge, 45 degrees
+	if ry < t * 1.6:
+		return Vector2(0.0, maxf(20.0, t - (ry - t)))         # the foot narrows toward the rock
+	return Vector2(0.0, 16.0)
 
 
 static func clear_of(r: Rect2, boxes: Array) -> bool:

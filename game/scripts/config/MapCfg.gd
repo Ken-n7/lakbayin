@@ -51,6 +51,9 @@ const CIRCLE_BUILDINGS := [
 ## and nothing else on the board is that big.
 const GATE_BUILDING := "res://assets/buildings/Red_Castle.png"
 const PLAYER_SPEED := 150.0
+## How far the hero's feet keep off a cliff face beside them, px: his sprite
+## is about twice as wide as his feet.
+const CLIFF_SIDE_MARGIN := 5.0
 const INTERACT_RADIUS := 42.0
 ## Half a circle tower, near enough: every circle is the same tower, 92px tall
 ## drawn, so this reaches the whole body from its middle. Tap reach only -- walking

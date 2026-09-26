@@ -527,6 +527,8 @@ func _ramp_ok(high: Dictionary, low: int, t: Vector2i, f: Vector2i, s: int) -> b
 	var face := f - Vector2i(s, 0)
 	if high.has(face + DOWN):
 		return false
+	if not grid.land.has(f + DOWN):
+		return false                                  # stairs into the sea
 	for b: Dictionary in MapCfg.BRIDGES:
 		if (b.cells as Rect2i).grow(2).has_point(f) or (b.cells as Rect2i).grow(2).has_point(t):
 			return false

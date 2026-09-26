@@ -682,6 +682,43 @@ func skip_intro() -> void:
 	_update_interaction()
 
 
+## On a ramp, up and down follow the slope: a step up or down the ramp's edge
+## stops is steered toward the middle of its grass instead. At the top, up
+## steps off onto the high ground; beside a ramp's top, down steps onto it --
+## so straight up or down takes the whole stair.
+func _slip(dy: float, stair_low: int) -> void:
+	var here := player.position
+	var at := MapGrid.cell_at(here)
+	var c := Vector2i(-1, -1)
+	for k in [at, MapGrid.cell_at(here + Vector2(0, dy))]:
+		if grid.stairs.has(k):
+			c = k
+			break
+	# ...or on the high ground at a ramp's top: that ramp, not a neighbour's foot.
+	for k in [at + Vector2i(-1, 0), at + Vector2i(1, 0)]:
+		if c.x < 0 and grid.stairs.has(k) and bool(grid.stairs[k].top) \
+				and k - Vector2i(int(grid.stairs[k].side), 0) == at:
+			c = k
+	if c.x < 0:
+		return
+	var d := absf(dy)
+	var mid := clampf(grid.ramp_mid_x(c, here.y + dy) - here.x, -d, d)
+	var high := -float(grid.stairs[c].side)          # which way the high ground is
+	var tries: Array[Vector2] = []
+	if absf(mid) > 0.01:
+		tries.append(Vector2(mid, dy))
+	# Off at the ends: up from its top onto the high ground, down from its
+	# foot out of its open side.
+	if grid.stairs.has(at) and bool(grid.stairs[at].top) == (dy < 0.0):
+		tries.append(Vector2((high if dy < 0.0 else -high) * d, 0.0))
+	if absf(mid) > 0.01:
+		tries.append(Vector2(mid, 0.0))
+	for n in tries:
+		if grid.box_walkable(here + n, hero_box, hero_level, stair_low):
+			player.position = here + n
+			return
+
+
 ## Which way the sprite faces. Vertical wins ties so a diagonal walk still
 ## shows the back or front, which reads better than a side-on shuffle.
 static func _facing(dir: Vector2) -> String:
@@ -721,6 +758,7 @@ func _process(delta: float) -> void:
 			player.position.y += step.y
 			if not grid.box_walkable(player.position, hero_box, hero_level, stair_low):
 				player.position.y -= step.y
+				_slip(step.y, stair_low)
 			hero_level = grid.level_at(player.position, hero_level)
 		var face := _facing(dir)
 		if spr.animation != face or not spr.is_playing():

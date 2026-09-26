@@ -44,7 +44,7 @@ const BUSH_AT_ROAD := 0.12
 ## four tiles out, far enough apart not to clump, and clear of the bridges.
 const WATER_ROCK := "res://assets/terrain/decorations/Water Rocks_0%d.png"
 const WATER_ROCKS := 24
-const WATER_ROCK_OFFSHORE := Vector2i(2, 5)    # tiles from land, nearest to farthest
+const WATER_ROCK_OFFSHORE := Vector2i(3, 6)    # tiles from land, nearest to farthest: a rock is near 3 wide
 const WATER_ROCK_APART := 5                    # tiles between two of them
 const WATER_ROCK_BRIDGE := 3                   # tiles kept clear of the road
 ## ...and of the barricade fences, or one off a fence's end reads as the fence
@@ -344,6 +344,12 @@ func _level_ok(at: Vector2, rects: Array[Rect2]) -> bool:
 	# On the high ground only the footprint itself need be on the level --
 	# its plateaus are narrow, and a ring round every trunk left them bare.
 	var ring := 1 if level < 2 else 0
+	# ...but never on its rim: the trunk a cell in from any edge, or the
+	# crown hangs out over the cliff.
+	for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]:
+		var n: Vector2i = home + d
+		if grid.cliff.has(n) or int(grid.height.get(n, -1)) != level:
+			return false
 	for c in cells:
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
