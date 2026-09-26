@@ -25,11 +25,19 @@ const ROCKS := ["Rock1", "Rock2", "Rock3", "Rock4"]
 const SPACING := {"tree": 22.0, "stump": 22.0, "rock": 30.0}
 ## Darts thrown per land cell; more is a denser, slower, better-spaced pick.
 const DARTS := 5
+const BUSH := "res://assets/terrain/decorations/Bush%d.png"
+const BUSH_SCALE := 0.32
+const BUSH_FPS := 6.0
+## Chance of a bush at each spot along a cliff's foot, and beside stairs.
+const BUSH_AT_CLIFF := 0.35
+const BUSH_AT_STAIRS := 0.9
+## Chance a tree on the ground gets a bush at its foot, on the wood's edge.
+const BUSH_AT_WOODS := 0.12
 ## Rocks in the water off every shore, to break up the sea: this many, one to
 ## four tiles out, far enough apart not to clump, and clear of the bridges.
 const WATER_ROCK := "res://assets/terrain/decorations/Water Rocks_0%d.png"
 const WATER_ROCKS := 24
-const WATER_ROCK_OFFSHORE := Vector2i(1, 4)    # tiles from land, nearest to farthest
+const WATER_ROCK_OFFSHORE := Vector2i(2, 5)    # tiles from land, nearest to farthest
 const WATER_ROCK_APART := 5                    # tiles between two of them
 const WATER_ROCK_BRIDGE := 3                   # tiles kept clear of the road
 ## ...and of the barricade fences, or one off a fence's end reads as the fence
@@ -43,6 +51,9 @@ var rng := RandomNumberGenerator.new()
 var _feet := {}                 # variant -> its collision rects, about its origin
 var _placed: Array[Dictionary] = []    # {kind, name, at, flip, rects}
 var _trail_dist := {}           # cell -> cells to the nearest road cell
+var _up_dist := {}              # cell -> cells north to where its level ends
+var _shore_dist := {}           # cell -> cells to the nearest shore
+var _bushes: Array = []         # {at, v, flip}
 var _fences: Array = []         # the barricades' gates, for their rocks
 
 
@@ -61,10 +72,13 @@ func _ready() -> void:
 	_fences = world.barricades.list
 	_measure_feet()
 	_measure_trail()
+	_measure_levels()
 
 	var forest := _noise(seed, 0.0045)
 	var stone := _noise(seed + 7, 0.008)
 	var grove := _noise(seed + 13, 0.003)
+	# Small copses between the big woods: a finer noise, only its peaks.
+	var copse := _noise(seed + 29, 0.03)
 
 	var darts: Array[Vector2] = []
 	for c: Vector2i in grid.land:
@@ -96,8 +110,8 @@ func _ready() -> void:
 		by_island[isl][1].append((stone.get_noise_2dv(p) + 1.0) * 0.5)
 	for isl in by_island:
 		var mix: Dictionary = MapCfg.ISLAND_PROPS[isl]
-		var woods := 0.14 + 0.5 * float(mix.tree)
-		var rocky := 0.05 + 0.3 * (float(mix.rock) - float(mix.stump))
+		var woods := 0.22 + 0.5 * float(mix.tree)
+		var rocky := 0.07 + 0.3 * (float(mix.rock) - float(mix.stump))
 		levels[isl] = [_level(by_island[isl][0], woods), _level(by_island[isl][1], rocky)]
 
 	for p in darts:
@@ -115,11 +129,26 @@ func _ready() -> void:
 		var s := (stone.get_noise_2dv(p) + 1.0) * 0.5
 		var woods: float = lv[0]
 		var rocky: float = lv[1]
-		var p_tree := smoothstep(woods - 0.04, woods + 0.07, n) * open
-		var p_rock := (smoothstep(rocky - 0.03, rocky + 0.05, s) * 0.7 + 0.01) \
+		# Woods frame the ground: they grow along the backs of each level --
+		# its north edge, the far side from the cliff you see -- and thin out
+		# toward its front, where the road and the view are.
+		var back := 1.0 - clampf(float(_up_dist.get(cell, 6)) / 6.0, 0.0, 1.0)
+		# Hard-edged woods: in a grove it is thick, outside it there is none --
+		# a clean line between wood and meadow reads; a sprinkle does not.
+		var p_tree := smoothstep(woods - 0.015, woods + 0.02, n) * open * lerpf(0.55, 1.0, back)
+		var cp := (copse.get_noise_2dv(p) + 1.0) * 0.5
+		p_tree = maxf(p_tree, smoothstep(0.7, 0.75, cp) * open * 0.9)
+		# Rocks only in their outcrops, never one on its own in a field.
+		var p_rock := smoothstep(rocky - 0.01, rocky + 0.02, s) * 0.3 \
 			* smoothstep(20.0, 50.0, road) * smoothstep(12.0, 50.0, station)
-		var edge := clampf(1.0 - absf(n - (woods - 0.06)) / 0.05, 0.0, 1.0)
-		var p_stump := 0.2 * edge * open * clampf(w_stump / 0.15, 0.3, 1.5)
+		# ...and rocks gather by the sea and up on the summit.
+		if int(_shore_dist.get(cell, 99)) <= 2:
+			p_rock *= 2.0
+		if int(grid.height.get(cell, 0)) >= 2:
+			p_rock *= 1.5
+		# Stumps only just outside a wood's edge: felled trees, not litter.
+		var edge := clampf(1.0 - absf(n - (woods - 0.03)) / 0.015, 0.0, 1.0)
+		var p_stump := 0.12 * edge * open * clampf(w_stump / 0.15, 0.3, 1.5)
 		var roll := rng.randf()
 		var kind := ""
 		var name := ""
@@ -141,7 +170,8 @@ func _ready() -> void:
 		if _fits(kind, p, rects):
 			_placed.append({"kind": kind, "name": name, "at": p, "flip": flip, "rects": rects})
 
-	var counts := {}
+	_plant_bushes()
+	var counts := {"bush": _bushes.size()}
 	for d in _placed:
 		counts[d.kind] = int(counts.get(d.kind, 0)) + 1
 	print("seed %d: %d props %s" % [seed, _placed.size(), counts])
@@ -161,7 +191,8 @@ static func _level(values: Array, share: float) -> float:
 func _water_rock_spots() -> Array[Vector2]:
 	var shore := {}                    # sea cell -> tiles from the nearest land
 	var queue: Array[Vector2i] = []
-	for c: Vector2i in grid.land:
+	# The sea cliffs are drawn over the water, so they count as land here.
+	for c: Vector2i in grid.land.merged(grid.cliff):
 		shore[c] = 0
 		queue.append(c)
 	var head := 0
@@ -275,7 +306,103 @@ func _measure_trail() -> void:
 ## so the way and the landmarks stay open -- rising to 1 beyond them.
 func _open(p: Vector2) -> float:
 	var road := float(_trail_dist.get(MapGrid.cell_at(p), 99)) * MapCfg.TILE
-	return smoothstep(24.0, 72.0, road) * smoothstep(16.0, 60.0, _keep_dist(p))
+	return smoothstep(28.0, 70.0, road) * smoothstep(20.0, 64.0, _keep_dist(p))
+
+
+## Levels: nothing on a cliff or a stair, or within a cell of one (the way
+## up stays open), and a prop's whole footprint and a cell round it on one
+## level -- so nothing hangs over a terrace's edge or stands at its foot.
+func _level_ok(at: Vector2, rects: Array[Rect2]) -> bool:
+	var home := MapGrid.cell_at(at)
+	var level := int(grid.height.get(home, -1))
+	var cells: Array[Vector2i] = [home]
+	for r: Rect2 in rects:
+		for corner in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+			cells.append(MapGrid.cell_at(corner))
+	for c in cells:
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				var n := c + Vector2i(dx, dy)
+				if grid.cliff.has(n) or grid.stairs.has(n):
+					return false
+				if grid.land.has(n) and int(grid.height.get(n, -1)) != level:
+					return false
+	return true
+
+
+func _measure_levels() -> void:
+	for c: Vector2i in grid.land:
+		var h := int(grid.height.get(c, 0))
+		var n := 0
+		while n < 6 and int(grid.height.get(c + Vector2i(0, -(n + 1)), -1)) == h:
+			n += 1
+		_up_dist[c] = n
+	var queue: Array[Vector2i] = []
+	for c: Vector2i in grid.beach:
+		_shore_dist[c] = 0
+		queue.append(c)
+	var head := 0
+	while head < queue.size():
+		var c := queue[head]
+		head += 1
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nb: Vector2i = c + d
+			if _shore_dist.has(nb) or not grid.land.has(nb):
+				continue
+			_shore_dist[nb] = int(_shore_dist[c]) + 1
+			queue.append(nb)
+
+
+## Bushes on the ground level only, where the banner has them: at the foot
+## of a cliff (a clear cell below it), beside the foot of a stair, and on the
+## edges of the woods. Their whole sprite stands over flat ground -- never on
+## raised ground or across a cliff face. No collision: low enough to walk
+## through, but never on the road, and never in a yard.
+func _plant_bushes() -> void:
+	var spots: Array[Array] = []                      # [point, chance]
+	for k: Vector2i in grid.cliff:
+		if grid.land.has(k + Vector2i(0, 2)):
+			spots.append([MapGrid.cell_mid(k + Vector2i(0, 2)) + Vector2(rng.randf_range(-8, 8), 6),
+				BUSH_AT_CLIFF])
+	for c: Vector2i in grid.stairs:
+		var st: Dictionary = grid.stairs[c]
+		if bool(st.top):
+			continue
+		var out := c + Vector2i(int(st.side) * 2, 1)
+		spots.append([MapGrid.cell_mid(out) + Vector2(0, 6), BUSH_AT_STAIRS])
+	for d: Dictionary in _placed:
+		if d.kind == "tree" and rng.randf() < BUSH_AT_WOODS:
+			spots.append([(d.at as Vector2) + Vector2(rng.randf_range(-24, 24), rng.randf_range(10, 22)), 1.0])
+	spots.sort_custom(func(a: Array, b: Array) -> bool:
+		return (a[0] as Vector2).y < (b[0] as Vector2).y or \
+			((a[0] as Vector2).y == (b[0] as Vector2).y and (a[0] as Vector2).x < (b[0] as Vector2).x))
+	var h := 128.0 * BUSH_SCALE
+	for spot: Array in spots:
+		var at: Vector2 = spot[0]
+		if rng.randf() > float(spot[1]):
+			continue
+		var art := Rect2(at - Vector2(h * 0.5, h * 0.7), Vector2(h, h * 0.7))
+		var flat := true
+		for corner in [art.position, Vector2(art.end.x, art.position.y),
+				Vector2(art.position.x, art.end.y), art.end]:
+			var k := MapGrid.cell_at(corner)
+			if not grid.land.has(k) or grid.cliff.has(k) or grid.stairs.has(k) \
+					or int(grid.height.get(k, -1)) != 0 or grid.trail.has(k):
+				flat = false
+		if not flat or not grid.clear_of_buildings(art):
+			continue
+		var near := false
+		for d: Dictionary in _placed:
+			if (d.at as Vector2).distance_to(at) < 16.0:
+				near = true
+				break
+		for b: Dictionary in _bushes:
+			if (b.at as Vector2).distance_to(at) < 18.0:
+				near = true
+				break
+		if near:
+			continue
+		_bushes.append({"at": at.round(), "v": rng.randi_range(1, 4), "flip": -1.0 if rng.randf() < 0.5 else 1.0})
 
 
 func _keep_dist(p: Vector2) -> float:
@@ -304,6 +431,8 @@ func _fits(kind: String, at: Vector2, rects: Array[Rect2]) -> bool:
 		for k: Rect2 in grid.station_rects + grid.sign_rects:
 			if k.intersects(r):
 				return false
+	if not _level_ok(at, rects):
+		return false
 	for d: Dictionary in _placed:
 		var gap := maxf(float(SPACING[kind]), float(SPACING[d.kind]))
 		if (d.at as Vector2).distance_to(at) < gap:
@@ -333,6 +462,19 @@ func _save(world: MapWorld) -> void:
 		# Each one on its own beat, or the whole sea breathes in step.
 		rock.frame = rng.randi_range(0, 15)
 		rock.owner = root
+
+	var shrubs := Node2D.new()
+	shrubs.name = "Bushes"
+	shrubs.y_sort_enabled = true
+	root.add_child(shrubs)
+	shrubs.owner = root
+	for b: Dictionary in _bushes:
+		var bush := Art.anim_sprite(shrubs, BUSH % int(b.v), b.at, BUSH_SCALE, BUSH_FPS,
+			float(b.flip), 8)
+		bush.name = "Bush"
+		bush.autoplay = bush.animation
+		bush.frame = rng.randi_range(0, 7)
+		bush.owner = root
 
 	var groups := {}
 	for d: Dictionary in _placed:

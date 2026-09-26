@@ -45,4 +45,8 @@ func _walkable(p: Vector2) -> bool:
 		return true
 	var layer: TileMapLayer = world.get_meta("grass")
 	var t: float = world.get_meta("tile", 32.0)
-	return layer.get_cell_source_id(Vector2i(floori(p.x / t), floori(p.y / t))) != -1
+	var c := Vector2i(floori(p.x / t), floori(p.y / t))
+	# Nor up a hill or its cliff, where there is one.
+	if (world.get_meta("no_walk", {}) as Dictionary).has(c):
+		return false
+	return layer.get_cell_source_id(c) != -1

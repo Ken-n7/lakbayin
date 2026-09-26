@@ -73,6 +73,9 @@ var play_zoom := MapCfg.PLAY_ZOOM
 ## The hero's Foot box, relative to their feet, from scenes/Hero.tscn -- the
 ## part of them that walls stop. A point at the feet if the scene has none.
 var hero_box := Rect2()
+## The level the hero walks at: 0 the ground, 1 a terrace, 2 the summit
+## (map/Terrain.gd). A ramp is where it changes.
+var hero_level := 0
 var _dev_aerial := false
 var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable with [ and ], see _nudge_hero_scale()
 ## How much one press of [ or ] moves the hero's scale, and the range it may
@@ -502,8 +505,11 @@ func setup(data: Dictionary) -> void:
 	decor = board.decor
 	_circles = board.circles
 	_spawn_player()
+	var clear: Array = [player]
+	for g: Dictionary in barricades.list:
+		clear.append(g.guard)
 	for band in board.cloud_bands:
-		band.keep_clear = player
+		band.keep_clear = clear
 	Game.time_changed.connect(hud.on_time)
 	Game.gems_changed.connect(hud.on_gems)
 	Game.adventure_ended.connect(_on_adventure_end)
@@ -703,12 +709,14 @@ func _process(delta: float) -> void:
 		# than stopping dead. Buildings only became real walls once the
 		# footprint stopped being rounded to tile centres.
 		var step := dir * MapCfg.PLAYER_SPEED * _speed_mult * delta
+		var stair_low := grid.stair_low_at(player.position)
 		player.position.x += step.x
-		if not grid.box_walkable(player.position, hero_box):
+		if not grid.box_walkable(player.position, hero_box, hero_level, stair_low):
 			player.position.x -= step.x
 		player.position.y += step.y
-		if not grid.box_walkable(player.position, hero_box):
+		if not grid.box_walkable(player.position, hero_box, hero_level, stair_low):
 			player.position.y -= step.y
+		hero_level = grid.level_at(player.position, hero_level)
 		var face := _facing(dir)
 		if spr.animation != face or not spr.is_playing():
 			spr.play(face)

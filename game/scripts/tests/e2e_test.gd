@@ -256,7 +256,20 @@ func _run() -> void:
 	(adv.get("player") as Node2D).position = (adv.get("_circles")[3] as Node2D).position
 	adv.call("_update_interaction")
 	check("bang off at a locked circle", bang != null and not bang.visible)
-	(adv.get("player") as Node2D).position += Vector2(400, 0)
+	# Open grass: a land cell well away from every stop on the board.
+	var grid: MapGrid = adv.get("grid")
+	var far := Vector2.ZERO
+	for c: Vector2i in grid.land:
+		var p := MapGrid.cell_mid(c)
+		var clear := true
+		for a: Vector2 in grid.anchors:
+			if p.distance_to(a) < MapCfg.INTERACT_RADIUS * 4.0:
+				clear = false
+				break
+		if clear:
+			far = p
+			break
+	(adv.get("player") as Node2D).position = far
 	adv.call("_update_interaction")
 	check("bang off in open grass", bang != null and not bang.visible)
 

@@ -57,53 +57,74 @@ const INTERACT_RADIUS := 42.0
 ## up to a tower is still `INTERACT_RADIUS` against the anchor it stands beside.
 const TOWER_TAP_REACH := 46.0
 
-## Four islands, as normalized centre + radii. `wobble` only shifts the coastline
-## noise so they do not come out as the same shape rotated. Island 0 is the camp,
-## bottom right; island 1 beside it is the big one, carrying Station 1 and its
-## eight circles. The walk runs right to left along the bottom, then up and back
-## across the top: camp -> island 1 -> island 2 -> island 3 and the Victory Gate.
-const ISLANDS := [
-	{"c": Vector2(0.925, 0.800), "r": Vector2(0.058, 0.135), "wobble": 0.6},
-	{"c": Vector2(0.415, 0.765), "r": Vector2(0.365, 0.225), "wobble": 1.7},
-	{"c": Vector2(0.260, 0.270), "r": Vector2(0.215, 0.175), "wobble": 3.1},
-	# Island 3 carries a station, its circles, a fence and the Victory Gate, which is
-	# more than its first size could hold -- the fence had shrunk to clear the shore and
-	# the keep's left house stood in the water. `c.y` and `r.y` move together so the
-	# north coast stays where it was and only the south shore travels, ~4 cells down
-	# into open sea. Island 1 is still a clear channel below it; close that and the two
-	# merge, and `_island_index()` hands the overlap to island 1 and its forest.
-	{"c": Vector2(0.740, 0.307), "r": Vector2(0.215, 0.212), "wobble": 5.3},
+# --- The board (map/Terrain.gd) -------------------------------------------
+## One seed builds the whole board; a layout that breaks a design rule moves
+## on to the next, up to TERRAIN_TRIES.
+const MAP_SEED := 7310
+const TERRAIN_TRIES := 40
+## The camp's islet, bottom right, in cells (x, y, w, h).
+const CAMP_REGION := Rect2i(84, 37, 10, 14)
+## The three districts in walk order. `region` bounds the island, in cells;
+## `arrive` is the bridge in (the station's pocket is where it lands) and `exit`
+## the bridge out (-1: none; the last district climbs to its summit instead).
+const DISTRICTS := [
+	{"region": Rect2i(5, 30, 69, 22), "arrive": 0, "exit": 1},
+	{"region": Rect2i(4, 4, 41, 20), "arrive": 1, "exit": 2},
+	{"region": Rect2i(51, 5, 41, 23), "arrive": 2, "exit": -1, "summit": true},
 ]
-
-## One authored trail per island, in normalized world coords. Each is a serpentine
-## that fills its island and ends near the next crossing, so the walk flows from
-## one island into the next. `_stamp_path()` guarantees land under all of it.
-const TRAILS := [
-	# The camp: the fire, then Station 1. Its anchor is across the channel on
-	# island 1 -- the trail runs over open water to get there, so `_stamp_path()`
-	# lays the land bridge under the walk. The monastery itself stands on island
-	# ground, well clear of the shore, which is the point of the crossing being
-	# the trail's and not the building's problem.
-	[Vector2(0.955, 0.855), Vector2(0.720, 0.800)],
-	# Island 1: Station 1's eight circles, starting west of the boulder line that
-	# `_build_barricade()` draws between them and the monastery.
-	[Vector2(0.585, 0.780), Vector2(0.60, 0.90), Vector2(0.28, 0.92),
-	 Vector2(0.10, 0.83), Vector2(0.16, 0.69), Vector2(0.40, 0.65),
-	 Vector2(0.38, 0.60)],
-	# Island 2: the bridge lands in the south-east corner, where Station 2 stands,
-	# and the walk loops west, north and back east to the seam. Nothing square
-	# across that walk can gate it -- it doubles back, so a line always leaves the
-	# last circle on the station's side. What does gate it is a fence drawn *round*
-	# the corner the station sits in; see `BARRICADES`.
-	[Vector2(0.325, 0.395), Vector2(0.12, 0.35), Vector2(0.12, 0.22),
-	 Vector2(0.25, 0.16), Vector2(0.40, 0.23)],
-	# Station 3 starts this walk, so its first point is where the keep stands. East of
-	# the old 0.60, which put the left house of the outpost over the water -- but only
-	# just, and not by eye: how far east it may go is fixed by its fence. See
-	# `BARRICADES`.
-	[Vector2(0.61, 0.23), Vector2(0.75, 0.16), Vector2(0.89, 0.22),
-	 Vector2(0.88, 0.34), Vector2(0.70, 0.38)],
+## Land bridges, in cells, and the island each belongs to.
+const BRIDGES := [
+	{"cells": Rect2i(74, 43, 10, 3), "to": 1},
+	{"cells": Rect2i(8, 24, 3, 6), "to": 2},
+	{"cells": Rect2i(45, 13, 6, 3), "to": 3},
 ]
+## Coasts: how much noise breaks up an island's rounded outline, its scale, and
+## where land ends (higher: smaller islands).
+const COAST_AMP := 0.42
+const COAST_FREQ := 0.07
+const COAST_LEVEL := 0.1
+## The station's pocket: ground this far round where the bridge lands; the
+## exit's; and how wide a band of terrace keeps each from the coast rim.
+const POCKET_R := 10.0
+const EXIT_POCKET_R := 7.0
+const POCKET_MOAT := 3
+## How far inland from its landing a pocket is centred.
+const POCKET_INLAND := 5.0
+## The coast rim's width varies with this noise, 0-3 cells.
+const RIM_FREQ := 0.09
+## Plateaus: where this noise tops PLATEAU_LEVEL at least PLATEAU_INLAND cells
+## from the sea; pieces under PLATEAU_MIN cells are dropped. The summit island
+## is lifted by SUMMIT_LIFT round its north-east, and its summit is its
+## biggest plateau's heart -- at least SUMMIT_MIN cells.
+const PLATEAU_FREQ := 0.08
+const PLATEAU_LEVEL := 0.12
+const PLATEAU_INLAND := 4
+const PLATEAU_MIN := 14
+const SUMMIT_LIFT := 0.9
+const SUMMIT_MIN := 40
+## Stairs up the terrace besides the one from each shelf, spread along it.
+const TERRACE_EXTRA_STAIRS := 2
+## The share of a district's circles set on its plateaus.
+const CIRCLES_HIGH := 0.34
+## Room a station needs round its doorstep for the keep and its houses, and the
+## Victory Gate for its castle: cells either side, and above.
+const STATION_YARD := Vector2i(4, 3)
+const GATE_YARD := Vector2i(3, 4)
+## Circles are at least this many cells apart.
+const MIN_STOP_GAP := 5.0
+## A circle's tower is drawn at this scale (PathCircle.TOWER_SCALE).
+const CIRCLE_TOWER_SCALE := 0.5
+## Little islands off the coasts, to dress.
+const ISLETS := 5
+## Each level's grass, as the pack's guide suggests, so the heights read apart:
+## the ground, the terraces, the plateaus, the summit.
+const LEVEL_COLORS := ["res://assets/terrain/tileset/Tilemap_color1.png",
+	"res://assets/terrain/tileset/Tilemap_color2.png",
+	"res://assets/terrain/tileset/Tilemap_color3.png",
+	"res://assets/terrain/tileset/Tilemap_color1.png"]
+## The guide's shadow under each raised level, one tile down.
+const LEVEL_SHADOW_SCALE := 0.36
+const LEVEL_SHADOW_ALPHA := 0.55
 
 ## Each island gets its own dressing, so the stations do not read as the same field
 ## three times: a thin camp clearing, a wooded starter valley, a stony quarry, a
@@ -117,95 +138,13 @@ const ISLAND_PROPS := [
 	{"tree": 0.08, "stump": 0.20, "rock": 0.80, "sheep": 0},
 ]
 
-## Every seam is crossed by a **land bridge**. Seam `i` is the water between island
-## `i` and island `i + 1`: the walk simply carries on over it and `_stamp_path()`
-## lays ground under the corridor, so every crossing is there from the first step
-## and a guard holds it rather than the tide. Seam 0 (camp -> Station 1) falls out
-## of trail 0, which spans it; the rest are stamped between one trail's end and the
-## next one's start.
-##
-## Kept as a list rather than assumed, because it is what `_stamp_path()` asks --
-## take a seam out of it and that crossing goes back to being open water with no
-## way over, which is a loud enough failure to find at once.
-const BRIDGED_SEAMS := [0, 1, 2]
-
-## The gates: a line of boulders across the walk with a giant guard in its one gap
-## -- the same Warrior sheets `_build_outpost()` gives its little guards, at three
-## times their 0.3 scale. A guard is a wall, not a trigger.
-##
-## One rule, every station: **his own station's briefing stands him down.** So the
-## line always stands between that station's tower and its first circle -- walk up,
-## take the briefing, and the way to the circles opens. `st` is the station (his
-## livery too, and the tower he steps aside toward) and `t` how far along that
-## stretch the line stands.
-##
-## What keeps the walk in order is not the guards, then, but `_can_enter_tower()`:
-## a station only opens its briefing while the current item belongs to it. Reaching
-## Station 2's door early gets you nothing but the view.
-## Each is a fence of `arc` cells' radius swung right round its station, with the
-## gap on the bearing the walk leaves by, `shift` cells of arc along the curve
-## from it. A fence rather than a line across the walk because every station
-## stands in a corner or at an end of its island, where a line either has nowhere
-## to go or strands a stop on the wrong side of itself -- and because a wall that
-## bows away from the station reads as one from the yard inside it.
-##
-## `offset` nudges the guard within his own gap, and only him: the fence, the gap
-## and the wall that plugs it stay on the bearing, so this is framing rather than
-## geometry. `rest` is where he should step aside to when the gate opens, measured
-## from his post, and it is a wish rather than a decree -- the nearest ground he
-## actually fits on wins, so a spot that has since grown a boulder stands him
-## beside it instead of on it. Both default to zero.
-const BARRICADES := [
-	# Radius picked so the gap lands on the cell the old straight line put him on:
-	# the knight has not moved, the wall around him has curved.
-	{"st": 0, "arc": 8.0, "offset": Vector2(0, -20)},
-	{"st": 1, "arc": 7.0, "offset": Vector2(0, -25)},
-	# Station 3 is at a forced compromise -- keep, knight and fence are one
-	# problem, and `arc` is bounded below by the west shore and above by the
-	# Victory Gate. See SPECS.md "Known compromises"; `tools/check_guards.gd`
-	# fails if it stops holding.
-	{"st": 2, "arc": 6.0, "shift": 2.0, "offset": Vector2(0, -30),
-			# Due west of his post is the road, and below that the station's own
-			# signboard, so there is no standing aside on the keep's side of this
-			# gate: he steps out through the gap and holds the north shoulder of it.
-			"rest": Vector2(-192, -32)},
-]
 const GUARD_SCALE := 0.9
-## A fence is laid cell by cell round its station, shore to shore. Objects, not
-## terrain -- the old three-tile neck had to be stamped because `_island_index()`
-## gives a shore ten cells wide, and a line of rocks just plugs whatever is there.
-## `ROCK_SCALE` is big enough that neighbouring stones touch even where the curve
-## steps diagonally and their cells are a cell and a half apart: below that the
-## fence reads as scattered pebbles with walls between them.
-const ROCK_SCALE := 1.2
-## Mixed into each fence cell's roll of stone, size, flip and pebbles.
-const FENCE_SEED := 4177
-## The stretch of fence the guard stands in for, as a box round his boots: his
-## shoulders either side, his chest above, and just enough below to keep the cell
-## he stands on. He is base-anchored like everything else here, so all of him is
-## drawn *upward* -- measured evenly round him, the slack landed under his boots,
-## which is the one shape a fence can take that reads as a way through.
-##
-## Against each cell's **middle**, not along the arc. A post sits wherever the
-## bearing puts it inside its own cell, so an arc length that rounded to two cells
-## at one gate rounded to three at the next -- which is how the red knight came to
-## have a stride of bare grass over his head with the wall still in it.
-const GUARD_REACH := Rect2(-35.0, -42.0, 70.0, 59.0)
 ## The knight himself, as a box round his boots: about two cells across and two
 ## high, base-anchored like everything else. What `_stands_clear()` asks its
 ## questions of, and what `tools/check_guards.gd` re-asks them of afterwards.
 const GUARD_BODY := Rect2(-34.0, -64.0, 68.0, 64.0)
 ## His feet, for the walk out of the gap: what must not cross a boulder's wall.
 const GUARD_BOOTS := Rect2(-18.0, -10.0, 36.0, 12.0)
-## A boulder's wall, like a building's, is the foot of what you can see and not
-## the cell it was laid on. `Art.sprite()` base-anchors a 64px stone, so the
-## stone is drawn a whole texture-height *above* its cell: a box centred on the
-## cell blocked a tile of open grass below the rock and left the rock's own top
-## walkable -- the bump into nothing the wall gave off. 1.5 cells across so
-## neighbours still overlap however the curve steps, 1.25 down from a quarter
-## cell above the base, which lands inside all four Rock sheets' pixels.
-const ROCK_WALL := Vector2(TILE * 1.5, TILE * 1.25)
-const ROCK_WALL_BASE := TILE * 0.25
 
 ## Towers stand beside the path, not on it: their walls are up to 150px wide and
 ## would otherwise swallow the next circle along. `_tower_lift()` picks the side.
@@ -242,29 +181,13 @@ const GUARD_STEP_TIME := 1.2
 ## extra headroom is because he is base-anchored and ~90px tall, so a trunk a
 ## clear cell above him still draws down over his head.
 const GUARD_CLEARING := Vector4(TILE * 1.5, TILE * 2.5, TILE * 1.5, TILE * 1.5)
-## And around the rubble. One tile is not enough: a pine two cells off still
-## reads as standing in the line, and walking through it looks like the bug.
-const RUBBLE_CLEARING := TILE * 2.0
-## A little below his feet, on top of GUARD_BODY: a boulder's wall stops above
-## the cell it stands on, and the y-sort draws a stone in the cell below him
-## over his boots.
-const GUARD_FOOT_SLACK := 24.0
 ## Where to look for somewhere he can stand aside to, in order and in cells:
 ## around an authored `rest` first, then in toward his own station, then
 ## anywhere near the station or the gap. First fit wins.
-const GUARD_REST_RINGS := [4, 8, 8]
+const GUARD_REST_RINGS := [4, 12, 8]
 ## Nothing open anywhere: at least get him out of the gap, this far toward his
 ## station.
 const GUARD_REST_FALLBACK := TILE * 3.0
-
-# --- Boulders ---------------------------------------------------------------
-const ROCK_SHEET := "res://assets/terrain/decorations/Rock%d.png"
-## Four stones in the pack, picked round-robin off the cell so a fence is not
-## four of the same one.
-const ROCK_VARIANTS := 4
-## How far round the arc each step goes. Half a cell, so the sweep never skips
-## a cell and leaves a gap in the fence.
-const ARC_STEP := TILE * 0.5
 
 # --- Stations ---------------------------------------------------------------
 ## How much of a building's height is wall. Only what stands on the ground: the
@@ -353,8 +276,6 @@ const SHEEP_WALK := "res://assets/terrain/resources/Sheep_Move.png"
 const SHEEP_IDLE_FPS := 5.0
 const SHEEP_WALK_FPS := 7.0
 const SHEEP_SCALE := 0.9
-## How far into its island a sheep may start, as a fraction of its radii.
-const SHEEP_SPREAD := 0.45
 
 const SHADOW_SHEET := "res://assets/terrain/tileset/Shadow.png"
 const SHEEP_SHADOW_SCALE := 0.5
@@ -384,35 +305,3 @@ const CAM_UNCLAMPED := 1000000
 ## How long the swoop from the aerial POV down onto the hero takes.
 const SWOOP_TIME := 0.9
 
-# --- Island shape -----------------------------------------------------------
-## The radial wobble that keeps a coastline ragged -- a bare ellipse reads as a
-## pond, not an island. `base` is how much of the ellipse is land; the two waves
-## ripple the edge, and each island's own `wobble` phase-shifts the first so
-## they do not come out as the same shape rotated.
-const COAST_BASE := 0.86
-const COAST_WAVE1 := Vector2(0.11, 3.0)   # amplitude, frequency
-const COAST_WAVE2 := Vector2(0.06, 5.0)
-const COAST_WAVE2_PHASE := 0.4
-## Past this the wobble cannot reach, so the cell is open water either way.
-const COAST_REJECT := 1.3
-
-## Walking inward from a spot in the sea to find land: how many steps, and how
-## far each one moves toward the island's centre.
-const LAND_SEARCH_TRIES := 60
-const LAND_SEARCH_STEP := 0.1
-
-# --- Stamping the walk ------------------------------------------------------
-## The authored path is stamped as land before the autotile pass, so a stray
-## inlet in the generated island can never cut the board in half.
-##
-## Three cells wide -- the walk itself plus a shoulder either side. This is also
-## the corridor `_trail` records, which is what keeps the decor pass off the
-## road and makes the walk read as a road through the trees.
-const STAMP_RING := [-1, 0, 1]
-## Half a cell per step along a trail segment, so the stamp never skips a cell.
-const STAMP_STEP := TILE * 0.5
-## Ground under a tower, which steps off the path and would otherwise stand in
-## the shallows at a bend. Asymmetric: the sprite is base-anchored, so it needs
-## more room above its feet than below.
-const TOWER_PAD_X := Vector2i(-2, 3)
-const TOWER_PAD_Y := Vector2i(-2, 2)

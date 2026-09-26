@@ -14,9 +14,9 @@ const SCALE := 0.55
 
 ## How far right a cloud goes before it comes back in from the left.
 var span := 1000.0
-## A cloud drifting near this thing fades nearly out, so it never hides it --
-## the hero, on the map. Unset, clouds keep their alpha.
-var keep_clear: Node2D = null
+## A cloud drifting near any of these fades nearly out, so it never hides
+## them -- the hero and the knights, on the map. Empty, clouds keep their alpha.
+var keep_clear: Array = []
 const CLEAR_NEAR := 110.0     # px: fully faded inside this
 const CLEAR_FAR := 220.0      # px: fully there beyond this
 const CLEAR_ALPHA := 0.12
@@ -40,14 +40,17 @@ func _init(width := 1000.0, top := 40.0, gap := 110.0, count := 3, alpha := ALPH
 
 
 func _process(delta: float) -> void:
-	var near := Vector2.INF
-	if keep_clear != null and is_instance_valid(keep_clear):
-		near = to_local(keep_clear.global_position)
+	var spots: Array[Vector2] = []
+	for n in keep_clear:
+		if is_instance_valid(n):
+			spots.append(to_local((n as Node2D).global_position))
 	for c: Sprite2D in get_children():
 		c.position.x += SPEED * delta
 		if c.position.x > span + 200.0:
 			c.position.x = -200.0
-		if near != Vector2.INF:
-			var d := c.position.distance_to(near)
+		if not spots.is_empty():
+			var d := INF
+			for p in spots:
+				d = minf(d, c.position.distance_to(p))
 			var want := lerpf(CLEAR_ALPHA, _alpha, smoothstep(CLEAR_NEAR, CLEAR_FAR, d))
 			c.modulate.a = move_toward(c.modulate.a, want, delta * 1.5)

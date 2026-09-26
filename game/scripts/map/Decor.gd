@@ -129,10 +129,16 @@ func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 	shadow.modulate.a = MapCfg.SHEEP_SHADOW_ALPHA
 	sheep.add_child(shadow)
 	sheep.set_script(preload("res://scripts/Wander.gd"))
-	var c: Vector2 = MapCfg.ISLANDS[isl].c
-	var r: Vector2 = MapCfg.ISLANDS[isl].r
-	var spread := MapCfg.SHEEP_SPREAD
-	sheep.position = grid.first_land(
-			c.x + rng.randf_range(-spread, spread) * r.x,
-			c.y + rng.randf_range(-spread, spread) * r.y, c)
+	# Somewhere on the island's ground level, off the road and away from the
+	# buildings -- a shelf or the camp.
+	var spots: Array[Vector2i] = []
+	for c: Vector2i in grid.land:
+		if int(grid.island_of.get(c, -1)) == isl and int(grid.height.get(c, 0)) == 0 \
+				and not grid.cliff.has(c) and not grid.stairs.has(c) and not grid.trail.has(c) \
+				and not grid.beach.has(c) \
+				and grid.clear_of_buildings(Rect2(MapGrid.cell_mid(c) - Vector2(16, 16), Vector2(32, 32))):
+			spots.append(c)
+	spots.sort()
+	sheep.position = MapGrid.cell_mid(spots[rng.randi_range(0, spots.size() - 1)]) \
+		if not spots.is_empty() else Vector2(-1000, -1000)
 	return sheep
