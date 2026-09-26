@@ -406,6 +406,11 @@ func mark_skipped() -> void:
 	scored.emit("skip", false)
 
 
+## Through the Victory Gate: the server records this player's own time.
+func mark_finished() -> void:
+	scored.emit("finish", true)
+
+
 ## Ten gems to a team-mate, already applied on the server.
 func mark_rescue_sent() -> void:
 	rescue_sent = true

@@ -1080,6 +1080,7 @@ func _act_on(target: Dictionary) -> void:
 			_open_quiz(Game.current_station, false)
 		"gate":
 			Sfx.play("gate")
+			Game.mark_finished()
 			Game.end_adventure()
 
 

@@ -113,10 +113,14 @@ func _ready() -> void:
 		else "got %d rows" % players.size())
 	_check("it carries correct responses",
 		"" if int(players[0].correct) == 6 else "got %s" % players[0].correct)
-	# The number a spectating teacher actually reads.
-	_check("it knows how long they have been idle",
-		"" if int(players[0].idle_s) >= 0 and int(players[0].idle_s) < 600
-		else "idle_s was %s" % players[0].idle_s)
+	# Their own time, set only at the Victory Gate: six answers in, none yet.
+	_check("a player still out has no time yet",
+		"" if int(players[0].finish_s) == -1 else "finish_s was %s" % players[0].finish_s)
+	await Net.sign_in("sc-player-" + stamp + "@numxventure-test.dev", "letmein123")
+	var early: Dictionary = await Scores.finish_run(_session)
+	_check("no time for a player who has not finished",
+		"" if early.error != "" else "finish_run was accepted")
+	await Net.sign_in(_admin_email, "letmein123")
 
 	# The team penalties live in `team_scores`: once the run is over, a member
 	# short of all 14 items costs the team 25.

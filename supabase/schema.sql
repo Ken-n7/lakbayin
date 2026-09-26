@@ -362,6 +362,38 @@ end $$;
 
 grant execute on function public.rescue(uuid, uuid) to authenticated;
 
+-- A player's own time for the adventure: the game clock when they walk into
+-- the Victory Gate -- pauses are not theirs, so they do not count (the clock's
+-- deadline moves on resume). Set once, and only for a player who finished all
+-- three stations; the leaderboard's Time column reads it.
+alter table public.members add column if not exists finish_s int;
+
+create or replace function public.finish_run(p_session uuid)
+returns public.members
+language plpgsql security definer set search_path = '' as $$
+declare
+  s   public.sessions;
+  row public.members;
+begin
+  select * into s from public.sessions where id = p_session;
+  if s is null or s.state <> 'running' then
+    raise exception 'the adventure is not running';
+  end if;
+  update public.members
+     set finished = true,
+         finish_s = coalesce(finish_s, greatest(0, s.duration_s
+                      - greatest(0, ceil(extract(epoch from (s.ends_at - now())))::int))),
+         updated_at = now()
+   where session_id = p_session and profile_id = auth.uid() and stations_done >= 3
+  returning * into row;
+  if row is null then
+    raise exception 'the adventure is not finished';
+  end if;
+  return row;
+end $$;
+
+grant execute on function public.finish_run(uuid) to authenticated;
+
 grant execute on function public.apply_answer(uuid, boolean) to authenticated;
 grant execute on function public.spend_hint(uuid) to authenticated;
 grant execute on function public.skip_item(uuid) to authenticated;

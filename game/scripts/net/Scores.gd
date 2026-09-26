@@ -32,6 +32,7 @@ static func submit(kind: String, flag: bool, session_id: String, done: Callable)
 			"hint": reply = await spend_hint(job[2])
 			"skip": reply = await skip_item(job[2])
 			"station": reply = await finish_station(job[2], job[1])
+			"finish": reply = await finish_run(job[2])
 			_: reply = {"error": "unknown score " + str(job[0]), "row": {}}
 		_queue.pop_front()
 		var cb: Callable = job[3]
@@ -58,6 +59,11 @@ static func skip_item(session_id: String) -> Dictionary:
 
 static func finish_station(session_id: String, perfect: bool) -> Dictionary:
 	return await _call("finish_station", {"p_session": session_id, "p_perfect": perfect})
+
+
+## Through the Victory Gate: the server stamps this player's time (Players tab).
+static func finish_run(session_id: String) -> Dictionary:
+	return await _call("finish_run", {"p_session": session_id})
 
 
 ## Send 10 gems to a team-mate. One per sender per adventure, which the server

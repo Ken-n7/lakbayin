@@ -6,8 +6,6 @@ extends Control
 ##
 ## A fetch, not a subscription: see `Board` for why only the admin watches.
 
-## Minutes of silence before a teacher should look at that student.
-const IDLE_WARN_S := 180
 
 var main: Control
 
@@ -185,9 +183,9 @@ func _podium(top: Array) -> Control:
 
 
 ## What a spectating teacher actually reads: who is scoring, who is answering,
-## and who has not touched anything in minutes.
+## and each player's own time through the Victory Gate ("—" while still out).
 func _fill_players() -> void:
-	_row(["Rank", "Username", "Gems", "Right", "Idle"], [10, 30, 12, 10, 12])
+	_row(["Rank", "Username", "Gems", "Right", "Time"], [10, 30, 12, 10, 12])
 	var rows: Array = await Board.players(_sid)
 	if rows.is_empty():
 		_list.add_child(Art.label("Nobody has joined yet.", Pal.SMALL, Pal.INK_MUTED,
@@ -196,13 +194,11 @@ func _fill_players() -> void:
 	for i in rows.size():
 		var r: Dictionary = rows[i]
 		_row([str(i + 1), str(r.username), str(r.gems), str(r.correct),
-			Ui.mmss(int(r.idle_s))], [10, 30, 12, 10, 12], false,
-			int(r.idle_s) >= IDLE_WARN_S)
+			Ui.mmss(int(r.finish_s)) if int(r.finish_s) >= 0 else "—"], [10, 30, 12, 10, 12])
 
 
-## `weights` are the column widths; `mine` highlights the player's own row and
-## `stale` flags somebody who has stopped answering.
-func _row(cells: Array, weights: Array, mine := false, stale := false) -> void:
+## `weights` are the column widths; `mine` highlights the player's own row.
+func _row(cells: Array, weights: Array, mine := false) -> void:
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 10)
 	for i in cells.size():
@@ -210,8 +206,6 @@ func _row(cells: Array, weights: Array, mine := false, stale := false) -> void:
 		if mine:
 			c.add_theme_color_override("font_color", Pal.INFO_DEEP)
 			c.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.6))
-		elif stale:
-			c.add_theme_color_override("font_color", Pal.WRONG)
 		line.add_child(c)
 	_list.add_child(line)
 
