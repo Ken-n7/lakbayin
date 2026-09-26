@@ -389,50 +389,93 @@ var _dialog: Control = null
 
 
 ## Change Character (once there is one to change) and Log Out.
+## Two groups (client, redesigned per ui-ux-pro-max): Audio -- each volume
+## with a mute toggle on its icon -- and Account, where Log Out asks first.
 func _open_settings() -> void:
 	_dialog = Ui.dim(self)
-	var with_hero := _show_portrait() and Game.player_name != ""
-	var box := Ui.back_panel(_dialog, Vector2(260, 236 if with_hero else 196), "Settings",
+	var box := Ui.back_panel(_dialog, Vector2(312, 0), "Settings",
 		func() -> void: _dialog.queue_free())
 	box.add_theme_constant_override("separation", 8)
+
+	Ui.section(box, "Audio")
 	# Volumes, 0 is off, kept on the device. A sound on letting go of Sounds,
 	# so it can be heard at the level just set.
-	_volume_row(box, "Music", main.music.volume, main.music.set_volume)
-	var sounds := _volume_row(box, "Sounds", Sfx.volume, Sfx.set_volume)
+	_volume_row(box, "Music", "music", main.music.volume, main.music.set_volume)
+	var sounds := _volume_row(box, "Sounds", "sound", Sfx.volume, Sfx.set_volume)
 	sounds.drag_ended.connect(func(_changed: bool) -> void: Sfx.play("button"))
+
+	Ui.section(box, "Account")
 	# Players only: a Quest Keeper never picks one, whatever this device last held.
-	if with_hero:
-		var hero := Ui.button("Change Character", 200, Ui.H, Ui.SMALL)
+	if _show_portrait() and Game.player_name != "":
+		var hero := _account_button(box, "Change Character", "hero", Ui.SMALL)
 		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
-		Ui.centre_row(box, hero)
-	var out := Ui.button("Log Out", 200, Ui.H, Ui.SMALL_RED)
-	out.pressed.connect(func() -> void:
-		Net.sign_out()
-		main.open("login"))
-	Ui.centre_row(box, out)
+	var out := _account_button(box, "Log Out", "exit", Ui.SMALL_RED)
+	out.pressed.connect(_confirm_logout)
 
 
-## A labelled volume slider with its % beside it, into `box`.
-func _volume_row(box: Control, caption: String, value: float, set_to: Callable) -> HSlider:
+## An Account row: a full-width button, its icon at the left like the menu's.
+func _account_button(box: Control, text: String, icon: String, kind: int) -> Button:
+	var b := Ui.button(text, 280, Ui.H, kind)
+	b.icon = Art.tex(ICONS % icon)
+	b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_constant_override("h_separation", 6)
+	Ui.centre_row(box, b)
+	Ui.fit_text(b)
+	return b
+
+
+## One volume: a mute toggle on its icon, its name, the slider and its level.
+## Muting remembers the level, so unmuting puts it back.
+func _volume_row(box: Control, caption: String, icon: String, value: float,
+		set_to: Callable) -> HSlider:
 	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 8)
+	var mute := Ui.icon_button(Art.tex(ICONS % icon), "Mute " + caption)
+	row.add_child(mute)
 	var name := Art.label(caption, Pal.LABEL, Pal.INK)
 	name.custom_minimum_size = Vector2(56, 0)
 	row.add_child(name)
-	var vol := Ui.slider(110)
+	var vol := Ui.slider(128)
 	vol.value = value
-	var pct := Art.label("", Pal.LABEL, Pal.INK_MUTED)
-	pct.custom_minimum_size = Vector2(36, 0)
-	var show := func(v: float) -> void: pct.text = "Off" if v <= 0.0 else "%d%%" % roundi(v * 100.0)
+	vol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var pct := Art.label("", Pal.LABEL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
+	pct.custom_minimum_size = Vector2(40, 0)
+	var last := [value if value > 0.0 else 0.8]      # the level to unmute to
+	var show := func(v: float) -> void:
+		pct.text = "Off" if v <= 0.0 else "%d%%" % roundi(v * 100.0)
+		mute.icon = Art.tex(ICONS % (icon + "_off" if v <= 0.0 else icon))
+		mute.tooltip_text = ("Unmute " if v <= 0.0 else "Mute ") + caption
 	show.call(value)
 	vol.value_changed.connect(func(v: float) -> void:
+		if v > 0.0:
+			last[0] = v
 		set_to.call(v)
 		show.call(v))
+	mute.pressed.connect(func() -> void: vol.value = 0.0 if vol.value > 0.0 else last[0])
 	row.add_child(vol)
 	row.add_child(pct)
 	box.add_child(row)
 	return vol
+
+
+## Log Out is the one step here that cannot be undone from this screen, so it
+## asks (ui-ux-pro-max: confirm destructive actions) -- over Settings.
+func _confirm_logout() -> void:
+	var dim := Ui.dim(_dialog)
+	var box := Ui.screen_panel(dim, Vector2(280, 0), "Log out?")
+	box.add_theme_constant_override("separation", 10)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	var stay := Ui.button("Stay", 110, Ui.H, Ui.SMALL)
+	stay.pressed.connect(dim.queue_free)
+	var out := Ui.button("Log Out", 110, Ui.H, Ui.SMALL_RED)
+	out.pressed.connect(func() -> void:
+		Net.sign_out()
+		main.open("login"))
+	row.add_child(stay)
+	row.add_child(out)
+	box.add_child(row)
 
 
 func _confirm_quit() -> void:

@@ -90,6 +90,39 @@ static func fit_text(b: Button) -> void:
 	b.add_theme_font_size_override("font_size", size)
 
 
+## A flat icon-only button in ink, for the parchment panels: the icon at its
+## native pixels, the tap area around it at least `side` square (a thumb's
+## worth on a phone). `tip` says what it does, as the icon alone cannot.
+static func icon_button(tex: Texture2D, tip: String, side := 36.0) -> Button:
+	var b := Button.new()
+	b.icon = tex
+	b.flat = true
+	b.tooltip_text = tip
+	b.custom_minimum_size = Vector2(side, side)
+	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.focus_mode = Control.FOCUS_NONE
+	for state in ["icon_normal_color", "icon_hover_color", "icon_focus_color"]:
+		b.add_theme_color_override(state, Pal.INK)
+	b.add_theme_color_override("icon_pressed_color", Pal.WOOD)   # the press shows
+	click(b)
+	return b
+
+
+## A small heading with a rule running off to its right: groups a panel's rows.
+static func section(parent: Node, text: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var l := Art.label(text, Pal.LABEL, Pal.INK_MUTED)
+	row.add_child(l)
+	var rule := ColorRect.new()
+	rule.color = Color(Pal.WOOD, 0.45)
+	rule.custom_minimum_size = Vector2(0, 2)
+	rule.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rule.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(rule)
+	parent.add_child(row)
+
+
 ## A button that drops a list, wearing the same skin as the rest. The one
 ## place the game needs it is Rescue, which the mockups draw as "Rescue ▾".
 static func menu_button(text: String, w: float, h: float, kind := BLUE) -> MenuButton:
