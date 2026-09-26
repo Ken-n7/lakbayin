@@ -31,6 +31,10 @@ var _gem_tw: Tween = null
 var _hint_bar: Label = null  # the controls crib, hidden while the board is frozen
 ## The stick and the GO/MENU buttons. Null on desktop, where there is no pad.
 var pad: Node2D = null
+var _pad_buttons: Array[TouchScreenButton] = []
+## The way back while the camera is off looking at the map: an arrow on the
+## screen's edge, pointing at the hero, that brings the view home when tapped.
+var hero_pointer: HeroPointer = null
 var _flash_active := false
 
 ## The menu is up. The screen reads this to stop the hero walking and to
@@ -65,8 +69,8 @@ func build() -> void:
 	prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(prompt)
 
-	var keys := ("joystick — move   ·   GO — enter   ·   MENU / back — menu" if Game.touch
-			else "WASD / arrows — move   ·   E — interact   ·   Esc — menu")
+	var keys := ("joystick — move   ·   drag — look   ·   GO — enter   ·   MENU — menu" if Game.touch
+			else "WASD / arrows — move   ·   drag — look   ·   E — interact   ·   Esc — menu")
 	var hint_bar: Label = Art.label(keys, Pal.TINY,
 			Pal.WHITE_DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	if Game.touch:
@@ -86,6 +90,10 @@ func build() -> void:
 		Art.shadow(l)
 
 	_build_pad()
+	hero_pointer = HeroPointer.new()
+	hero_pointer.visible = false
+	hero_pointer.pressed.connect(func() -> void: adv.end_look())
+	hud_layer.add_child(hero_pointer)
 	# The cheat drawer, and only where cheating is free: a release export never
 	# builds the node, so there is nothing in it to reach.
 	if OS.is_debug_build():
@@ -267,6 +275,7 @@ func _build_pad() -> void:
 	# Kept a thumb's width off the bottom edge: that strip is Android's
 	# swipe-up-home gesture zone, immersive mode or not.
 	joystick = preload("res://scripts/Joystick.gd").new()
+	joystick.ignore = pointer_hit
 	pad.add_child(joystick)
 	# Measured in from the right edge, not from 640: `keep_height` makes the
 	# canvas ~800 wide on a 20:9 phone, and fixed coordinates left GO and MENU
@@ -294,6 +303,7 @@ func _touch_btn(action: String, text: String, center: Vector2, s: float, font: i
 	b.position = center - Vector2(64.0, 64.0) * s
 	b.modulate.a = 0.8
 	pad.add_child(b)
+	_pad_buttons.append(b)
 	var l := Art.label(text, font, Pal.WHITE_STRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.size = Vector2(80, 24)
@@ -314,6 +324,53 @@ func set_crib(on: bool) -> void:
 func close_dev() -> void:
 	if dev != null and is_instance_valid(dev):
 		dev.close()
+
+
+# --- Looking around the map -------------------------------------------------
+## While a finger drags the view, GO and MENU stop pressing themselves when a
+## finger slides onto them (`passby_press`): a look across the bottom-right
+## corner would otherwise press GO on the way past.
+func set_panning(on: bool) -> void:
+	for b in _pad_buttons:
+		b.passby_press = not on
+
+
+## A touch at `pos` (viewport px) that belongs to the HUD, not to the board:
+## GO or MENU, the hero pointer, or any HUD control that takes clicks (the top
+## bar's plates, the dev drawer). The board neither pans nor taps from these.
+func owns_touch(pos: Vector2) -> bool:
+	if pad != null and pad.visible:
+		for b in _pad_buttons:
+			var r := 64.0 * b.scale.x
+			if (b.position + Vector2(r, r)).distance_to(pos) <= r:
+				return true
+	if pointer_hit(pos):
+		return true
+	for layer in [hud_layer, ui_layer]:
+		for c: Control in layer.find_children("*", "Control", true, false):
+			if c.is_visible_in_tree() and c.mouse_filter == Control.MOUSE_FILTER_STOP \
+					and c.get_global_rect().has_point(pos):
+				return true
+	return false
+
+
+## `pos` is on the hero pointer (and it is showing). The screen asks this for
+## raw touches, because a second finger -- the left thumb already on the stick
+## -- is never turned into the mouse click the button itself listens for.
+func pointer_hit(pos: Vector2) -> bool:
+	return hero_pointer != null and hero_pointer.visible \
+			and hero_pointer.get_global_rect().grow(6.0).has_point(pos)
+
+
+## Shows the pointer at `at` (its centre, viewport px) aiming along `dir`, or
+## hides it.
+func point_to_hero(show: bool, at := Vector2.ZERO, dir := Vector2.RIGHT) -> void:
+	if hero_pointer == null:
+		return
+	hero_pointer.visible = show
+	if show:
+		hero_pointer.position = at - hero_pointer.size * 0.5
+		hero_pointer.aim(dir)
 
 
 ## Hiding a TouchScreenButton releases its action on its own; the stick is a
@@ -452,3 +509,45 @@ func _leave_menu(menu: Control, screen: String, drop: String) -> void:
 		"abandon": Game.abandon_adventure()
 	if screen != "":
 		adv.main.open(screen)
+
+
+## The arrow back to the hero: a wooden disc on the edge of the screen with an
+## arrow aimed at where the hero stands. Tapping it (or moving, or GO) brings
+## the camera home. 44px, the touch-target floor.
+class HeroPointer extends Control:
+	signal pressed
+
+	const SIDE := 44.0
+	var _dir := Vector2.RIGHT
+
+	func _init() -> void:
+		size = Vector2(SIDE, SIDE)
+		custom_minimum_size = size
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		tooltip_text = "Back to your hero"
+
+	func aim(dir: Vector2) -> void:
+		if dir.length_squared() > 0.0001 and not dir.normalized().is_equal_approx(_dir):
+			_dir = dir.normalized()
+			queue_redraw()
+
+	func _draw() -> void:
+		var c := size * 0.5
+		draw_circle(c + Vector2(0, 2), SIDE * 0.5 - 2.0, Color(0, 0, 0, 0.35))
+		draw_circle(c, SIDE * 0.5 - 2.0, Color(0.42, 0.29, 0.19))
+		draw_arc(c, SIDE * 0.5 - 3.0, 0.0, TAU, 40, Pal.GOLD, 2.0)
+		var side := _dir.orthogonal()
+		var tip := c + _dir * 13.0
+		var back := c - _dir * 7.0
+		draw_colored_polygon(PackedVector2Array([tip, back + side * 10.0, c - _dir * 2.0,
+				back - side * 10.0]), Pal.CREAM)
+
+	## A touch arrives here as a touch, not only as the mouse a phone makes of
+	## it -- and a second finger (the first on the stick) only ever as a touch.
+	func _gui_input(event: InputEvent) -> void:
+		var tap := (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed) \
+				or (event is InputEventMouseButton and (event as InputEventMouseButton).pressed
+					and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT)
+		if tap:
+			accept_event()
+			pressed.emit()
