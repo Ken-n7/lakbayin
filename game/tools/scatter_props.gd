@@ -18,6 +18,10 @@ extends Node
 ## test_collisions afterwards proves the hero can still reach every stop.
 
 const TREES := ["Tree1", "Tree2", "Tree3", "Tree4"]
+## Which trees grow at each level: Tree1-2 are pines, Tree3-4 leafy (yellow,
+## autumn).
+const SPECIES := [["Tree3", "Tree4"], ["Tree3", "Tree4", "Tree1"], ["Tree1", "Tree2"],
+	["Tree2", "Tree1"]]
 const STUMPS := ["Stump1", "Stump2", "Stump3", "Stump4"]
 const ROCKS := ["Rock1", "Rock2", "Rock3", "Rock4"]
 
@@ -29,10 +33,13 @@ const BUSH := "res://assets/terrain/decorations/Bush%d.png"
 const BUSH_SCALE := 0.32
 const BUSH_FPS := 6.0
 ## Chance of a bush at each spot along a cliff's foot, and beside stairs.
-const BUSH_AT_CLIFF := 0.35
+const BUSH_AT_CLIFF := 0.6
 const BUSH_AT_STAIRS := 0.9
 ## Chance a tree on the ground gets a bush at its foot, on the wood's edge.
-const BUSH_AT_WOODS := 0.12
+const BUSH_AT_WOODS := 0.35
+## Clumps of bushes out in the ground-level meadows, and along the roads.
+const BUSH_CLUMPS := 70
+const BUSH_AT_ROAD := 0.12
 ## Rocks in the water off every shore, to break up the sea: this many, one to
 ## four tiles out, far enough apart not to clump, and clear of the bridges.
 const WATER_ROCK := "res://assets/terrain/decorations/Water Rocks_0%d.png"
@@ -138,6 +145,11 @@ func _ready() -> void:
 		var p_tree := smoothstep(woods - 0.015, woods + 0.02, n) * open * lerpf(0.55, 1.0, back)
 		var cp := (copse.get_noise_2dv(p) + 1.0) * 0.5
 		p_tree = maxf(p_tree, smoothstep(0.7, 0.75, cp) * open * 0.9)
+		# The high ground is dressed too, whatever the woods noise says there:
+		# pine copses on every plateau and on the summit, as the banner's
+		# heights have them.
+		if int(grid.height.get(cell, 0)) >= 2:
+			p_tree = maxf(p_tree, smoothstep(0.52, 0.6, cp) * open)
 		# Rocks only in their outcrops, never one on its own in a field.
 		var p_rock := smoothstep(rocky - 0.01, rocky + 0.02, s) * 0.3 \
 			* smoothstep(20.0, 50.0, road) * smoothstep(12.0, 50.0, station)
@@ -145,7 +157,7 @@ func _ready() -> void:
 		if int(_shore_dist.get(cell, 99)) <= 2:
 			p_rock *= 2.0
 		if int(grid.height.get(cell, 0)) >= 2:
-			p_rock *= 1.5
+			p_rock = maxf(p_rock * 1.5, 0.02 * open)
 		# Stumps only just outside a wood's edge: felled trees, not litter.
 		var edge := clampf(1.0 - absf(n - (woods - 0.03)) / 0.015, 0.0, 1.0)
 		var p_stump := 0.12 * edge * open * clampf(w_stump / 0.15, 0.3, 1.5)
@@ -154,9 +166,15 @@ func _ready() -> void:
 		var name := ""
 		if roll < p_tree:
 			kind = "tree"
-			# Groves of one species, with a stranger now and then.
+			# The species follows the grass, as in the banner: leafy yellow and
+			# autumn trees on the light ground, pines on the dark high ground,
+			# the terrace between mixing both. Groves keep to one kind, with a
+			# stranger now and then.
 			var g := (grove.get_noise_2dv(p) + 1.0) * 0.5
-			name = TREES[clampi(int(g * 4.0), 0, 3)] if rng.randf() > 0.2 else TREES[rng.randi_range(0, 3)]
+			var kinds: Array = SPECIES[mini(int(grid.height.get(cell, 0)), SPECIES.size() - 1)]
+			name = kinds[clampi(int(g * kinds.size()), 0, kinds.size() - 1)]
+			if rng.randf() < 0.12:
+				name = TREES[rng.randi_range(0, 3)]
 		elif roll < p_tree + p_rock:
 			kind = "rock"
 			name = ROCKS[rng.randi_range(0, 3)]
@@ -306,6 +324,10 @@ func _measure_trail() -> void:
 ## so the way and the landmarks stay open -- rising to 1 beyond them.
 func _open(p: Vector2) -> float:
 	var road := float(_trail_dist.get(MapGrid.cell_at(p), 99)) * MapCfg.TILE
+	# The high ground's narrow terraces keep a tighter clearing, or none of
+	# them would have a tree.
+	if int(grid.height.get(MapGrid.cell_at(p), 0)) >= 2:
+		return smoothstep(20.0, 44.0, road) * smoothstep(20.0, 64.0, _keep_dist(p))
 	return smoothstep(28.0, 70.0, road) * smoothstep(20.0, 64.0, _keep_dist(p))
 
 
@@ -319,13 +341,17 @@ func _level_ok(at: Vector2, rects: Array[Rect2]) -> bool:
 	for r: Rect2 in rects:
 		for corner in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
 			cells.append(MapGrid.cell_at(corner))
+	# On the high ground only the footprint itself need be on the level --
+	# its plateaus are narrow, and a ring round every trunk left them bare.
+	var ring := 1 if level < 2 else 0
 	for c in cells:
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
 				var n := c + Vector2i(dx, dy)
-				if grid.cliff.has(n) or grid.stairs.has(n):
+				if grid.stairs.has(n) or grid.cliff.has(n) and (ring > 0 or n == c):
 					return false
-				if grid.land.has(n) and int(grid.height.get(n, -1)) != level:
+				if absi(dx) + absi(dy) <= ring * 2 and grid.land.has(n) \
+						and int(grid.height.get(n, -1)) != level:
 					return false
 	return true
 
@@ -370,6 +396,24 @@ func _plant_bushes() -> void:
 			continue
 		var out := c + Vector2i(int(st.side) * 2, 1)
 		spots.append([MapGrid.cell_mid(out) + Vector2(0, 6), BUSH_AT_STAIRS])
+	# Clumps of two or three out in the open, and the odd one by the road.
+	var ground: Array[Vector2i] = []
+	for c: Vector2i in grid.land:
+		if int(grid.height.get(c, -1)) == 0 and not grid.trail.has(c):
+			ground.append(c)
+	ground.sort()
+	for _k in BUSH_CLUMPS:
+		if ground.is_empty():
+			break
+		var at := MapGrid.cell_mid(ground[rng.randi_range(0, ground.size() - 1)])
+		for _n in rng.randi_range(2, 3):
+			spots.append([at + Vector2(rng.randf_range(-22, 22), rng.randf_range(-10, 10)), 1.0])
+	for c: Vector2i in grid.trail:
+		if int(grid.height.get(c, -1)) == 0 and rng.randf() < BUSH_AT_ROAD:
+			for d in [Vector2i(0, 2), Vector2i(0, -2), Vector2i(2, 0), Vector2i(-2, 0)]:
+				if not grid.trail.has(c + d):
+					spots.append([MapGrid.cell_mid(c + d) + Vector2(0, 8), 1.0])
+					break
 	for d: Dictionary in _placed:
 		if d.kind == "tree" and rng.randf() < BUSH_AT_WOODS:
 			spots.append([(d.at as Vector2) + Vector2(rng.randf_range(-24, 24), rng.randf_range(10, 22)), 1.0])
@@ -397,7 +441,7 @@ func _plant_bushes() -> void:
 				near = true
 				break
 		for b: Dictionary in _bushes:
-			if (b.at as Vector2).distance_to(at) < 18.0:
+			if (b.at as Vector2).distance_to(at) < 12.0:
 				near = true
 				break
 		if near:

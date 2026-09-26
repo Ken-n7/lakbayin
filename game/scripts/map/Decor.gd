@@ -123,20 +123,22 @@ func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 	})
 	spr.scale = Vector2(MapCfg.SHEEP_SCALE, MapCfg.SHEEP_SCALE)
 	sheep.add_child(spr)
-	var shadow := Sprite2D.new()
-	shadow.texture = Art.tex(MapCfg.SHADOW_SHEET)
-	shadow.scale = Vector2(MapCfg.SHEEP_SHADOW_SCALE, MapCfg.SHEEP_SHADOW_SCALE)
-	shadow.modulate.a = MapCfg.SHEEP_SHADOW_ALPHA
-	sheep.add_child(shadow)
 	sheep.set_script(preload("res://scripts/Wander.gd"))
-	# Somewhere on the island's ground level, off the road and away from the
-	# buildings -- a shelf or the camp.
+	# Anywhere on the island, on any level, with room to graze round it: off
+	# the road, clear of cliffs, stairs and the shore, away from the buildings.
 	var spots: Array[Vector2i] = []
 	for c: Vector2i in grid.land:
-		if int(grid.island_of.get(c, -1)) == isl and int(grid.height.get(c, 0)) == 0 \
-				and not grid.cliff.has(c) and not grid.stairs.has(c) and not grid.trail.has(c) \
-				and not grid.beach.has(c) \
-				and grid.clear_of_buildings(Rect2(MapGrid.cell_mid(c) - Vector2(16, 16), Vector2(32, 32))):
+		if int(grid.island_of.get(c, -1)) != isl or grid.trail.has(c) or grid.beach.has(c):
+			continue
+		var h := int(grid.height.get(c, 0))
+		var room := true
+		for dy in range(-1, 2):
+			for dx in range(-2, 3):
+				var k := c + Vector2i(dx, dy)
+				if not grid.land.has(k) or grid.cliff.has(k) or grid.stairs.has(k) \
+						or int(grid.height.get(k, -1)) != h:
+					room = false
+		if room and grid.clear_of_buildings(Rect2(MapGrid.cell_mid(c) - Vector2(16, 16), Vector2(32, 32))):
 			spots.append(c)
 	spots.sort()
 	sheep.position = MapGrid.cell_mid(spots[rng.randi_range(0, spots.size() - 1)]) \

@@ -19,6 +19,9 @@ var list: Array[Dictionary] = []
 ## Anchor index of each station's tower, handed in by `MapBuilder`: it is the
 ## station a guard steps aside toward, and the side he faces.
 var _towers: Array = []
+## The stations' outpost houses (Stations.houses), for a knight told to stand
+## behind one.
+var _houses: Array = []
 
 
 func _init(w: Node2D, g: MapGrid) -> void:
@@ -28,9 +31,10 @@ func _init(w: Node2D, g: MapGrid) -> void:
 
 ## One gate per station, on the stair `stairs[st]` holds ({top, foot, side},
 ## from Terrain), each posted in whatever state this run has already earned.
-func build(towers: Array, stairs: Array) -> void:
+func build(towers: Array, stairs: Array, houses := []) -> void:
 	list.clear()
 	_towers = towers
+	_houses = houses
 	for st in stairs.size():
 		var g := _build_one(st, stairs[st])
 		list.append(g)
@@ -57,7 +61,9 @@ func _build_one(st: int, stair: Dictionary) -> Dictionary:
 		"offset": Vector2.ZERO,
 		"rest": Vector2.ZERO,
 	}
-	g.stand = _guard_rest(g)
+	g.stand = _behind_house(g) if MapCfg.GUARD_REST_BEHIND_HOUSE[st] else Vector2.INF
+	if g.stand == Vector2.INF:
+		g.stand = _guard_rest(g)
 	grid.keep_out(Rect2(g.post as Vector2, Vector2.ZERO).expand(g.stand as Vector2)
 			.grow_individual(MapCfg.GUARD_CLEARING.x, MapCfg.GUARD_CLEARING.y,
 					MapCfg.GUARD_CLEARING.z, MapCfg.GUARD_CLEARING.w))
@@ -104,7 +110,8 @@ func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 		k.offset = Vector2(0, -f.get_height() * 0.5)
 	k.play("idle")
 	# Over the grass like the outpost guards, who are decoration at the same depth.
-	k.z_index = MapCfg.GUARD_Z
+	# In the y-sort with everything else, so a house in front of him hides him.
+	k.z_index = 0
 	world.add_child(k)
 	return k
 
@@ -115,6 +122,33 @@ func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 func _face(g: Dictionary, from: Vector2) -> void:
 	var home: Vector2 = grid.anchors[_towers[int(g.st)]]
 	(g.guard as AnimatedSprite2D).scale.x = MapCfg.GUARD_SCALE * (1.0 if home.x >= from.x else -1.0)
+
+
+## Behind his station's left-hand house: close to his stair, and the house
+## stands in front of him -- he is drawn behind it by the y-sort, never over
+## it. The nearest spot along the back of the house whose ground takes his
+## boots; INF if there is none.
+func _behind_house(g: Dictionary) -> Vector2:
+	var st := int(g.st)
+	if st >= _houses.size():
+		return Vector2.INF
+	for h: Dictionary in _houses[st]:
+		if float(h.side) > 0.0:
+			continue
+		var at: Vector2 = h.at
+		var back := at.y - float(h.bh) * MapCfg.HOUSE_WALL_FRAC - MapCfg.GUARD_BEHIND_GAP
+		var best := Vector2.INF
+		for k in range(-6, 7):
+			var p := Vector2(at.x + k * 6.0, back)
+			var boots := Rect2(MapCfg.GUARD_BOOTS.position + p, MapCfg.GUARD_BOOTS.size)
+			var c := MapGrid.cell_at(p)
+			if not grid.land.has(c) or grid.cliff.has(c) or grid.stairs.has(c) \
+					or int(grid.height.get(c, -1)) != 0 or not MapGrid.clear_of(boots, grid.solid):
+				continue
+			if best == Vector2.INF or p.distance_to(g.post) < best.distance_to(g.post):
+				best = p
+		return best
+	return Vector2.INF
 
 
 ## Where opening the gate sends him: the nearest open ground beside his
@@ -218,6 +252,10 @@ func walk_path(g: Dictionary, from: Vector2, to: Vector2) -> Array[Vector2]:
 				continue
 			if n != goal and not clear.call(MapGrid.cell_mid(n)):
 				continue
+			# A diagonal step must not cut a wall's corner.
+			if d.x != 0 and d.y != 0 and n != goal \
+					and not _line_clear(MapGrid.cell_mid(c), MapGrid.cell_mid(n), clear):
+				continue
 			came[n] = c
 			queue.append(n)
 	if not came.has(goal):
@@ -253,7 +291,7 @@ func path_stones(_g: Dictionary, from: Vector2) -> Array:
 
 
 static func _line_clear(a: Vector2, b: Vector2, clear: Callable) -> bool:
-	var steps := maxi(1, int(a.distance_to(b) / 8.0))
+	var steps := maxi(1, int(a.distance_to(b) / 2.0))
 	for s in range(1, steps + 1):
 		if not clear.call(a.lerp(b, float(s) / steps)):
 			return false

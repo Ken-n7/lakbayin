@@ -117,11 +117,12 @@ const CIRCLE_TOWER_SCALE := 0.5
 ## Little islands off the coasts, to dress.
 const ISLETS := 5
 ## Each level's grass, as the pack's guide suggests, so the heights read apart:
-## the ground, the terraces, the plateaus, the summit.
+## the ground, the terraces, the plateaus, the summit -- light and warm at
+## the shore, darker and cooler going up, as the Tiny Swords banner has it.
 const LEVEL_COLORS := ["res://assets/terrain/tileset/Tilemap_color1.png",
 	"res://assets/terrain/tileset/Tilemap_color2.png",
 	"res://assets/terrain/tileset/Tilemap_color3.png",
-	"res://assets/terrain/tileset/Tilemap_color1.png"]
+	"res://assets/terrain/tileset/Tilemap_color5.png"]
 ## The guide's shadow under each raised level, one tile down.
 const LEVEL_SHADOW_SCALE := 0.36
 const LEVEL_SHADOW_ALPHA := 0.55
@@ -132,10 +133,10 @@ const LEVEL_SHADOW_ALPHA := 0.55
 ## to `rock` -- which tools/scatter_props turns into how much of the island is
 ## woods and how much is rock; and the sheep each island keeps.
 const ISLAND_PROPS := [
-	{"tree": 0.55, "stump": 0.70, "rock": 0.88, "sheep": 1},
-	{"tree": 0.60, "stump": 0.70, "rock": 0.86, "sheep": 3},
-	{"tree": 0.22, "stump": 0.46, "rock": 0.90, "sheep": 1},
-	{"tree": 0.08, "stump": 0.20, "rock": 0.80, "sheep": 0},
+	{"tree": 0.55, "stump": 0.70, "rock": 0.88, "sheep": 4},
+	{"tree": 0.60, "stump": 0.70, "rock": 0.86, "sheep": 9},
+	{"tree": 0.45, "stump": 0.56, "rock": 0.90, "sheep": 5},
+	{"tree": 0.40, "stump": 0.50, "rock": 0.85, "sheep": 5},
 ]
 
 const GUARD_SCALE := 0.9
@@ -174,6 +175,10 @@ const GUARD_IDLE_FPS := 5.0
 const GUARD_WALK_FPS := 9.0
 ## Over the grass, at the same depth as the outpost guards he matches.
 const GUARD_Z := 1
+## Knights who step aside to behind their station's left-hand house, and how
+## far behind its wall they stand. The others take the nearest open ground.
+const GUARD_REST_BEHIND_HOUSE := [true, false, false]
+const GUARD_BEHIND_GAP := 6.0
 ## How long he takes to walk out of the gap when his station is briefed.
 const GUARD_STEP_TIME := 1.2
 ## Ground kept clear around the gap, his walk and his spot, so the decor pass
@@ -278,8 +283,6 @@ const SHEEP_WALK_FPS := 7.0
 const SHEEP_SCALE := 0.9
 
 const SHADOW_SHEET := "res://assets/terrain/tileset/Shadow.png"
-const SHEEP_SHADOW_SCALE := 0.5
-const SHEEP_SHADOW_ALPHA := 0.5
 
 # --- The hero ---------------------------------------------------------------
 const HERO_SHADOW_SCALE := 0.3

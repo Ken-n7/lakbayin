@@ -15,6 +15,8 @@ var grid: MapGrid
 ## `locks` is the station's title label, repainted as progress is made.
 var nodes: Array = []
 var locks: Array = []
+## Per station, its outpost's houses: [{at, hw, bh, side}], side -1 the left.
+var houses: Array = []
 var gate: Node2D = null
 
 
@@ -169,6 +171,9 @@ func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
 		if not ok:
 			continue
 		_building(path, at)
+		while houses.size() <= i:
+			houses.append([])
+		(houses[i] as Array).append({"at": at, "hw": hw, "bh": bh, "side": side})
 		grid.block(wall)
 		grid.keep_out(MapGrid.building_keepout(at, hw, bh))
 	# Idle guards: the unit sheets are 8-frame strips with transparent gutters, so
