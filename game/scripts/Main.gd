@@ -21,7 +21,17 @@ const SCREENS := {
 	"summary": preload("res://scripts/SummaryScreen.gd"),
 }
 
+## Music per screen (client), a playlist in `Music.gd`: the town songs on the
+## sign-in screens and all that Home opens, the shop's on Choose Hero; a screen
+## not listed is silent.
+const MUSIC := {
+	"login": "town", "register": "town", "reset": "town", "home": "town",
+	"team": "town", "board": "town", "learn": "town",
+	"hero": "shop",
+}
+
 var current: Control = null
+var _music: Music
 ## The moving scene behind the menu screens, kept here rather than in each
 ## screen so it carries on across screen changes instead of restarting.
 var backdrop: Backdrop
@@ -35,6 +45,8 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	backdrop = Backdrop.new()
 	add_child(backdrop)
+	_music = Music.new()
+	add_child(_music)
 	# `godot --path game -- --explore`: straight onto the board, for looking.
 	if OS.is_debug_build() and "--explore" in OS.get_cmdline_user_args():
 		explore_map()
@@ -131,6 +143,8 @@ func open(name: String, data: Dictionary = {}) -> void:
 	current.set("main", self)
 	add_child(current)
 	current.setup(data)
+	_music.play(str(MUSIC.get(name, "")))
+
 
 
 ## The soft keyboard covers the bottom half of a landscape phone -- on this
