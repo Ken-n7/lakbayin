@@ -37,8 +37,19 @@ var _steps: Label            # "1 Pick a team -> 2 Ready!", the current one lit
 var _banner: PanelContainer  # the status line's backing, coloured by state
 
 
-func setup(_data: Dictionary) -> void:
+func setup(data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Dev navigator's "lobby": the team picker mid-pick, made-up teams, no
+	# server -- for looking at it without a live session.
+	if OS.is_debug_build() and bool(data.get("preview", false)):
+		_lobby.session = {"id": "preview", "code": "AB3K", "state": "lobby"}
+		_lobby.teams = [{"id": "t1", "name": "Math Mavericks"},
+			{"id": "t2", "name": "Number Ninjas"}, {"id": "t3", "name": "Prime Pirates"}]
+		_lobby.players = {Net.user_id: {"username": "you", "team_id": "t1"},
+			"p2": {"username": "ana", "team_id": "t1"}, "p3": {"username": "ben", "team_id": "t2"},
+			"p4": {"username": "cai", "team_id": "t2"}, "p5": {"username": "dee", "team_id": "t3"}}
+		_build_lobby()
+		return
 	if not (Net.configured() and Net.signed_in()):
 		_build_offline()
 		return
@@ -177,7 +188,7 @@ func _build_lobby() -> void:
 	# to work out that entering the map is what "ready" means. The code rides
 	# the same line -- a line of its own pushed Ready off a 360px screen.
 	var head := HBoxContainer.new()
-	var code := Art.label("Code %s" % Game.joined_code, Pal.SMALL, Pal.INK_MUTED)
+	var code := Art.label("Code %s" % str(_lobby.session.get("code", Game.joined_code)), Pal.SMALL, Pal.INK_MUTED)
 	code.custom_minimum_size = Vector2(110, 0)
 	head.add_child(code)
 	_steps = Art.label("", Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)

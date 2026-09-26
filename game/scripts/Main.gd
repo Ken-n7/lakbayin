@@ -22,12 +22,13 @@ const SCREENS := {
 }
 
 ## Music per screen (client), a playlist in `Music.gd`: the town songs on the
-## sign-in screens and all that Home opens, the shop's on Choose Hero; a screen
-## not listed is silent.
+## sign-in screens and all that Home opens, the shop's on Choose Hero, Victory!
+## on the end-of-game summary; a screen not listed is silent.
 const MUSIC := {
 	"login": "town", "register": "town", "reset": "town", "home": "town",
 	"team": "town", "board": "town", "learn": "town",
 	"hero": "shop",
+	"summary": "victory",
 }
 
 var current: Control = null
@@ -98,6 +99,14 @@ func _build_dev_nav() -> void:
 		box.visible = false
 		explore_map())
 	col.add_child(explore)
+
+	# The team picker, which otherwise needs a live session to reach.
+	var lobby := DevUi.button("lobby")
+	lobby.custom_minimum_size = Vector2(88, 19)
+	lobby.pressed.connect(func() -> void:
+		box.visible = false
+		open("team", {"preview": true}))
+	col.add_child(lobby)
 
 	var out := DevUi.button("sign out")
 	out.custom_minimum_size = Vector2(88, 19)

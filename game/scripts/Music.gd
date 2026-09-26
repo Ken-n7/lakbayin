@@ -19,10 +19,12 @@ const SONGS := {                      # name -> [file, loop start in seconds]
 	"winds": ["res://assets/music/where_the_winds_roam.ogg", 0.639],
 	"port": ["res://assets/music/port_town.ogg", 2.135],
 	"shop": ["res://assets/music/shop.ogg", 0.0],
+	"victory": ["res://assets/music/victory.ogg", 8.501],
 }
 const PLAYLISTS := {
 	"town": ["our_town", "winds", "port"],
 	"shop": ["shop"],
+	"victory": ["victory"],
 }
 
 ## 0..1, the Music slider in Home's Settings; 0 is off.
