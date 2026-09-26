@@ -24,17 +24,13 @@ func _entries() -> Array:
 	return [
 		# Straight into a fresh session with its code; Game Controls and the
 		# Teams tab are where it is run, and leaving ends it.
-		["Start Session", "controls", Ui.RED, {"new": true}],
-		["Question Management", "questions", Ui.SMALL],
-		["Leaderboard", "board", Ui.SMALL],
-		["Feedback", "feedback", Ui.SMALL],
+		["Start Session", "controls", Ui.RED, {"new": true}, "play"],
+		# "Question Bank": "Question Management" did not fit beside its icon,
+		# and the line under the menu already calls it the bank.
+		["Question Bank", "questions", Ui.SMALL, {}, "question"],
+		["Leaderboard", "board", Ui.SMALL, {}, "trophy"],
+		["Feedback", "feedback", Ui.SMALL, {}, "feedback"],
 	]
-
-
-## Log Out stays on the header here: this column has no room for Settings
-## and Quit alongside the four destinations.
-func _logout_in_settings() -> bool:
-	return false
 
 
 ## Back on the dashboard quits straight away, as it always has.
@@ -50,6 +46,19 @@ func _show_portrait() -> bool:
 ## The one number a teacher needs before pressing Start: whether the bank can
 ## fill the stations. Start Game refuses on this same check.
 func _after_menu(col: VBoxContainer) -> void:
+	# The player's Settings (volumes, Log Out) and a Quit that asks first --
+	# side by side, as a sixth full row ran off the canvas.
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	for spec: Array in [["Settings", _open_settings, "gear"], ["Quit", _confirm_quit, "exit"]]:
+		var b := Ui.button(spec[0], (COL_W - 6) / 2.0, BTN_H, Ui.SMALL)
+		b.icon = Art.tex(ICONS % spec[2])
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_constant_override("h_separation", 4)
+		b.pressed.connect(spec[1])
+		row.add_child(b)
+	col.add_child(row)
+
 	var line := Art.label("Checking the question bank...", Pal.TINY, Pal.WHITE_DIM,
 			HORIZONTAL_ALIGNMENT_CENTER)
 	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -64,5 +73,5 @@ func _after_menu(col: VBoxContainer) -> void:
 			Game.ITEMS_PER_STATION[0], Game.ITEMS_PER_STATION[1], Game.ITEMS_PER_STATION[2]]
 		line.add_theme_color_override("font_color", Pal.GOLD)
 	else:
-		line.text = "Bank short — see Question Management"
+		line.text = "Bank short — see Question Bank"
 		line.add_theme_color_override("font_color", Pal.WRONG)

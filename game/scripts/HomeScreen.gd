@@ -68,7 +68,7 @@ func _tagline() -> String:
 func _entries() -> Array:
 	var has_profile := Game.player_name != ""
 	return [
-		["Join Quest" if has_profile else "Start Adventure", "", Ui.RED],
+		["Join Quest" if has_profile else "Start Adventure", "", Ui.RED, {}, "play"],
 		["Leaderboard", "board", Ui.SMALL, {}, "trophy"],
 		["Learn", "learn", Ui.SMALL, {}, "book"],
 		["Settings", _open_settings, Ui.SMALL, {}, "gear"],
@@ -372,6 +372,7 @@ func _build_menu() -> void:
 			b.pressed.connect(func() -> void:
 				main.open(route if route != "" else _adventure_route(), data))
 		col.add_child(b)
+		Ui.fit_text(b)
 	_after_menu(col)
 
 
@@ -390,7 +391,8 @@ var _dialog: Control = null
 ## Change Character (once there is one to change) and Log Out.
 func _open_settings() -> void:
 	_dialog = Ui.dim(self)
-	var box := Ui.back_panel(_dialog, Vector2(260, 236), "Settings",
+	var with_hero := _show_portrait() and Game.player_name != ""
+	var box := Ui.back_panel(_dialog, Vector2(260, 236 if with_hero else 196), "Settings",
 		func() -> void: _dialog.queue_free())
 	box.add_theme_constant_override("separation", 8)
 	# Volumes, 0 is off, kept on the device. A sound on letting go of Sounds,
@@ -398,7 +400,8 @@ func _open_settings() -> void:
 	_volume_row(box, "Music", main.music.volume, main.music.set_volume)
 	var sounds := _volume_row(box, "Sounds", Sfx.volume, Sfx.set_volume)
 	sounds.drag_ended.connect(func(_changed: bool) -> void: Sfx.play("button"))
-	if Game.player_name != "":
+	# Players only: a Quest Keeper never picks one, whatever this device last held.
+	if with_hero:
 		var hero := Ui.button("Change Character", 200, Ui.H, Ui.SMALL)
 		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
 		Ui.centre_row(box, hero)
@@ -434,11 +437,11 @@ func _volume_row(box: Control, caption: String, value: float, set_to: Callable) 
 
 func _confirm_quit() -> void:
 	_dialog = Ui.dim(self)
-	var box := Ui.screen_panel(_dialog, Vector2(300, 150), "Quit NumXventure?")
+	var box := Ui.screen_panel(_dialog, Vector2(300, 150 if _show_portrait() else 124), "Quit NumXventure?")
 	box.add_theme_constant_override("separation", 10)
-	var note := Art.label("Your gems are saved.", Pal.SMALL, Pal.INK_MUTED,
-		HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(note)
+	if _show_portrait():                 # a player's reassurance; a teacher has no gems
+		box.add_child(Art.label("Your gems are saved.", Pal.SMALL, Pal.INK_MUTED,
+			HORIZONTAL_ALIGNMENT_CENTER))
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 10)

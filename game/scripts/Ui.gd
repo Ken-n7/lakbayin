@@ -74,6 +74,22 @@ static func quiet(b: BaseButton) -> void:
 	b.set_meta("quiet", true)
 
 
+## Steps a button's text size down until its label, icon and padding fit its
+## width -- never below `Art.MIN_FONT`. For labels that vary ("Start Adventure"
+## or "Join Quest") beside an icon. Call once it is in the tree, so the font
+## measured is the one drawn.
+static func fit_text(b: Button) -> void:
+	var font := b.get_theme_font("font")
+	var box := b.get_theme_stylebox("normal")
+	var room := b.custom_minimum_size.x - box.get_margin(SIDE_LEFT) - box.get_margin(SIDE_RIGHT)
+	if b.icon != null:
+		room -= b.icon.get_width() + b.get_theme_constant("h_separation")
+	var size := b.get_theme_font_size("font_size")
+	while size > Art.MIN_FONT and font.get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > room:
+		size -= 1
+	b.add_theme_font_size_override("font_size", size)
+
+
 ## A button that drops a list, wearing the same skin as the rest. The one
 ## place the game needs it is Rescue, which the mockups draw as "Rescue ▾".
 static func menu_button(text: String, w: float, h: float, kind := BLUE) -> MenuButton:

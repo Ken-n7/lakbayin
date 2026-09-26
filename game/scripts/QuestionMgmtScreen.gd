@@ -29,7 +29,7 @@ var _tabs: HBoxContainer
 func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
-	var box := Ui.back_panel(self, PANEL, "Question Management", go_back)
+	var box := Ui.back_panel(self, PANEL, "Question Bank", go_back)
 	box.add_theme_constant_override("separation", 5)
 
 	# The stations as tabs, and the sample-question seed as a quiet link

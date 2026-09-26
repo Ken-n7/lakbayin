@@ -67,7 +67,7 @@ func _load() -> void:
 	for q: Dictionary in _rows:
 		_pick.add_item("S%d  %s" % [int(q.get("station", 0)), q.get("prompt", "")])
 	if _rows.is_empty():
-		_say("No questions yet — add some in Question Management.", Pal.INK_MUTED)
+		_say("No questions yet — add some in the Question Bank.", Pal.INK_MUTED)
 		return
 	_show_selected()
 
