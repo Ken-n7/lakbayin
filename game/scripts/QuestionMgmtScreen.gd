@@ -95,9 +95,14 @@ func _build_add_form(box: VBoxContainer) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	col.add_child(row)
-	_prompt = _labelled(row, "Question", "e.g. 8 + (−3)", 200)
-	_hint = _labelled(row, "Hint", "optional", 150)
-	_answer = _labelled(row, "Answer", "e.g. 5", 80)
+	# The example is the one piece of help the form has room for: a caret is
+	# how an exponent is typed, and it turns into one as it is typed.
+	_prompt = _math_field(_labelled(row, "Question", "e.g. (-2)^3 + 4", 200))
+	_hint = _math_field(_labelled(row, "Hint", "optional", 150))
+	_answer = _labelled(row, "Answer", "e.g. -8", 80)
+	# The answer is a number -- the students' keypad types nothing else -- so a
+	# phone opens its number pad, with a minus, not the full keyboard.
+	_answer.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER_DECIMAL
 	var buttons := VBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_END
 	_add_btn = Ui.button("Add", Ui.W_TINY, Ui.H, Ui.RED)
@@ -118,6 +123,19 @@ func _labelled(row: HBoxContainer, caption: String, placeholder: String, w: floa
 	var le := Ui.line_edit(placeholder, w, 28)
 	c.add_child(le)
 	row.add_child(c)
+	return le
+
+
+## `le` with exponents raised as they are typed: `(-2)^3` reads (-2)³ in the
+## field itself, so the teacher sees exactly what the students will
+## (MathText.live). Setting `text` from code does not emit `text_changed`, so
+## this never feeds itself.
+func _math_field(le: LineEdit) -> LineEdit:
+	le.text_changed.connect(func(t: String) -> void:
+		var got: Array = MathText.live(t, le.caret_column)
+		if got[0] != t:
+			le.text = got[0]
+			le.caret_column = got[1])
 	return le
 
 

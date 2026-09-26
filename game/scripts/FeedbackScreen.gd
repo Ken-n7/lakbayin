@@ -101,6 +101,8 @@ func _save() -> void:
 	if q.is_empty():
 		_say("Pick a question first.", Pal.WRONG)
 		return
+	# Raised here as well as in the store, so the box shows what was saved.
+	_text.text = MathText.superscripts(_text.text)
 	var done: Dictionary = await QuestionStore.edit(str(q.get("id", "")),
 		{"feedback": _text.text})
 	if done.error != "":
