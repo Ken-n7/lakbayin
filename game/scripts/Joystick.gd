@@ -13,6 +13,9 @@ const RADIUS := 46.0
 ## a bare tap on the left no longer falls through to the circle-inspect tap
 ## (`AdventureScreen._tap_at`); that gesture still works on the right half.
 var zone := Rect2(Vector2.ZERO, Vector2(320, 360))
+## Touches the stick leaves alone even inside `zone`: the HUD's arrow back to
+## the hero can sit on the left edge, and a tap on it must reach it.
+var ignore := func(_at: Vector2) -> bool: return false
 
 var _touch_index := -1
 var _knob := Vector2.ZERO
@@ -28,7 +31,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
 		if t.pressed:
-			if _touch_index == -1 and zone.has_point(t.position):
+			if _touch_index == -1 and zone.has_point(t.position) and not ignore.call(t.position):
 				_touch_index = t.index
 				position = t.position
 				_knob = Vector2.ZERO

@@ -85,6 +85,22 @@ var _current_circle := -1            # the circle to answer now, -1 none
 var _last_state := ""                # the session state last applied, for its sounds
 var _last_gems := -1
 var _dev_aerial := false
+
+# --- Looking around the map, as a MOBA does ---------------------------------
+## A finger dragged across the board moves the camera, at the play zoom, to see
+## what is really there -- other teams walking, the knights, the stations -- and
+## the camera stays where it is left. Moving, GO, or the arrow on the screen's
+## edge bring it home to the hero.
+##
+## A press only becomes a look once it has moved PAN_SLOP px; one that lifts
+## before that is a tap (`_tap_at`). Touches are read as raw ScreenTouch /
+## ScreenDrag, so the right thumb can look while the left one steers -- the
+## mouse a phone makes from a touch only ever follows the first finger, and is
+## ignored here so a touch is never read twice.
+const PAN_SLOP := 10.0
+var _looking := false
+var _look_at := Vector2.ZERO       # where the camera is looking, world px
+var _press := {}                   # the pointer down on the board: {id, at, panning}
 var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable with [ and ], see _nudge_hero_scale()
 ## How much one press of [ or ] moves the hero's scale, and the range it may
 ## roam over while you pick a number by eye.
@@ -805,11 +821,16 @@ func _process(delta: float) -> void:
 		return
 	if hud.paused or _frozen or not Game.adventure_active or _spectate != "":
 		return
-	if not _dev_aerial:
-		_cam.position = player.position
 	var dir := Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_up", "move_down"))
+	# Walking brings the camera home -- unless a finger is still dragging the
+	# view, which is the look the player is in the middle of.
+	if _looking and dir.length_squared() > 0.001 and not bool(_press.get("panning", false)):
+		end_look()
+	if not _dev_aerial:
+		_cam.position = _look_at if _looking else player.position
+	_aim_hero_pointer()
 	if dir.length_squared() > 1.0:
 		dir = dir.normalized()
 	var spr: AnimatedSprite2D = player.get_node("Spr")
@@ -971,9 +992,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not _wait_for_admin and (tap or event.is_action_pressed("interact")):
 			_swoop()
 		return
-	if tap:
-		_tap_at((event as InputEventWithModifiers).position if event is InputEventMouseButton
-				else (event as InputEventScreenTouch).position)
+	var p := _pointer(event)
+	if not p.is_empty():
+		_on_pointer(p)
 		return
 	# Dev sizing knob: [ shrinks the hero, ] grows him, and the toast prints the
 	# number to bake into MapCfg.UNIT_SCALE.
@@ -986,6 +1007,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_nudge_hero_scale(HERO_SCALE_STEP)
 				return
 	if event.is_action_pressed("interact"):
+		end_look()
 		_interact()
 	elif event.is_action_pressed("pause"):
 		hud.open_menu()
@@ -999,6 +1021,115 @@ func _nudge_hero_scale(delta: float) -> void:
 	var spr: AnimatedSprite2D = player.get_node("Spr")
 	spr.scale = Vector2(_hero_scale, _hero_scale)
 	hud.flash("Hero scale: %.1f  (MapCfg.UNIT_SCALE is %.1f)" % [_hero_scale, MapCfg.UNIT_SCALE])
+
+
+## One pointer event, as {kind: down|move|up, id, pos, rel}, or {} for anything
+## else. A touch's own index is its id; a real mouse is -100. The mouse a phone
+## makes from a touch (DEVICE_ID_EMULATION) is dropped: the touch itself is here.
+static func _pointer(event: InputEvent) -> Dictionary:
+	if event is InputEventScreenTouch:
+		var t := event as InputEventScreenTouch
+		return {"kind": "down" if t.pressed else "up", "id": t.index, "pos": t.position,
+				"rel": Vector2.ZERO}
+	if event is InputEventScreenDrag:
+		var d := event as InputEventScreenDrag
+		return {"kind": "move", "id": d.index, "pos": d.position, "rel": d.relative}
+	if event.device == InputEvent.DEVICE_ID_EMULATION:
+		return {}
+	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		var b := event as InputEventMouseButton
+		return {"kind": "down" if b.pressed else "up", "id": -100, "pos": b.position,
+				"rel": Vector2.ZERO}
+	if event is InputEventMouseMotion and ((event as InputEventMouseMotion).button_mask & MOUSE_BUTTON_MASK_LEFT):
+		var m := event as InputEventMouseMotion
+		return {"kind": "move", "id": -100, "pos": m.position, "rel": m.relative}
+	return {}
+
+
+## The board's one pointer: a tap, or a look once it has moved PAN_SLOP px.
+## Touches that land on the HUD (GO, MENU, the plates, the hero pointer) are
+## the HUD's, never the board's.
+func _on_pointer(p: Dictionary) -> void:
+	match p.kind:
+		"down":
+			if hud.pointer_hit(p.pos):
+				end_look()
+				return
+			# The same finger index down again means its last lift never reached
+			# the board (a quiz or the menu took it): that press is over.
+			if (_press.is_empty() or _press.id == p.id) and not hud.owns_touch(p.pos):
+				_press = {"id": p.id, "at": p.pos, "panning": false}
+		"move":
+			if _press.is_empty() or p.id != _press.id:
+				return
+			if not _press.panning:
+				if (p.pos as Vector2).distance_to(_press.at) < PAN_SLOP:
+					return
+				_press.panning = true
+				_begin_look()
+				_look_by(p.pos - _press.at)
+				return
+			_look_by(p.rel)
+		"up":
+			if _press.is_empty() or p.id != _press.id:
+				return
+			var was_pan: bool = _press.panning
+			var at: Vector2 = _press.at
+			_press = {}
+			hud.set_panning(false)
+			if not was_pan:
+				_tap_at(at)
+
+
+## The camera leaves the hero: it holds still where it is, and follows the
+## finger 1:1 from here -- no smoothing lag behind a drag.
+func _begin_look() -> void:
+	hud.set_panning(true)
+	_close_card()
+	if _looking:
+		return
+	_looking = true
+	_look_at = _cam.get_screen_center_position()
+	_cam.position_smoothing_enabled = false
+	_cam.position = _look_at
+
+
+## The view dragged by `screen_delta` px: the world moves with the finger.
+func _look_by(screen_delta: Vector2) -> void:
+	var z := _cam.zoom.x
+	_look_at = _settled_cam(_look_at - screen_delta / z, z)
+
+
+## Home to the hero, gliding: smoothing back on, the target back on the hero.
+## Safe to call when not looking.
+func end_look() -> void:
+	if not _looking:
+		return
+	_looking = false
+	if _press.get("panning", false):
+		_press = {}
+		hud.set_panning(false)
+	_cam.position_smoothing_enabled = true
+	hud.point_to_hero(false)
+
+
+## While looking away, the arrow on the screen's edge points at the hero; it
+## hides whenever the hero is on screen anyway.
+func _aim_hero_pointer() -> void:
+	if not _looking:
+		return
+	var view := get_viewport_rect().size
+	var hero: Vector2 = get_viewport().get_canvas_transform() * player.position
+	var inset := Rect2(Vector2(28, 70), view - Vector2(28 + 120, 70 + 64))
+	if Rect2(Vector2.ZERO, view).grow(-16.0).has_point(hero):
+		hud.point_to_hero(false)
+		return
+	var c := inset.get_center()
+	var dir := (hero - c).normalized()
+	# Where the ray from the middle toward the hero leaves the inset box.
+	var tx := INF if is_zero_approx(dir.x) else ((inset.end.x if dir.x > 0.0 else inset.position.x) - c.x) / dir.x
+	var ty := INF if is_zero_approx(dir.y) else ((inset.end.y if dir.y > 0.0 else inset.position.y) - c.y) / dir.y
+	hud.point_to_hero(true, c + dir * minf(tx, ty), dir)
 
 
 ## Tap-to-inspect. `self` is a canvas item under the camera, so the viewport's
@@ -1168,6 +1299,8 @@ func _begin_spectating(why: String, finish_s := -1) -> void:
 	if _spectate != "" or Game.session_id == "" or not Game.adventure_active:
 		return
 	_spectate = why
+	end_look()
+	_press = {}
 	_close_card()
 	hud.set_pad(false)
 	hud.set_crib(false)
@@ -1208,6 +1341,8 @@ func _show_banner(finish_s := -1) -> void:
 # --- Quiz overlay -----------------------------------------------------------
 func _show_overlay(overlay: Control) -> void:
 	_overlay = overlay
+	end_look()
+	_press = {}
 	_close_card()
 	hud.close_dev()
 	hud.set_pad(false)
