@@ -707,6 +707,12 @@ func _refresh_state() -> void:
 	# go by, so nothing is offered for a dead clock.
 	if _session.is_empty() or Teams.expired(_session):
 		state = "ended"
+	# The music follows the session as the players' phones do: battle songs in
+	# the lobby, The Journey once it runs, Victory! once it is over.
+	if main != null:
+		main.music.play("battle" if _making or state == "lobby"
+			else "journey" if state == "running" or state == "paused"
+			else "town" if _session.is_empty() else "victory")
 	var r := _readiness()
 	var total: int = _lobby.players.size()
 	if is_instance_valid(_code_label):

@@ -33,6 +33,9 @@ const MUSIC := {
 	"hero": "shop",
 	"summary": "victory",
 	"adventure": "battle",
+	# The Quest Keeper's side matches the players' (client): its home and what
+	# that opens are the town songs; Game Controls follows its session.
+	"admin": "town", "questions": "town", "feedback": "town", "controls": "town",
 }
 
 var current: Control = null
