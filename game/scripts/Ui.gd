@@ -448,6 +448,36 @@ static func scroll(parent: Node, h: float) -> ScrollContainer:
 	return sc
 
 
+## A 0..1 slider in the parchment kit: a wooden track that fills gold, a cream
+## knob. As tall as a button, so a thumb can take it on a phone.
+static func slider(w: float) -> HSlider:
+	var s := HSlider.new()
+	s.min_value = 0.0
+	s.max_value = 1.0
+	s.step = 0.05
+	s.custom_minimum_size = Vector2(w, H)
+	var track := StyleBoxFlat.new()
+	track.bg_color = Pal.WOOD
+	track.set_corner_radius_all(4)
+	track.content_margin_top = 4
+	track.content_margin_bottom = 4
+	var fill := track.duplicate() as StyleBoxFlat
+	fill.bg_color = Pal.GOLD
+	s.add_theme_stylebox_override("slider", track)
+	s.add_theme_stylebox_override("grabber_area", fill)
+	s.add_theme_stylebox_override("grabber_area_highlight", fill)
+	var knob := Image.create(18, 18, false, Image.FORMAT_RGBA8)
+	for y in 18:
+		for x in 18:
+			var d := Vector2(x - 8.5, y - 8.5).length()
+			if d <= 8.5:
+				knob.set_pixel(x, y, Pal.INK if d > 6.5 else Pal.CREAM)
+	var tex := ImageTexture.create_from_image(knob)
+	s.add_theme_icon_override("grabber", tex)
+	s.add_theme_icon_override("grabber_highlight", tex)
+	return s
+
+
 ## One control, centred on its own row. What every "Back" button wanted.
 static func centre_row(parent: Node, c: Control) -> HBoxContainer:
 	var row := HBoxContainer.new()

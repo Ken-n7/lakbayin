@@ -31,7 +31,8 @@ const MUSIC := {
 }
 
 var current: Control = null
-var _music: Music
+## The background music; Home's Settings sets its volume.
+var music: Music
 ## The moving scene behind the menu screens, kept here rather than in each
 ## screen so it carries on across screen changes instead of restarting.
 var backdrop: Backdrop
@@ -45,8 +46,8 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	backdrop = Backdrop.new()
 	add_child(backdrop)
-	_music = Music.new()
-	add_child(_music)
+	music = Music.new()
+	add_child(music)
 	# `godot --path game -- --explore`: straight onto the board, for looking.
 	if OS.is_debug_build() and "--explore" in OS.get_cmdline_user_args():
 		explore_map()
@@ -143,7 +144,7 @@ func open(name: String, data: Dictionary = {}) -> void:
 	current.set("main", self)
 	add_child(current)
 	current.setup(data)
-	_music.play(str(MUSIC.get(name, "")))
+	music.play(str(MUSIC.get(name, "")))
 
 
 

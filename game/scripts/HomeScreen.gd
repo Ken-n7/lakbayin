@@ -390,9 +390,26 @@ var _dialog: Control = null
 ## Change Character (once there is one to change) and Log Out.
 func _open_settings() -> void:
 	_dialog = Ui.dim(self)
-	var box := Ui.back_panel(_dialog, Vector2(260, 150), "Settings",
+	var box := Ui.back_panel(_dialog, Vector2(260, 196), "Settings",
 		func() -> void: _dialog.queue_free())
 	box.add_theme_constant_override("separation", 8)
+	# Music volume, 0 is off, kept on the device.
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	row.add_child(Art.label("Music", Pal.LABEL, Pal.INK))
+	var vol := Ui.slider(110)
+	vol.value = main.music.volume
+	var pct := Art.label("", Pal.LABEL, Pal.INK_MUTED)
+	pct.custom_minimum_size = Vector2(36, 0)
+	var show := func(v: float) -> void: pct.text = "Off" if v <= 0.0 else "%d%%" % roundi(v * 100.0)
+	show.call(vol.value)
+	vol.value_changed.connect(func(v: float) -> void:
+		main.music.set_volume(v)
+		show.call(v))
+	row.add_child(vol)
+	row.add_child(pct)
+	box.add_child(row)
 	if Game.player_name != "":
 		var hero := Ui.button("Change Character", 200, Ui.H, Ui.SMALL)
 		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))

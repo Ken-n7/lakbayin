@@ -11,6 +11,9 @@ extends Node
 ## fades across.
 
 const FADE := 2.0                     # seconds, every crossfade
+const BUS := "Music"
+## The volume is the device's, not the player's: its own file, not the profile.
+const SAVE_PATH := "user://audio.cfg"
 const SONGS := {                      # name -> [file, loop start in seconds]
 	"our_town": ["res://assets/music/definitely_our_town.ogg", 23.106],
 	"winds": ["res://assets/music/where_the_winds_roam.ogg", 0.639],
@@ -22,6 +25,8 @@ const PLAYLISTS := {
 	"shop": ["shop"],
 }
 
+## 0..1, the Music slider in Home's Settings; 0 is off.
+var volume := 0.8
 var _players: Array[AudioStreamPlayer] = []
 var _on := 0                          # which of the two is the one playing
 var _list := ""
@@ -30,11 +35,35 @@ var _fade: Tween
 
 
 func _ready() -> void:
+	# Its own bus, so its volume is only the music's.
+	if AudioServer.get_bus_index(BUS) < 0:
+		AudioServer.add_bus()
+		AudioServer.set_bus_name(AudioServer.bus_count - 1, BUS)
 	for i in 2:
 		var p := AudioStreamPlayer.new()
 		p.volume_db = linear_to_db(0.0)
+		p.bus = BUS
 		add_child(p)
 		_players.append(p)
+	var cfg := ConfigFile.new()
+	if cfg.load(SAVE_PATH) == OK:
+		volume = clampf(float(cfg.get_value("audio", "music", volume)), 0.0, 1.0)
+	_apply()
+
+
+## Set, apply and keep the music volume.
+func set_volume(v: float) -> void:
+	volume = clampf(v, 0.0, 1.0)
+	_apply()
+	var cfg := ConfigFile.new()
+	cfg.set_value("audio", "music", volume)
+	cfg.save(SAVE_PATH)
+
+
+func _apply() -> void:
+	var bus := AudioServer.get_bus_index(BUS)
+	AudioServer.set_bus_volume_db(bus, linear_to_db(volume))
+	AudioServer.set_bus_mute(bus, volume <= 0.0)
 
 
 ## Switch to `list` ("" for silence). The same list carries on.
