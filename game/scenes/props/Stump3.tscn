@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://3h0jp0ndla5a"]
+
+[ext_resource type="Texture2D" uid="uid://dea1w2crjft1d" path="res://assets/terrain/decorations/Stump 3.png" id="1_jyyf1"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_s1bw5"]
+size = Vector2(6, 3.7999992)
+
+[node name="Stump3" type="Node2D" unique_id=1184404705]
+
+[node name="Sprite" type="Sprite2D" parent="." unique_id=565039337]
+scale = Vector2(0.4, 0.4)
+texture = ExtResource("1_jyyf1")
+offset = Vector2(0, -128)
+
+[node name="Foot" type="StaticBody2D" parent="." unique_id=1272745508]
+
+[node name="Box" type="CollisionShape2D" parent="Foot" unique_id=1622724148]
+position = Vector2(0, -13.1)
+shape = SubResource("RectangleShape2D_s1bw5")

@@ -19,6 +19,7 @@ var checks := 0
 var completed := false
 
 var _save_backup: PackedByteArray = []
+var _session_backup: PackedByteArray = []
 
 
 func check(name: String, condition: bool, detail := "") -> void:
@@ -37,9 +38,21 @@ func backup_save() -> void:
 		var f := FileAccess.open(Game.SAVE_PATH, FileAccess.READ)
 		_save_backup = f.get_buffer(f.get_length())
 		f.close()
+	# A signed-in session left behind by one of the live tools would make the
+	# splash wait on a token refresh before routing, and these suites are
+	# offline by design. Taken away for the run, put back afterwards.
+	if FileAccess.file_exists(Net.SESSION_PATH):
+		var g := FileAccess.open(Net.SESSION_PATH, FileAccess.READ)
+		_session_backup = g.get_buffer(g.get_length())
+		g.close()
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Net.SESSION_PATH))
 
 
 func restore_save() -> void:
+	if _session_backup.size() > 0:
+		var g := FileAccess.open(Net.SESSION_PATH, FileAccess.WRITE)
+		g.store_buffer(_session_backup)
+		g.close()
 	if _save_backup.size() > 0:
 		var f := FileAccess.open(Game.SAVE_PATH, FileAccess.WRITE)
 		f.store_buffer(_save_backup)

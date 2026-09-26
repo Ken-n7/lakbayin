@@ -7,6 +7,10 @@ signal gems_changed(gems: int)
 signal time_changed(seconds_left: int)
 signal adventure_started
 signal adventure_ended(result: Dictionary)
+## lobby / running / paused / ended, as the admin's session row says.
+signal session_state_changed(state: String)
+## Gems reached zero. The team is charged GEM_ELIMINATED once.
+signal eliminated_changed
 
 # --- Gems scoring rules (from the NumXventure design) -----------------------
 const START_GEMS := 50
@@ -16,6 +20,8 @@ const GEM_HINT := -5
 const GEM_SKIP := -15
 const GEM_PERFECT_BONUS := 10
 const GEM_TEAM_FINISH_PENALTY := -25
+## Charged to the team the first time a member reaches zero gems.
+const GEM_ELIMINATED := -50
 
 # --- Adventure shape --------------------------------------------------------
 const ITEMS_PER_STATION := [8, 3, 3]      # Station 1/2/3
@@ -26,18 +32,26 @@ const DURATION_CHOICES := [300, 600, 900] # 5 / 10 / 15 minutes
 ## Super Retro World character pack: 32 sheets, one per adventurer.
 const HERO_COUNT := 32
 
-const SAVE_PATH := "user://numxventure.cfg"
+## `--profile=NAME` (after `--`) gives a desktop window its own save, so three
+## windows can be a teacher and two students instead of one login three times.
+var SAVE_PATH := "user://numxventure%s.cfg" % profile_suffix()
+
+
+##
+## The live checks under `res://tools/` sign up throwaway accounts, and saved
+## them over the real login -- the teacher's window came back as a test admin
+## that owned none of the class's sessions. They get a profile of their own.
+static func profile_suffix() -> String:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--profile="):
+			return "-" + a.trim_prefix("--profile=")
+	for a in OS.get_cmdline_args():
+		if a.begins_with("res://tools/"):
+			return "-tools"
+	return ""
 
 # --- Palette (sampled from the pack) ---------------------------------------
 
-# --- Rivals -----------------------------------------------------------------
-## Fixed rival adventuring parties, so the leaderboard is meaningful offline.
-const RIVALS := [
-	{"name": "Math Mavericks", "gems": 480},
-	{"name": "Number Ninjas", "gems": 440},
-	{"name": "Problem Solvers", "gems": 400},
-	{"name": "Logic Legends", "gems": 340},
-]
 
 var gems := START_GEMS
 var correct := 0
@@ -47,12 +61,31 @@ var hints_used := 0
 
 var adventure_active := false
 var duration_seconds := 600.0
-var time_left := 0.0
+## Seconds left, read off a deadline rather than counted down frame by frame.
+## Adding up frame deltas ran slow wherever frames stall -- a phone in the
+## background, a window out of focus -- so every board in the room showed a
+## different clock, and none the teacher's. Anything that sets it (a session
+## row, the dev drawer's +60) moves the deadline with it.
+var time_left := 0.0:
+	set(v):
+		time_left = v
+		_deadline = now() + v
+var _deadline := 0.0
+## Server time minus this device's clock, from the `Date` on every reply (see
+## Supabase.gd). Phones in one classroom disagree by seconds to minutes; a
+## deadline read against each one's own clock gave each a different countdown.
+var clock_offset := 0.0
 
 var current_station := 0          # 0-based index of the active quiz station
 var items_done := 0               # global circle progress, 0..TOTAL_ITEMS
 var towers_entered: Array[bool] = [false, false, false]  # station intro card seen
-var clock_paused := false         # frozen aerial POV now; the admin's pause in Phase 3
+## Frozen aerial POV, and the admin's pause. Unpausing starts the deadline
+## again from what was left.
+var clock_paused := false:
+	set(v):
+		clock_paused = v
+		if not v:
+			_deadline = now() + time_left
 var completed_stations: Array[bool] = [false, false, false]
 var perfect_stations: Array[bool] = [false, false, false]
 var station_flawed := false       # flags a "no errors" run inside the current station
@@ -61,6 +94,11 @@ var item_used_hint := false       # one hint per item; reset by the quiz per que
 
 var player_name := ""
 var team_name := ""
+## The session this phone joined by code, kept across launches so Continue
+## Quest goes straight back in -- a dead phone mid-lesson must not need the
+## code read out again. `session_id` is the run being played; this is the door.
+var joined_session := ""
+var joined_code := ""
 var hero_id := 1
 
 var leaderboard: Array = []   # [{name, gems}]
@@ -112,9 +150,73 @@ func _ready() -> void:
 	load_profile()
 
 
-func _process(delta: float) -> void:
+## The state of the admin's session, "" when playing offline.
+var session_state := ""
+## Latches once, and the team is only ever charged for it once. In a session an
+## eliminated player is out: they watch the rest of the adventure from the map
+## (client; `AdventureScreen._begin_spectating`). Playing alone, they carry on.
+var eliminated := false
+## The session the score belongs to, "" when playing offline.
+var session_id := ""
+
+
+## The server owns the clock (SPECS §3: "durungan an ira pag-answer dapat").
+## `ends_at` is the deadline while running and `remaining_s` is what was banked
+## at a pause; the local tick in `_process` only fills the gaps between
+## updates, so a phone that joins late or sleeps still agrees with the room.
+## The time everyone's clock is read against: the server's, as near as this
+## device can tell. Unix seconds.
+func now() -> float:
+	return Time.get_unix_time_from_system() + clock_offset
+
+
+## "Thu, 25 Sep 2026 10:11:56 GMT" -> unix seconds, or 0.
+static func http_date(v: String) -> int:
+	var p := v.split(" ", false)
+	var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	if p.size() < 5 or months.find(p[2]) == -1:
+		return 0
+	return Time.get_unix_time_from_datetime_string("%s-%02d-%02dT%s" % [
+		p[3], months.find(p[2]) + 1, int(p[1]), p[4]])
+
+
+func apply_session(row: Dictionary) -> void:
+	var state := str(row.get("state", ""))
+	duration_seconds = float(int(row.get("duration_s", 600)))
+	match state:
+		"running":
+			var ends := Time.get_unix_time_from_datetime_string(str(row.get("ends_at", "")))
+			time_left = maxf(0.0, float(ends) - now())
+			clock_paused = false
+		"paused":
+			# What the pause banked, not what this phone had counted to.
+			time_left = float(int(row.get("remaining_s", 0)))
+			clock_paused = true
+		"ended":
+			time_left = 0.0
+			clock_paused = true
+		_:
+			# lobby: the board is up, the clock has not started.
+			time_left = duration_seconds
+			clock_paused = true
+	session_state = state
+	session_id = str(row.get("id", session_id))
+	time_changed.emit(int(ceilf(time_left)))
+	session_state_changed.emit(state)
+
+
+## Something happened that changes the score. Whoever is online listens and
+## forwards it; `Game` itself never names the backend, because `test_rules.gd`
+## loads this file with `--script`, which registers no autoloads -- naming
+## `Net` here hangs a suite instead of failing it.
+##
+## `kind` is answer / hint / skip / station; `flag` is correct, or perfect.
+signal scored(kind: String, flag: bool)
+
+
+func _process(_delta: float) -> void:
 	if adventure_active and not clock_paused and time_left > 0.0:
-		time_left = maxf(0.0, time_left - delta)
+		time_left = maxf(0.0, _deadline - now())
 		time_changed.emit(int(ceilf(time_left)))
 		if time_left <= 0.0:
 			end_adventure()
@@ -127,12 +229,45 @@ func begin_adventure(seconds: int = 600) -> void:
 	time_left = duration_seconds
 	adventure_active = true
 	clock_paused = false
+	eliminated = false
 	current_station = 0
 	items_done = 0
 	towers_entered = [false, false, false]
 	completed_stations = [false, false, false]
 	perfect_stations = [false, false, false]
+	# Last run's session must not leak into this one: an `ended` state left
+	# over would refuse every answer until the fresh fetch landed.
+	session_id = ""
+	session_state = ""
 	adventure_started.emit()
+
+
+## Only while the clock runs does an answer count. The server refuses a score
+## outside `running`, so a phone that took one locally anyway would walk on
+## ahead of its own row and the team total would never see it.
+func can_score() -> bool:
+	return session_state == "" or session_state == "running"
+
+
+## Back into a run already under way -- a phone that died, an app restarted,
+## "Join Quest" after leaving the board. The server's member row is the
+## progress; a fresh local run would put the player back on circle 1 while
+## every answer still moved the server's counter on from where it was.
+func restore_from(row: Dictionary) -> void:
+	gems = int(row.get("gems", START_GEMS))
+	correct = int(row.get("correct", 0))
+	items_done = clampi(int(row.get("items_done", 0)), 0, TOTAL_ITEMS)
+	wrong = maxi(items_done - correct, 0)   # wrong and skipped are not kept apart
+	eliminated = bool(row.get("eliminated", false))
+	current_station = station_of_item(items_done)
+	var end := 0
+	for s in ITEMS_PER_STATION.size():
+		var start := end
+		end += ITEMS_PER_STATION[s]
+		completed_stations[s] = items_done >= end
+		# Past its first circle means its briefing was read.
+		towers_entered[s] = items_done > start
+	gems_changed.emit(gems)
 
 
 ## Walking away from a run: dropped, not scored. No summary, no leaderboard row
@@ -215,19 +350,27 @@ func _gems_reset() -> void:
 	gems_changed.emit(gems)
 
 
+## No clamp. Gems reach zero and the player is eliminated -- the paper's
+## "Eliminated Member (reaching 0 gems): -50 gems", which could never fire
+## while this floored at zero. The -50 is charged once, by `eliminated`
+## latching, so a run cannot keep billing the team.
 func _apply(delta: int) -> void:
-	gems = maxi(gems + delta, 0)
+	gems += delta
+	if gems <= 0 and not eliminated:
+		eliminated = true
+		eliminated_changed.emit()
 	gems_changed.emit(gems)
 
 
 ## One hint per item, -5 gems each (design doc: "Use of Hint: -5 gems").
 func spend_hint() -> bool:
-	if gems <= 0 or item_used_hint:
+	if item_used_hint:
 		return false
 	item_used_hint = true
 	station_used_hint = true
 	hints_used += 1
 	_apply(GEM_HINT)
+	scored.emit("hint", false)
 	return true
 
 
@@ -240,12 +383,14 @@ func mark_wrong() -> void:
 	items_done += 1
 	station_flawed = true
 	_apply(GEM_WRONG)
+	scored.emit("answer", false)
 
 
 func mark_correct() -> void:
 	correct += 1
 	items_done += 1
 	_apply(GEM_CORRECT)
+	scored.emit("answer", true)
 
 
 func mark_skipped() -> void:
@@ -253,6 +398,12 @@ func mark_skipped() -> void:
 	items_done += 1
 	station_flawed = true
 	_apply(GEM_SKIP)
+	scored.emit("skip", false)
+
+
+## Through the Victory Gate: the server records this player's own time.
+func mark_finished() -> void:
+	scored.emit("finish", true)
 
 
 ## Call after finishing a station's last item.
@@ -261,6 +412,7 @@ func finish_station(station_index: int) -> int:
 	if not station_flawed and not station_used_hint:
 		bonus = GEM_PERFECT_BONUS
 		_apply(bonus)
+	scored.emit("station", bonus > 0)
 	completed_stations[station_index] = true
 	perfect_stations[station_index] = bonus > 0
 	station_flawed = false
@@ -276,6 +428,8 @@ func load_profile() -> void:
 		return
 	player_name = cfg.get_value("profile", "name", "")
 	team_name = cfg.get_value("profile", "team", "")
+	joined_session = cfg.get_value("profile", "session", "")
+	joined_code = cfg.get_value("profile", "code", "")
 	hero_id = clampi(int(cfg.get_value("profile", "hero_id", 1)), 1, HERO_COUNT)
 	leaderboard = cfg.get_value("leaderboard", "rows", leaderboard)
 
@@ -284,17 +438,19 @@ func save_profile() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("profile", "name", player_name)
 	cfg.set_value("profile", "team", team_name)
+	cfg.set_value("profile", "session", joined_session)
+	cfg.set_value("profile", "code", joined_code)
 	cfg.set_value("profile", "hero_id", hero_id)
 	cfg.set_value("leaderboard", "rows", leaderboard)
 	cfg.save(SAVE_PATH)
 
 
+## The offline board: this machine's own runs, best score per team name. The
+## four invented rival parties are gone -- they sat above real students on a
+## board the client reads as a result.
 func _register_leaderboard(entry_name: String, entry_gems: int) -> void:
-	# One row per name, or the fixed rivals pile up again on every save.
 	var best: Dictionary = {}
 	for row in leaderboard:
-		best[row.name] = maxi(int(row.gems), int(best.get(row.name, 0)))
-	for row in RIVALS:
 		best[row.name] = maxi(int(row.gems), int(best.get(row.name, 0)))
 	if entry_name != "":
 		best[entry_name] = entry_gems   # this run replaces the player's old row

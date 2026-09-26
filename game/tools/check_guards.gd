@@ -5,8 +5,8 @@ extends SceneTree
 ##
 ##   godot --path game --script res://tools/check_guards.gd
 ##
-## Two rules, and between them they cover what editing `BARRICADES`, `ISLANDS` or
-## `TRAILS` can quietly break.
+## Two rules, and between them they cover what changing the board
+## (map/Terrain.gd, MapCfg.DISTRICTS) can quietly break.
 ##
 ## **He has somewhere to stand.** A hand-placed `rest` that lands in the rubble drew
 ## him standing on the fence he had just opened; one that lands on the road puts him
@@ -40,14 +40,14 @@ func _initialize() -> void:
 	for st in (_s.barricades.list as Array).size():
 		var g: Dictionary = _s.barricades.list[st]
 		var at: Vector2 = g.stand
-		var name := "station %d" % (int(g.st) + 1)
+		var name := "station %d" % (st + 1)
 		# His body plus a little below his boots, the same slack `_stands_clear()`
 		# gives the rubble: the y-sort draws a stone in the cell below him over his
 		# feet, which reads as standing in the wall even when he is a cell clear.
 		var body := Rect2(MapCfg.GUARD_BODY.position + at, MapCfg.GUARD_BODY.size)
 		var why := ""
-		if not MapGrid.clear_of(body.grow_individual(0.0, 0.0, 0.0, 24.0), g.rocks as Array):
-			why = "rests on its own fence"
+		if body.intersects((g.span as Rect2)):
+			why = "rests on his own stair"
 		elif _s.grid.trail.has(MapGrid.cell_at(at)):
 			why = "rests on the road"
 		elif not _s.grid.is_walkable(at):
@@ -58,9 +58,9 @@ func _initialize() -> void:
 			_s.grid.solid.erase(_s.barricades.list[j].wall as Rect2)
 		var seen := _flood()
 		if not seen.has(MapGrid.cell_at(_s.grid.anchors[towers[st]])):
-			why = "fences the player out of its own door"
+			why = "shuts the player out of his own station"
 		elif seen.has(MapGrid.cell_at(_s.grid.anchors[towers[st] + 1])):
-			why = "leaves its first circle open"
+			why = "leaves his station's first circle open"
 		if why.is_empty():
 			print("%s: post %s -> rest %s, gate holds" % [name, g.post, at])
 			continue
@@ -75,17 +75,7 @@ func _initialize() -> void:
 	quit()
 
 
-## Every cell you can walk to from the base camp, given whatever is in `_solid`.
+## Every cell you can walk to from the base camp, by level, given whatever
+## is in `solid`.
 func _flood() -> Dictionary:
-	var start: Vector2i = MapGrid.cell_at(_s.grid.anchors[0])
-	var seen := {start: true}
-	var q: Array[Vector2i] = [start]
-	while not q.is_empty():
-		var c: Vector2i = q.pop_back()
-		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-			var n: Vector2i = c + d
-			if seen.has(n) or not MapGrid.in_bounds(n) or not _s.grid.is_walkable(MapGrid.cell_mid(n)):
-				continue
-			seen[n] = true
-			q.append(n)
-	return seen
+	return _s.grid.flood(_s.grid.anchors[0], 0)

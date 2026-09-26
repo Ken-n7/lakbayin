@@ -33,10 +33,12 @@ run() {                                     # run <name> <godot args...>
 }
 
 run "rules       " --script res://test_rules.gd
+run "auth        " --script res://test_auth.gd
 run "collisions  " --script res://test_collisions.gd
 run "smoke       " res://scripts/tests/smoke_test.tscn
 run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn
+run "layout      " res://tools/layout.tscn
 
 # The two windowed tools need a GL context, so CI will skip them -- but they
 # reach deep into AdventureScreen and nothing else exercises them, so run them

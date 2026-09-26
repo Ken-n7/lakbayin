@@ -1,27 +1,27 @@
 class_name Barricades
 extends RefCounted
 
-## The gates: a fence of boulders swung round each station, with a giant knight
-## filling its one gap.
+## The gates: a giant knight on each station's stair.
 ##
-## One rule for all three -- **his own station's briefing stands him down** --
-## so a station is always on the near side of its own guard. A guard is a wall,
-## not a trigger: what keeps the walk in order is the gating in
-## `AdventureScreen`, not the man.
-##
-## A fence rather than a line across the walk because every station stands in a
-## corner or at an end of its island, where a line either has nowhere to go or
-## strands a stop on the wrong side of itself.
+## Every station stands in a pocket of ground where its bridge lands, walled
+## in by cliffs and the sea (map/Terrain.gd); one stair leads out, and the
+## station's knight stands on it. One rule for all three -- **his own
+## station's briefing stands him down** -- so a station is always on the near
+## side of its own guard. He is a wall over the stair, not a trigger: what
+## keeps the walk in order is the gating in `AdventureScreen`, not the man.
 
 var world: Node2D
 var grid: MapGrid
 
-## One entry per `MapCfg.BARRICADES` row. See `_build_one()` for its shape.
+## One entry per station. See `_build_one()` for its shape.
 var list: Array[Dictionary] = []
 
 ## Anchor index of each station's tower, handed in by `MapBuilder`: it is the
 ## station a guard steps aside toward, and the side he faces.
 var _towers: Array = []
+## The stations' outpost houses (Stations.houses), for a knight told to stand
+## behind one.
+var _houses: Array = []
 
 
 func _init(w: Node2D, g: MapGrid) -> void:
@@ -29,116 +29,46 @@ func _init(w: Node2D, g: MapGrid) -> void:
 	grid = g
 
 
-## One gate per `GATES` entry, each posted in whatever state this run has already
-## earned. Built last, because a gate needs the stations standing (for the decor
-## keep-outs it checks) and the finished `grid.anchors`.
-func build(towers: Array) -> void:
+## One gate per station, on the stair `stairs[st]` holds ({top, foot, side},
+## from Terrain), each posted in whatever state this run has already earned.
+func build(towers: Array, stairs: Array, houses := []) -> void:
 	list.clear()
 	_towers = towers
-	for spec: Dictionary in MapCfg.BARRICADES:
-		var g := _build_one(spec, int(towers[int(spec.st)]))
+	_houses = houses
+	for st in stairs.size():
+		var g := _build_one(st, stairs[st])
 		list.append(g)
 		_post_guard(g)
 
 
-## The boulder line and the gap in it the guard fills, laid across the walk from
-## stop `ai` to the next one along, cell by cell out to land's end on both sides,
-## so there is no way round it and exactly one way through.
-##
-## Objects rather than terrain: the rocks are what the player reads, and one
-## `grid.solid` rect per cell is what stops them. The line is laid on every build, open
-## or not -- only the guard in its gap comes and goes.
-func _build_one(spec: Dictionary, ai: int) -> Dictionary:
-	var a: Vector2 = grid.anchors[ai]          # the station's doorstep
-	var b: Vector2 = grid.anchors[ai + 1]      # its first circle: the way out
+## He stands at the foot of the stair, facing down it; his wall is the whole
+## ramp, so nobody climbs past him. When the gate opens he steps off to the
+## side, into the pocket.
+func _build_one(st: int, stair: Dictionary) -> Dictionary:
+	var top: Vector2i = stair.top
+	var foot: Vector2i = stair.foot
+	var t := float(MapCfg.TILE)
+	var ramp := Rect2(Vector2(top) * t, Vector2(t, t * 2.0))
 	var g := {
-		"st": int(spec.st),
-		"post": Vector2.ZERO,
-		"wall": Rect2(),
+		"st": st,
+		"post": MapGrid.cell_mid(foot) + Vector2(0, t * 0.5 - 2.0),
+		"wall": ramp,
+		"span": ramp,
 		"rocks": [] as Array[Rect2],
 		"stand": Vector2.ZERO,
 		"guard": null,
 		"open": false,
-		"offset": spec.get("offset", Vector2.ZERO),
-		"rest": spec.get("rest", Vector2.ZERO),
+		"offset": Vector2.ZERO,
+		"rest": Vector2.ZERO,
 	}
-	_lay_arc(g, a, b, float(spec.arc), float(spec.get("shift", 0.0)))
-	g.stand = _guard_rest(g)
-	# Nothing grows in the gap, along the walk he takes out of it, or where he ends
-	# up standing -- a tree in any of the three reads as him shoving through a wood.
-	# The extra headroom is because he is base-anchored and stands ~90px tall, so a
-	# trunk a clear cell above him still draws down over his head. Reserved here,
-	# before `_build_decor()` runs, which is also what makes it the same clear
-	# ground on a restart that has already opened this gate.
+	g.stand = _behind_house(g) if MapCfg.GUARD_REST_BEHIND_HOUSE[st] else Vector2.INF
+	if g.stand == Vector2.INF:
+		g.stand = _guard_rest(g)
 	grid.keep_out(Rect2(g.post as Vector2, Vector2.ZERO).expand(g.stand as Vector2)
 			.grow_individual(MapCfg.GUARD_CLEARING.x, MapCfg.GUARD_CLEARING.y,
 					MapCfg.GUARD_CLEARING.z, MapCfg.GUARD_CLEARING.w))
-	# Keep the decor pass clear of the rubble on both sides. Touching it is not
-	# enough: a loose boulder alongside the line reads as part of the wall and
-	# walking through that one is the bug it looks like, and one tile is not
-	# enough either -- a pine two cells off still reads as standing in the line.
-	var rocks: Array = g.rocks
-	if not rocks.is_empty():
-		var span: Rect2 = rocks[0]
-		for r in rocks:
-			span = span.merge(r)
-		grid.keep_out(span.grow(MapCfg.RUBBLE_CLEARING))
+	grid.keep_out(ramp.grow(t))
 	return g
-
-
-## A fence swung right round the station at `radius` cells, from land's end on one
-## side of it to land's end on the other, with the gap on the bearing the walk
-## leaves by. This is the gate for a station standing in a corner of its island:
-## island 2's walk doubles back on itself, so a line square across it always
-## leaves the last circle on the station's side -- but a fence around the corner
-## has the whole island outside it.
-##
-## Each cell's wall is `ROCK_WALL`, wider than its cell, so neighbours overlap
-## however the curve steps and there is no diagonal slip between two of them.
-func _lay_arc(g: Dictionary, a: Vector2, b: Vector2, radius: float, shift: float) -> void:
-	var r := radius * MapCfg.TILE
-	# The gap sits on the bearing the walk leaves by, give or take `shift` cells of
-	# arc -- clockwise is downward on screen. It is only where the guard stands;
-	# the way out is open wherever it is, since nothing draws the road.
-	var bearing := (b - a).angle() + shift * MapCfg.TILE / r
-	# Half a cell of arc per step, so the walk round never skips a cell.
-	var da := MapCfg.ARC_STEP / r
-	g.post = a + Vector2.from_angle(bearing) * r
-	var stretch := Rect2(MapCfg.GUARD_REACH.position + (g.post as Vector2), MapCfg.GUARD_REACH.size)
-	var seen := {}
-	var wall := Rect2(g.post as Vector2, Vector2.ZERO)
-	for side: float in [1.0, -1.0]:
-		var n := 0
-		while true:
-			var c := MapGrid.cell_at(a + Vector2.from_angle(bearing + side * float(n) * da) * r)
-			n += 1
-			if seen.has(c):
-				continue
-			if not grid.land.has(c):
-				# The arm has run out of island. A boulder's wall stands on the
-				# boulder, which leaves the boulder's own cell -- the ground at
-				# its foot -- open, and at the end of an arm that foot is the way
-				# round the whole fence. So the fence takes one more step, into
-				# the shallows: the last stone stands in the water with its wall
-				# over the beach behind it, and the arm ends where the map does.
-				if MapGrid.in_bounds(c):
-					_lay_rock(g, c, MapGrid.rock_wall(c))
-				break
-			seen[c] = true
-			var rect := MapGrid.rock_wall(c)
-			if stretch.has_point(MapGrid.cell_mid(c)):
-				wall = wall.merge(rect)   # the guard's own stretch of it
-			else:
-				_lay_rock(g, c, rect)
-	g.wall = wall
-
-
-func _lay_rock(g: Dictionary, c: Vector2i, rect: Rect2) -> void:
-	(g.rocks as Array).append(rect)
-	grid.block(rect)
-	# Round-robin off the cell so the wall is not four of the same stone.
-	Art.sprite(world, Art.tex(MapCfg.ROCK_SHEET % (1 + posmod(c.x + c.y, MapCfg.ROCK_VARIANTS))),
-			MapGrid.cell_mid(c), MapCfg.ROCK_SCALE)
 
 
 ## Has this run already earned its way past `g`? One rule: the briefing.
@@ -180,7 +110,8 @@ func _spawn_guard(st: int, at: Vector2) -> AnimatedSprite2D:
 		k.offset = Vector2(0, -f.get_height() * 0.5)
 	k.play("idle")
 	# Over the grass like the outpost guards, who are decoration at the same depth.
-	k.z_index = MapCfg.GUARD_Z
+	# In the y-sort with everything else, so a house in front of him hides him.
+	k.z_index = 0
 	world.add_child(k)
 	return k
 
@@ -193,38 +124,43 @@ func _face(g: Dictionary, from: Vector2) -> void:
 	(g.guard as AnimatedSprite2D).scale.x = MapCfg.GUARD_SCALE * (1.0 if home.x >= from.x else -1.0)
 
 
-## Where opening the gate will send him: open ground beside his own station, on
-## his own side of the wall if there is room for him there. Often there is not --
-## a yard with an outpost, a road and a wall of rocks in it fills up fast, and
-## island 2's is half sea besides -- so it widens to anywhere near the station,
-## then to anywhere just off the gap. By then the gate is open and standing past
-## it is no lie. Searched rather than authored, so retuning a gate or moving a
-## station cannot strand him. Called once, from `_build_one()`.
+## Behind his station's left-hand house: close to his stair, and the house
+## stands in front of him -- he is drawn behind it by the y-sort, never over
+## it. The nearest spot along the back of the house whose ground takes his
+## boots; INF if there is none.
+func _behind_house(g: Dictionary) -> Vector2:
+	var st := int(g.st)
+	if st >= _houses.size():
+		return Vector2.INF
+	for h: Dictionary in _houses[st]:
+		if float(h.side) > 0.0:
+			continue
+		var at: Vector2 = h.at
+		var back := at.y - float(h.bh) * MapCfg.HOUSE_WALL_FRAC - MapCfg.GUARD_BEHIND_GAP
+		var best := Vector2.INF
+		for k in range(-6, 7):
+			var p := Vector2(at.x + k * 6.0, back)
+			var boots := Rect2(MapCfg.GUARD_BOOTS.position + p, MapCfg.GUARD_BOOTS.size)
+			var c := MapGrid.cell_at(p)
+			if not grid.land.has(c) or grid.cliff.has(c) or grid.stairs.has(c) \
+					or int(grid.height.get(c, -1)) != 0 or not MapGrid.clear_of(boots, grid.solid):
+				continue
+			if best == Vector2.INF or p.distance_to(g.post) < best.distance_to(g.post):
+				best = p
+		return best
+	return Vector2.INF
+
+
+## Where opening the gate sends him: the nearest open ground beside his
+## stair, clear of it, in the pocket. Searched rather than authored, so moving a stair
+## cannot strand him. Called once, from `_build_one()`.
 func _guard_rest(g: Dictionary) -> Vector2:
-	var home: Vector2 = grid.anchors[_towers[int(g.st)]]
 	var post: Vector2 = g.post
-	# An authored `rest` is asked for first, and the same question is put to it as
-	# to anywhere else -- can he stand there. So it steers the search instead of
-	# overriding it, and a spot that has since grown a boulder gives up the nearest
-	# one that has not rather than planting him in the rubble.
-	var want: Vector2 = g.rest
-	if want != Vector2.ZERO:
-		for c in MapGrid.rings(MapGrid.cell_at(post + want), int(MapCfg.GUARD_REST_RINGS[0])):
-			var at := MapGrid.cell_mid(c)
-			if _stands_clear(g, at):
-				return at
-	var inside := post.distance_to(home)
-	for c in MapGrid.rings(MapGrid.cell_at(home), int(MapCfg.GUARD_REST_RINGS[1])):
+	for c in MapGrid.rings(MapGrid.cell_at(post), int(MapCfg.GUARD_REST_RINGS[1])):
 		var at := MapGrid.cell_mid(c)
-		if at.distance_to(home) <= inside and _stands_clear(g, at):
+		if _stands_clear(g, at):
 			return at
-	for centre: Vector2 in [home, post]:
-		for c in MapGrid.rings(MapGrid.cell_at(centre), int(MapCfg.GUARD_REST_RINGS[2])):
-			var at := MapGrid.cell_mid(c)
-			if _stands_clear(g, at):
-				return at
-	# Nothing open at all: at least get out of the gap.
-	return post + (home - post).normalized() * MapCfg.GUARD_REST_FALLBACK
+	return post + Vector2(0, MapCfg.GUARD_REST_FALLBACK)
 
 
 ## Ground a man his size can stand on: nothing under him, nothing drawn over him.
@@ -234,12 +170,18 @@ func _stands_clear(g: Dictionary, at: Vector2) -> bool:
 	var c := MapGrid.cell_at(at)
 	if not grid.is_walkable(at) or grid.trail.has(c):
 		return false
+	if int(grid.height.get(c, 0)) != 0 or grid.stairs.has(c):
+		return false                                  # on the ground, off any stair
 	var body := Rect2(MapCfg.GUARD_BODY.position + at, MapCfg.GUARD_BODY.size)
-	# The rubble gets his body plus a little below his feet: a boulder's wall is
-	# the stone and stops above the cell it stands on, and the y-sort draws a
-	# stone in the cell below him over his boots.
-	if not MapGrid.clear_of(body.grow_individual(0.0, 0.0, 0.0, MapCfg.GUARD_FOOT_SLACK), g.rocks as Array):
+	# Off the stair and a cell clear of it, so he never stands in the way.
+	if body.intersects((g.span as Rect2).grow(MapCfg.TILE)):
 		return false
+	# ...and every cell under him on the ground, not in a cliff face.
+	for corner in [body.position, Vector2(body.end.x, body.position.y),
+			Vector2(body.position.x, body.end.y), body.end]:
+		var k := MapGrid.cell_at(corner)
+		if not grid.land.has(k) or grid.cliff.has(k) or int(grid.height.get(k, -1)) != 0:
+			return false
 	return grid.clear_of_signs(body) and grid.clear_of_buildings(body)
 
 
@@ -256,11 +198,26 @@ func open(g: Dictionary) -> void:
 	if k == null or not is_instance_valid(k):
 		return
 	var to: Vector2 = g.stand
-	# Facing the way he is about to go -- the sheets' own direction is east.
-	k.scale.x = MapCfg.GUARD_SCALE * (1.0 if to.x >= k.position.x else -1.0)
+	# Round the rubble, not through it: a straight line from the gap to where
+	# he rests crossed the fence, and he walked over the boulders (client).
+	var path := walk_path(g, k.position, to)
+	var total := 0.0
+	var at := k.position
+	for p in path:
+		total += at.distance_to(p)
+		at = p
 	k.play("walk")
 	var tw := k.create_tween()
-	tw.tween_property(k, "position", to, MapCfg.GUARD_STEP_TIME).set_ease(Tween.EASE_IN_OUT)
+	at = k.position
+	for p in path:
+		var leg := at.distance_to(p)
+		var dir := p.x - at.x
+		# Facing the way each leg goes -- the sheets' own direction is east.
+		tw.tween_callback(func() -> void:
+			if is_instance_valid(k) and absf(dir) > 1.0:
+				k.scale.x = MapCfg.GUARD_SCALE * (1.0 if dir > 0.0 else -1.0))
+		tw.tween_property(k, "position", p, MapCfg.GUARD_STEP_TIME * leg / maxf(total, 1.0))
+		at = p
 	# Arriving, he turns back to face his station, which is where `_post_guard()`
 	# leaves him on a restart. Without this the walk's own direction sticks, and
 	# the same knight faced two ways depending on whether you saw him step aside.
@@ -270,8 +227,83 @@ func open(g: Dictionary) -> void:
 			_face(g, to))
 
 
+## The knight's way off the stairs to where he rests, as points to walk
+## through: the shortest run of ground cells his boots clear every wall of,
+## straightened wherever a straight line is just as clear. Ends at `to`.
+func walk_path(g: Dictionary, from: Vector2, to: Vector2) -> Array[Vector2]:
+	var boots := MapCfg.GUARD_BOOTS
+	var stones := path_stones(g, from)
+	var clear := func(p: Vector2) -> bool:
+		return MapGrid.clear_of(Rect2(boots.position + p, boots.size), stones)
+	var start := MapGrid.cell_at(from)
+	var goal := MapGrid.cell_at(to)
+	var came := {start: start}
+	var queue: Array[Vector2i] = [start]
+	var head := 0
+	while head < queue.size() and not came.has(goal):
+		var c := queue[head]
+		head += 1
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+				Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+			var n: Vector2i = c + d
+			if came.has(n) or not grid.land.has(n) or grid.cliff.has(n) \
+					or (int(grid.height.get(n, 0)) != 0 and not grid.stairs.has(n)) \
+					or absi(n.x - start.x) + absi(n.y - start.y) > 40:
+				continue
+			if n != goal and not clear.call(MapGrid.cell_mid(n)):
+				continue
+			# A diagonal step must not cut a wall's corner.
+			if d.x != 0 and d.y != 0 and n != goal \
+					and not _line_clear(MapGrid.cell_mid(c), MapGrid.cell_mid(n), clear):
+				continue
+			came[n] = c
+			queue.append(n)
+	if not came.has(goal):
+		return [to] as Array[Vector2]
+	var cells: Array[Vector2i] = []
+	var c := goal
+	while c != start:
+		cells.push_front(c)
+		c = came[c]
+	# Straighten: from each point, skip ahead to the farthest one in plain view.
+	var pts: Array[Vector2] = []
+	for cell in cells:
+		pts.append(MapGrid.cell_mid(cell))
+	pts[-1] = to
+	var out: Array[Vector2] = []
+	var here := from
+	var i := 0
+	while i < pts.size():
+		var j := pts.size() - 1
+		while j > i and not _line_clear(here, pts[j], clear):
+			j -= 1
+		out.append(pts[j])
+		here = pts[j]
+		i = j + 1
+	return out
+
+
+## The walls his walk must not cross: every one but those his boots already
+## touch where he starts -- the stairs he is stepping off.
+func path_stones(_g: Dictionary, from: Vector2) -> Array:
+	var at := Rect2(MapCfg.GUARD_BOOTS.position + from, MapCfg.GUARD_BOOTS.size)
+	return grid.solid.filter(func(r: Rect2) -> bool: return not r.intersects(at))
+
+
+static func _line_clear(a: Vector2, b: Vector2, clear: Callable) -> bool:
+	var steps := maxi(1, int(a.distance_to(b) / 2.0))
+	for s in range(1, steps + 1):
+		if not clear.call(a.lerp(b, float(s) / steps)):
+			return false
+	return true
+
+
 ## Called wherever progress is made: setup, and every overlay that closes.
-func refresh() -> void:
+## True if a knight stood aside just now (the screen plays his sound).
+func refresh() -> bool:
+	var any := false
 	for g: Dictionary in list:
 		if not bool(g.open) and _is_due(g):
 			open(g)
+			any = true
+	return any

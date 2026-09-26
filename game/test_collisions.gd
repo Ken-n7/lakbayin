@@ -53,8 +53,54 @@ func _initialize() -> void:
 		assert(not seen.has(pos), "circle %d shares a spot with another" % n)
 		seen[pos] = true
 		assert(screen.grid.is_walkable(pos), "circle %d stands on unwalkable ground" % n)
+		# The question is asked at the tower's front door: the tower stands
+		# straight up off its circle, so the circle is below its wall, centred on
+		# the door. Towers used to step aside, or even below the circle, which
+		# put the "answer here" spot beside the tower or behind it on its roof.
+		var wall: Rect2 = (circles[n] as Node2D).get("wall")
+		assert(wall.end.y <= 0.0, "circle %d is not in front of its tower (wall %s)" % [n, wall])
+		assert(absf(wall.get_center().x) < 1.0,
+				"circle %d is beside its tower's door, not in front of it (wall %s)" % [n, wall])
+		# ...and the road comes to that door, not through the tower.
+		var terrain: Terrain = screen.world.terrain
+		var cell := MapGrid.cell_at(pos)
+		for k in terrain._tower_cells(cell, MapCfg.CIRCLE_BUILDINGS[G.station_of_item(n)]):
+			assert(k == cell + Terrain.UP or not screen.grid.trail.has(k),
+					"the road runs under circle %d's tower at %s" % [n, k])
 	assert(screen.stations.gate != null, "no victory gate")
 	assert(screen.grid.is_walkable(screen.stations.gate.position), "the gate is not walkable")
+
+	# Props are solid at the base -- a trunk, a rock's body -- and the road is
+	# not: the hero used to walk straight through the forest.
+	var feet: Array[Rect2] = screen.decor.feet
+	# Placed by hand now, so any number is fine -- but a prop scene with a
+	# collision box must come out solid. Count what should have.
+	var boxed := 0
+	var placed: Node = (load(MapCfg.MAP_PROPS) as PackedScene).instantiate()
+	for p in placed.find_children("*", "StaticBody2D", true, false):
+		boxed += p.find_children("*", "CollisionShape2D", true, false).size()
+	placed.free()
+	assert(feet.size() >= boxed, "only %d walls from %d collision shapes" % [feet.size(), boxed])
+	# A circle becomes bands that stay inside it and span it at the middle.
+	var disc := CircleShape2D.new()
+	disc.radius = 10.0
+	var bands: Array[Rect2] = Decor._walls_of(disc, Transform2D(0.0, Vector2(100, 100)))
+	assert(bands.size() == 5, "a circle made %d bands" % bands.size())
+	for b: Rect2 in bands:
+		assert(Rect2(90, 90, 20, 20).encloses(b), "a band leaves the circle's square: %s" % b)
+	assert(is_equal_approx(bands[2].size.x, 20.0), "the middle band is not the full width")
+	var on_road := 0
+	for r: Rect2 in feet:
+		assert(not screen.grid.is_walkable(r.get_center()), "a prop's base is walkable")
+		# Boxes are placed and sized by hand now (scenes/map/MapProps.tscn), and
+		# one reaching over the road's edge is not a failure: the reach checks
+		# below -- the cell flood and the hero's own box -- are what say whether
+		# the way is still open. Named, so a box that shuts it is easy to find.
+		if screen.grid.trail.has(_cell(screen, r.get_center())):
+			on_road += 1
+			print("  note: a prop's box is over the road at %s" % r)
+	if on_road > 0:
+		print("  %d prop box(es) over the road -- fine while every stop stays reachable" % on_road)
 
 	# Strictly sequential: nothing is answerable until the tower is briefed, then
 	# only the one circle the player is actually on.
@@ -88,13 +134,12 @@ func _initialize() -> void:
 	# proves a gate: a flag can be checked, but only reachability shows that the
 	# next island cannot be reached by walking around the obstacle.
 	#
-	# Every crossing is a land bridge now, so every gate is a body in a wall of
-	# rocks -- two of them straight across the walk, one a fence curved right round
-	# the station it guards. The proof does not care which: walk the ground and see
-	# where you can get to.
+	# Every gate is a knight on the only stairs up to his station's terrace;
+	# the cliffs are the rest of the wall. The proof does not care how: walk the
+	# board, by level, and see where you can get to.
 	G.begin_adventure(600)
 	assert(screen.barricades.list.size() == 3,
-			"expected 3 barricades, got %d" % screen.barricades.list.size())
+			"expected a knight on each of 3 stations' stairs, got %d" % screen.barricades.list.size())
 	for g: Dictionary in screen.barricades.list:
 		var who: int = int(g.st) + 1
 		assert(not bool(g.open), "station %d's barricade starts open" % who)
@@ -103,7 +148,6 @@ func _initialize() -> void:
 				"station %d's guard is not solid" % who)
 		assert(screen.grid.clear_of_anchors(g.wall),
 				"station %d's wall swallows a stop on the board" % who)
-		_assert_line(screen, g)
 		# He steps aside rather than vanishing, so the spot has to be real ground:
 		# open, off the road, and not back inside the rocks he was standing in.
 		var rest: Vector2 = g.stand
@@ -113,8 +157,7 @@ func _initialize() -> void:
 		assert(rest.distance_to(g.post as Vector2) > MapCfg.TILE,
 				"station %d's guard steps down into the gap he was plugging" % who)
 
-	# Station 1's door has to stay usable from the bridge side, or the briefing
-	# that stands its guard down can never happen.
+	# Station 1's door has to be open from the camp, or nothing can begin.
 	var door: Vector2 = screen.grid.anchors[1]
 	assert(screen.grid.is_walkable(door), "Station 1's doorstep is inside the wall")
 	var held := _reachable(screen)
@@ -124,16 +167,35 @@ func _initialize() -> void:
 	# the three is walkable-to, and `_assert_islands()` is what proves it.
 	_assert_islands(screen, G, -1)
 
-	# Each one opens in turn, and the rocks stay -- only the gap does.
-	for st in 3:
+	# Each one opens in turn.
+	for st in screen.barricades.list.size():
 		var g: Dictionary = screen.barricades.list[st]
 		screen.barricades.open(g)
 		assert(screen.grid.is_walkable((g.wall as Rect2).get_center()),
 				"station %d's wall outlived its guard" % (st + 1))
-		_assert_line(screen, g)
 		_assert_islands(screen, G, st)
 
-	# ...and each one waits on its own station's briefing and nothing else:
+	# With every gate open, the hero's actual Foot box (scenes/Hero.tscn) gets
+	# everywhere it has to: the cell flood above is a point per 32px, and a box
+	# can stick in a gap a point slips through.
+	_assert_box_reach(screen, G)
+
+	# Each knight steps off his stair round every wall, never through one.
+	var boots: Rect2 = MapCfg.GUARD_BOOTS
+	for st in screen.barricades.list.size():
+		var g: Dictionary = screen.barricades.list[st]
+		var path: Array[Vector2] = screen.barricades.walk_path(g, g.post, g.stand)
+		assert(path[-1] == g.stand, "knight %d's walk does not end where he rests" % (st + 1))
+		var at: Vector2 = g.post
+		for p in path:
+			for k in range(1, 21):
+				var q := at.lerp(p, k / 20.0)
+				assert(MapGrid.clear_of(Rect2(boots.position + q, boots.size),
+					screen.barricades.path_stones(g, g.post)),
+					"knight %d walks through a wall at %s" % [st + 1, q])
+			at = p
+
+	# ...and each one waits on his own station's briefing and nothing else:
 	# clearing the station before his does not move him.
 	var fresh: Control = load("res://scripts/AdventureScreen.gd").new()
 	root.add_child(fresh)
@@ -164,14 +226,12 @@ func _initialize() -> void:
 	assert(bool(briefed.barricades.list[0].open),
 			"station 1's guard re-posted on a run that was already briefed")
 	assert(briefed.grid.is_walkable((briefed.barricades.list[0].wall as Rect2).get_center()),
-			"the gap is walled on a run that was already briefed")
+			"the stair is walled on a run that was already briefed")
 	assert(briefed.barricades.list[0].guard != null,
 			"the briefed guard vanished instead of standing aside")
 	for st in [1, 2]:
 		assert(not bool(briefed.barricades.list[st].open),
 				"station %d's guard gone on a briefed restart" % (st + 1))
-	# The line is scenery, not a gate: it is laid on every build, open or not.
-	_assert_line(briefed, briefed.barricades.list[0])
 
 	# --- The dev drawer's Skip Station --------------------------------------
 	# It is the shortcut the later islands are tested through, so it has to leave
@@ -203,40 +263,23 @@ func _initialize() -> void:
 	quit()
 
 
-## The rung of `opened` at which each station's doorstep becomes walkable-to.
-const TOWER_OPENS_AT := [-1, 0, 1]
-
-
-## `opened` is how many guards have stood down, or -1 while all three still hold.
-## Station `st`'s circles are walkable-to from the base camp exactly when
-## `opened >= st`, and the Victory Gate once the last guard has moved -- it stands
-## past Station 3's wall with its circles.
+## `opened` is the last station whose knight has stood down, or -1 while all
+## three hold. A station is walkable-to once the knight before it has stood
+## down; its circles once its own has; the Victory Gate once the last has.
 func _assert_islands(screen: Control, G: Node, opened: int) -> void:
 	var reach := _reachable(screen)
 	for n in G.TOTAL_ITEMS:
 		var st: int = G.station_of_item(n)
 		var pos: Vector2 = (screen._circles[n] as Node2D).position
-		var cell := Vector2i(floori(pos.x / MapCfg.TILE), floori(pos.y / MapCfg.TILE))
-		if opened >= st:
-			assert(reach.has(cell),
-					"circle %d (station %d) unreachable with %d guard(s) stood down" % [n + 1, st + 1, opened])
-		else:
-			assert(not reach.has(cell),
-					"circle %d (station %d) reachable with only %d guard(s) stood down" % [n + 1, st + 1, opened])
+		assert(reach.has(_cell(screen, pos)) == (opened >= st),
+				"circle %d (station %d) reachability wrong with %d knight(s) down" % [n + 1, st + 1, opened + 1])
 	for st in 3:
 		var tp: Vector2 = (screen.stations.nodes[st] as Node2D).position
-		var tcell := Vector2i(floori(tp.x / MapCfg.TILE), floori(tp.y / MapCfg.TILE))
-		# Every station stands on the near side of its own guard -- you have to
-		# reach a station to be briefed by it, which is what moves him. So a tower
-		# waits on whatever gate is in front of it, not on its own: Station 1 is
-		# open from the first step, Station 2 is over the bridge that leaves past
-		# Station 1's knight, and Station 3 over the one past Station 2's.
-		assert(reach.has(tcell) == (opened >= TOWER_OPENS_AT[st]),
-				"Tower %d reachability wrong with %d gate(s) open" % [st + 1, opened])
+		assert(reach.has(_cell(screen, tp)) == (opened >= st - 1),
+				"station %d reachability wrong with %d knight(s) down" % [st + 1, opened + 1])
 	var gate: Vector2 = (screen.stations.gate as Node2D).position
-	var gcell := Vector2i(floori(gate.x / MapCfg.TILE), floori(gate.y / MapCfg.TILE))
-	assert(reach.has(gcell) == (opened >= 2),
-			"victory gate reachability wrong with %d guard(s) stood down" % opened)
+	assert(reach.has(_cell(screen, gate)) == (opened >= 2),
+			"victory gate reachability wrong with %d knight(s) down" % (opened + 1))
 
 
 ## Circles resolved by the time station `st` is done -- the same running total
@@ -253,54 +296,98 @@ static func _cell(screen: Control, at: Vector2) -> Vector2i:
 	return Vector2i(floori(at.x / MapCfg.TILE), floori(at.y / MapCfg.TILE))
 
 
-## One barricade's boulders: every rock solid, and none of them swallowing a stop
-## on the board. That the fence actually *seals* is not checked here and cannot
-## usefully be -- one is a straight line across the walk and the other a curve
-## right round a station, and "does it hold" has the same answer for both:
-## `_assert_islands()` walks the ground from the base camp and sees where it gets.
-func _assert_line(screen: Control, g: Dictionary) -> void:
-	var rocks: Array = g.rocks
-	var who: int = int(g.st) + 1
-	assert(rocks.size() >= 3,
-			"station %d's boulder line is only %d rocks long" % [who, rocks.size()])
-	var in_the_sea := 0
-	for r in rocks:
-		var rock: Rect2 = r
-		assert(not screen.grid.is_walkable(rock.get_center()),
-				"a boulder at %s is not solid" % rock.get_center())
-		assert(screen.grid.clear_of_anchors(rock),
-				"a boulder at %s swallows a stop on the board" % rock.get_center())
-		# The cell the boulder was laid on, back out of the wall that stands on it.
-		var cell: Vector2i = MapGrid.cell_at(rock.get_center()
-				+ Vector2(0.0, MapCfg.ROCK_WALL.y * 0.5 + MapCfg.ROCK_WALL_BASE))
-		# `Art.sprite()` draws a boulder upward from its cell, so a wall centred on
-		# the cell blocks a tile of open grass *below* the stone -- the bump into
-		# nothing that made this fence feel unfinished. The wall stands on the art.
-		assert(rock.end.y <= MapGrid.cell_mid(cell).y,
-				"the wall at %s sits below its boulder" % rock.get_center())
-		if not screen.grid.land.has(cell):
-			in_the_sea += 1
-	# Which leaves the cell at each arm's end -- the stone's own foot -- open, and
-	# that foot is the way round the whole fence. So each arm takes one more step,
-	# into the shallows, and there the beach behind the last stone is the wall.
-	assert(in_the_sea == 2,
-			"station %d's fence ends on dry land (%d stones in the water)" % [who, in_the_sea])
-
-
-## Cells walkable from the base camp, by flood fill over cell centres.
-func _reachable(screen: Control) -> Dictionary:
-	var start: Vector2 = screen.grid.anchors[0]
-	var seen := {}
-	var queue: Array[Vector2i] = [Vector2i(floori(start.x / MapCfg.TILE), floori(start.y / MapCfg.TILE))]
-	seen[queue[0]] = true
+## Floods the board in 8px steps as the hero's Foot box, from the base camp,
+## walking by level as the hero does -- up and down the stairs, never off a
+## terrace or through a cliff -- and asserts every station doorstep, circle and
+## the gate is within INTERACT_RADIUS of somewhere it got to.
+func _assert_box_reach(screen: Control, G: Node) -> void:
+	var box: Rect2 = screen.hero_box
+	assert(box.size != Vector2.ZERO, "the hero has no Foot box")
+	var grid: MapGrid = screen.grid
+	# Walls by 64px bucket, or a quarter-million steps x every wall is a long test.
+	var buckets := {}
+	for w: Rect2 in grid.solid:
+		for bx in range(floori(w.position.x / 64.0), floori(w.end.x / 64.0) + 1):
+			for by in range(floori(w.position.y / 64.0), floori(w.end.y / 64.0) + 1):
+				var k := Vector2i(bx, by)
+				if not buckets.has(k):
+					buckets[k] = []
+				buckets[k].append(w)
+	var fits := func(p: Vector2, level: int, stair_low: int) -> bool:
+		var r := Rect2(box.position + p, box.size)
+		for bx in range(floori(r.position.x / 64.0), floori(r.end.x / 64.0) + 1):
+			for by in range(floori(r.position.y / 64.0), floori(r.end.y / 64.0) + 1):
+				for w: Rect2 in buckets.get(Vector2i(bx, by), []):
+					if w.intersects(r):
+						return false
+		for c in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+			if not grid.cell_ok(MapGrid.cell_at(c), level, stair_low):
+				return false
+		return true
+	var start: Vector2 = grid.anchors[0]
+	assert(fits.call(start, 0, -1), "the hero's box does not fit where they start")
+	var first := Vector3i(0, 0, 0)
+	var seen := {first: true}
+	var queue: Array[Vector3i] = [first]
+	var reached: Array[Vector2] = []
 	while not queue.is_empty():
-		var c: Vector2i = queue.pop_back()
+		var k: Vector3i = queue.pop_back()
+		var here := start + Vector2(k.x, k.y) * 8.0
+		reached.append(here)
+		var low := grid.stair_low_at(here)
 		for d in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
-			var nc: Vector2i = c + d
-			if seen.has(nc) or not MapGrid.in_bounds(nc):
+			var p := start + Vector2(k.x + d.x, k.y + d.y) * 8.0
+			if not fits.call(p, k.z, low):
 				continue
-			if not screen.grid.is_walkable(MapGrid.cell_mid(nc)):
-				continue
-			seen[nc] = true
-			queue.append(nc)
-	return seen
+			var nk := Vector3i(k.x + d.x, k.y + d.y, grid.level_at(p, k.z))
+			if not seen.has(nk):
+				seen[nk] = true
+				queue.append(nk)
+	var stops: Array = []
+	for st in 3:
+		stops.append(["station %d" % (st + 1), (screen.stations.nodes[st] as Node2D).position])
+	for n in G.TOTAL_ITEMS:
+		stops.append(["circle %d" % (n + 1), (screen._circles[n] as Node2D).position])
+	stops.append(["the Victory Gate", screen.stations.gate.position])
+	for stop: Array in stops:
+		var near := false
+		for p: Vector2 in reached:
+			if p.distance_to(stop[1]) <= MapCfg.INTERACT_RADIUS:
+				near = true
+				break
+		assert(near, "%s is out of the hero's reach with a %s Foot box" % [stop[0], box.size])
+	print("hero box %s reaches all %d stops (%d spots)" % [box.size, stops.size(), reached.size()])
+	_assert_stairs(screen)
+
+
+## Every staircase can be climbed and left: from its foot, walking by level,
+## the level above is reached; from beside its top, the level below.
+func _assert_stairs(screen: Control) -> void:
+	var grid: MapGrid = screen.grid
+	var ramps := 0
+	for c: Vector2i in grid.stairs:
+		var s: Dictionary = grid.stairs[c]
+		if bool(s.top):
+			continue
+		ramps += 1
+		var low := int(s.low)
+		var top: Vector2i = c + Vector2i(0, -1)
+		var up := false
+		for k: Vector2i in grid.flood(MapGrid.cell_mid(c), low):
+			if int(grid.height.get(k, -1)) == low + 1 and not grid.stairs.has(k):
+				up = true
+				break
+		assert(up, "the stairs at %s lead nowhere up" % c)
+		var down := false
+		var above: Vector2i = top - Vector2i(int(s.side), 0)
+		for k: Vector2i in grid.flood(MapGrid.cell_mid(above), low + 1):
+			if int(grid.height.get(k, -1)) == low and not grid.stairs.has(k):
+				down = true
+				break
+		assert(down, "the stairs at %s cannot be come down" % c)
+	assert(ramps >= 6, "only %d staircases" % ramps)
+	print("stairs: %d, every one climbable and come down" % ramps)
+
+
+func _reachable(screen: Control) -> Dictionary:
+	return screen.grid.flood(screen.grid.anchors[0], 0)

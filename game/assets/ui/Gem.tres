@@ -1,0 +1,23 @@
+[gd_resource type="AnimatedTexture" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/ui/gem/gem_0.png" id="1_ahhm3"]
+[ext_resource type="Texture2D" path="res://assets/ui/gem/gem_1.png" id="2_716j5"]
+[ext_resource type="Texture2D" path="res://assets/ui/gem/gem_2.png" id="3_56egw"]
+[ext_resource type="Texture2D" path="res://assets/ui/gem/gem_3.png" id="4_6u70e"]
+[ext_resource type="Texture2D" path="res://assets/ui/gem/gem_4.png" id="5_xg5th"]
+[ext_resource type="Texture2D" path="res://assets/ui/gem/gem_5.png" id="6_p5ajm"]
+
+[resource]
+frames = 6
+frame_0/texture = ExtResource("1_ahhm3")
+frame_0/duration = 1.4
+frame_1/texture = ExtResource("2_716j5")
+frame_1/duration = 0.09
+frame_2/texture = ExtResource("3_56egw")
+frame_2/duration = 0.09
+frame_3/texture = ExtResource("4_6u70e")
+frame_3/duration = 0.09
+frame_4/texture = ExtResource("5_xg5th")
+frame_4/duration = 0.09
+frame_5/texture = ExtResource("6_p5ajm")
+frame_5/duration = 0.09

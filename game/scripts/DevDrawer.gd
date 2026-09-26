@@ -1,7 +1,8 @@
 extends Control
 
-## The dev drawer: a handle on the left edge of the Adventure map that slides out
-## a panel of cheats. It exists so the later islands can be reached without
+## The dev drawer: a tab on the left edge of the Adventure map that pops out a
+## box of cheats. Plain widgets, no pack art and no slide -- it is a test rig,
+## and dressing it as parchment only makes it look like part of the game. It exists so the later islands can be reached without
 ## answering every question in front of them, and so the board can be looked at
 ## while the game is running rather than only in a screenshot.
 ##
@@ -13,15 +14,16 @@ extends Control
 ## is a test rig, not a feature, and it can be deleted whole without touching a
 ## line of the game.
 
-const PANEL_W := 150.0
-## Top edge only -- the panel is a container, so it takes whatever height its
-## buttons need. Nine of them come to ~340px of the 360px canvas, which is why it
-## starts flush with the top and rides over the HUD bar while it is out.
+const PANEL_W := 124.0
+## Top edge only -- the box is a container, so it takes whatever height its
+## buttons need, and nine of them nearly fill the 360px canvas.
 const PANEL_Y := 4.0
-const HANDLE := Vector2(22.0, 56.0)
-const HANDLE_Y := 150.0
-const SLIDE := 0.18
+const TAB := Vector2(18.0, 40.0)
+const TAB_Y := 150.0
 const FAST_WALK := 3.0
+## What Zoom steps through, from the shipped MapCfg.PLAY_ZOOM up -- for picking
+## a camera on the phone itself rather than guessing at a desk.
+const ZOOMS := [0.75, 0.85, 0.95, 1.05, 1.2]
 
 ## One row per button: label, and the method it calls. Adding a tool is a line
 ## here plus the method. A toggle rewrites its own label with a trailing dot.
@@ -34,6 +36,7 @@ const TOOLS := [
 	["Freeze", "_freeze"],
 	["+1:00", "_add_minute"],
 	["Show Walls", "_show_walls"],
+	["Zoom 0.75", "_zoom"],
 	["End Run", "_end_run"],
 ]
 
@@ -42,6 +45,7 @@ var _panel: PanelContainer
 var _handle: Button
 var _buttons := {}          # method name -> Button, for the toggles' labels
 var _walls: Node2D = null   # the `_solid` overlay, while it is up
+var _hero_box: Node2D = null   # and the hero's Foot box with it
 var _open := false
 
 
@@ -52,34 +56,29 @@ func setup(adv: Control) -> void:
 	# the rest of the screen still gets taps, drags and the circle-inspect.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	_panel = Ui.panel(Vector2(PANEL_W, 0.0), "Dev")
-	_panel.position = Vector2(-PANEL_W, PANEL_Y)
+	_panel = DevUi.box(PANEL_W)
+	_panel.position = Vector2(TAB.x, PANEL_Y)
+	_panel.visible = false
 	add_child(_panel)
-	var box: VBoxContainer = _panel.get_child(0) as VBoxContainer
-	box.add_theme_constant_override("separation", 2)
+	var box := DevUi.column(_panel)
 	for spec: Array in TOOLS:
-		var b := Ui.button(String(spec[0]), 130.0, 24.0, Ui.SMALL)
+		var b := DevUi.button(String(spec[0]))
 		b.pressed.connect(_press.bind(String(spec[1])))
 		box.add_child(b)
 		_buttons[String(spec[1])] = b
 
-	_handle = Ui.button("»", HANDLE.x, HANDLE.y, Ui.SMALL_RED)
-	_handle.position = Vector2(0.0, HANDLE_Y)
+	_handle = DevUi.button("D", TAB.y)
+	_handle.custom_minimum_size = TAB
+	_handle.position = Vector2(0.0, TAB_Y)
 	_handle.pressed.connect(toggle)
 	add_child(_handle)
 	_claim_touch()
 
 
-## Slide in or out. The handle rides the panel's edge so it is always the thing
-## nearest the middle of the screen.
+## Show or hide. No tween: waiting 0.18s to reach a cheat is 0.18s of nothing.
 func toggle() -> void:
 	_open = not _open
-	_handle.text = "«" if _open else "»"
-	var to := 0.0 if _open else -PANEL_W
-	var tw := create_tween()
-	tw.set_parallel(true)
-	tw.tween_property(_panel, "position:x", to, SLIDE).set_ease(Tween.EASE_OUT)
-	tw.tween_property(_handle, "position:x", to + PANEL_W, SLIDE).set_ease(Tween.EASE_OUT)
+	_panel.visible = _open
 	_claim_touch()
 
 
@@ -96,7 +95,7 @@ func _claim_touch() -> void:
 	var stick: Node2D = _adv.hud.joystick
 	if stick == null or not is_instance_valid(stick):
 		return
-	var taken := (PANEL_W if _open else HANDLE.x) + 4.0
+	var taken := (TAB.x + PANEL_W if _open else TAB.x) + 4.0
 	stick.zone = Rect2(Vector2(taken, 0.0), Vector2(320.0 - taken, 360.0))
 
 
@@ -161,7 +160,7 @@ func _aerial() -> void:
 		cam.zoom = Vector2(z, z)
 		cam.position = Vector2(MapCfg.WORLD_W * MapCfg.TILE, MapCfg.WORLD_H * MapCfg.TILE) * 0.5
 	else:
-		cam.zoom = Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM)
+		cam.zoom = Vector2(_adv.play_zoom, _adv.play_zoom)
 		_adv._clamp_cam(true)
 		cam.position = _adv.player.position
 		cam.position_smoothing_enabled = true
@@ -198,6 +197,8 @@ func _show_walls() -> void:
 	if _walls != null and is_instance_valid(_walls):
 		_walls.queue_free()
 		_walls = null
+		if is_instance_valid(_hero_box):
+			_hero_box.queue_free()
 		_mark("_show_walls", false)
 		return
 	var n := Node2D.new()
@@ -208,9 +209,26 @@ func _show_walls() -> void:
 			n.draw_rect(r, Color(1.0, 0.4, 0.4, 0.85), false, 1.0))
 	_adv.world.add_child(n)
 	_walls = n
+	# The hero's own Foot box, riding along with them (scenes/Hero.tscn).
+	_hero_box = Node2D.new()
+	_hero_box.z_index = 6
+	_hero_box.draw.connect(func() -> void:
+		_hero_box.draw_rect(_adv.hero_box, Color(0.3, 0.9, 1.0, 0.35))
+		_hero_box.draw_rect(_adv.hero_box, Color(0.3, 0.9, 1.0, 0.95), false, 1.0))
+	_adv.player.add_child(_hero_box)
 	_mark("_show_walls", true)
 
 
 ## Straight to the summary, for testing the end of a run without playing one.
+## The next zoom along, applied at once and kept for the rest of the run.
+func _zoom() -> void:
+	var at := ZOOMS.find(_adv.play_zoom)
+	var z: float = ZOOMS[(at + 1) % ZOOMS.size()]
+	_adv.play_zoom = z
+	if not _adv._dev_aerial and not _adv._frozen:
+		(_adv._cam as Camera2D).zoom = Vector2(z, z)
+	_buttons["_zoom"].text = "Zoom %.2f" % z
+
+
 func _end_run() -> void:
 	Game.end_adventure()

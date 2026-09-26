@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://blni565fb1xsc"]
+
+[ext_resource type="Texture2D" uid="uid://cnycs01caeyya" path="res://assets/terrain/decorations/Rock3.png" id="1_uuree"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_yeyin"]
+size = Vector2(49, 21)
+
+[node name="Rock3" type="Node2D" unique_id=2131467440]
+
+[node name="Sprite" type="Sprite2D" parent="." unique_id=1573039438]
+scale = Vector2(1.4, 1.4)
+texture = ExtResource("1_uuree")
+offset = Vector2(0, -32)
+
+[node name="Foot" type="StaticBody2D" parent="." unique_id=258515582]
+
+[node name="Box" type="CollisionShape2D" parent="Foot" unique_id=1611230917]
+position = Vector2(1.5000005, -34.5)
+shape = SubResource("RectangleShape2D_yeyin")

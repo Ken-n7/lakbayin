@@ -19,6 +19,9 @@ var beach := {}       # Vector2i -> true, land with water on at least one side
 var island_of := {}   # Vector2i -> island index, for the per-island decor pass
 var trail := {}       # Vector2i -> true, the road corridor: decor keeps off it
 var taken := {}       # Vector2i -> true, cells a prop already stands on
+var height := {}      # Vector2i -> level: 0 the ground, 1 a terrace, 2 the summit
+var cliff := {}       # Vector2i -> level, the cliff face under that level's south edge
+var stairs := {}      # Vector2i -> {low, tile, top, side}: a ramp's two cells, low and low+1 meet
 
 # --- Boxes, in world px -----------------------------------------------------
 var solid: Array[Rect2] = []          # walls: buildings, boulders, guards
@@ -31,9 +34,8 @@ var sign_rects: Array[Rect2] = []     # the station signboards, specifically
 ## end up inside a wall.
 var anchors: Array = []
 
-## The grass layer, for the walkability test. A cell is walkable when it has a
-## tile, which after `MapBuilder.retile()` is exactly the `land` set -- but the
-## tilemap is what the player actually walks on, so it is what gets asked.
+## The grass layer. Walkability asks `land`, which is exactly what it is
+## painted from -- and is there before the paint, when Terrain checks its work.
 var grass: TileMapLayer = null
 
 
@@ -66,77 +68,146 @@ static func rings(c: Vector2i, radius: int) -> Array[Vector2i]:
 	return out
 
 
-## A boulder's wall stands on the boulder, not on the cell it was laid on: the
-## art is base-anchored, so a box centred on the cell blocks a tile of open
-## grass below the stone and leaves the stone's own top walkable.
-static func rock_wall(c: Vector2i) -> Rect2:
-	return Rect2(cell_mid(c) - Vector2(MapCfg.ROCK_WALL.x * 0.5,
-			MapCfg.ROCK_WALL.y + MapCfg.ROCK_WALL_BASE), MapCfg.ROCK_WALL)
-
-
-# --- Shape ------------------------------------------------------------------
-## Which island a cell belongs to, or -1 for open water. The radial wobble is
-## what keeps the coastlines ragged -- a bare ellipse reads as a pond.
-static func island_index(cell: Vector2i) -> int:
-	var px := (float(cell.x) + 0.5) / float(MapCfg.WORLD_W)
-	var py := (float(cell.y) + 0.5) / float(MapCfg.WORLD_H)
-	for i in MapCfg.ISLANDS.size():
-		var isl: Dictionary = MapCfg.ISLANDS[i]
-		var c: Vector2 = isl.c
-		var r: Vector2 = isl.r
-		var dx := (px - c.x) / r.x
-		var dy := (py - c.y) / r.y
-		var d := sqrt(dx * dx + dy * dy)
-		if d > MapCfg.COAST_REJECT:
-			continue
-		var ang := atan2(dy, dx)
-		var edge := MapCfg.COAST_BASE \
-				+ MapCfg.COAST_WAVE1.x * sin(ang * MapCfg.COAST_WAVE1.y + float(isl.wobble)) \
-				+ MapCfg.COAST_WAVE2.x * cos(ang * MapCfg.COAST_WAVE2.y + MapCfg.COAST_WAVE2_PHASE)
-		if d < edge:
-			return i
-	return -1
-
-
 # --- Questions --------------------------------------------------------------
+## Can something stand at `pos` at the level of the ground there: clear of
+## walls, on land, not in a cliff face.
 func is_walkable(pos: Vector2) -> bool:
 	for r in solid:
 		if r.has_point(pos):
 			return false
-	return grass != null and grass.get_cell_source_id(cell_at(pos)) != -1
+	var c := cell_at(pos)
+	return land.has(c) and not cliff.has(c)
 
 
-## Nearest land walking inward from a normalized spot, for props that must not
-## end up in the sea.
-func first_land(nx: float, ny: float, toward: Vector2) -> Vector2:
-	for _tries in MapCfg.LAND_SEARCH_TRIES:
-		var c := Vector2i(floori(nx * MapCfg.WORLD_W), floori(ny * MapCfg.WORLD_H))
-		if land.has(c):
-			return cell_mid(c)
-		nx = lerpf(nx, toward.x, MapCfg.LAND_SEARCH_STEP)
-		ny = lerpf(ny, toward.y, MapCfg.LAND_SEARCH_STEP)
-	return norm(MapCfg.ISLANDS[0].c)
-
-
-## Ground a prop may stand on: this island's, inland of the shore, off the road,
-## off the stations and not already occupied. Everything that makes the board
-## read as a place rather than as noise is this one predicate.
-func plantable(c: Vector2i, isl: int) -> bool:
-	if taken.has(c) or trail.has(c):
+## May a walker at `level` stand in `c`? Ground of that height takes them; a
+## ramp takes either of the two levels it joins; a cliff takes nobody. A
+## walker on a ramp now (`stair_low` its lower level, else -1) may step off it
+## onto either level.
+func cell_ok(c: Vector2i, level: int, stair_low := -1) -> bool:
+	if not land.has(c) or cliff.has(c):
 		return false
-	if not land.has(c) or beach.has(c):
-		return false
-	if int(island_of.get(c, -1)) != isl:
-		return false
-	return not near_station(c)
+	if stairs.has(c):
+		var low := int(stairs[c].low)
+		return level == low or level == low + 1 or stair_low == low
+	var h := int(height.get(c, 0))
+	if stair_low >= 0:
+		return h == stair_low or h == stair_low + 1
+	return h == level
 
 
-func near_station(c: Vector2i) -> bool:
-	var p := cell_mid(c)
-	for r: Rect2 in station_rects:
-		if r.has_point(p):
-			return true
-	return false
+## The level after standing at `pos`: the ground's own height, or on a ramp,
+## whatever it was.
+func level_at(pos: Vector2, was: int) -> int:
+	var c := cell_at(pos)
+	if stairs.has(c):
+		return was
+	return int(height.get(c, 0))
+
+
+## The lower level of the ramp at `pos`, or -1 off one.
+func stair_low_at(pos: Vector2) -> int:
+	var c := cell_at(pos)
+	return int(stairs[c].low) if stairs.has(c) else -1
+
+
+## Every cell reachable from `from` starting at `level`, walking as the hero
+## does: by level, up and down ramps, round walls (tested at cell middles).
+## `ground_only` never changes level -- the board as it is with no stairs.
+func flood(from: Vector2, level: int, ground_only := false) -> Dictionary:
+	var start := cell_at(from)
+	var seen := {Vector3i(start.x, start.y, level): true}
+	var cells := {start: true}
+	var queue: Array[Vector3i] = [Vector3i(start.x, start.y, level)]
+	while not queue.is_empty():
+		var k: Vector3i = queue.pop_back()
+		var c := Vector2i(k.x, k.y)
+		var low := -1 if ground_only or not stairs.has(c) else int(stairs[c].low)
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = c + d
+			var p := cell_mid(n)
+			if not cell_ok(n, k.z, low):
+				continue
+			var blocked := false
+			for r in solid:
+				if r.has_point(p):
+					blocked = true
+					break
+			if blocked:
+				continue
+			var nl := k.z if ground_only else level_at(p, k.z)
+			var nk := Vector3i(n.x, n.y, nl)
+			if not seen.has(nk):
+				seen[nk] = true
+				cells[n] = true
+				queue.append(nk)
+	return cells
+
+
+## Can the hero stand at `pos`? `box` is their Foot box, relative to their
+## feet (scenes/Hero.tscn): clear of every wall, and all four corners on
+## ground they may stand on at `level` (see `cell_ok`). A point check let the
+## hero's feet squeeze between two rocks 6px apart.
+func box_walkable(pos: Vector2, box: Rect2, level := 0, stair_low := -1) -> bool:
+	var r := Rect2(box.position + pos, box.size)
+	for w in solid:
+		if w.intersects(r):
+			return false
+	for corner in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+		var c := cell_at(corner)
+		if not cell_ok(c, level, stair_low):
+			return false
+		if stairs.has(c) and not on_ramp(corner, c):
+			return false
+	# A man is wider than his feet: keep them a little off a cliff face
+	# beside him, or half of him is drawn over the rock -- except on the
+	# landing under a ramp's foot, which may be no wider than the ramp.
+	var m := MapCfg.CLIFF_SIDE_MARGIN
+	for p in [Vector2(r.position.x - m, r.position.y), Vector2(r.position.x - m, r.end.y),
+			Vector2(r.end.x + m, r.position.y), Vector2(r.end.x + m, r.end.y)]:
+		if cliff.has(cell_at(p)) and not stairs.has(cell_at(Vector2(clampf(p.x, r.position.x, r.end.x), p.y)) + Vector2i(0, -1)):
+			return false
+	return true
+
+
+## Whether `p`, in ramp cell `c`, is on the ramp's grass rather than the open
+## corner of its top tile or the rock of its foot -- measured off the art
+## (Tilemap row 4-5, cols 0 and 3). In the ramp's own frame: x from its low
+## side (0) to its high side (32), y from the top tile's top (0) to the foot's
+## bottom (64).
+func on_ramp(p: Vector2, c: Vector2i) -> bool:
+	var span := _ramp_span(c, p.y)
+	var x := _ramp_x(c, p.x)
+	return x >= span.x and x <= span.y
+
+
+## World x of the middle of the ramp's grass at height `y`: where going up or
+## down it steers the hero (`AdventureScreen._slip`).
+func ramp_mid_x(c: Vector2i, y: float) -> float:
+	var span := _ramp_span(c, y)
+	return c.x * MapCfg.TILE + _flip(c, (span.x + span.y) * 0.5)
+
+
+## World x into the ramp's frame.
+func _ramp_x(c: Vector2i, x: float) -> float:
+	return _flip(c, x - c.x * MapCfg.TILE)
+
+
+## The frame runs low side to high side; a ramp with its high ground to the
+## left runs mirrored. Its own inverse.
+func _flip(c: Vector2i, x: float) -> float:
+	return MapCfg.TILE - x if int(stairs[c].side) > 0 else x
+
+
+## The grass's [from, to] across the ramp's frame at world height `y`.
+func _ramp_span(c: Vector2i, y: float) -> Vector2:
+	var t := float(MapCfg.TILE)
+	var top_y := float(c.y if bool(stairs[c].top) else c.y - 1) * t
+	var ry := clampf(y - top_y, 4.0, t * 2.0)
+	if ry < t:
+		return Vector2(maxf(0.0, t - 1.0 - (ry - 4.0)), t)   # the slope's edge, 45 degrees
+	if ry < t * 1.6:
+		return Vector2(0.0, maxf(20.0, t - (ry - t)))         # the foot narrows toward the rock
+	return Vector2(0.0, 16.0)
 
 
 static func clear_of(r: Rect2, boxes: Array) -> bool:

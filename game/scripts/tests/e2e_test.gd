@@ -62,6 +62,10 @@ func _find_line_edit(root: Node) -> LineEdit:
 
 func _click(root: Node, text: String) -> void:
 	var b := _find_button(root, text)
+	# A bare glyph -- the "←" in a screen's title -- is found by what it says
+	# it does: its tooltip.
+	if b == null:
+		b = _find_button_tooltip(root, text)
 	if b == null:
 		check("button exists: %s" % text, false)
 		return
@@ -158,32 +162,58 @@ func _end_via_time() -> void:
 	await _wait(2)
 
 
+## Start Adventure is two steps now: the home screen, then the team name.
+## Every "Join Quest" in this suite goes through both.
+## A player types a name every run, so the default is a name and not "".
+## Section 8 clears `Game.team_name`, and an empty field is refused -- which
+## is the screen behaving, not a broken step.
+func _continue_quest(team := "Test Team") -> void:
+	_click(_screen(), "Join Quest")
+	await _wait(3)
+	_screen()._team.text = team
+	_click(_screen(), "Ready!")
+	await _wait(4)
+
+
 func _run() -> void:
 	_main_scene = preload("res://scenes/Main.tscn").instantiate()
 	add_child(_main_scene)
 	await _wait(4)
 
-	print("== 1. splash -> title ==")
+	print("== 1. splash -> sign in -> home ==")
 	check("booted to splash", _script_of(_screen(), "res://scripts/SplashScreen.gd"))
 	check("splash shows the tagline", _find_label(_screen(), "Explore.") != null)
 	_screen().call("skip")
 	await _wait(3)
-	check("splash routes to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
-	check("start button present", _find_button(_screen(), "Start New Journey") != null)
+	# With keys in project.godot the backend is always configured, so a launch
+	# lands on the login form -- which is the point, and what a phone does.
+	# This suite is offline by design: it asserts the gate, then steps over it
+	# rather than signing in, because a suite that needs the network is a suite
+	# that fails on a train.
+	check("a fresh launch asks you to sign in",
+		_script_of(_screen(), "res://scripts/LoginScreen.gd"))
+	check("login offers a way to register", _find_button(_screen(), "Create Account") != null)
+	check("login offers recovery", _find_button(_screen(), "Forgot Password?") != null)
+	_main_scene.call("open", "home")
+	await _wait(3)
+	check("splash routes to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	check("start button present", _find_button(_screen(), "Start Adventure") != null)
 	check("learn button present", _find_button(_screen(), "Learn") != null)
 	check("board button present", _find_button(_screen(), "Leaderboard") != null)
 
 	print("== 2. hero select ==")
-	_click(_screen(), "Start New Journey")
+	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	var hero := _screen()
 	check("reached hero select", _script_of(hero, "res://scripts/HeroSelectScreen.gd"))
-	var name_field := _find_line_edit(hero)
-	check("name field present", name_field != null)
-	name_field.text = "E2E Hero"
+	# No name to type: the account's username is the name.
+	check("no name field", _find_line_edit(hero) == null)
 	_find_button_tooltip(hero, "Adventurer #12").pressed.emit()
-	_click(hero, "15 min")
-	_click(hero, "Begin Adventure")
+	_click(hero, "Set")
+	await _wait(3)
+	# Hero select hands off to the team name, which is what begins the run.
+	_screen()._team.text = "Test Team"
+	_click(_screen(), "Ready!")
 	await _wait(4)
 
 	print("== 3. adventure map ==")
@@ -226,7 +256,20 @@ func _run() -> void:
 	(adv.get("player") as Node2D).position = (adv.get("_circles")[3] as Node2D).position
 	adv.call("_update_interaction")
 	check("bang off at a locked circle", bang != null and not bang.visible)
-	(adv.get("player") as Node2D).position += Vector2(400, 0)
+	# Open grass: a land cell well away from every stop on the board.
+	var grid: MapGrid = adv.get("grid")
+	var far := Vector2.ZERO
+	for c: Vector2i in grid.land:
+		var p := MapGrid.cell_mid(c)
+		var clear := true
+		for a: Vector2 in grid.anchors:
+			if p.distance_to(a) < MapCfg.INTERACT_RADIUS * 4.0:
+				clear = false
+				break
+		if clear:
+			far = p
+			break
+	(adv.get("player") as Node2D).position = far
 	adv.call("_update_interaction")
 	check("bang off in open grass", bang != null and not bang.visible)
 
@@ -247,9 +290,7 @@ func _run() -> void:
 
 	# circle 2: wrong
 	ov = await _open_circle(adv, 1)
-	var rescue := _find_button(ov, "Rescue")
-	check("rescue present", rescue != null)
-	check("rescue disabled", rescue != null and rescue.disabled)
+	check("no rescue (paused feature)", _find_button(ov, "Rescue") == null)
 	_find_line_edit(ov).text = "999"
 	_click(ov, "Submit Answer")
 	await _wait(2)
@@ -292,30 +333,55 @@ func _run() -> void:
 	check("leaderboard shown", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("back to home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	_click(_screen(), "Learn")
 	await _wait(3)
 	check("learn shown", _script_of(_screen(), "res://scripts/LearnScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("back to title again", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("back to title again", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("main backref wired", true)
 
 	print("== 7. continue quest + pause menu ==")
-	check("continue quest shown", _find_button(_screen(), "Continue Quest") != null)
-	# With a profile saved, the title needs its own way back to hero creation.
-	check("title new game shown", _find_button(_screen(), "New Game") != null)
-	check("title quit shown", _find_button(_screen(), "Quit") != null)
-	_click(_screen(), "New Game")
+	check("continue quest shown", _find_button(_screen(), "Join Quest") != null)
+	# Change Character and Log Out live in Settings; Quit asks first.
+	check("menu has Settings", _find_button(_screen(), "Settings") != null)
+	check("menu has Quit", _find_button(_screen(), "Quit") != null)
+	check("Change Character left the menu", _find_button(_screen(), "Change Character") == null)
+	_click(_screen(), "Quit")
+	await _wait(2)
+	check("Quit asks first", _find_label(_screen(), "Quit NumXventure?") != null)
+	_click(_screen(), "Stay")
+	await _wait(2)
+	check("Stay keeps you here", _find_label(_screen(), "Quit NumXventure?") == null
+		and _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	_screen().call("go_back")
+	await _wait(2)
+	check("back asks as well", _find_label(_screen(), "Quit NumXventure?") != null)
+	_screen().call("go_back")
+	await _wait(2)
+	check("back again closes the question", _find_label(_screen(), "Quit NumXventure?") == null)
+	_click(_screen(), "Settings")
+	await _wait(2)
+	check("Settings offers Change Character", _find_button(_screen(), "Change Character") != null)
+	_click(_screen(), "Change Character")
 	await _wait(3)
-	check("title new game opens hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
-	_click(_screen(), "Back")
+	check("change character opens hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
+	_click(_screen(), "Set")
 	await _wait(3)
-	_click(_screen(), "Continue Quest")
+	check("Set from Settings goes back Home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	# Start Adventure now goes by way of the team name, per SPECS §3.
+	_click(_screen(), "Join Quest")
+	await _wait(3)
+	check("continue quest asks for the team name",
+		_script_of(_screen(), "res://scripts/TeamNameScreen.gd"))
+	_screen()._team.text = "Test Team"
+	_click(_screen(), "Ready!")
 	await _wait(4)
 	adv = _map()
 	check("reached adventure from continue", adv.has_method("_try_enter_station"))
-	adv.get("hud").toggle_pause()
+	check("team name carried into the run", Game.team_name == "Test Team")
+	adv.get("hud").open_menu()
 	await _wait(1)
 	check("paused", bool(adv.get("hud").paused))
 	check("resume button", _find_button(adv, "Resume") != null)
@@ -331,7 +397,7 @@ func _run() -> void:
 	Game.gems = 999
 	Game.completed_stations[0] = true
 	var rows_before: int = Game.leaderboard.size()
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "Restart")
 	await _wait(4)
@@ -342,7 +408,7 @@ func _run() -> void:
 	check("restart scored nothing", Game.leaderboard.size() == rows_before)
 
 	# New Game goes back to hero creation, also without scoring the run.
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "New Game")
 	await _wait(4)
@@ -351,66 +417,67 @@ func _run() -> void:
 	check("new game scored nothing", Game.leaderboard.size() == rows_before)
 	_click(_screen(), "Back")
 	await _wait(3)
-	_click(_screen(), "Continue Quest")
-	await _wait(4)
+	await _continue_quest()   # team name is remembered from the last run
 	adv = _map()
 	check("back on the map", adv.has_method("_try_enter_station"))
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "Leaderboard")
 	await _wait(3)
 	check("leaderboard from pause", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("back to home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
 	print("== 8. hero select variations ==")
 	Game.player_name = ""
 	Game.team_name = ""
-	_main_scene.call("open", "title")
+	_main_scene.call("open", "home")
 	await _wait(3)
-	check("start button without profile", _find_button(_screen(), "Start New Journey") != null)
-	_click(_screen(), "Start New Journey")
+	check("start button without profile", _find_button(_screen(), "Start Adventure") != null)
+	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	hero = _screen()
 	for id in [1, Game.HERO_COUNT]:
 		check("adventurer #%d present" % id, _find_button_tooltip(hero, "Adventurer #%d" % id) != null)
+	# Duration left this screen with G6 -- the admin owns the clock now, and a
+	# player who could pick their own length could out-sit the class.
 	for dur in ["5 min", "10 min", "15 min"]:
-		check("duration %s present" % dur, _find_button(hero, dur) != null)
+		check("duration %s is gone from hero select" % dur, _find_button(hero, dur) == null)
 	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
 	check("hero local set", int(hero.get("_hero_id")) == 7, str(hero.get("_hero_id")))
-	_click(hero, "5 min")
-	check("duration local set", int(hero.get("_duration")) == 300, str(hero.get("_duration")))
 	_click(hero, "Back")
 	await _wait(3)
-	check("hero back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
-	_click(_screen(), "Start New Journey")
+	check("hero back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	hero = _screen()
-	var name2 := _find_line_edit(hero)
-	check("name field present", name2 != null)
-	name2.text = "E2E Hero"
 	# re-pick after the screen was recreated (Back discarded the locals)
 	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
-	_click(hero, "5 min")
-	_click(hero, "Begin Adventure")
+	_click(hero, "Set")
+	await _wait(3)
+	# Hero select hands off to the team name, which is what begins the run.
+	_screen()._team.text = "Test Team"
+	_click(_screen(), "Ready!")
 	await _wait(4)
-	check("reached adventure (hero 7 / 5min)", _screen().has_method("_try_enter_station"))
+	check("reached adventure (hero 7)", _screen().has_method("_try_enter_station"))
 	check("hero 7 persisted", Game.hero_id == 7, str(Game.hero_id))
-	check("duration 300 persisted", Game.duration_seconds == 300, str(Game.duration_seconds))
+	# The run takes whatever duration the admin set; hero select no longer has
+	# a say, so the default is what survives.
+	check("duration came from Game, not the player",
+		Game.duration_seconds == 600, str(Game.duration_seconds))
 	adv = _map()
-	adv.get("hud").toggle_pause()
+	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "Home")
 	await _wait(4)
-	check("home lands on title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("home lands on title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("home ends adventure", not Game.adventure_active)
 	var res8: Dictionary = Game.last_run
 	check("unfinished penalty recorded (25)", int(res8.get("gems", 0)) == 25, str(res8.get("gems")))
 
 	print("== 9. summary buttons / natural end ==")
-	_click(_screen(), "Continue Quest")
-	await _wait(4)
+	await _continue_quest()
 	_map()
 	check("adventure again (fresh)", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
 	await _end_via_time()
@@ -428,18 +495,17 @@ func _run() -> void:
 	check("summary again", _script_of(sum, "res://scripts/SummaryScreen.gd"))
 	_click(sum, "Home")
 	await _wait(3)
-	check("summary home to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("summary home to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	_click(_screen(), "Leaderboard")
 	await _wait(3)
 	check("board reachable", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
 	check("board non-empty", not (Game.leaderboard.is_empty()))
 	_click(_screen(), "Back")
 	await _wait(3)
-	check("board back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("board back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
 	print("== 10. walk the whole board via the UI ==")
-	_click(_screen(), "Continue Quest")
-	await _wait(4)
+	await _continue_quest()
 	adv = _map()
 	check("fresh adventure", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
 	check("all stations locked", (Game.completed_stations as Array) == [false, false, false])
@@ -450,6 +516,7 @@ func _run() -> void:
 	var p1: Vector2 = (stations[1] as Node2D).position
 	var p2: Vector2 = (stations[2] as Node2D).position
 	check("stations distinct cells", p0 != p1 and p1 != p2 and p0 != p2, "%s / %s / %s" % [p0, p1, p2])
+	Sfx.heard.clear()
 	for s in 3:
 		await _play_station(adv, s)
 		check("station %d returned to map" % (s + 1), adv.get("_overlay") == null)
@@ -469,6 +536,11 @@ func _run() -> void:
 	adv.call("_try_enter_gate")
 	await _wait(4)
 	check("gate ended the adventure", not Game.adventure_active)
+	# What a player hears on the way: briefing, the knight standing aside,
+	# the circles lighting, each answer, each station, the gate.
+	for want in ["enter_tower", "knight", "circle_unlock", "correct", "station_complete", "gate"]:
+		check("sound: %s" % want, want in Sfx.heard, str(Sfx.heard))
+	check("no wrong sound on a perfect run", not "wrong" in Sfx.heard)
 	sum = _screen()
 	check("summary after full run", _script_of(sum, "res://scripts/SummaryScreen.gd"))
 	var res10: Dictionary = Game.last_run
@@ -478,7 +550,7 @@ func _run() -> void:
 	check("0 wrong/skip/hint", int(res10.get("wrong", 0)) == 0 and int(res10.get("skipped", 0)) == 0 and int(res10.get("hints", 0)) == 0)
 	_click(sum, "Home")
 	await _wait(3)
-	check("title after full run", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("title after full run", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
 	print("== 11. learn tabs ==")
 	_click(_screen(), "Learn")
@@ -487,7 +559,8 @@ func _run() -> void:
 	var lessons := [
 		["Basic Operations", "operation"],
 		["Exponential Notation", "exponent"],
-		["Order of Operations", "pemdas"],
+		# The mockup's Learn copy says GEMDAS, not PEMDAS, and so do we now.
+		["Order of Operations", "gemdas"],
 	]
 	for l in lessons:
 		_click(learn, l[0])
@@ -496,7 +569,56 @@ func _run() -> void:
 		check("%s lesson shown" % l[0], content_label != null and String(content_label.text).to_lower().contains(l[1]))
 	_click(learn, "Back")
 	await _wait(3)
-	check("learn back to title", _script_of(_screen(), "res://scripts/TitleScreen.gd"))
+	check("learn back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+
+	print("== 12a. join codes ==")
+	check("codes are cleaned as typed", Teams.clean_code(" k7-qm ") == "K7QM", Teams.clean_code(" k7-qm "))
+	check("a look-alike twin becomes the character codes use",
+		Teams.clean_code("zsbvg") == "258U6", Teams.clean_code("zsbvg"))
+	for twin: String in Teams.TWINS:
+		check("codes never contain %s" % twin, not Teams.CODE_CHARS.contains(twin))
+		check("but do contain its twin %s" % Teams.TWINS[twin],
+			Teams.CODE_CHARS.contains(Teams.TWINS[twin]))
+	check("look-alikes are caught", Teams.bad_chars("O0I1L") == "O0I1L", Teams.bad_chars("O0I1L"))
+	check("a real code has none", Teams.bad_chars("K7QM") == "")
+	check("the note names them", Teams.bad_note("O0") == "Codes never use O 0 — check that character.",
+		Teams.bad_note("O0"))
+	# The game's alphabet and the server's must be one string, or the game
+	# would refuse codes the server hands out.
+	var schema := FileAccess.get_file_as_string(
+		ProjectSettings.globalize_path("res://") + "../supabase/schema.sql")
+	check("the code alphabet matches session_code() in schema.sql",
+		schema.contains("abc text := '%s';" % Teams.CODE_CHARS))
+
+	print("== 12. the teacher's map view ==")
+	_main_scene.call("open", "controls")
+	await _wait(3)
+	var gc := _screen()
+	_click(gc, "View Map")
+	await _wait(3)
+	var watch: Control = gc.get("_map")
+	check("View Map opens the map", watch != null and watch.visible)
+	check("the panel steps aside", not (gc.get("_panel_root") as Control).visible)
+	check("the bar keeps the controls", _find_button(gc, "Controls") != null)
+	var board: Node2D = watch.get("world")
+	check("the map starts on the whole board",
+		is_equal_approx(board.scale.x, watch.call("_min_zoom")), str(board.scale.x))
+	# Zooming keeps the point under the finger where it was.
+	var at := Vector2(300, 200)
+	var under: Vector2 = (at - board.position) / board.scale.x
+	watch.call("_set_zoom", 0.9, at)
+	check("zoom holds the point under the finger",
+		((at - board.position) / board.scale.x).distance_to(under) < 0.5)
+	check("zoom stops at the closest", (watch.call("_set_zoom", 99.0, at) == null)
+		and is_equal_approx(board.scale.x, MapWatch.MAX_ZOOM))
+	watch.call("_pan", Vector2(100000, 100000))
+	check("the board cannot be dragged off screen", board.position == Vector2.ZERO)
+	gc.call("go_back")
+	await _wait(2)
+	check("back from the map is back to the controls",
+		not watch.visible and (gc.get("_panel_root") as Control).visible)
+	_main_scene.call("open", "home")
+	await _wait(3)
 	# The last line of _run(): anything that aborts the coroutine early leaves
 	# this unset and `finish()` fails the suite.
 	completed = true

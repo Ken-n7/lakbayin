@@ -45,4 +45,13 @@ func _walkable(p: Vector2) -> bool:
 		return true
 	var layer: TileMapLayer = world.get_meta("grass")
 	var t: float = world.get_meta("tile", 32.0)
-	return layer.get_cell_source_id(Vector2i(floori(p.x / t), floori(p.y / t))) != -1
+	var c := Vector2i(floori(p.x / t), floori(p.y / t))
+	# On the map, a sheep keeps to the level it grazes on: never over a cliff's
+	# edge, onto a stair, or up one.
+	if world.has_meta("height"):
+		var height: Dictionary = world.get_meta("height")
+		var home := Vector2i(floori(_home.x / t), floori(_home.y / t))
+		if (world.get_meta("no_walk", {}) as Dictionary).has(c) \
+				or int(height.get(c, -1)) != int(height.get(home, -2)):
+			return false
+	return layer.get_cell_source_id(c) != -1
