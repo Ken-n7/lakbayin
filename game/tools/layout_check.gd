@@ -15,7 +15,7 @@ extends Node
 const SIZES := [Vector2(640, 360), Vector2(800, 360)]
 var CANVAS := Vector2(640, 360)
 ## Splash, team and adventure are settled; the client asked to leave them be.
-const SCREENS := ["login", "register", "reset", "home", "admin", "controls",
+const SCREENS := ["login", "register", "reset", "home", "admin", "controls", "history",
 		"questions", "feedback", "hero", "learn", "board", "summary"]
 
 var _bad := 0

@@ -79,6 +79,7 @@ var _bar_msg: Label            # the last thing said, for a few seconds
 var _fresh := false
 ## A session is being made right now -- the first second after Start Session.
 var _making := false
+var _board: Control = null   # the live leaderboard panel, while it is open
 var _seen_players := -1      # the lobby as last drawn, for the join bell
 var _seen_ready := -1
 ## The session this screen is ending itself, so its own "ended" coming back
@@ -112,6 +113,10 @@ func setup(data: Dictionary) -> void:
 	view.tooltip_text = "Watch the class on the map"
 	view.pressed.connect(_show_map.bind(true))
 	title_row.add_child(view)
+	var board := Ui.button("Leaderboard", 110, Ui.H, Ui.SMALL)
+	board.tooltip_text = "The live leaderboard for this session"
+	board.pressed.connect(_open_board)
+	title_row.add_child(board)
 	_players = _players_menu()
 	title_row.add_child(_players)
 
@@ -1075,7 +1080,24 @@ func _say(text: String, col: Color) -> void:
 
 ## Leaving ends the session, so it asks -- the code stops working and anyone
 ## still in it is sent out. A session already over just leaves.
+## The live leaderboard (client): a panel over whatever is showing -- the
+## controls or the map -- following the answers as they land. Closes itself.
+func _open_board() -> void:
+	var sid := str(_session.get("id", ""))
+	if sid == "":
+		_say("Start a session first.", Pal.WRONG)
+		return
+	_board = preload("res://scripts/LeaderboardScreen.gd").new()
+	_board.main = main
+	add_child(_board)
+	_board.setup({"session": sid, "live": true, "close": true})
+
+
 func go_back() -> void:
+	# The live board first, if it is open: back closes it.
+	if is_instance_valid(_board):
+		_board.go_back()
+		return
 	# From the map, back is back to the controls -- not "end the session?".
 	if _map != null and _map.visible:
 		_show_map(false)
@@ -1187,6 +1209,14 @@ func _build_bar() -> void:
 	apart.custom_minimum_size = Vector2(6, 0)
 	apart.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(apart)
+	# The trophy alone: the bar is full, and "Leaderboard" in words pushed End
+	# off the screen. The panel's button has the words.
+	var bar_board := Ui.button("", 40, Ui.H, Ui.SMALL)
+	bar_board.icon = Art.tex("res://assets/ui/icons/trophy.png")
+	bar_board.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bar_board.tooltip_text = "Leaderboard"
+	bar_board.pressed.connect(_open_board)
+	row.add_child(bar_board)
 	_bar_end = Ui.button("End", 56, Ui.H, Ui.SMALL_RED)
 	_bar_end.pressed.connect(_confirm_end)
 	row.add_child(_bar_end)
@@ -1210,8 +1240,10 @@ func _sync_bar() -> void:
 	_bar_code.text = "Code " + _code_label.text
 	var lobby := state == "lobby"
 	# Short, so the bar fits a 640-wide phone: the head count is on Controls.
+	# The part before any " — ": "Session ended — ← to start again" pushed End
+	# off a phone; the hint is on the panel.
 	_bar_status.text = state.capitalize() + "  ·  " + _clock.text.get_slice(" ", 0) \
-		if _clock.visible else _status.text
+		if _clock.visible else _status.text.get_slice(" — ", 0)
 	_bar_start.visible = lobby
 	_bar_start.disabled = _start_btn.disabled
 	_bar_hold.visible = not lobby

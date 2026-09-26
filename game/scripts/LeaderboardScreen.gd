@@ -5,6 +5,11 @@ extends Control
 ## is all an unconnected dev run has.
 ##
 ## A fetch, not a subscription: see `Board` for why only the admin watches.
+##
+## The Quest Keeper reaches it two ways (client): a past session's results
+## from History (`{"session", "title", "back": "history"}`), and the live board
+## over Game Controls (`{"session", "live": true, "close": true}` -- a panel
+## that closes itself, rather than a screen of its own).
 
 
 var main: Control
@@ -16,10 +21,21 @@ var _watching := false
 ## map, which a teacher never opens -- so the admin's "Live Leaderboard" was
 ## reading "" and showing this device's offline runs instead of the class.
 var _sid := ""
+var _title := ""
+var _back := ""           # the screen ← opens; "" for this side's home
+var _close := false       # a panel over another screen: ← closes it
+var _live := true         # the teacher's board follows answers as they land
 
 
-func setup(_data: Dictionary) -> void:
+func setup(data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_sid = str(data.get("session", ""))
+	_title = str(data.get("title", ""))
+	_back = str(data.get("back", ""))
+	_close = bool(data.get("close", false))
+	_live = bool(data.get("live", true))
+	if _close:
+		Sfx.play("panel_open")
 	_build()
 
 
@@ -29,8 +45,12 @@ func _build() -> void:
 	# No scrim: Main's moving scene is the background (Backdrop.gd), and a
 	# 90% dim over it would show nothing on this screen alone.
 	# Back is the ← in the title, not a big red button competing with nothing.
-	var box := Ui.back_panel(self, Vector2(600, 330), "Live Leaderboard"
-		if _is_admin() else "Team Ranking", go_back)
+	# Over another screen, the panel needs a scrim of its own. Silent: the
+	# tabs rebuild it, and the open was already heard in `setup`.
+	if _close:
+		Ui.dim(self, false)
+	var box := Ui.back_panel(self, Vector2(600, 330), _title if _title != ""
+		else "Live Leaderboard" if _is_admin() else "Team Ranking", go_back)
 	box.add_theme_constant_override("separation", 6)
 
 	# Two tabs, per the mockup -- but only for the teacher. A student's board
@@ -91,7 +111,7 @@ func _is_admin() -> bool:
 ## row; forty students watching that turns ~200 realtime messages an adventure
 ## into ~22,000, for a screen they are not looking at mid-run.
 func _watch() -> void:
-	if not _is_admin() or _sid == "" or _watching:
+	if not _live or not _is_admin() or _sid == "" or _watching:
 		return
 	_watching = true
 	var rt: Realtime = Net.realtime()
@@ -220,7 +240,11 @@ func _cell(text: String, weight: int, color: int = -1) -> Label:
 
 
 func go_back() -> void:
-	main.open("admin" if _is_admin() else "home")
+	if _close:
+		Sfx.play("panel_close")
+		queue_free()
+		return
+	main.open(_back if _back != "" else "admin" if _is_admin() else "home")
 
 
 func _row_is_me(row: Dictionary) -> bool:

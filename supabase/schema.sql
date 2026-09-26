@@ -121,6 +121,24 @@ end $$;
 alter table public.sessions add column if not exists
   code text not null default public.session_code();
 
+-- When it ended, stamped by the server (not the phone): the Quest Keeper's
+-- History tells "Ended early" (End pressed with time left) from "Time's up".
+-- Sessions from before this column have none and read as plain "Ended".
+alter table public.sessions add column if not exists ended_at timestamptz;
+
+create or replace function public.stamp_ended() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if new.state = 'ended' and old.state is distinct from 'ended' then
+    new.ended_at := now();
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists sessions_stamp_ended on public.sessions;
+create trigger sessions_stamp_ended before update on public.sessions
+  for each row execute function public.stamp_ended();
+
 -- 3. Teams and members ------------------------------------------------------
 -- The team name IS the join code, so it is unique within its session.
 create table if not exists public.teams (

@@ -28,7 +28,8 @@ func _entries() -> Array:
 		# "Question Bank": "Question Management" did not fit beside its icon,
 		# and the line under the menu already calls it the bank.
 		["Question Bank", "questions", Ui.SMALL, {}, "question"],
-		["Leaderboard", "board", Ui.SMALL, {}, "trophy"],
+		# Past sessions and their winners; the live board is on Game Controls.
+		["History", "history", Ui.SMALL, {}, "history"],
 		["Feedback", "feedback", Ui.SMALL, {}, "feedback"],
 	]
 

@@ -89,18 +89,25 @@ static func my_results() -> Array:
 		var s: Variant = row.get("sessions")
 		if not (s is Dictionary) or not expired(s):
 			continue
-		var g := int(row.get("gems", 0))
-		if bool(row.get("eliminated", false)):
-			g -= 50
-		if int(row.get("items_done", 0)) < Game.TOTAL_ITEMS:
-			g += Game.GEM_TEAM_FINISH_PENALTY
-		out.append({"gems": g, "at": _stamp((s as Dictionary).get("created_at"))})
+		out.append({"gems": final_gems(row), "at": _stamp((s as Dictionary).get("created_at"))})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at > b.at)
 	return out
 
 
 ## A random (v4) uuid, made here so a new row can be announced before the
 ## server has answered with its id.
+## A member row's gems once its adventure is over: less 50 if they were
+## eliminated, less 25 if they did not finish every item -- the team board's
+## rules (`team_scores`), for one player.
+static func final_gems(row: Dictionary) -> int:
+	var g := int(row.get("gems", 0))
+	if bool(row.get("eliminated", false)):
+		g -= 50
+	if int(row.get("items_done", 0)) < Game.TOTAL_ITEMS:
+		g += Game.GEM_TEAM_FINISH_PENALTY
+	return g
+
+
 static func uuid() -> String:
 	var b := Crypto.new().generate_random_bytes(16)
 	b[6] = (b[6] & 0x0f) | 0x40
