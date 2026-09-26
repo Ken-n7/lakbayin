@@ -15,21 +15,42 @@ const PATH := "/rest/v1/questions"
 
 ## `station` 1-3, or 0 for the whole bank. Inactive rows come back too: the
 ## admin has to see what is switched off in order to switch it on.
+##
+## Exponents typed with a caret come back raised (`TEXT_FIELDS`), so a row
+## saved as `2^3` -- before the form raised them, or straight into the table --
+## reads 2³ everywhere the bank is shown: the list, Feedback, and the quiz.
 static func fetch(station := 0) -> Dictionary:
 	var q := PATH + "?select=*&order=station,created_at,id"
 	if station > 0:
 		q = PATH + "?select=*&station=eq.%d&order=created_at,id" % station
 	var r: Dictionary = await Net.rest(HTTPClient.METHOD_GET, q)
-	return {"error": r.error, "rows": r.data if r.data is Array else []}
+	var rows: Array = r.data if r.data is Array else []
+	for row in rows:
+		if row is Dictionary:
+			_raise(row)
+	return {"error": r.error, "rows": rows}
+
+
+## The text a teacher writes, where `2^3` means 2³. Not the answer: that is a
+## number, compared as typed on the keypad.
+const TEXT_FIELDS := ["prompt", "hint", "feedback"]
+
+
+## Raises the exponents in `row`'s text fields, in place; returns it.
+static func _raise(row: Dictionary) -> Dictionary:
+	for k: String in TEXT_FIELDS:
+		if row.get(k) is String:
+			row[k] = MathText.superscripts(row[k])
+	return row
 
 
 static func add(station: int, prompt: String, answer: String, hint := "") -> Dictionary:
-	var body := {
+	var body := _raise({
 		"station": station,
 		"prompt": prompt.strip_edges(),
 		"answer": answer.strip_edges(),
 		"hint": hint.strip_edges(),
-	}
+	})
 	if body.prompt == "" or body.answer == "":
 		return {"error": "A question needs a prompt and an answer.", "rows": []}
 	var r: Dictionary = await Net.rest(HTTPClient.METHOD_POST, PATH, body)
@@ -39,7 +60,7 @@ static func add(station: int, prompt: String, answer: String, hint := "") -> Dic
 ## Partial update: pass only what changed.
 static func edit(id: String, fields: Dictionary) -> Dictionary:
 	var r: Dictionary = await Net.rest(
-		HTTPClient.METHOD_PATCH, PATH + "?id=eq." + id, fields)
+		HTTPClient.METHOD_PATCH, PATH + "?id=eq." + id, _raise(fields.duplicate()))
 	return {"error": r.error, "rows": r.data if r.data is Array else []}
 
 
@@ -146,14 +167,16 @@ static func item_for(station_index: int, item_index: int) -> Dictionary:
 	if item_index < rows.size():
 		var q: Dictionary = rows[item_index]
 		return {
-			"prompt": str(q.get("prompt", "")),
+			# Raised again here, where the students see it: whatever filled the
+			# bank, `2^3` is never what reaches the quiz.
+			"prompt": MathText.superscripts(str(q.get("prompt", ""))),
 			"answer": str(q.get("answer", "")),
-			"hint": str(q.get("hint", "")),
+			"hint": MathText.superscripts(str(q.get("hint", ""))),
 			# The admin's feedback is the rule reminder on a wrong answer; that
 			# is what the Feedback screen writes it for. Falls back to the hint
 			# so a question with no feedback still says something useful.
-			"rule": str(q.get("feedback", "")) if str(q.get("feedback", "")) != ""
-				else str(q.get("hint", "")),
+			"rule": MathText.superscripts(str(q.get("feedback", ""))
+				if str(q.get("feedback", "")) != "" else str(q.get("hint", ""))),
 		}
 	var gen: Dictionary = QuestionGen.item_for_station(station_index, item_index)
 	gen["answer"] = str(gen.get("answer", ""))
