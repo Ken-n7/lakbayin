@@ -48,7 +48,7 @@ window/handheld/orientation=4
 
 [gui]
 
-theme/custom_font="res://assets/fonts/PixelifySans.ttf"
+theme/custom_font="res://assets/fonts/PatrickHand-Regular.ttf"
 
 [input_devices]
 

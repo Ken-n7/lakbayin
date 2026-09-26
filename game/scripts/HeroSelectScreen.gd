@@ -30,7 +30,7 @@ func _build() -> void:
 
 	# The heading over the preview, and under it the preview and the grid
 	# side by side, level at the top (client).
-	outer.add_child(Art.label("Choose your hero", Pal.H2, Pal.TITLE))
+	outer.add_child(Art.title(Art.label("Choose your hero", Pal.H2, Pal.TITLE)))
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 14)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL

@@ -12,28 +12,50 @@ extends RefCounted
 ## Raise it here after a real-device read, not per call site.
 const MIN_FONT := 14
 
-const PIXEL_FONT := "res://assets/fonts/PixelifySans.ttf"
+## Patrick Hand is the project-wide font (project.godot `gui/theme/custom_font`):
+## the questions, answers, keypad, numbers and every line of body text. It
+## replaced Pixelify Sans on the client's word that the text was hard to read,
+## which a 5x7 pixel grid could only be patched so far against; it matches the
+## hand-drawn Tiny Swords art, and carries every superscript 0-9 an exponent
+## question needs. MedievalSharp is the display face, for titles, banners and
+## logos only -- where the text should look good and is never a number someone
+## has to get right (`title()`).
+const TEXT_FONT := "res://assets/fonts/PatrickHand-Regular.ttf"
+const TITLE_FONT := "res://assets/fonts/MedievalSharp.ttf"
 const SYMBOL_FONT := "res://assets/fonts/DejaVuSans.ttf"
 
 static var _tex_cache: Dictionary = {}
 static var _frames_cache: Dictionary = {}
 static var _patch_cache: Dictionary = {}
+static var _faces: Array[FontFile] = []   # keeps the fonts `apply_font_fallback` set up alive
 
 
-## Pixelify Sans is the project-wide font (project.godot `gui/theme/custom_font`)
-## and carries the superscripts and math signs the questions need, but has no
-## tick, star or arrow. Attach a symbol face for those.
+## Neither face has a tick, star or arrow, so both fall back to a symbol face.
 ##
 ## `load()` returns the very instance the project theme already uses, so setting
 ## its fallback here is enough -- no Theme juggling. Note the fallback must not
-## be `ThemeDB.fallback_font`: once the pixel font is the project default, that
+## be `ThemeDB.fallback_font`: once the text font is the project default, that
 ## *is* this font, and Godot rejects the cycle.
+##
+## Both faces are held in `_faces` as well: a font is reference-counted, and the
+## display face, which no theme holds, was freed the moment this returned -- the
+## next `load()` got a fresh copy with no fallback, and a star in a title went
+## blank.
 static func apply_font_fallback() -> void:
-	var f := load(PIXEL_FONT) as FontFile
 	var sym := load(SYMBOL_FONT) as FontFile
-	if f == null or sym == null or not f.fallbacks.is_empty():
-		return
-	f.fallbacks = [sym]
+	for path in [TEXT_FONT, TITLE_FONT]:
+		var f := load(path) as FontFile
+		if f != null and sym != null and f.fallbacks.is_empty():
+			f.fallbacks = [sym]
+		if f != null and not _faces.has(f):
+			_faces.append(f)
+
+
+## Sets `c` in the display face: titles, banners and logos, never a question,
+## an answer or a number. Returns `c` so it wraps a constructor.
+static func title(c: Control) -> Control:
+	c.add_theme_font_override("font", load(TITLE_FONT) as FontFile)
+	return c
 
 
 static func tex(path: String) -> Texture2D:

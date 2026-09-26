@@ -26,11 +26,11 @@ func setup(_data: Dictionary) -> void:
 	col.add_theme_constant_override("separation", 10)
 	add_child(col)
 
-	var logo := Art.label("NumXventure", Pal.LOGO, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
+	var logo := Art.title(Art.label("NumXventure", Pal.LOGO, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(logo)
-	var tag := Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD,
-			HORIZONTAL_ALIGNMENT_CENTER)
+	var tag := Art.title(Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD,
+			HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(tag)      # over a moving scene now, not a flat colour
 	col.add_child(tag)
 
