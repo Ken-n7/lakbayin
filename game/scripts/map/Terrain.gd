@@ -340,7 +340,7 @@ func _carve_stair(terrace: Dictionary, pocket: Dictionary, near: Vector2i) -> bo
 			var t: Vector2i = c0 + Vector2i(s, 0)
 			var f := t + DOWN
 			var need: Array[Vector2i] = [t, t + UP, t + UP + UP, t + Vector2i(s, 0), f,
-				f + DOWN, c0 + DOWN, t + Vector2i(s, -1)]
+				f + DOWN, c0 + DOWN, c0 + DOWN + DOWN, t + Vector2i(s, -1)]
 			var ok := true
 			var lower: Array[Vector2i] = []
 			for k in need:
@@ -522,6 +522,11 @@ func _ramp_ok(high: Dictionary, low: int, t: Vector2i, f: Vector2i, s: int) -> b
 		return false                                  # air, or the other side of it
 	if not (_flat(f + DOWN, low) or _flat(f + Vector2i(s, 0), low)):
 		return false                                  # nowhere to step off
+	# The cliff beside the foot must drop onto low ground, not into a
+	# one-cell pit with the high ground again below it.
+	var face := f - Vector2i(s, 0)
+	if high.has(face + DOWN):
+		return false
 	for b: Dictionary in MapCfg.BRIDGES:
 		if (b.cells as Rect2i).grow(2).has_point(f) or (b.cells as Rect2i).grow(2).has_point(t):
 			return false
@@ -939,8 +944,12 @@ func paint(world: Node2D, builder: MapBuilder) -> void:
 		var layer := Art.terrain_layer(MapCfg.LEVEL_COLORS[level], MapCfg.TILE)
 		layer.name = "Level%d" % level
 		world.add_child(layer)
+		# A ramp stands on the ground of its low level (the guide): that
+		# ground runs on under it, unbroken, and shows through its open corner.
 		var up := func(c: Vector2i) -> bool:
-			return int(grid.height.get(c, -1)) >= level and not grid.stairs.has(c)
+			if grid.stairs.has(c):
+				return int(grid.stairs[c].low) >= level
+			return int(grid.height.get(c, -1)) >= level
 		var joins := func(c: Vector2i) -> bool:
 			if up.call(c):
 				return true
@@ -962,8 +971,10 @@ func paint(world: Node2D, builder: MapBuilder) -> void:
 				sp.scale = Vector2.ONE * MapCfg.LEVEL_SHADOW_SCALE
 				sp.modulate.a = MapCfg.LEVEL_SHADOW_ALPHA
 				shade.add_child(sp)
+		# A cliff runs on into more cliff, a ramp's foot, or this level's own
+		# ground beside it (the guide's 18 beside 6): only a drop ends it.
 		var face := func(c: Vector2i) -> bool:
-			if int(grid.cliff.get(c, 0)) == level:
+			if int(grid.cliff.get(c, 0)) == level or up.call(c):
 				return true
 			return grid.stairs.has(c) and int(grid.stairs[c].low) == level - 1 \
 				and not bool(grid.stairs[c].top)

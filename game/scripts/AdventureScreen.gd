@@ -708,15 +708,20 @@ func _process(delta: float) -> void:
 		# One axis at a time, so a diagonal into a wall slides along it rather
 		# than stopping dead. Buildings only became real walls once the
 		# footprint stopped being rounded to tile centres.
+		# In steps of at most 2px: a hitched frame's long step would jump a
+		# stair's thin rail.
 		var step := dir * MapCfg.PLAYER_SPEED * _speed_mult * delta
-		var stair_low := grid.stair_low_at(player.position)
-		player.position.x += step.x
-		if not grid.box_walkable(player.position, hero_box, hero_level, stair_low):
-			player.position.x -= step.x
-		player.position.y += step.y
-		if not grid.box_walkable(player.position, hero_box, hero_level, stair_low):
-			player.position.y -= step.y
-		hero_level = grid.level_at(player.position, hero_level)
+		var n := ceili(step.length() / 2.0)
+		step /= n
+		for _i in n:
+			var stair_low := grid.stair_low_at(player.position)
+			player.position.x += step.x
+			if not grid.box_walkable(player.position, hero_box, hero_level, stair_low):
+				player.position.x -= step.x
+			player.position.y += step.y
+			if not grid.box_walkable(player.position, hero_box, hero_level, stair_low):
+				player.position.y -= step.y
+			hero_level = grid.level_at(player.position, hero_level)
 		var face := _facing(dir)
 		if spr.animation != face or not spr.is_playing():
 			spr.play(face)
