@@ -159,10 +159,8 @@ func _init() -> void:
 	# A rejoin picks up the server's row: circle 10 is station 2's third item.
 	var R: Node = load("res://scripts/Game.gd").new()
 	R.begin_adventure(600)
-	R.restore_from({"gems": 72, "correct": 7, "items_done": 10, "eliminated": false,
-		"rescued_at": "2026-09-24T10:00:00Z"})
+	R.restore_from({"gems": 72, "correct": 7, "items_done": 10, "eliminated": false})
 	assert(R.gems == 72 and R.items_done == 10 and R.correct == 7, "row restored")
-	assert(R.rescue_sent, "a sent rescue stays sent")
 	assert(R.current_station == 1, "on station 2: %d" % R.current_station)
 	assert(R.completed_stations == [true, false, false], "station 1 done")
 	assert(R.towers_entered == [true, true, false], "briefings 1 and 2 read")

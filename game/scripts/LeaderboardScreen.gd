@@ -203,7 +203,8 @@ func _podium(top: Array) -> Control:
 
 
 ## What a spectating teacher actually reads: who is scoring, who is answering,
-## and each player's own time through the Victory Gate ("—" while still out).
+## and each player's own time through the Victory Gate -- "Out" if they were
+## eliminated, "DNF" if the session ended with them neither, "—" while playing.
 func _fill_players() -> void:
 	_row(["Rank", "Username", "Gems", "Right", "Time"], [10, 30, 12, 10, 12])
 	var rows: Array = await Board.players(_sid)
@@ -214,7 +215,15 @@ func _fill_players() -> void:
 	for i in rows.size():
 		var r: Dictionary = rows[i]
 		_row([str(i + 1), str(r.username), str(r.gems), str(r.correct),
-			Ui.mmss(int(r.finish_s)) if int(r.finish_s) >= 0 else "—"], [10, 30, 12, 10, 12])
+			_time_of(r)], [10, 30, 12, 10, 12])
+
+
+static func _time_of(r: Dictionary) -> String:
+	if int(r.finish_s) >= 0:
+		return Ui.mmss(int(r.finish_s))
+	if bool(r.eliminated):
+		return "Out"
+	return "DNF" if bool(r.over) else "—"
 
 
 ## `weights` are the column widths; `mine` highlights the player's own row.

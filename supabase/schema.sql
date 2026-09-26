@@ -412,6 +412,29 @@ end $$;
 
 grant execute on function public.finish_run(uuid) to authenticated;
 
+-- Everyone done -- through the Gate or eliminated -- ends the session by itself,
+-- as End would (client): every phone goes to the results together, instead of
+-- the early finishers each on their own. One who left is neither, so the
+-- session waits for the clock or the Quest Keeper, and they are DNF.
+create or replace function public.end_when_all_done() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if (new.finished or new.eliminated)
+     and not exists (select 1 from public.members
+                     where session_id = new.session_id
+                       and not finished and not eliminated) then
+    update public.sessions set state = 'ended'
+     where id = new.session_id and state in ('running', 'paused');
+  end if;
+  return new;
+end $$;
+
+-- AFTER, and on any update: `eliminated` is set by the BEFORE trigger above,
+-- never named in the UPDATE itself.
+drop trigger if exists members_all_done on public.members;
+create trigger members_all_done after update on public.members
+  for each row execute function public.end_when_all_done();
+
 grant execute on function public.apply_answer(uuid, boolean) to authenticated;
 grant execute on function public.spend_hint(uuid) to authenticated;
 grant execute on function public.skip_item(uuid) to authenticated;

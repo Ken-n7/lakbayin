@@ -152,13 +152,10 @@ func _ready() -> void:
 
 ## The state of the admin's session, "" when playing offline.
 var session_state := ""
-## Latches once. An eliminated player keeps answering -- the penalty is already
-## taken, and benching a student for the rest of a proctored class is the worse
-## outcome -- but the team is only ever charged for it once.
+## Latches once, and the team is only ever charged for it once. In a session an
+## eliminated player is out: they watch the rest of the adventure from the map
+## (client; `AdventureScreen._begin_spectating`). Playing alone, they carry on.
 var eliminated := false
-## One assist per sender per adventure -- the paper's "to assist one member
-## only". The server enforces it; this only keeps the button honest.
-var rescue_sent := false
 ## The session the score belongs to, "" when playing offline.
 var session_id := ""
 
@@ -233,7 +230,6 @@ func begin_adventure(seconds: int = 600) -> void:
 	adventure_active = true
 	clock_paused = false
 	eliminated = false
-	rescue_sent = false
 	current_station = 0
 	items_done = 0
 	towers_entered = [false, false, false]
@@ -263,7 +259,6 @@ func restore_from(row: Dictionary) -> void:
 	items_done = clampi(int(row.get("items_done", 0)), 0, TOTAL_ITEMS)
 	wrong = maxi(items_done - correct, 0)   # wrong and skipped are not kept apart
 	eliminated = bool(row.get("eliminated", false))
-	rescue_sent = row.get("rescued_at") != null
 	current_station = station_of_item(items_done)
 	var end := 0
 	for s in ITEMS_PER_STATION.size():
@@ -409,12 +404,6 @@ func mark_skipped() -> void:
 ## Through the Victory Gate: the server records this player's own time.
 func mark_finished() -> void:
 	scored.emit("finish", true)
-
-
-## Ten gems to a team-mate, already applied on the server.
-func mark_rescue_sent() -> void:
-	rescue_sent = true
-	_apply(-10)
 
 
 ## Call after finishing a station's last item.

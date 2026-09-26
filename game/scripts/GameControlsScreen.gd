@@ -1270,9 +1270,18 @@ func _on_own_session(type: String, record: Dictionary) -> void:
 	if sid == "" or str(record.get("id", sid)) != sid:
 		return
 	if type == "DELETE" or str(record.get("state", "")) == "ended":
+		var was := str(_session.get("state", ""))
 		_session["state"] = "ended"
 		_refresh_state()
-		if sid != _ending_id:
+		if sid == _ending_id:
+			return
+		# A game in play that ended without End: the server's doing, when the
+		# last player was through the Gate or out (`end_when_all_done`).
+		if type != "DELETE" and was in ["running", "paused"]:
+			_notice("Everyone is done",
+				"Every player has finished or been eliminated, so the session has ended. "
+				+ "Their results are on the Leaderboard, and in History.", "")
+		else:
 			_lost_session()
 		return
 	_session.merge(record, true)

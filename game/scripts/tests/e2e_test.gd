@@ -290,9 +290,7 @@ func _run() -> void:
 
 	# circle 2: wrong
 	ov = await _open_circle(adv, 1)
-	var rescue := _find_button(ov, "Rescue")
-	check("rescue present", rescue != null)
-	check("rescue disabled", rescue != null and rescue.disabled)
+	check("no rescue (paused feature)", _find_button(ov, "Rescue") == null)
 	_find_line_edit(ov).text = "999"
 	_click(ov, "Submit Answer")
 	await _wait(2)

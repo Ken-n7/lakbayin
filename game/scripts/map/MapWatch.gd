@@ -40,6 +40,9 @@ var _touches := {}               # index -> position, for the pinch
 var _glide: Tween
 var _zoom_in: TextureButton
 var _zoom_out: TextureButton
+## A player watching after they are done sees their own hero too, where they
+## stopped; the Quest Keeper is no member, so it makes no odds for them.
+var include_me := false
 
 
 func _ready() -> void:
@@ -105,7 +108,8 @@ func _load() -> void:
 
 
 func _redraw() -> void:
-	_peers.refresh(_rows.values(), world.peer_anchors(), world.gate_at(), Net.user_id)
+	_peers.refresh(_rows.values(), world.peer_anchors(), world.gate_at(),
+		"" if include_me else Net.user_id)
 
 
 func _on_broadcast(event: String, data: Dictionary) -> void:

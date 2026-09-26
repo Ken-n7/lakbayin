@@ -21,13 +21,14 @@ static func teams(session_id: String) -> Array:
 	return got.data if got.error == "" and got.data is Array else []
 
 
-## [{username, gems, correct, items_done, finish_s}], best first. `finish_s` is
-## the player's own time for the adventure -- the game clock when they walked
-## into the Victory Gate, pauses not counted -- or -1 while they are still out.
+## [{username, gems, correct, items_done, finish_s, eliminated, over}], best
+## first. `finish_s` is the player's own time for the adventure -- the game
+## clock when they walked into the Victory Gate, pauses not counted -- or -1;
+## `over` is whether the session has ended, which makes a -1 a DNF.
 static func players(session_id: String) -> Array:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		MEMBERS + "?select=gems,correct,items_done,finish_s,profiles(username)"
-		+ "&session_id=eq." + session_id + "&order=gems.desc")
+		MEMBERS + "?select=gems,correct,items_done,finish_s,eliminated,profiles(username),"
+		+ "sessions(state,created_at,ends_at)&session_id=eq." + session_id + "&order=gems.desc")
 	if got.error != "" or not (got.data is Array):
 		return []
 	var out: Array = []
@@ -40,5 +41,7 @@ static func players(session_id: String) -> Array:
 			"correct": int(row.get("correct", 0)),
 			"items_done": int(row.get("items_done", 0)),
 			"finish_s": int(t) if t != null else -1,
+			"eliminated": bool(row.get("eliminated", false)),
+			"over": row.get("sessions") is Dictionary and Teams.expired(row.get("sessions")),
 		})
 	return out

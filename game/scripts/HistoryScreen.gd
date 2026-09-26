@@ -7,7 +7,7 @@ extends Control
 ##
 ## "Played" is started (it has a deadline) with somebody in it, and over. How
 ## it ended:
-##   Completed    everyone who played walked into the Victory Gate
+##   Completed    everyone who played was done: through the Gate, or out
 ##   Time's up    the clock ran out
 ##   Ended early  End was pressed with time still left (running or paused)
 ##   Ended        ended before the server stamped `ended_at` -- older sessions
@@ -129,7 +129,8 @@ func _card(s: Dictionary, team: Dictionary) -> Control:
 
 ## [label, colour]: see the class comment.
 static func _how_it_ended(s: Dictionary, members: Array) -> Array:
-	if members.all(func(m: Dictionary) -> bool: return bool(m.get("finished", false))):
+	if members.all(func(m: Dictionary) -> bool:
+			return bool(m.get("finished", false)) or bool(m.get("eliminated", false))):
 		return ["Completed", Pal.CORRECT]
 	if str(s.get("state", "")) == "ended":
 		var ended_at := Teams._stamp(s.get("ended_at"))

@@ -63,6 +63,10 @@ var _frozen := false                    # the aerial POV before the adventure st
 var _wait_for_admin := false
 var _intro_tw: Tween = null
 var _sky: SkyClouds = null        # the clouds the start swoop dives through
+## "" while playing; "finished" or "eliminated" once this player is done but
+## the session is not -- they watch, flying the map, until everyone is done.
+var _spectate := ""
+var _banner: Label = null
 var _start_hint: Label = null   # "Tap anywhere to start" -- freed once it does
 var _card: Control = null       # the tapped circle's info card
 ## Dev knobs the drawer drives: a walk-speed multiplier, and the flag that stops
@@ -133,6 +137,11 @@ func _sync_session() -> void:
 	_my_team = str(mine.get("team_id", ""))
 	Game.apply_session(session)
 	_apply_session_state()
+	# Back after a restart already done: straight to watching.
+	if bool(mine.get("finished", false)):
+		_begin_spectating("finished", int(mine.get("finish_s", -1)) if mine.get("finish_s") != null else -1)
+	elif bool(mine.get("eliminated", false)):
+		_begin_spectating("eliminated")
 	if not _circles.is_empty():
 		hud.refresh()
 		_refresh_circles()
@@ -274,10 +283,13 @@ func _on_score_reply(reply: Dictionary) -> void:
 		hud.flash("Not scored: " + reply.error)
 	else:
 		_take_server_row(reply.row)
+		# The Gate's reply carries the time the server stamped.
+		if _spectate == "finished" and reply.row.get("finish_s") != null:
+			_show_banner(int(reply.row.finish_s))
 
 
 ## The server's copy of this player's row -- from a scoring reply or from the
-## socket. Gems follow it; a rise nobody here asked for is a rescue landing.
+## socket. Gems follow it.
 func _take_server_row(row: Dictionary) -> void:
 	# Only with nothing still on its way: an older reply taken over a newer
 	# local sum would briefly undo it.
@@ -286,12 +298,11 @@ func _take_server_row(row: Dictionary) -> void:
 	var server_gems: int = int(row.get("gems", Game.gems))
 	if server_gems == Game.gems:
 		return
-	if server_gems - Game.gems == 10:
-		Sfx.play("rescue")
-		hud.flash("A team-mate rescued you: +10 gems!")
 	Game.gems = server_gems
 	Game.eliminated = bool(row.get("eliminated", Game.eliminated))
 	Game.gems_changed.emit(Game.gems)
+	if Game.eliminated and _overlay == null:
+		_begin_spectating("eliminated")
 
 
 ## Everything the socket says. Filters narrow what the server sends, but not
@@ -792,7 +803,7 @@ func _process(delta: float) -> void:
 	_share_position(delta)
 	if _overlay != null and is_instance_valid(_overlay) and Game.adventure_active:
 		return
-	if hud.paused or _frozen or not Game.adventure_active:
+	if hud.paused or _frozen or not Game.adventure_active or _spectate != "":
 		return
 	if not _dev_aerial:
 		_cam.position = player.position
@@ -946,7 +957,7 @@ func _update_interaction() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _overlay != null or hud.paused:
+	if _overlay != null or hud.paused or _spectate != "":
 		return
 	var tap := ((event is InputEventMouseButton
 					and (event as InputEventMouseButton).pressed
@@ -1080,8 +1091,13 @@ func _act_on(target: Dictionary) -> void:
 			_open_quiz(Game.current_station, false)
 		"gate":
 			Sfx.play("gate")
-			Game.mark_finished()
-			Game.end_adventure()
+			# In a session: through the Gate is done, not over -- the results
+			# wait for everyone (client). Alone there is nobody to wait for.
+			if Game.session_id != "":
+				Game.mark_finished()
+				_begin_spectating("finished")
+			else:
+				Game.end_adventure()
 
 
 ## The briefing card (`intro_only`) or one question. Same overlay either way.
@@ -1133,8 +1149,60 @@ func _refresh_circles() -> bool:
 ## Android's back button, routed here by Main: leaving a station mid-question
 ## is not on offer, so back opens the pause menu instead.
 func go_back() -> void:
+	# Done but not over: no way out until everyone is (client).
+	if _spectate != "":
+		hud.flash("The results open when everyone is done")
+		return
 	if _overlay == null and not hud.paused and not _frozen:
 		hud.open_menu()
+
+
+# --- Spectating ---------------------------------------------------------------
+## Done -- through the Gate, or out of gems -- while others still play
+## (client). The results wait for everyone, so until then this player flies
+## the map the way the Quest Keeper does (`MapWatch`: the whole class, drag,
+## pinch, zoom), with a banner saying where they stand, and no way to leave.
+## The session ending -- everyone done (`end_when_all_done`), the clock, or
+## the Quest Keeper -- ends it here as ever, into the results.
+func _begin_spectating(why: String, finish_s := -1) -> void:
+	if _spectate != "" or Game.session_id == "" or not Game.adventure_active:
+		return
+	_spectate = why
+	_close_card()
+	hud.set_pad(false)
+	hud.set_crib(false)
+	hud.set_prompt("")
+	# Over the board and under the HUD: a layer of the HUD's own number, put
+	# ahead of it, draws beneath it (SkyClouds does the same).
+	var layer := CanvasLayer.new()
+	layer.layer = 1
+	add_child(layer)
+	move_child(layer, 0)
+	var watch := MapWatch.new()
+	watch.include_me = true
+	layer.add_child(watch)
+	watch.watch(Game.session_id)
+	world.visible = false          # MapWatch draws its own board
+	_show_banner(finish_s)
+
+
+## "You finished! 12:34 · 180 gems" or "Eliminated", and that the results
+## wait for everyone -- on a plank under the top bar, over grass or sea.
+func _show_banner(finish_s := -1) -> void:
+	if _banner == null or not is_instance_valid(_banner):
+		_banner = Art.label("", Pal.LABEL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+		var plank := Ui.plank(_banner, 12.0)
+		plank.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		plank.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		plank.offset_top = 56.0
+		plank.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hud.hud_layer.add_child(plank)
+	var head := "Eliminated" if _spectate == "eliminated" else "You finished!"
+	if _spectate == "finished":
+		if finish_s >= 0:
+			head += "  %s" % Ui.mmss(finish_s)
+		head += "  ·  %d gems" % Game.gems
+	_banner.text = head + "\nWaiting for everyone to finish…"
 
 
 # --- Quiz overlay -----------------------------------------------------------
@@ -1167,6 +1235,9 @@ func close_overlay() -> void:
 			Sfx.play("knight")
 		elif lit:
 			Sfx.play("circle_unlock")
+		# Out of gems: that result was the last thing they played (client).
+		if Game.eliminated:
+			_begin_spectating("eliminated")
 	# Clearing the board no longer ends the run on its own -- the Victory Gate
 	# does, and walking to it is the last step of the player flow.
 
