@@ -79,6 +79,8 @@ var _bar_msg: Label            # the last thing said, for a few seconds
 var _fresh := false
 ## A session is being made right now -- the first second after Start Session.
 var _making := false
+var _seen_players := -1      # the lobby as last drawn, for the join bell
+var _seen_ready := -1
 ## The session this screen is ending itself, so its own "ended" coming back
 ## over the socket is not mistaken for somebody else ending it.
 var _ending_id := ""
@@ -199,6 +201,7 @@ func _build_session_side() -> Control:
 
 	_start_btn = Ui.button("Start Game", SIDE_W - 12, Ui.H, Ui.RED)
 	_start_btn.pressed.connect(func() -> void: _set_state("running", true))
+	Ui.quiet(_start_btn)          # its sound is the start's, or the refusal's
 	col.add_child(_start_btn)
 	# The reason, where the eye already is -- not only in a popup after a
 	# press that did nothing.
@@ -211,6 +214,7 @@ func _build_session_side() -> Control:
 	row.add_theme_constant_override("separation", 6)
 	_hold_btn = Ui.button("⏸ Pause", (SIDE_W - 18) / 2.0, Ui.H, Ui.SMALL)
 	_hold_btn.pressed.connect(_toggle_hold)
+	Ui.quiet(_hold_btn)
 	row.add_child(_hold_btn)
 	_end_btn = Ui.button("End Game", (SIDE_W - 18) / 2.0, Ui.H, Ui.SMALL_RED)
 	_end_btn.pressed.connect(_confirm_end)
@@ -233,10 +237,12 @@ func _build_teams_board() -> Control:
 	head.add_child(label)
 	_add_btn = Ui.button("+ Team", 90, Ui.H, Ui.SMALL)
 	_add_btn.pressed.connect(_add_team)
+	Ui.quiet(_add_btn)
 	head.add_child(_add_btn)
 	# For when picking freely has put all the friends on one side.
 	_shuffle_btn = Ui.button("Shuffle", 90, Ui.H, Ui.SMALL)
 	_shuffle_btn.pressed.connect(_shuffle)
+	Ui.quiet(_shuffle_btn)
 	head.add_child(_shuffle_btn)
 	col.add_child(head)
 
@@ -680,6 +686,8 @@ func _set_state(want: String, is_start: bool, without_away := false) -> void:
 	if done.error != "":
 		_tell("sessions", "UPDATE", _session)
 	if done.error == "":
+		Sfx.play("qk_start" if is_start else "paused" if want == "paused"
+			else "ended" if want == "ended" else "resumed")
 		_say("Game %s." % want if not is_start
 			else "Game running. Teams are locked now.", Pal.CORRECT)
 	_refresh_state()
@@ -715,6 +723,15 @@ func _refresh_state() -> void:
 			else "town" if _session.is_empty() else "victory")
 	var r := _readiness()
 	var total: int = _lobby.players.size()
+	# A bell as somebody joins or gets ready -- measured from the first read
+	# of the lobby, so opening the screen on a full one is quiet.
+	if _lobby.session.is_empty():
+		_seen_players = -1
+	else:
+		if _seen_players >= 0 and (total > _seen_players or r.ready.size() > _seen_ready):
+			Sfx.play("player_joins")
+		_seen_players = total
+		_seen_ready = r.ready.size()
 	if is_instance_valid(_code_label):
 		_code_label.text = str(_session.get("code", "····")) if state != "ended" else "····"
 		if _making:
@@ -892,6 +909,7 @@ func _remove_team(id: String, name: String, names: Array) -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 8)
 	var yes := Ui.button("Remove", 140, Ui.H, Ui.RED)
+	Ui.quiet(yes)
 	var no := Ui.button("Keep it", 140, Ui.H, Ui.SMALL)
 	yes.pressed.connect(func() -> void:
 		dim.queue_free()
@@ -904,6 +922,7 @@ func _remove_team(id: String, name: String, names: Array) -> void:
 
 ## Gone from the screen at once; if the server refuses, it is read back.
 func _drop_team(id: String) -> void:
+	Sfx.play("qk_team")
 	_lobby.apply("teams", "DELETE", {"id": id})
 	_draw_teams()
 	_tell("teams", "DELETE", {"id": id})
@@ -953,6 +972,7 @@ func _add_team() -> void:
 	# The id is made here, so the card and every lobby's copy of it can
 	# appear before the server has answered.
 	var row := {"id": Teams.uuid(), "session_id": _session.get("id", ""), "name": "Team %d" % n}
+	Sfx.play("qk_team")
 	_lobby.apply("teams", "INSERT", row)
 	_draw_teams()
 	_tell("teams", "INSERT", row)
@@ -1032,6 +1052,8 @@ func _shuffle() -> void:
 		return
 	var done: Dictionary = await Net.rest(HTTPClient.METHOD_POST,
 		"/rest/v1/rpc/shuffle_teams", {"p_session": _session.get("id", "")})
+	if done.error == "":
+		Sfx.play("qk_team")
 	_say(done.error if done.error != "" else "Teams shuffled.",
 		Pal.WRONG if done.error != "" else Pal.CORRECT)
 	# Too many rows to describe one by one: every lobby reads it again.
@@ -1040,6 +1062,8 @@ func _shuffle() -> void:
 
 
 func _say(text: String, col: Color) -> void:
+	if col == Pal.WRONG and text != "":
+		Sfx.play("error")
 	_msg.text = text
 	_msg.add_theme_color_override("font_color", col)
 	# On the map the panel is away: say it in the bar, then let it go.

@@ -518,6 +518,7 @@ func _run() -> void:
 	var p1: Vector2 = (stations[1] as Node2D).position
 	var p2: Vector2 = (stations[2] as Node2D).position
 	check("stations distinct cells", p0 != p1 and p1 != p2 and p0 != p2, "%s / %s / %s" % [p0, p1, p2])
+	Sfx.heard.clear()
 	for s in 3:
 		await _play_station(adv, s)
 		check("station %d returned to map" % (s + 1), adv.get("_overlay") == null)
@@ -537,6 +538,11 @@ func _run() -> void:
 	adv.call("_try_enter_gate")
 	await _wait(4)
 	check("gate ended the adventure", not Game.adventure_active)
+	# What a player hears on the way: briefing, the knight standing aside,
+	# the circles lighting, each answer, each station, the gate.
+	for want in ["enter_tower", "knight", "circle_unlock", "correct", "station_complete", "gate"]:
+		check("sound: %s" % want, want in Sfx.heard, str(Sfx.heard))
+	check("no wrong sound on a perfect run", not "wrong" in Sfx.heard)
 	sum = _screen()
 	check("summary after full run", _script_of(sum, "res://scripts/SummaryScreen.gd"))
 	var res10: Dictionary = Game.last_run

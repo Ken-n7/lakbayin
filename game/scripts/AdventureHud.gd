@@ -412,6 +412,7 @@ func open_menu() -> void:
 	adv._close_card()
 	close_dev()
 	set_pad(false)
+	Sfx.play("panel_open")
 	var box := Ui.screen_panel(ui_layer, Vector2(300, 270), "Menu")
 	var menu := box.get_parent()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -443,6 +444,8 @@ func _leave_menu(menu: Control, screen: String, drop: String) -> void:
 	paused = false
 	set_pad(true)
 	menu.queue_free()
+	if screen == "":
+		Sfx.play("panel_close")         # Resume: back to the map
 	match drop:
 		"end": Game.end_adventure()
 		"restart": Game.restart_adventure()

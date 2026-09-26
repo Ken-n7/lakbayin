@@ -293,6 +293,7 @@ func _round_button(icon: String, tip: String, act: Callable) -> TextureButton:
 	b.tooltip_text = tip
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(act)
+	Ui.click(b)
 	var glyph := Control.new()
 	glyph.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE

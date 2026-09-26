@@ -56,6 +56,7 @@ func _ready() -> void:
 	add_child(backdrop)
 	music = Music.new()
 	add_child(music)
+	Sfx.attach(self)
 	# `godot --path game -- --explore`: straight onto the board, for looking.
 	if OS.is_debug_build() and "--explore" in OS.get_cmdline_user_args():
 		explore_map()

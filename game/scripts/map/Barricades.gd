@@ -299,7 +299,11 @@ static func _line_clear(a: Vector2, b: Vector2, clear: Callable) -> bool:
 
 
 ## Called wherever progress is made: setup, and every overlay that closes.
-func refresh() -> void:
+## True if a knight stood aside just now (the screen plays his sound).
+func refresh() -> bool:
+	var any := false
 	for g: Dictionary in list:
 		if not bool(g.open) and _is_due(g):
 			open(g)
+			any = true
+	return any

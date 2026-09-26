@@ -52,9 +52,7 @@ func _ready() -> void:
 		p.bus = BUS
 		add_child(p)
 		_players.append(p)
-	var cfg := ConfigFile.new()
-	if cfg.load(SAVE_PATH) == OK:
-		volume = clampf(float(cfg.get_value("audio", "music", volume)), 0.0, 1.0)
+	volume = load_setting("music", volume)
 	_apply()
 
 
@@ -62,8 +60,22 @@ func _ready() -> void:
 func set_volume(v: float) -> void:
 	volume = clampf(v, 0.0, 1.0)
 	_apply()
+	save_setting("music", volume)
+
+
+## One file for the device's audio settings, the music's and `Sfx`'s: each
+## save reads it first, so neither wipes the other's.
+static func load_setting(key: String, fallback: float) -> float:
 	var cfg := ConfigFile.new()
-	cfg.set_value("audio", "music", volume)
+	if cfg.load(SAVE_PATH) != OK:
+		return fallback
+	return clampf(float(cfg.get_value("audio", key, fallback)), 0.0, 1.0)
+
+
+static func save_setting(key: String, value: float) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SAVE_PATH)
+	cfg.set_value("audio", key, value)
 	cfg.save(SAVE_PATH)
 
 

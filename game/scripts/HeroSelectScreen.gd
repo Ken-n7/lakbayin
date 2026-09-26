@@ -72,6 +72,7 @@ func _build() -> void:
 		b.tooltip_text = "Adventurer #%d" % id
 		b.focus_mode = Control.FOCUS_ALL
 		b.pressed.connect(_pick_hero.bind(id))
+		Ui.click(b)
 		_hero_buttons[id] = b
 		grid.add_child(b)
 
@@ -162,4 +163,5 @@ func _save_hero() -> void:
 		Game.player_name = "Adventurer"
 	Game.hero_id = _hero_id
 	Game.save_profile()
+	Sfx.play("success")
 	main.open(_then)

@@ -58,7 +58,20 @@ static func button(text: String, w: float, h: float, kind := BLUE) -> Button:
 	b.add_theme_color_override("font_hover_color", Pal.WHITE)
 	b.add_theme_color_override("font_pressed_color", Pal.WHITE)
 	b.add_theme_font_size_override("font_size", maxi(int(KINDS[kind][2]), Art.MIN_FONT))
+	click(b)
 	return b
+
+
+## The button sound, on press -- unless the button is `quiet()`: one whose
+## result has a sound of its own (Submit, Start, ...), or the keypad (client).
+static func click(b: BaseButton) -> void:
+	b.pressed.connect(func() -> void:
+		if not b.has_meta("quiet"):
+			Sfx.play("button"))
+
+
+static func quiet(b: BaseButton) -> void:
+	b.set_meta("quiet", true)
 
 
 ## A button that drops a list, wearing the same skin as the rest. The one
@@ -81,6 +94,7 @@ static func menu_button(text: String, w: float, h: float, kind := BLUE) -> MenuB
 	# old near-transparent white it read as missing, not unavailable.
 	m.add_theme_color_override("font_disabled_color", Color(1, 1, 1, 0.7))
 	m.add_theme_font_size_override("font_size", maxi(int(KINDS[kind][2]), Art.MIN_FONT))
+	click(m)
 	return m
 
 
@@ -202,6 +216,7 @@ static func glyph(text: String, size := 20, color: Color = Pal.TITLE) -> Button:
 	b.add_theme_font_size_override("font_size", size)
 	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
 		b.add_theme_color_override(state, color)
+	click(b)
 	return b
 
 
@@ -424,11 +439,18 @@ static func link(text: String, color: Color = Pal.INFO_DEEP) -> Button:
 
 
 ## The scrim that darkens whatever is behind a screen.
-static func dim(parent: Node) -> ColorRect:
+## It is what every dialog opens on, so it carries the panel sounds: open now,
+## close when the dialog goes -- not when the whole screen does.
+static func dim(parent: Node, sound := true) -> ColorRect:
 	var d := ColorRect.new()
 	d.color = Pal.DIM
 	d.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	parent.add_child(d)
+	if sound:
+		Sfx.play("panel_open")
+		d.tree_exiting.connect(func() -> void:
+			if not parent.is_queued_for_deletion() and parent.is_inside_tree():
+				Sfx.play("panel_close"))
 	return d
 
 

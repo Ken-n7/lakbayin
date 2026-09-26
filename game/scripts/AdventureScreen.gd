@@ -76,6 +76,9 @@ var hero_box := Rect2()
 ## The level the hero walks at: 0 the ground, 1 a terrace, 2 the summit
 ## (map/Terrain.gd). A ramp is where it changes.
 var hero_level := 0
+var _current_circle := -1            # the circle to answer now, -1 none
+var _last_state := ""                # the session state last applied, for its sounds
+var _last_gems := -1
 var _dev_aerial := false
 var _hero_scale := MapCfg.UNIT_SCALE   # live-tunable with [ and ], see _nudge_hero_scale()
 ## How much one press of [ or ] moves the hero's scale, and the range it may
@@ -266,6 +269,7 @@ func _on_scored(kind: String, flag: bool) -> void:
 
 func _on_score_reply(reply: Dictionary) -> void:
 	if reply.error != "":
+		Sfx.play("error")
 		hud.flash("Not scored: " + reply.error)
 	else:
 		_take_server_row(reply.row)
@@ -282,6 +286,7 @@ func _take_server_row(row: Dictionary) -> void:
 	if server_gems == Game.gems:
 		return
 	if server_gems - Game.gems == 10:
+		Sfx.play("rescue")
 		hud.flash("A team-mate rescued you: +10 gems!")
 	Game.gems = server_gems
 	Game.eliminated = bool(row.get("eliminated", Game.eliminated))
@@ -340,6 +345,7 @@ func _take_team(row: Dictionary) -> void:
 	if team == _my_team:
 		return
 	_my_team = team
+	Sfx.play("team_changed")
 	if team != "":
 		hud.flash("Your Quest Keeper moved you to another team")
 		return
@@ -441,6 +447,14 @@ func _show_waiting() -> void:
 
 ## One place deciding what the session's state means on the board.
 func _apply_session_state() -> void:
+	# A sound for a change of state, not for learning it on arrival.
+	var was := _last_state
+	_last_state = Game.session_state
+	if was != "" and was != Game.session_state:
+		match Game.session_state:
+			"paused": Sfx.play("paused")
+			"running": Sfx.play("resumed" if was == "paused" else "")
+			"ended": Sfx.play("ended")
 	match Game.session_state:
 		"running":
 			hud.paused = false
@@ -512,6 +526,12 @@ func setup(data: Dictionary) -> void:
 		band.keep_clear = clear
 	Game.time_changed.connect(hud.on_time)
 	Game.gems_changed.connect(hud.on_gems)
+	Game.time_changed.connect(_time_sounds)
+	Game.gems_changed.connect(_gem_sound)
+	Game.eliminated_changed.connect(func() -> void:
+		if Game.eliminated:
+			Sfx.play("eliminated"))
+	_last_gems = Game.gems
 	Game.adventure_ended.connect(_on_adventure_end)
 	hud.refresh()
 	_refresh_circles()
@@ -962,6 +982,7 @@ func _tap_at(screen_pos: Vector2) -> void:
 
 func _close_card() -> void:
 	if _card != null and is_instance_valid(_card):
+		Sfx.play("panel_close")
 		_card.queue_free()
 	_card = null
 
@@ -979,6 +1000,7 @@ func _show_circle_card(n: int) -> void:
 	card.position = Vector2(170, 92)
 	hud.ui_layer.add_child(card)
 	_card = card
+	Sfx.play("panel_open")
 	var box: VBoxContainer = card.get_child(0) as VBoxContainer
 	box.add_child(Art.label(meta.title, 14, Color("3a2c22"), HORIZONTAL_ALIGNMENT_CENTER))
 	var state := ("Cleared" if n < Game.items_done
@@ -1014,6 +1036,7 @@ func _act_on(target: Dictionary) -> void:
 		return
 	var why := _gate_reason(target)
 	if why != "":
+		Sfx.play("blocked")
 		hud.flash(why + "!")
 		return
 	match kind:
@@ -1024,11 +1047,14 @@ func _act_on(target: Dictionary) -> void:
 			Game.current_station = Game.station_of_item(int(target.index))
 			_open_quiz(Game.current_station, false)
 		"gate":
+			Sfx.play("gate")
 			Game.end_adventure()
 
 
 ## The briefing card (`intro_only`) or one question. Same overlay either way.
 func _open_quiz(station: int, intro_only: bool) -> void:
+	if intro_only:
+		Sfx.play("enter_tower")
 	var quiz: Control = preload("res://scripts/QuizOverlay.gd").new()
 	quiz.adventure = self
 	quiz.station_index = station
@@ -1056,14 +1082,19 @@ func _try_enter_gate() -> void:
 	_act_on({"kind": "gate", "index": 0})
 
 
-func _refresh_circles() -> void:
+## True if a circle has just become the one to answer.
+func _refresh_circles() -> bool:
+	var was := _current_circle
+	_current_circle = -1
 	for n in _circles.size():
 		var state := "locked"
 		if n < Game.items_done:
 			state = "done"
 		elif _can_answer(n):
 			state = "current"
+			_current_circle = n
 		(_circles[n] as Node2D).set_state(state)
+	return _current_circle >= 0 and _current_circle != was
 
 
 ## Android's back button, routed here by Main: leaving a station mid-question
@@ -1095,13 +1126,35 @@ func close_overlay() -> void:
 		_overlay = null
 		hud.set_pad(true)
 		hud.refresh()
-		_refresh_circles()
-		barricades.refresh()
+		# One sound for what opened: the knight's "a way opens" when a
+		# briefing sends him aside -- that also lights the station's first
+		# circle -- or the circle's chime on its own.
+		var lit := _refresh_circles()
+		if barricades.refresh():
+			Sfx.play("knight")
+		elif lit:
+			Sfx.play("circle_unlock")
 	# Clearing the board no longer ends the run on its own -- the Victory Gate
 	# does, and walking to it is the last step of the player flow.
 
 
+## One minute left, then each of the last ten seconds (client).
+func _time_sounds(sec: int) -> void:
+	if not _frozen and (sec == 60 or (sec >= 1 and sec <= 10)):
+		Sfx.play("time_warning")
+
+
+## The gem counter going up: a blip just after the reward's own sound, the way
+## a rupee counts in. Down is silent -- the wrong answer, hint or skip said it.
+func _gem_sound(g: int) -> void:
+	if _last_gems >= 0 and g > _last_gems:
+		Sfx.play("gem", 0.35)
+	_last_gems = g
+
+
 func _on_adventure_end(result: Dictionary) -> void:
+	if bool(result.get("time_up", false)):
+		Sfx.play("time_up")
 	if _overlay != null:
 		close_overlay()
 	hud.paused = false

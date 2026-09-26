@@ -390,26 +390,14 @@ var _dialog: Control = null
 ## Change Character (once there is one to change) and Log Out.
 func _open_settings() -> void:
 	_dialog = Ui.dim(self)
-	var box := Ui.back_panel(_dialog, Vector2(260, 196), "Settings",
+	var box := Ui.back_panel(_dialog, Vector2(260, 236), "Settings",
 		func() -> void: _dialog.queue_free())
 	box.add_theme_constant_override("separation", 8)
-	# Music volume, 0 is off, kept on the device.
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
-	row.add_child(Art.label("Music", Pal.LABEL, Pal.INK))
-	var vol := Ui.slider(110)
-	vol.value = main.music.volume
-	var pct := Art.label("", Pal.LABEL, Pal.INK_MUTED)
-	pct.custom_minimum_size = Vector2(36, 0)
-	var show := func(v: float) -> void: pct.text = "Off" if v <= 0.0 else "%d%%" % roundi(v * 100.0)
-	show.call(vol.value)
-	vol.value_changed.connect(func(v: float) -> void:
-		main.music.set_volume(v)
-		show.call(v))
-	row.add_child(vol)
-	row.add_child(pct)
-	box.add_child(row)
+	# Volumes, 0 is off, kept on the device. A sound on letting go of Sounds,
+	# so it can be heard at the level just set.
+	_volume_row(box, "Music", main.music.volume, main.music.set_volume)
+	var sounds := _volume_row(box, "Sounds", Sfx.volume, Sfx.set_volume)
+	sounds.drag_ended.connect(func(_changed: bool) -> void: Sfx.play("button"))
 	if Game.player_name != "":
 		var hero := Ui.button("Change Character", 200, Ui.H, Ui.SMALL)
 		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
@@ -419,6 +407,29 @@ func _open_settings() -> void:
 		Net.sign_out()
 		main.open("login"))
 	Ui.centre_row(box, out)
+
+
+## A labelled volume slider with its % beside it, into `box`.
+func _volume_row(box: Control, caption: String, value: float, set_to: Callable) -> HSlider:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	var name := Art.label(caption, Pal.LABEL, Pal.INK)
+	name.custom_minimum_size = Vector2(56, 0)
+	row.add_child(name)
+	var vol := Ui.slider(110)
+	vol.value = value
+	var pct := Art.label("", Pal.LABEL, Pal.INK_MUTED)
+	pct.custom_minimum_size = Vector2(36, 0)
+	var show := func(v: float) -> void: pct.text = "Off" if v <= 0.0 else "%d%%" % roundi(v * 100.0)
+	show.call(value)
+	vol.value_changed.connect(func(v: float) -> void:
+		set_to.call(v)
+		show.call(v))
+	row.add_child(vol)
+	row.add_child(pct)
+	box.add_child(row)
+	return vol
 
 
 func _confirm_quit() -> void:

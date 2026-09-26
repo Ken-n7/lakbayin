@@ -72,6 +72,7 @@ func _submit() -> void:
 		# unknown address alike, which is the behaviour we want -- pass it on.
 		_say(err)
 		return
+	Sfx.play("success")
 	main.open("admin" if Net.role == "admin" else "home")
 
 
@@ -82,6 +83,7 @@ func _busy(on: bool) -> void:
 
 func _say(text: String) -> void:
 	_msg.text = text
+	Sfx.play("error")
 
 
 ## Back on the first screen is the way out of the app.

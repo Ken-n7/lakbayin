@@ -80,13 +80,13 @@ func setup(_data: Dictionary) -> void:
 func _submit() -> void:
 	var user := _user.text.strip_edges()
 	if _email.text.strip_edges().is_empty():
-		_msg.text = "Enter your email."
+		_err("Enter your email.")
 		return
 	if not RegEx.create_from_string("^[A-Za-z0-9_-]{3,20}$").search(user):
-		_msg.text = "Username: 3-20 letters, digits, _ or - only."
+		_err("Username: 3-20 letters, digits, _ or - only.")
 		return
 	if _pass.text.length() < MIN_PASSWORD:
-		_msg.text = "Password must be at least %d characters." % MIN_PASSWORD
+		_err("Password must be at least %d characters." % MIN_PASSWORD)
 		return
 
 	_go.disabled = true
@@ -96,11 +96,18 @@ func _submit() -> void:
 	_go.disabled = false
 	_go.text = "Register"
 	if err != "":
-		_msg.text = err
+		_err(err)
 		return
 	# Registered and signed in: straight to the character pick, per §2.
 	# An admin never plays, so there is no character to pick.
+	Sfx.play("success")
 	main.open("admin" if Net.role == "admin" else "hero")
+
+
+## A form problem, said and sounded.
+func _err(text: String) -> void:
+	_msg.text = text
+	Sfx.play("error")
 
 
 func go_back() -> void:

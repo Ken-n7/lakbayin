@@ -69,7 +69,7 @@ func setup(_data: Dictionary) -> void:
 
 
 func _ready() -> void:
-	Ui.dim(self)
+	Ui.dim(self, false)            # the quiz has sounds of its own
 	Game.time_changed.connect(_on_time)
 	Game.gems_changed.connect(_on_gems)
 
@@ -165,14 +165,17 @@ func _build() -> void:
 	action.add_theme_constant_override("separation", 8)
 	_btn_hint = Ui.button("Hint  −5", 100, Ui.H, Ui.SMALL)
 	_btn_hint.pressed.connect(_use_hint)
+	Ui.quiet(_btn_hint)
 	var btn_skip := Ui.button("Skip  −15", 100, Ui.H, Ui.SMALL)
 	btn_skip.pressed.connect(_skip)
+	Ui.quiet(btn_skip)
 	_rescue = Ui.menu_button("Rescue ▾", 100, Ui.H, Ui.SMALL)
 	_rescue.disabled = true
 	_rescue.tooltip_text = "Needs a team-mate to transfer gems to"
 	_rescue.get_popup().id_pressed.connect(_send_rescue)
 	_btn_submit = Ui.button("Submit Answer", 170, Ui.H, Ui.RED)
 	_btn_submit.pressed.connect(_submit)
+	Ui.quiet(_btn_submit)
 	action.add_child(_btn_hint)
 	action.add_child(btn_skip)
 	action.add_child(_rescue)
@@ -267,9 +270,11 @@ func _submit() -> void:
 	var ok := _matches(t, str(answer))
 	if ok:
 		Game.mark_correct()
+		Sfx.play("correct")
 		_show_result(true)
 	else:
 		Game.mark_wrong()
+		Sfx.play("wrong")
 		_show_result(false)
 
 
@@ -317,7 +322,8 @@ func _send_rescue(id: int) -> void:
 		_flash_trouble(reply.error)
 		return
 	Game.mark_rescue_sent()
-	_flash_trouble("Sent 10 gems to %s" % mate.username)
+	Sfx.play("rescue")
+	_flash_trouble("Sent 10 gems to %s" % mate.username, "")
 	_refresh_rescue()
 
 
@@ -386,6 +392,7 @@ func _finish_item_or_station() -> void:
 
 func _show_complete() -> void:
 	phase = Phase.DONE
+	Sfx.play("station_complete")
 	var bonus := Game.finish_station(station_index)
 	_layout()
 	_continue_btn.text = "Return to Map"
@@ -408,6 +415,7 @@ func _use_hint() -> void:
 	if phase != Phase.QUESTION or Game.item_used_hint or not _may_score():
 		return
 	if Game.spend_hint():
+		Sfx.play("hint")
 		_hint_text.text = "Hint: " + current.hint
 		_btn_hint.disabled = true
 	else:
@@ -421,6 +429,7 @@ func _skip() -> void:
 		_flash_trouble("No gems left to skip")
 		return
 	Game.mark_skipped()
+	Sfx.play("skip")
 	_finish_item_or_station()
 
 
@@ -457,6 +466,7 @@ func _build_keypad() -> Control:
 		b.add_theme_font_size_override("font_size", 18)
 		var k: String = key
 		b.pressed.connect(func() -> void: _key(k))
+		Ui.quiet(b)                 # no keypad sound (client)
 		grid.add_child(b)
 	return _keypad
 
@@ -489,7 +499,11 @@ func _filter_input(text: String) -> void:
 	_input.caret_column = out.length()
 
 
-func _flash_trouble(msg: String) -> void:
+## A line under the question for a moment -- mostly why something was refused,
+## so that is its sound unless told otherwise.
+func _flash_trouble(msg: String, sound := "refused") -> void:
+	if sound != "":
+		Sfx.play(sound)
 	Art.toast(_hint_text, msg, 1.0, _hint_text.text)
 
 

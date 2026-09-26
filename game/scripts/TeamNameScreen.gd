@@ -183,6 +183,8 @@ func _enter(quiet := false) -> void:
 	if not is_instance_valid(self):
 		return
 	_build_lobby()
+	if err == "" and not quiet:
+		Sfx.play("success")
 	if err != "":
 		_say(err, Pal.WRONG)
 
@@ -455,6 +457,8 @@ func _back_button(box: Control) -> void:
 
 
 func _say(text: String, col: Color) -> void:
+	if col == Pal.WRONG and text != "":
+		Sfx.play("error")
 	if is_instance_valid(_msg):
 		_msg.visible = text != ""
 		_msg.text = text
