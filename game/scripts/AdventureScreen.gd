@@ -669,11 +669,33 @@ func _swoop() -> void:
 	_start_music()
 	_drop_start_hint()
 	hud.set_prompt("")
+	# One eased curve drives both zoom and position, so the dive is one
+	# movement. Zoom goes by ratio, not by amount (a linear zoom rushes one end),
+	# and the view shrinks toward where the camera will settle, so the hero
+	# holds still on screen as the world closes in -- landing exactly where
+	# the clamped play camera will be, so there is no jump at the end.
+	var z0 := _cam.zoom.x
+	var p0 := _cam.position
+	var to := _settled_cam(player.position, play_zoom)
 	_intro_tw = create_tween()
-	_intro_tw.set_parallel(true)
-	_intro_tw.tween_property(_cam, "zoom", Vector2(play_zoom, play_zoom), MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
-	_intro_tw.tween_property(_cam, "position", player.position, MapCfg.SWOOP_TIME).set_ease(Tween.EASE_IN_OUT)
-	_intro_tw.chain().tween_callback(skip_intro)
+	_intro_tw.tween_interval(MapCfg.SWOOP_HOLD)
+	_intro_tw.tween_method(func(t: float) -> void:
+		var z := z0 * pow(play_zoom / z0, t)
+		_cam.zoom = Vector2(z, z)
+		var span := 1.0 / z0 - 1.0 / play_zoom
+		var w := (1.0 / z - 1.0 / play_zoom) / span if absf(span) > 0.0001 else 0.0
+		_cam.position = to + (p0 - to) * w,
+		0.0, 1.0, MapCfg.SWOOP_TIME).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	_intro_tw.tween_callback(skip_intro)
+
+
+## Where the play camera ends up looking at `at`, `zoom` in: `at`, pulled in
+## from the board's edges by half the view, as the camera limits will.
+func _settled_cam(at: Vector2, zoom: float) -> Vector2:
+	var half := get_viewport_rect().size / (2.0 * zoom)
+	var world := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE
+	return Vector2(clampf(at.x, half.x, maxf(half.x, world.x - half.x)),
+			clampf(at.y, half.y, maxf(half.y, world.y - half.y)))
 
 
 func _drop_start_hint() -> void:

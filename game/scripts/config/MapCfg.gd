@@ -308,6 +308,8 @@ const CAM_SMOOTH := 6.0
 ## Far enough out that the camera limits are off for the aerial POV: a visible
 ## rect wider than the limits is shoved off-centre rather than letterboxed.
 const CAM_UNCLAMPED := 1000000
-## How long the swoop from the aerial POV down onto the hero takes.
-const SWOOP_TIME := 0.9
+## How long the swoop from the aerial POV down onto the hero takes, and the
+## beat it holds first -- the moment the Start lands, before the dive.
+const SWOOP_TIME := 2.0
+const SWOOP_HOLD := 0.25
 
