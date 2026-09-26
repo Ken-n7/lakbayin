@@ -49,6 +49,7 @@ var seed_used := 0
 var _rng := RandomNumberGenerator.new()
 var _why := ""
 var _used := {}                 # (cell, low level) a stair or its margin takes
+var _no_road := {}              # cells every road goes round: the circles' towers
 
 
 func _init(g: MapGrid) -> void:
@@ -72,6 +73,7 @@ func _reset() -> void:
 	for d: Dictionary in [grid.land, grid.island_of, grid.trail, grid.height, grid.cliff,
 			grid.stairs, grid.beach]:
 		d.clear()
+	_no_road.clear()
 	grid.solid.clear()
 	anchors = []
 	lifts = {}
@@ -612,20 +614,28 @@ func _place_stops(parts: Array) -> bool:
 			goal = _summit_cell(part)
 			if goal == Vector2i(-1, -1):
 				return _fail("no room on the summit for the Victory Gate")
-		var circles := _circle_cells(i, door, goal)
+		var building: String = MapCfg.CIRCLE_BUILDINGS[i]
+		var circles := _circle_cells(i, door, goal, building)
 		if circles.size() < Game.ITEMS_PER_STATION[i]:
 			return _fail("no room for district %d's circles (%d)" % [i + 1, circles.size()])
 		var way: Array = [door]
 		way.append_array(circles)
 		way.append(goal)
+		# The road comes to each tower's door, never through the tower: its
+		# footprint is off-limits to this road and every one after, so the road
+		# reaches the circle from the left, the right or below.
+		for c in circles:
+			for k in _tower_cells(c, building):
+				_no_road[k] = true
 		var road := _road(way, 0)
 		if road.is_empty():
 			return _fail("district %d's road does not join up" % (i + 1))
-		var building: String = MapCfg.CIRCLE_BUILDINGS[i]
 		for c in circles:
-			var lift := _circle_lift(road, road.find(c), building)
+			var lift := _circle_lift(c, building)
 			if lift == Vector2.INF:
 				return _fail("no room for a circle's tower in district %d" % (i + 1))
+			# The last step up to the door, so the road meets the tower's threshold.
+			grid.trail[c + UP] = true
 			lifts[anchors.size()] = lift
 			anchors.append(MapGrid.cell_mid(c))
 		if part.has("down"):
@@ -652,14 +662,14 @@ func _summit_cell(part: Dictionary) -> Vector2i:
 ## The district's circles: spread over its raised ground -- a share of them
 ## on its plateaus -- each with open ground round it, then put in walking
 ## order from `entry` to `goal`.
-func _circle_cells(i: int, entry: Vector2i, goal: Vector2i) -> Array[Vector2i]:
+func _circle_cells(i: int, entry: Vector2i, goal: Vector2i, building: String) -> Array[Vector2i]:
 	var n: int = Game.ITEMS_PER_STATION[i]
 	var pools := {1: [], 2: []}
 	for c: Vector2i in grid.land:
 		if int(grid.island_of.get(c, -1)) != i + 1:
 			continue
 		var h := int(grid.height.get(c, 0))
-		if (h == 1 or h == 2) and _open_around(c, h, 1):
+		if (h == 1 or h == 2) and _open_around(c, h, 1) and _circle_lift(c, building) != Vector2.INF:
 			(pools[h] as Array).append(c)
 	for k in pools:
 		(pools[k] as Array).sort()
@@ -794,7 +804,7 @@ func _mark_road(c: Vector2i) -> void:
 		return
 	for d in D4:
 		var k: Vector2i = c + d
-		if _flat(k, int(grid.height.get(c, -2))):
+		if _flat(k, int(grid.height.get(c, -2))) and not _no_road.has(k):
 			grid.trail[k] = true
 
 
@@ -823,7 +833,7 @@ func _route(a: Vector2i, level: int, b: Vector2i) -> Array[Vector3i]:
 		var low := int(grid.stairs[c].low) if grid.stairs.has(c) else -1
 		for d in D4:
 			var nc: Vector2i = c + d
-			if not grid.cell_ok(nc, s.z, low) or _railed(c, nc):
+			if not grid.cell_ok(nc, s.z, low) or _railed(c, nc) or _no_road.has(nc):
 				continue
 			var ns := Vector3i(nc.x, nc.y, grid.level_at(MapGrid.cell_mid(nc), s.z))
 			var step := 1.0 if grid.stairs.has(nc) or _clear_round(nc, ns.z) else 2.5
@@ -859,34 +869,32 @@ func _railed(a: Vector2i, b: Vector2i) -> bool:
 	return false
 
 
-## Where a circle's tower stands: up off the road where it runs across, to
-## either side where it runs up and down -- only onto flat ground of the
-## circle's own level.
-func _circle_lift(path: Array[Vector2i], at: int, building: String) -> Vector2:
-	if at < 0:
-		return Vector2.INF
-	var here := path[at]
-	var dir := path[mini(at + 2, path.size() - 1)] - path[maxi(at - 2, 0)]
-	var tries: Array = []
-	if absi(dir.x) >= absi(dir.y):
-		tries = [Vector2(0, -MapCfg.CIRCLE_LIFT), Vector2(0, MapCfg.CIRCLE_LIFT + MapCfg.TILE)]
-	else:
-		tries = [Vector2(MapCfg.CIRCLE_SIDE_LIFT, 0), Vector2(-MapCfg.CIRCLE_SIDE_LIFT, 0)]
-	tries.append_array([Vector2(0, -MapCfg.CIRCLE_LIFT), Vector2(MapCfg.CIRCLE_SIDE_LIFT, 0),
-		Vector2(-MapCfg.CIRCLE_SIDE_LIFT, 0)])
+## Where a circle's tower stands: straight up off its circle, always, so the
+## circle is the tower's doorstep and the question is asked at its front door.
+## It used to step aside where the road ran up and down, or below the circle
+## where there was no room above -- which put the circle beside the tower, or
+## behind it on its roof. Only onto flat ground of the circle's own level, off
+## any road already laid; INF where it does not fit (`_circle_cells` skips those).
+func _circle_lift(c: Vector2i, building: String) -> Vector2:
+	var level := int(grid.height.get(c, -1))
+	for k in _tower_cells(c, building):
+		if not _flat(k, level) or grid.trail.has(k):
+			return Vector2.INF
+	return Vector2(0, -MapCfg.CIRCLE_LIFT)
+
+
+## The cells under the lower half of circle `c`'s tower -- its walls, not the
+## roof that overhangs them -- standing where `_circle_lift` puts it.
+func _tower_cells(c: Vector2i, building: String) -> Array[Vector2i]:
 	var size := Art.cell(building, 0, 0).region.size * MapCfg.CIRCLE_TOWER_SCALE
-	var level := int(grid.height.get(here, -1))
-	for lift: Vector2 in tries:
-		var base := MapGrid.cell_mid(here) + lift
-		var foot := Rect2(base - Vector2(size.x * 0.5, size.y * 0.5), Vector2(size.x, size.y * 0.5))
-		var clear := true
-		for corner in [foot.position, Vector2(foot.end.x, foot.position.y),
-				Vector2(foot.position.x, foot.end.y), foot.end]:
-			if not _flat(MapGrid.cell_at(corner), level):
-				clear = false
-		if clear:
-			return lift
-	return Vector2.INF
+	var base := MapGrid.cell_mid(c) + Vector2(0, -MapCfg.CIRCLE_LIFT)
+	var a := MapGrid.cell_at(base - Vector2(size.x * 0.5, size.y * 0.5) + Vector2.ONE)
+	var b := MapGrid.cell_at(base + Vector2(size.x * 0.5, 0) - Vector2.ONE)
+	var out: Array[Vector2i] = []
+	for y in range(a.y, b.y + 1):
+		for x in range(a.x, b.x + 1):
+			out.append(Vector2i(x, y))
+	return out
 
 
 # --- Checks -----------------------------------------------------------------

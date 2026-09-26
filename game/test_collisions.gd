@@ -53,6 +53,20 @@ func _initialize() -> void:
 		assert(not seen.has(pos), "circle %d shares a spot with another" % n)
 		seen[pos] = true
 		assert(screen.grid.is_walkable(pos), "circle %d stands on unwalkable ground" % n)
+		# The question is asked at the tower's front door: the tower stands
+		# straight up off its circle, so the circle is below its wall, centred on
+		# the door. Towers used to step aside, or even below the circle, which
+		# put the "answer here" spot beside the tower or behind it on its roof.
+		var wall: Rect2 = (circles[n] as Node2D).get("wall")
+		assert(wall.end.y <= 0.0, "circle %d is not in front of its tower (wall %s)" % [n, wall])
+		assert(absf(wall.get_center().x) < 1.0,
+				"circle %d is beside its tower's door, not in front of it (wall %s)" % [n, wall])
+		# ...and the road comes to that door, not through the tower.
+		var terrain: Terrain = screen.world.terrain
+		var cell := MapGrid.cell_at(pos)
+		for k in terrain._tower_cells(cell, MapCfg.CIRCLE_BUILDINGS[G.station_of_item(n)]):
+			assert(k == cell + Terrain.UP or not screen.grid.trail.has(k),
+					"the road runs under circle %d's tower at %s" % [n, k])
 	assert(screen.stations.gate != null, "no victory gate")
 	assert(screen.grid.is_walkable(screen.stations.gate.position), "the gate is not walkable")
 

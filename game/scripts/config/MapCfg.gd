@@ -62,8 +62,10 @@ const TOWER_TAP_REACH := 46.0
 
 # --- The board (map/Terrain.gd) -------------------------------------------
 ## One seed builds the whole board; a layout that breaks a design rule moves
-## on to the next, up to TERRAIN_TRIES.
-const MAP_SEED := 7310
+## on to the next, up to TERRAIN_TRIES. 7311 is the board as played: it was
+## what 7310 fell through to before every circle faced its tower's front door,
+## and that fix let 7310 hold -- a whole new board nobody asked for.
+const MAP_SEED := 7311
 const TERRAIN_TRIES := 40
 ## The camp's islet, bottom right, in cells (x, y, w, h).
 const CAMP_REGION := Rect2i(84, 37, 10, 14)
@@ -153,11 +155,10 @@ const GUARD_BOOTS := Rect2(-18.0, -10.0, 36.0, 12.0)
 ## Towers stand beside the path, not on it: their walls are up to 150px wide and
 ## would otherwise swallow the next circle along. `_tower_lift()` picks the side.
 const TOWER_LIFT := 56.0
-## A question circle's tower stands at its own doorstep, close enough that the
-## glowing "answer here" ring reads as the tower's entrance. See `_circle_lift()`
-## for why stepping sideways needs more room than stepping up.
+## A question circle's tower stands straight up off its circle, close enough
+## that the circle is the tower's doorstep: the question is always asked at the
+## front door, never beside or behind the tower. See `_circle_lift()`.
 const CIRCLE_LIFT := 26.0
-const CIRCLE_SIDE_LIFT := 40.0
 ## How close the play camera sits. 1.0 is the crispest -- the art is never
 ## resampled -- but shows only a screenful of a world this size; 0.75 trades a
 ## little sharpness for a third more trail in view. Try both on the device.
