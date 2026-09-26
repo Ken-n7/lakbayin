@@ -62,6 +62,7 @@ var _frozen := false                    # the aerial POV before the adventure st
 ## Online, only the admin's Start Game releases the board.
 var _wait_for_admin := false
 var _intro_tw: Tween = null
+var _sky: SkyClouds = null        # the clouds the start swoop dives through
 var _start_hint: Label = null   # "Tap anywhere to start" -- freed once it does
 var _card: Control = null       # the tapped circle's info card
 ## Dev knobs the drawer drives: a walk-speed multiplier, and the flag that stops
@@ -499,6 +500,10 @@ func setup(data: Dictionary) -> void:
 	# the board (start, circle cards) would silently do nothing. The HUD buttons
 	# and panels are their own Controls with their own filters, unaffected by this.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Before the HUD, on its layer: over the board, under the HUD.
+	_sky = SkyClouds.new()
+	_sky.layer = 1
+	add_child(_sky)
 	hud = AdventureHud.new(self)
 	hud.build()
 	# Fetched once, while the board builds and the aerial view holds -- long
@@ -684,7 +689,9 @@ func _swoop() -> void:
 		_cam.zoom = Vector2(z, z)
 		var span := 1.0 / z0 - 1.0 / play_zoom
 		var w := (1.0 / z - 1.0 / play_zoom) / span if absf(span) > 0.0001 else 0.0
-		_cam.position = to + (p0 - to) * w,
+		_cam.position = to + (p0 - to) * w
+		if is_instance_valid(_sky):
+			_sky.progress(t),
 		0.0, 1.0, MapCfg.SWOOP_TIME).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 	_intro_tw.tween_callback(skip_intro)
 
@@ -720,6 +727,9 @@ func skip_intro() -> void:
 		_intro_tw.kill()
 	_intro_tw = null
 	_drop_start_hint()
+	if is_instance_valid(_sky):
+		_sky.queue_free()
+	_sky = null
 	_start_music()
 	hud.set_crib(true)
 	_frozen = false

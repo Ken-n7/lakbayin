@@ -53,6 +53,7 @@ func _initialize() -> void:
 	# The board, not the game: no HUD bar, no joystick, no "tap to start".
 	_screen.hud.hud_layer.visible = false
 	_screen.hud.ui_layer.visible = false
+	_screen._sky.visible = false    # the board, not the sky over it
 	_screen._cam.position_smoothing_enabled = false
 	_screen._clamp_cam(false)
 
