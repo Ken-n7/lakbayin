@@ -22,13 +22,17 @@ const SCREENS := {
 }
 
 ## Music per screen (client), a playlist in `Music.gd`: the town songs on the
-## sign-in screens and all that Home opens, the shop's on Choose Hero, Victory!
-## on the end-of-game summary; a screen not listed is silent.
+## sign-in screens and all that Home opens, the shop's on Choose Hero, the
+## battle songs on the map while it waits for the start, Victory! on the
+## end-of-game summary; a screen not listed is silent. A screen may change its
+## own as it goes (`music.play()`): the team lobby to the battle songs, the map
+## to The Journey once the adventure starts.
 const MUSIC := {
 	"login": "town", "register": "town", "reset": "town", "home": "town",
 	"team": "town", "board": "town", "learn": "town",
 	"hero": "shop",
 	"summary": "victory",
+	"adventure": "battle",
 }
 
 var current: Control = null
@@ -152,8 +156,9 @@ func open(name: String, data: Dictionary = {}) -> void:
 	current = SCREENS[name].new()
 	current.set("main", self)
 	add_child(current)
-	current.setup(data)
+	# Before setup, so a screen that picks its own music there has the last word.
 	music.play(str(MUSIC.get(name, "")))
+	current.setup(data)
 
 
 

@@ -62,6 +62,13 @@ func setup(data: Dictionary) -> void:
 		_enter(true)
 
 
+## The code form keeps Home's town songs; the lobby is the battle songs, on
+## into the map until the adventure starts (client).
+func _music(list: String) -> void:
+	if main != null:
+		main.music.play(list)
+
+
 func _background() -> void:
 	for c in get_children():
 		c.queue_free()
@@ -102,6 +109,7 @@ func _begin_offline() -> void:
 # --- Online: the code -------------------------------------------------------
 func _build_code() -> void:
 	_background()
+	_music("town")
 	# The sign-in screens' layout: the game's name on the scene, the form
 	# beside it -- this is the third form a student meets, and it should look
 	# like the other two.
@@ -182,6 +190,7 @@ func _enter(quiet := false) -> void:
 # --- Online: the lobby ------------------------------------------------------
 func _build_lobby() -> void:
 	_background()
+	_music("battle")
 	var box := Ui.screen_panel(self, LOBBY, "Pick Your Team")
 	box.add_theme_constant_override("separation", 6)
 	# Two steps, and which one you are on: a Grade 8 student should not have

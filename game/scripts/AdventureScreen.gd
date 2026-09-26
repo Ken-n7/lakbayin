@@ -646,6 +646,7 @@ func _start_intro() -> void:
 func _swoop() -> void:
 	if not _frozen:
 		return
+	_start_music()
 	_drop_start_hint()
 	hud.set_prompt("")
 	_intro_tw = create_tween()
@@ -661,6 +662,13 @@ func _drop_start_hint() -> void:
 	_start_hint = null
 
 
+## The adventure is on: the waiting's battle songs give way to The Journey
+## (client). Without `Main` (the map_shot tool) there is no music to change.
+func _start_music() -> void:
+	if main != null:
+		main.music.play("journey")
+
+
 ## Collapse the intro at once -- the tail of the tween, and what the tests call so
 ## nothing waits on wall-clock time.
 func skip_intro() -> void:
@@ -670,6 +678,7 @@ func skip_intro() -> void:
 		_intro_tw.kill()
 	_intro_tw = null
 	_drop_start_hint()
+	_start_music()
 	hud.set_crib(true)
 	_frozen = false
 	Game.clock_paused = false
