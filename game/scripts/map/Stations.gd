@@ -126,7 +126,7 @@ func build_keep(i: int, at: Vector2, _accent: String, lift := Vector2(0, -MapCfg
 	var sign_box := Rect2(at + Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y), MapCfg.SIGN_BOX)
 	grid.keep_out(sign_box)
 	grid.sign_rects.append(sign_box)
-	var title := Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
+	var title := Art.title(Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER))
 	title.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y)
 	title.size = Vector2(MapCfg.SIGN_BOX.x, 20)
 	st.add_child(title)

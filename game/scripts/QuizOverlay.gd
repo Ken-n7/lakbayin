@@ -181,7 +181,7 @@ func _build() -> void:
 
 	# The result: what happened, what it cost or paid, the right answer on a
 	# card of its own, then the rule -- in that order of size.
-	_result_title = Art.label("", Pal.H1, Pal.CORRECT, HORIZONTAL_ALIGNMENT_CENTER)
+	_result_title = Art.title(Art.label("", Pal.H1, Pal.CORRECT, HORIZONTAL_ALIGNMENT_CENTER)) as Label
 	_panel.add_child(_result_title)
 	_delta_label = Art.label("", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
 	_panel.add_child(_delta_label)
@@ -211,6 +211,7 @@ func _show_intro() -> void:
 	phase = Phase.INTRO
 	_q_index.text = "Mission briefing"      # the card's "Mission" line, per SPECS §5
 	_q_prompt.text = str(meta.title).get_slice(": ", 1)
+	Art.title(_q_prompt)      # the station's name, a banner; questions set it back
 	_mission_text.text = meta.mission
 	_layout()
 	_continue_btn.text = "Continue"
@@ -243,6 +244,7 @@ func _next_question() -> void:
 	current = QuestionStore.item_for(station_index, item_index)
 	answer = current.answer
 	_q_index.text = "Question %d of %d" % [item_index + 1, total]
+	_q_prompt.remove_theme_font_override("font")
 	_q_prompt.text = current.prompt
 	_ask.text = current.prompt
 	_layout()

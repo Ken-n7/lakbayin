@@ -71,16 +71,20 @@ func _init() -> void:
 	assert(QG.item_for_station(2, 1).topic == "exp", "S3 items are exponents")
 	assert(QG.item_for_station(1, 0).topic == "pemdas", "S2 items are PEMDAS")
 
-	# The pixel font has no tick/star/arrow; without the symbol fallback the HUD
+	# Neither face has a tick/star/arrow; without the symbol fallback the HUD
 	# pips and Learn screen arrows silently render as blank boxes.
 	var A := load("res://scripts/Art.gd")
 	A.apply_font_fallback()
-	var f := load(A.PIXEL_FONT) as FontFile
-	assert(f.fallbacks.size() == 1, "symbol fallback attached")
-	for ch in ["\u2713", "\u2605", "\u25b6", "\u2192"]:
-		assert(f.has_char(ch.unicode_at(0)), "font resolves %s via fallback" % ch)
-	for ch in ["\u00b2", "\u00b3", "\u2212", "\u00d7", "\u00f7"]:
-		assert(f.has_char(ch.unicode_at(0)), "font resolves %s" % ch)
+	for path: String in [A.TEXT_FONT, A.TITLE_FONT]:
+		var face := load(path) as FontFile
+		assert(face.fallbacks.size() == 1, "symbol fallback attached to %s" % path)
+		for ch in ["\u2713", "\u2605", "\u25b6", "\u2192"]:
+			assert(face.has_char(ch.unicode_at(0)), "%s resolves %s via fallback" % [path, ch])
+	# The questions' own face draws every exponent itself -- not the fallback,
+	# whose smooth sans would sit in a hand-drawn line like a pasted-in label.
+	var f := load(A.TEXT_FONT) as FontFile
+	for ch in "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079\u2212\u00d7\u00f7\u00b1":
+		assert(f.get_supported_chars().contains(ch), "text font draws %s itself" % ch)
 	print("font: superscripts and marks all resolve")
 
 	# BigRibbons has 20px of gutter above its first row; slicing it by

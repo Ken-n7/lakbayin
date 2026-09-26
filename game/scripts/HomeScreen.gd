@@ -317,13 +317,13 @@ func _build_menu() -> void:
 	col.add_theme_constant_override("separation", 4)
 	add_child(col)
 
-	var tl := Art.label("NumXventure", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
+	var tl := Art.title(Art.label("NumXventure", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
 	tl.custom_minimum_size = Vector2(COL_W, 0)
 	Art.shadow(tl, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(tl)
 
 	if _tagline() != "":
-		var tag := Art.label(_tagline(), Pal.SMALL, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		var tag := Art.title(Art.label(_tagline(), Pal.SMALL, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
 		tag.custom_minimum_size = Vector2(COL_W, 0)
 		col.add_child(tag)
 

@@ -269,7 +269,7 @@ static func panel(s: Vector2, title := "", title_col: Color = Pal.TITLE) -> Pane
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pc.add_child(box)
 	if title != "":
-		var head := Art.label(title, Pal.H2, title_col, HORIZONTAL_ALIGNMENT_CENTER)
+		var head := Art.title(Art.label(title, Pal.H2, title_col, HORIZONTAL_ALIGNMENT_CENTER))
 		box.add_child(head)
 		var rule := HSeparator.new()
 		rule.modulate = Color(0.6, 0.5, 0.4, 0.6)
@@ -321,7 +321,7 @@ static func ribbon(row: int, text: String, h := 22.0, size := Pal.SMALL) -> HBox
 	var middle := Art.cell(RIBBONS, 1, row)
 	var right := Art.cell(RIBBONS, 2, row)
 	var k := h / left.region.size.y
-	var label := Art.label(text, size, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	var label := Art.title(Art.label(text, size, Pal.WHITE, HORIZONTAL_ALIGNMENT_CENTER)) as Label
 	Art.shadow(label)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -407,10 +407,10 @@ static func auth_layout(parent: Node, title: String, form_w := 330.0) -> VBoxCon
 	brand.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# 34, not the splash's 44: beside a 330px form on a 640 canvas the column
 	# is ~250 wide, and the full-size name ran past it.
-	var logo := Art.label("NumXventure", 34, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER)
+	var logo := Art.title(Art.label("NumXventure", 34, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
 	brand.add_child(logo)
-	var tag := Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	var tag := Art.title(Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(tag)
 	brand.add_child(tag)
 	split.add_child(brand)
