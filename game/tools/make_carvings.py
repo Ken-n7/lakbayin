@@ -55,13 +55,15 @@ G = {
     "^2": ["###", "..#", "###", "#..", "###"],
     "^3": ["###", "..#", "###", "..#", "###"],
     " ": [".....", ".....", ".....", ".....", ".....", ".....", "....."],
+    # A size down, for the smallest rock's face (a leading "_").
+    "_9": [".##.", "#..#", "#..#", ".###", "...#", ".##."],
 }
 
 
 def tokens(text):
     out, i = [], 0
     while i < len(text):
-        n = 2 if text[i] == "^" else 1
+        n = 2 if text[i] in "^_" else 1
         out.append(text[i:i + n])
         i += n
     return out
@@ -129,15 +131,15 @@ PIECES = {
     # Blue, Station 1: the four operations.
     "blue_a": ("Rock4", False, [("+ -", 24, 21, -1), ("x /", 32, 38, 0)]),
     "blue_b": ("Rock2", False, [("3+4=7", 32, 28, 3)]),
-    "blue_c": ("Rock1", True, [("+", 32, 26, 0)]),
+    "blue_c": ("Rock1", True, [("+", 32, 29, 0)]),
     # Yellow, Station 2: the order -- brackets first, then x and /.
     "yellow_a": ("Rock3", False, [("(x)", 33, 29, 1)]),
     "yellow_b": ("Rock2", True, [("2+3x4", 32, 28, 1)]),
     # Red, Station 3: powers.
     "red_a": ("Rock4", True, [("v^2", 39, 22, 1), ("2^3", 33, 38, -1)]),
-    "red_b": ("Rock2", False, [("2^3=8", 32, 29, 3)]),
+    "red_b": ("Rock2", False, [("2^3=8", 32, 27, 3)]),
     "red_c": ("Rock3", False, [("4^2", 35, 27, -1), ("16", 31, 35, 1)]),
-    "red_d": ("Rock1", False, [("9", 31, 26, 0)]),
+    "red_d": ("Rock1", False, [("_9", 31, 30, 0)]),
 }
 
 
