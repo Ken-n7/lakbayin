@@ -278,6 +278,27 @@ func _on_rescue_news(data: Dictionary) -> void:
 			amount, "" if amount == 1 else "s"])
 
 
+## The standings as a panel over the map, not a screen of their own: opening
+## the board used to close the map, and ← went Home, out of the game. The
+## hero stands while it is open; ← closes it and play goes on where it was.
+## Behind `hud.menu_leaderboard`, which is off for now.
+func open_board() -> void:
+	if _overlay != null:
+		return
+	var b: Control = preload("res://scripts/LeaderboardScreen.gd").new()
+	b.set("main", main)
+	_overlay = b
+	_close_card()
+	hud.set_pad(false)
+	hud.ui_layer.add_child(b)
+	b.setup({"session": Game.session_id if Game.session_id != "" else Game.joined_session,
+			"close": true, "live": false})
+	b.tree_exiting.connect(func() -> void:
+		if _overlay == b:
+			_overlay = null
+			hud.set_pad(true))
+
+
 ## Rescue from the map's menu. The question screen opens its own.
 func open_rescue() -> void:
 	if _overlay != null or Game.rescue_block() != "":

@@ -41,6 +41,12 @@ var _flash_active := false
 ## keep the board from taking taps behind the panel.
 var paused := false
 
+## Leaderboard in the in-game menu. Off (client, 2026-09-27): no standings
+## mid-game. Kept, not removed -- it may come back -- and it works: it opens the
+## board as a panel over the map (`AdventureScreen.open_board`), and ← returns
+## to the game. Home and the results screen keep their Leaderboard.
+var menu_leaderboard := false
+
 
 func _init(screen: Control) -> void:
 	adv = screen
@@ -527,6 +533,14 @@ func open_menu() -> void:
 			["Home", Ui.SMALL, "home", "end"],
 			["Restart", Ui.SMALL, "adventure", "restart"],
 			["New Game", Ui.SMALL_RED, "hero", "abandon"]]:
+		if spec[0] == "Leaderboard":
+			if menu_leaderboard:
+				var lb := Ui.button(spec[0], 200, Ui.H, spec[1])
+				lb.pressed.connect(func() -> void:
+					_leave_menu(menu, "", "")
+					adv.open_board())
+				Ui.centre_row(box, lb)
+			continue
 		var b := Ui.button(spec[0], 200, Ui.H, spec[1])
 		b.pressed.connect(_leave_menu.bind(menu, spec[2], spec[3]))
 		Ui.centre_row(box, b)

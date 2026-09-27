@@ -78,12 +78,6 @@ func _build() -> void:
 	_list.add_theme_constant_override("separation", 4)
 	scroll.add_child(_list)
 
-	var note := Art.label("Gems reset to %d for every adventure. Finish all stations to avoid the −%d penalty." %
-			[Game.START_GEMS, -(Game.GEM_TEAM_FINISH_PENALTY)], Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.custom_minimum_size = Vector2(540, 0)
-	box.add_child(note)
-
 	_fill()
 	_watch()
 
@@ -144,11 +138,12 @@ func _fill_teams() -> void:
 		rows = await Board.teams(_sid)
 	if rows.is_empty():
 		rows = Game.leaderboard
+	if not is_instance_valid(_list):
+		return
 	if rows.is_empty():
 		_list.add_child(Art.label("No scores yet.", Pal.SMALL, Pal.INK_MUTED,
 				HORIZONTAL_ALIGNMENT_CENTER))
-		return
-	if not is_instance_valid(_list):
+		_add_note()
 		return
 	_list.add_child(_podium(rows.slice(0, 3)))
 	# Fourth place and below, as rows under the podium.
@@ -158,6 +153,18 @@ func _fill_teams() -> void:
 			var r: Dictionary = rows[i]
 			_row([str(i + 1), str(r.get("name", "")), str(int(r.get("gems", 0)))], [12, 40, 12],
 				_row_is_me(r))
+	_add_note()
+
+
+## The scoring note, at the end of the list rather than pinned under it: pinned,
+## it took the space the list needed and covered the fifth team.
+func _add_note() -> void:
+	var note := Art.label("Gems reset to %d for every adventure. Finish all stations to avoid the −%d penalty." %
+			[Game.START_GEMS, -(Game.GEM_TEAM_FINISH_PENALTY)], Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	note.name = "Note"
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.custom_minimum_size = Vector2(520, 0)
+	_list.add_child(note)
 
 
 ## The mockup's podium: first in the middle and tallest, second to its left,
@@ -208,14 +215,18 @@ func _podium(top: Array) -> Control:
 func _fill_players() -> void:
 	_row(["Rank", "Username", "Gems", "Right", "Time"], [10, 30, 12, 10, 12])
 	var rows: Array = await Board.players(_sid)
+	if not is_instance_valid(_list):
+		return
 	if rows.is_empty():
 		_list.add_child(Art.label("Nobody has joined yet.", Pal.SMALL, Pal.INK_MUTED,
 				HORIZONTAL_ALIGNMENT_CENTER))
+		_add_note()
 		return
 	for i in rows.size():
 		var r: Dictionary = rows[i]
 		_row([str(i + 1), str(r.username), str(r.gems), str(r.correct),
 			_time_of(r)], [10, 30, 12, 10, 12])
+	_add_note()
 
 
 static func _time_of(r: Dictionary) -> String:
