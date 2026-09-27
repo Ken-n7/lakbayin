@@ -63,24 +63,28 @@ func _ready() -> void:
 		"" if mates.is_empty() or str(mates[0].profile_id) != Net.user_id else "listed you")
 
 	_check("someone on another team is refused",
-		"" if (await Scores.rescue(_session, c)).error != "" else "the transfer went through")
+		"" if (await Scores.rescue(_session, c, 5)).error != "" else "the transfer went through")
 	_check("rescuing yourself is refused",
-		"" if (await Scores.rescue(_session, a)).error != "" else "the transfer went through")
+		"" if (await Scores.rescue(_session, a, 5)).error != "" else "the transfer went through")
+	_check("giving every gem is refused (you keep 1)",
+		"" if (await Scores.rescue(_session, b, 50)).error != "" else "the transfer went through")
+	_check("giving 0 is refused",
+		"" if (await Scores.rescue(_session, b, 0)).error != "" else "the transfer went through")
 
-	var sent: Dictionary = await Scores.rescue(_session, b)
-	_check("a team-mate can be rescued", sent.error)
-	_check("the receiver gains 10",
-		"" if int((sent.row as Dictionary).get("gems", 0)) == 60
+	# The rescuer picks the amount (client, 2026-09-27): 15 here.
+	var sent: Dictionary = await Scores.rescue(_session, b, 15)
+	_check("a team-mate can be rescued with a chosen amount", sent.error)
+	_check("the reply is the rescuer's row, 15 lighter",
+		"" if int((sent.row as Dictionary).get("gems", 0)) == 35
 		else "got %s" % (sent.row as Dictionary).get("gems"))
-	var mine: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		"/rest/v1/members?select=gems,rescued_at&session_id=eq." + _session
-		+ "&profile_id=eq." + a)
-	var row: Dictionary = mine.data[0] if mine.data is Array \
-		and not (mine.data as Array).is_empty() else {}
-	_check("the sender pays 10",
-		"" if int(row.get("gems", 0)) == 40 else "got %s" % row.get("gems"))
-	_check("one assist per sender",
-		"" if (await Scores.rescue(_session, b)).error != "" else "a second was allowed")
+	var theirs: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		"/rest/v1/members?select=gems&session_id=eq." + _session + "&profile_id=eq." + b)
+	var brow: Dictionary = theirs.data[0] if theirs.data is Array \
+		and not (theirs.data as Array).is_empty() else {}
+	_check("the teammate gains 15",
+		"" if int(brow.get("gems", 0)) == 65 else "got %s" % brow.get("gems"))
+	_check("one rescue per player",
+		"" if (await Scores.rescue(_session, b, 1)).error != "" else "a second was allowed")
 
 	# Elimination: ten wrong answers from 50 reaches exactly zero.
 	await _as(c)
@@ -106,7 +110,7 @@ func _ready() -> void:
 
 	await _as(a)
 	_check("an eliminated player cannot be rescued",
-		"" if (await Scores.rescue(_session, c)).error != "" else "the transfer went through")
+		"" if (await Scores.rescue(_session, c, 1)).error != "" else "the transfer went through")
 
 	await Net.sign_in(_admin, "letmein123")
 	await Net.rest(HTTPClient.METHOD_DELETE, "/rest/v1/sessions?id=eq." + _session)

@@ -324,17 +324,28 @@ drop trigger if exists members_eliminated on public.members;
 create trigger members_eliminated before update on public.members
   for each row execute function public.mark_eliminated();
 
--- Rescue: -10 from the sender, +10 to the receiver, both in one statement so a
--- failure cannot create or destroy gems (SPECS §4, and the paper's "A teammate
--- will be allowed to transfer 10 gems to assist one member only").
+-- Rescue (client, 2026-09-27): a player gives a teammate who is running out of
+-- gems as many of their own as they choose, both halves in one statement so a
+-- failure cannot create or destroy gems. Replaces the fixed 10 of the paper's
+-- "transfer 10 gems to assist one member only".
 --
--- One assist per sender per adventure, which is what "one member only" means,
--- enforced by `rescued_at` rather than trusted to the client. You cannot
--- rescue yourself, someone on another team, or someone already eliminated --
--- the -50 has been taken and refunding it would make elimination negotiable.
+-- ONE rescue per player per adventure -- sent, not received: a player can be
+-- rescued by several teammates -- enforced by `rescued_at`, never trusted to
+-- the client. The rescuer keeps at least 1 gem: giving the last one away would
+-- eliminate them and cost the team the -50 the rescue was meant to prevent.
+-- You cannot rescue yourself, someone on another team, someone already out
+-- (the -50 has been taken; refunding it would make elimination negotiable), or
+-- someone already through the Victory Gate.
+--
+-- Both rows are locked together, in one order, before anything is read: two
+-- teammates rescuing each other at the same moment wait for each other rather
+-- than deadlock, and an answer scored mid-rescue cannot take the giver under 1.
+-- Returns the GIVER's row, which is the one the rescuer's phone keeps.
 alter table public.members add column if not exists rescued_at timestamptz;
 
-create or replace function public.rescue(p_session uuid, p_to uuid)
+drop function if exists public.rescue(uuid, uuid);
+
+create or replace function public.rescue(p_session uuid, p_to uuid, p_amount int)
 returns public.members
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -345,19 +356,29 @@ begin
                  where id = p_session and state = 'running') then
     raise exception 'the adventure is not running';
   end if;
+  perform 1 from public.members
+   where session_id = p_session and profile_id in (auth.uid(), p_to)
+   order by profile_id
+   for update;
   select * into giver from public.members
    where session_id = p_session and profile_id = auth.uid();
   if giver is null then
     raise exception 'you are not in this adventure';
   end if;
   if giver.rescued_at is not null then
-    raise exception 'you have already sent a rescue';
+    raise exception 'you have already used your rescue';
+  end if;
+  if giver.eliminated then
+    raise exception 'you are out of the adventure';
   end if;
   if giver.profile_id = p_to then
     raise exception 'you cannot rescue yourself';
   end if;
-  if giver.gems < 10 then
-    raise exception 'you need 10 gems to send a rescue';
+  if p_amount is null or p_amount < 1 then
+    raise exception 'give at least 1 gem';
+  end if;
+  if p_amount > giver.gems - 1 then
+    raise exception 'you can give at most % gems -- keep at least 1', greatest(giver.gems - 1, 0);
   end if;
 
   select * into taker from public.members
@@ -369,16 +390,19 @@ begin
   if taker.eliminated then
     raise exception 'that player is already out';
   end if;
+  if taker.finished then
+    raise exception 'that player has already finished';
+  end if;
 
-  update public.members set gems = gems - 10, rescued_at = now(), updated_at = now()
-   where session_id = p_session and profile_id = auth.uid();
-  update public.members set gems = gems + 10, updated_at = now()
-   where session_id = p_session and profile_id = p_to
-  returning * into taker;
-  return taker;
+  update public.members set gems = gems + p_amount, updated_at = now()
+   where session_id = p_session and profile_id = p_to;
+  update public.members set gems = gems - p_amount, rescued_at = now(), updated_at = now()
+   where session_id = p_session and profile_id = auth.uid()
+  returning * into giver;
+  return giver;
 end $$;
 
-grant execute on function public.rescue(uuid, uuid) to authenticated;
+grant execute on function public.rescue(uuid, uuid, int) to authenticated;
 
 -- A player's own time for the adventure: the game clock when they walk into
 -- the Victory Gate -- pauses are not theirs, so they do not count (the clock's

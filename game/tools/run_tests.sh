@@ -39,6 +39,7 @@ run "collisions  " --script res://test_collisions.gd
 run "smoke       " res://scripts/tests/smoke_test.tscn
 run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn
+run "rescue      " res://scripts/tests/rescue_test.tscn
 run "layout      " res://tools/layout.tscn
 
 # The two windowed tools need a GL context, so CI will skip them -- but they
@@ -54,6 +55,19 @@ if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
 	rm -rf "$shots"
 else
 	echo "skip  GL tools -- no display"
+fi
+
+# The server's rules (supabase/schema.sql) on plain Postgres, wherever there is
+# one to talk to: PGHOST / PGPORT / PGUSER pointing at a server that lets this
+# user create databases. See supabase/test/run.sh.
+if command -v psql >/dev/null && [[ -n "${PGHOST:-}" ]] && psql -X -q -c "select 1" >/dev/null 2>&1; then
+	if out=$(../supabase/test/run.sh 2>&1); then
+		echo "ok    server SQL   $(echo "$out" | grep -E '^---- ' | tail -1)"
+	else
+		echo "FAIL  server SQL"; echo "$out" | grep -E "^FAIL" | head -8; fail=1
+	fi
+else
+	echo "skip  server SQL -- no Postgres (set PGHOST, see supabase/test/run.sh)"
 fi
 
 [[ $fail -eq 0 ]] && echo "all suites green" || echo "SUITES FAILED"

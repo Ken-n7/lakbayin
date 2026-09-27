@@ -383,6 +383,45 @@ func set_pad(on: bool) -> void:
 		joystick.release()
 
 
+## A line over everything -- the question screen included -- for news from
+## another player: "ana rescued you! +15 gems". The prompt line sits under the
+## overlays, where a player mid-question would never see it.
+## On the HUD's own wooden plate, so it reads over the parchment of a question
+## as well as over the map.
+var _news: Label = null
+var _news_bar: Control = null
+var _news_tw: Tween = null
+
+
+func announce(text: String) -> void:
+	if _news_bar == null or not is_instance_valid(_news_bar):
+		_news_bar = CenterContainer.new()
+		_news_bar.name = "NewsBar"
+		_news_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+		_news_bar.offset_top = 46.0
+		_news_bar.offset_bottom = 84.0
+		_news_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_news = Art.label("", Pal.BODY + 2, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+		_news.name = "News"
+		_news.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var plate := Ui.plank(_news, 14.0)
+		plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_news_bar.add_child(plate)
+		ui_layer.add_child(_news_bar)
+	ui_layer.move_child(_news_bar, -1)       # over whatever opened since
+	_news.text = text
+	_news_bar.visible = true
+	_news_bar.modulate.a = 1.0
+	if _news_tw != null and _news_tw.is_valid():
+		_news_tw.kill()
+	_news_tw = _news_bar.create_tween()
+	_news_tw.tween_interval(3.5)
+	_news_tw.tween_property(_news_bar, "modulate:a", 0.0, 0.5)
+	_news_tw.tween_callback(func() -> void:
+		_news_bar.visible = false
+		_news.text = "")
+
+
 func flash(text: String) -> void:
 	if not is_instance_valid(prompt):
 		return
@@ -491,6 +530,23 @@ func open_menu() -> void:
 		var b := Ui.button(spec[0], 200, Ui.H, spec[1])
 		b.pressed.connect(_leave_menu.bind(menu, spec[2], spec[3]))
 		Ui.centre_row(box, b)
+		if spec[0] == "Resume" and Game.session_id != "":
+			_menu_rescue(box, menu)
+
+
+## Rescue from the map, not only from a question: whoever is running low needs
+## it now, not at the rescuer's next circle. Team games only; greyed with the
+## reason once it cannot be used.
+func _menu_rescue(box: VBoxContainer, menu: Control) -> void:
+	var why := Game.rescue_block()
+	var r := Ui.button("Rescue used" if Game.rescue_sent else "Rescue a teammate", 200, Ui.H, Ui.SMALL)
+	r.name = "Rescue"
+	r.disabled = why != ""
+	r.tooltip_text = why if why != "" else "Give some of your gems to a teammate"
+	r.pressed.connect(func() -> void:
+		_leave_menu(menu, "", "")
+		adv.open_rescue())
+	Ui.centre_row(box, r)
 
 
 ## Every exit closes the menu. `drop` decides the fate of the run in
