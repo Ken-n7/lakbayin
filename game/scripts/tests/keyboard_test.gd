@@ -7,7 +7,16 @@ extends TestCase
 ## exists on a phone -- and the rest is the real Main and the real screens.
 ##   godot --headless res://scripts/tests/keyboard_test.tscn
 
-const SCREENS := ["login", "register", "reset", "team", "questions", "controls", "feedback"]
+## [what, screen, how to get to its fields]. Some fields only show part way
+## through: the join code (signed in), the reset's second step, the team
+## names on the teacher's cards once there are teams.
+var SCREENS := [
+	["login", "login", Callable()], ["register", "register", Callable()],
+	["reset, step 1", "reset", Callable()], ["reset, step 2", "reset", _reset_step2],
+	["team name (offline)", "team", Callable()], ["join code", "team", _join_code],
+	["questions", "questions", Callable()], ["controls", "controls", Callable()],
+	["controls, team cards", "controls", _team_cards], ["feedback", "feedback", Callable()],
+]
 const KEYBOARDS := [0.5, 0.6, 0.7]      # share of the screen's height
 
 var main: Control
@@ -25,7 +34,7 @@ func view_h() -> float:
 func fields(root: Node) -> Array:
 	var out: Array = []
 	for f: Control in root.find_children("*", "LineEdit", true, false) + root.find_children("*", "TextEdit", true, false):
-		if f.is_visible_in_tree() and f.editable:
+		if f.is_visible_in_tree() and f.editable and f.virtual_keyboard_enabled:
 			out.append(f)
 	return out
 
@@ -41,6 +50,13 @@ func settle() -> void:
 
 ## `f`, focused under a keyboard `share` of the screen tall: is it in view?
 func in_view(f: Control, share: float) -> Array:
+	# A field down a scrolled list is scrolled to first, as a thumb would.
+	var n: Node = f.get_parent()
+	while n != null and not n is ScrollContainer:
+		n = n.get_parent()
+	if n != null:
+		(n as ScrollContainer).ensure_control_visible(f)
+		await frames(2)
 	main.fake_keyboard = view_h() * share
 	f.grab_focus()
 	await settle()
@@ -70,22 +86,43 @@ func _ready() -> void:
 	finish("KEYBOARD")
 
 
+func _reset_step2(screen: Control) -> void:
+	screen.call("_show_step", 2)
+
+
+func _join_code(screen: Control) -> void:
+	for c in screen.get_children():
+		c.free()
+	screen.call("_build_code")
+
+
+## Six teams, the class the client plays with.
+func _team_cards(screen: Control) -> void:
+	var lobby: Object = screen.get("_lobby")
+	lobby.set("teams", range(6).map(func(i: int) -> Dictionary:
+		return {"id": "t%d" % i, "name": "Team %d" % (i + 1)}))
+	screen.call("_draw_teams")
+
+
 func _every_field() -> void:
 	print("-- every field on every screen, above the keyboard")
-	for s: String in SCREENS:
-		main.open(s)
+	for c: Array in SCREENS:
+		main.open(c[1])
 		await frames(20)
+		if (c[2] as Callable).is_valid():
+			(c[2] as Callable).call(main.current)
+			await frames(20)
 		var list := fields(main.current)
-		check("%s has a field to type in" % s, not list.is_empty())
+		check("%s has a field to type in" % c[0], not list.is_empty())
 		for f: Control in list:
 			var worst := ""
 			for share: float in KEYBOARDS:
 				var got: Array = await in_view(f, share)
 				if not got[0]:
 					worst += " %d%%: %s" % [int(share * 100), got[1]]
-			check("%s: '%s' stays in view" % [s, label(f)], worst == "", worst)
+			check("%s: '%s' stays in view" % [c[0], label(f)], worst == "", worst)
 		await release()
-		check("%s: back where it was once the keyboard is gone" % s, main.current.position.y == 0.0,
+		check("%s: back where it was once the keyboard is gone" % c[0], main.current.position.y == 0.0,
 			str(main.current.position.y))
 
 
@@ -131,6 +168,18 @@ func _how_it_moves() -> void:
 	await settle()
 	check("focus off the fields: the screen comes back down", main.current.position.y == 0.0,
 		str(main.current.position.y))
+	# The quiz's answer never opens the keyboard -- its own keypad is the
+	# input -- so nothing lifts for it, whatever keyboard there might be.
+	var answer := Ui.line_edit("", 150, 40, 25)
+	answer.virtual_keyboard_enabled = false
+	answer.position = Vector2(100, view_h() - 50.0)
+	main.current.add_child(answer)
+	main.fake_keyboard = view_h() * 0.6
+	answer.grab_focus()
+	await settle()
+	check("a field on its own keypad (the quiz answer) lifts nothing", main.current.position.y == 0.0,
+		str(main.current.position.y))
+	answer.queue_free()
 	await release()
 	main.open("register")
 	await frames(20)

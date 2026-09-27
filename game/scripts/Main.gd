@@ -228,7 +228,10 @@ func _lift_wanted(panel: Control, field: Control, keyboard: float) -> float:
 func _process(_delta: float) -> void:
 	var keyboard := keyboard_height()
 	var focus := get_viewport().gui_get_focus_owner()
-	var field: Control = focus if (focus is LineEdit or focus is TextEdit) and focus.is_visible_in_tree() else null
+	# Not a field that never opens the keyboard (the answer, typed on the
+	# quiz's own keypad): nothing of it can be under one.
+	var field: Control = focus if (focus is LineEdit or focus is TextEdit) and focus.is_visible_in_tree() \
+			and bool(focus.get("virtual_keyboard_enabled")) else null
 	var panel: Control = _panel_of(field) if field != null and keyboard > 0.0 else null
 	if panel != null and not _lifted.has(panel):
 		_lifted[panel] = [panel.position.y, 0.0]
