@@ -37,6 +37,7 @@ const ISLANDS := [
 
 var _world: Node2D
 var _clouds: Clouds
+var _motes: MathMotes
 var _land := {}
 var _pan_tw: Tween
 
@@ -51,6 +52,13 @@ func _ready() -> void:
 	_build_ground()
 	_build_islands()
 	_build_life()
+	# Maths rising out of the sea, over the islands and under the clouds. Its
+	# own node after the world, moved with it (`_pan_to`): inside the y-sorted
+	# world it would sort under the islands, and a z_index lifts it over the
+	# screens in front too -- it drew on the sign-in form.
+	_motes = MathMotes.new(Vector2(W * TILE, H * TILE))
+	_motes.name = "MathMotes"
+	add_child(_motes)
 	_clouds = Clouds.new(W * TILE * 0.6)
 	add_child(_clouds)
 	var wash := ColorRect.new()
@@ -187,3 +195,5 @@ func _pan_to(t: float) -> void:
 	_world.position.x = -travel * t
 	# Centre the band of islands in whatever height this screen has.
 	_world.position.y = (size.y - H * TILE) * 0.5
+	if _motes != null:
+		_motes.position = _world.position
