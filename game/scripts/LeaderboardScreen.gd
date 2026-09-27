@@ -223,7 +223,7 @@ func _podium(top: Array) -> Control:
 ## and each player's own time through the Victory Gate -- "Out" if they were
 ## eliminated, "DNF" if the session ended with them neither, "—" while playing.
 func _fill_players() -> void:
-	_row(["Rank", "Username", "Gems", "Right", "Time"], [10, 30, 12, 10, 12])
+	_row(["Rank", "Username", "Gems", "Correct", "Time"], [10, 30, 12, 10, 12])
 	var rows: Array = await Board.players(_sid)
 	if not is_instance_valid(_list):
 		return

@@ -215,7 +215,13 @@ func _team_panel() -> void:
 	check("a heading and a line per player", players.get_child_count() == 4, str(players.get_child_count()))
 	var line := func(i: int) -> Array:
 		return players.get_child(i).get_children().map(func(l: Label) -> String: return l.text)
-	check("the heading", line.call(0) == ["Player", "Gems", "Right", "Finish"], str(line.call(0)))
+	check("the heading", line.call(0) == ["Player", "Gems", "Correct", "Finish"], str(line.call(0)))
+	var fits := true
+	for l: Label in players.get_child(0).get_children():
+		var need := l.get_theme_font("font").get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+				l.get_theme_font_size("font_size")).x
+		fits = fits and need <= l.size.x
+	check("every heading fits its column, Correct included", fits)
 	check("me, starred, with my finish time", line.call(1) == ["★ me", "60", "12", "12:34"], str(line.call(1)))
 	check("a player who didn't finish: DNF", line.call(2) == ["ana", "40", "9", "DNF"], str(line.call(2)))
 	check("a player who ran out: Out", line.call(3) == ["bo", "0", "3", "Out"], str(line.call(3)))

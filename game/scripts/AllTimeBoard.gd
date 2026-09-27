@@ -245,7 +245,7 @@ func _open_team(rank: int, r: Dictionary) -> void:
 				Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER))
 		return
 	var players: Array = got.get("rows", [])
-	list.add_child(_player_line(["Player", "Gems", "Right", "Finish"], true, false))
+	list.add_child(_player_line(["Player", "Gems", "Correct", "Finish"], true, false))
 	var out := 0
 	var short := 0
 	var sum := 0
