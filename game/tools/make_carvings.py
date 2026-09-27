@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-"""Rocks with maths carved into them -- standing rocks and flat ones in the grass, for the menus'
-scene (client, 2026-09-27: math "etched on some assets").
+"""Rocks with maths carved into them -- standing rocks and flat ones in the
+grass -- for the menus' scene (client, 2026-09-27: math "etched on some
+assets", then "natural rocks with carves in them", then "the same resolution
+as the Tiny Swords ones").
 
-Drawn pixel by pixel in the Tiny Swords rocks' own four stone colours and
-their way of drawing -- jagged outlines, lit facets, dark cracks where the
-facets meet -- so they sit in the pack as natural rock, not dressed stone. Each island carries its station's
-signs: Blue the four operations, Yellow the order they are done in -- ( ),
-then x and /, then + and - -- Red the powers. The carving is a groove in the
-darkest stone with a light lip under it, where the light catches the cut.
+Drawn at the pack's own pixel size: the backdrop shows Tiny Swords' buildings,
+ground and trees at 0.5, so these are drawn F = 2.6 times finer than their
+first cut and shown at 0.5 too (`Backdrop.CARVING_SCALE`). The shapes are the
+pack's way of drawing rock -- jagged outline, lit crown and left face, shaded
+right and foot, an ink line heavier on the shaded side, cracks with dark
+wedges -- in its rocks' four colours. The maths is cut in MedievalSharp, the
+game's display face: a dark groove with a light lip under it.
+
+Each island carries its station's signs: Blue the four operations, Yellow
+the order they are done in -- ( ), then x and /, then + and - -- Red powers.
 
 Idempotent. Run from game/ with Pillow installed:
 
@@ -15,9 +21,11 @@ Idempotent. Run from game/ with Pillow installed:
 """
 import os
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 OUT = "assets/terrain/decorations/math"
+FONT = "assets/fonts/MedievalSharp.ttf"
+F = 2.6            # detail over the first cut; shown at 0.5 in the backdrop
 
 # The stone of Rock1-4, lightest to the outline.
 LIGHT = (0x8C, 0xC3, 0xC4, 255)
@@ -27,67 +35,8 @@ LINE = (0x16, 0x1C, 0x2E, 255)
 GROOVE = (0x1C, 0x28, 0x30, 255)
 LIP = (0xD8, 0xF4, 0xF0, 255)
 SHADOW = (0x10, 0x18, 0x20, 70)
-# The stations' liveries, for the inlay on each stone's head.
 INLAY = {"blue": (0x4A, 0x7C, 0xC9, 255), "yellow": (0xE6, 0xB4, 0x3C, 255),
          "red": (0xC8, 0x48, 0x3C, 255)}
-
-# 5x7 glyphs, and 3x5 raised ones for powers (a leading "^").
-G = {
-    "+": [".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."],
-    "-": [".....", ".....", ".....", "#####", ".....", ".....", "....."],
-    "x": [".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "....."],
-    "/": ["..#..", ".....", ".....", "#####", ".....", ".....", "..#.."],
-    "=": [".....", ".....", "#####", ".....", "#####", ".....", "....."],
-    "(": ["...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."],
-    ")": [".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."],
-    "v": [".....", ".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#"],   # the letter x
-    "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
-    "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
-    "3": ["####.", "....#", "....#", ".###.", "....#", "....#", "####."],
-    "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
-    "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
-    "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
-    "^2": ["###", "..#", "###", "#..", "###"],
-    "^3": ["###", "..#", "###", "..#", "###"],
-    " ": [".....", ".....", ".....", ".....", ".....", ".....", "....."],
-}
-
-
-def tokens(text):
-    out, i = [], 0
-    while i < len(text):
-        if text[i] == "^":
-            out.append(text[i:i + 2])
-            i += 2
-        else:
-            out.append(text[i])
-            i += 1
-    return out
-
-
-def width(text):
-    return sum(len(G[t][0]) + 1 for t in tokens(text)) - 1
-
-
-def carve(im, text, x0, y0):
-    """Cut `text` into the stone at (x0, y0), the top of a 7-row line."""
-    x = x0
-    for t in tokens(text):
-        rows = G[t]
-        dy = -1 if t.startswith("^") else 0      # powers sit high
-        for r, row in enumerate(rows):
-            for c, ch in enumerate(row):
-                if ch == "#":
-                    im.putpixel((x + c, y0 + dy + r), GROOVE)
-        # The lip: light on the stone just under each cut.
-        for r, row in enumerate(rows):
-            for c, ch in enumerate(row):
-                below = rows[r + 1][c] if r + 1 < len(rows) else "."
-                if ch == "#" and below != "#":
-                    p = (x + c, y0 + dy + r + 1)
-                    if im.getpixel(p) not in (GROOVE, LINE, (0, 0, 0, 0)):
-                        im.putpixel(p, LIP)
-        x += len(rows[0]) + 1
 
 
 def _jag(seed, n, lo, hi):
@@ -99,23 +48,9 @@ def _jag(seed, n, lo, hi):
     return out
 
 
-def _shade(im, mask, face):
-    """Fill `mask` pixels with `face(x, y)`, outlined in the pack's ink."""
-    w, h = im.size
-    inside = lambda x, y: 0 <= x < w and 0 <= y < h and mask[y][x]
-    for y in range(h):
-        for x in range(w):
-            if not mask[y][x]:
-                continue
-            edge = not (inside(x - 1, y) and inside(x + 1, y) and inside(x, y - 1) and inside(x, y + 1))
-            im.putpixel((x, y), LINE if edge else face(x, y))
-
-
-def _poly_mask(w, h, pts):
-    from PIL import ImageDraw
-    m = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(m).polygon(pts, fill=1)
-    return [[m.getpixel((x, y)) == 1 for x in range(w)] for y in range(h)]
+def _s(pts):
+    """First-cut coordinates to this resolution."""
+    return [(round(x * F), round(y * F)) for x, y in pts]
 
 
 def _shadow(im, cx, cy, rx, ry):
@@ -127,13 +62,9 @@ def _shadow(im, cx, cy, rx, ry):
 
 
 def _rock(w, h, facets, cracks, notches, seed):
-    """A rock the way the pack draws one: facets of lit, mid and shaded stone,
-    an ink outline that thickens on the shaded (bottom and right) side, and
-    ink cracks with dark wedges where the facets meet. Points move by up to a
-    pixel per `seed`, so no two rocks share an outline."""
-    from PIL import ImageDraw
-    # One offset per corner, shared by every facet meeting there -- moved
-    # separately, neighbouring facets part and the grass shows through.
+    """A rock the way the pack draws one. Coordinates are the first cut's;
+    corners move a little per `seed`, shared by every facet meeting there, so
+    no two rocks share an outline and no facets part."""
     j = _jag(seed, 400, -1, 1)
     moves = {}
     for pts, _ in facets:
@@ -141,28 +72,77 @@ def _rock(w, h, facets, cracks, notches, seed):
             if p not in moves:
                 n = len(moves)
                 moves[p] = (j[2 * n], j[2 * n + 1])
-    wob = lambda pts: [(x + moves[(x, y)][0], y + moves[(x, y)][1]) for x, y in pts]
-    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    wob = lambda pts: [(round((x + moves[(x, y)][0] * .6) * F), round((y + moves[(x, y)][1] * .6) * F))
+                       for x, y in pts]
+    W, H = round(w * F), round(h * F)
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    moved = [(wob(pts), col) for pts, col in facets]
-    for pts, col in moved:
-        d.polygon(pts, fill=col)
-    solid = lambda x, y: 0 <= x < w and 0 <= y < h and im.getpixel((x, y))[3] == 255
-    edge = [(x, y) for y in range(h) for x in range(w) if solid(x, y) and not (
-        solid(x - 1, y) and solid(x + 1, y) and solid(x, y - 1) and solid(x, y + 1))]
-    for p in edge:
-        im.putpixel(p, LINE)
-    # The shaded side's heavier line: one more pixel in from the bottom/right.
-    for x, y in edge:
-        if not solid(x, y + 1) or not solid(x + 1, y):
+    for pts, col in facets:
+        d.polygon(wob(pts), fill=col)
+    solid = lambda x, y: 0 <= x < W and 0 <= y < H and im.getpixel((x, y))[3] == 255
+    # The ink line: two pixels, the pack's weight at this size; three on the
+    # shaded bottom and right.
+    ring = set()
+    for y in range(H):
+        for x in range(W):
+            if solid(x, y) and not all(solid(x + dx, y + dy) for dx, dy in
+                                       ((-1, 0), (1, 0), (0, -1), (0, 1))):
+                ring.add((x, y))
+    inner = set()
+    for x, y in ring:
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            q = (x + dx, y + dy)
+            if solid(*q) and q not in ring:
+                inner.add(q)
+    heavy = set()
+    for x, y in inner:
+        if not solid(x, y + 2) or not solid(x + 2, y):
             for q in ((x, y - 1), (x - 1, y)):
-                if solid(*q) and im.getpixel(q) == DARK:
-                    im.putpixel(q, LINE)
+                if solid(*q) and q not in ring and q not in inner:
+                    heavy.add(q)
+    for p in ring | inner | heavy:
+        im.putpixel(p, LINE)
     for line in cracks:
-        d.line(line, fill=LINE, width=1)
+        d.line(_s(line), fill=LINE, width=2)
     for tri in notches:
-        d.polygon(tri, fill=LINE)
+        d.polygon(_s(tri), fill=LINE)
     return im
+
+
+def _glyphs(text, size):
+    """`text` in the display face, hard-edged (no anti-aliasing: pixel art),
+    thickened a pixel so the cut reads."""
+    font = ImageFont.truetype(FONT, size)
+    l, t, r, b = font.getbbox(text)
+    m = Image.new("1", (r - l + 4, b - t + 4), 0)
+    d = ImageDraw.Draw(m)
+    d.fontmode = "1"
+    d.text((2 - l, 2 - t), text, font=font, fill=1)
+    w, h = m.size
+    on = {(x, y) for y in range(h) for x in range(w) if m.getpixel((x, y))}
+    on |= {(x + 1, y) for x, y in on}
+    return on, w + 1, h
+
+
+def carve(im, text, cx, top, size, fit_w=None):
+    """Cut `text` centred on `cx`, its top at `top`; shrunk to `fit_w` if wide."""
+    on, w, h = _glyphs(text, size)
+    while fit_w and w > fit_w and size > 8:
+        size -= 1
+        on, w, h = _glyphs(text, size)
+    x0 = round(cx - w / 2)
+    inside = lambda p: 0 <= p[0] < im.width and 0 <= p[1] < im.height
+    for x, y in on:
+        p = (x0 + x, top + y)
+        if inside(p) and im.getpixel(p)[3] == 255:
+            im.putpixel(p, GROOVE)
+    # The lip: light on the stone just under each cut.
+    for x, y in on:
+        if (x, y + 1) not in on:
+            p = (x0 + x, top + y + 1)
+            if inside(p) and im.getpixel(p)[3] == 255 and im.getpixel(p) not in (LINE, GROOVE):
+                im.putpixel(p, LIP)
+    return h
 
 
 def stele(lines, inlay, seed):
@@ -177,29 +157,35 @@ def stele(lines, inlay, seed):
     im = _rock(w, h,
                [(crown, LIGHT), (left, LIGHT), (front, MID), (right, DARK), (foot, DARK)],
                [[(11, 14), (18, 12), (27, 14)], [(27, 14), (31, 20), (30, 32), (31, 44)],
-                [(9, 46), (22, 47), (31, 44)], [(10, 24), (9, 30)], [(31, 6), (29, 9)]],
+                [(9, 46), (22, 47), (31, 44)], [(11, 14), (10, 24), (9, 36), (8, 46), (7, 49)], [(31, 6), (29, 9)]],
                [[(17, 12), (19, 12), (18, 15)], [(30, 31), (32, 33), (30, 34)], [(21, 47), (23, 47), (22, 50)]],
                seed)
-    _shadow(im, w / 2, 52, w / 2 - 1, 3)
+    _shadow(im, w * F / 2, 52 * F, w * F / 2 - F, 3 * F)
     # The station's colour, a chip of stone set in the crown.
-    cx, cy = 21, 7
-    for dy in range(-2, 3):
-        for dx in range(-2 + abs(dy), 3 - abs(dy)):
-            im.putpixel((cx + dx, cy + dy), inlay if abs(dx) + abs(dy) < 2 else GROOVE)
-    # The maths, cut into the front face (x 12-28, clear of its seams).
-    y = 17 if len(lines) == 3 else 20
+    cx, cy, r = round(21 * F), round(7 * F), round(2.2 * F)
+    d = ImageDraw.Draw(im)
+    d.polygon([(cx, cy - r - 2), (cx + r + 2, cy), (cx, cy + r + 2), (cx - r - 2, cy)], fill=GROOVE)
+    d.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], fill=inlay)
+    im.putpixel((cx - 1, cy - r + 2), LIP)
+    # The maths, cut into the front face (x 12-28 of the first cut).
+    face_cx, face_w = 20.5 * F, 16 * F
+    y = round((16 if len(lines) == 3 else 19) * F)
     for line in lines:
-        carve(im, line, 12 + (17 - width(line)) // 2, y)
-        y += 9
+        # Signs alone are drawn small in the face; cut them larger than
+        # numbers so the line reads at the same weight.
+        signs = not any(c.isalnum() for c in line)
+        carve(im, line, face_cx, y - (round(1.5 * F) if signs else 0), round((12 if signs else 8.5) * F), face_w)
+        y += round(9 * F)
     return im
 
 
 def slab(text, seed):
     """A low rock in the grass, the maths cut into its top: the top lit, its
     front in shade, a crack or two."""
-    tw = width(text)
-    w, h = tw + 14, 23
-    W = w
+    size = round(8 * F)
+    _, tw, _ = _glyphs(text, size)
+    W = round(tw / F) + 12
+    w, h = W, 23
     top = [(3, 7), (8, 2), (int(W * .4), 3), (int(W * .6), 1), (W - 6, 3), (W - 2, 8), (W - 4, 14),
            (int(W * .5), 15), (6, 14), (1, 11)]
     lit = [(3, 7), (8, 2), (int(W * .4), 3), (int(W * .35), 4), (8, 4), (4, 9)]
@@ -208,20 +194,20 @@ def slab(text, seed):
     im = _rock(w, h, [(top, MID), (lit, LIGHT), (front, DARK)],
                [[(6, 14), (int(W * .5), 15), (W - 4, 14)], [(W - 4, 14), (W - 2, 8)]],
                [[(int(W * .5) - 1, 15), (int(W * .5) + 1, 15), (int(W * .5), 18)]], seed)
-    _shadow(im, w / 2, 20, w / 2, 2)
-    carve(im, text, (w - tw) // 2, 5)
+    _shadow(im, w * F / 2, 20 * F, w * F / 2, 2 * F)
+    carve(im, text, w * F / 2, round(3.6 * F), size, (W - 10) * F)
     return im
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
     pieces = {
-        "stele_blue.png": stele(["+ -", "x /"], INLAY["blue"], 11),
-        "stele_yellow.png": stele(["( )", "x /", "+ -"], INLAY["yellow"], 23),
-        "stele_red.png": stele(["v^2", "2^3", "4^2"], INLAY["red"], 37),
+        "stele_blue.png": stele(["+  −", "×  ÷"], INLAY["blue"], 11),
+        "stele_yellow.png": stele(["(  )", "×  ÷", "+  −"], INLAY["yellow"], 23),
+        "stele_red.png": stele(["x²", "2³", "4²"], INLAY["red"], 37),
         "slab_blue.png": slab("3+4=7", 5),
-        "slab_yellow.png": slab("2+3x4", 17),
-        "slab_red.png": slab("2^3=8", 29),
+        "slab_yellow.png": slab("2+3×4", 17),
+        "slab_red.png": slab("2³=8", 29),
     }
     for name, im in pieces.items():
         im.save(os.path.join(OUT, name))

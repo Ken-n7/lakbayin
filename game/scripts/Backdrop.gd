@@ -33,7 +33,7 @@ const WASH := 0.38                 # the dark wash over the scene
 const SHOW_MOTES := true
 const SHOW_CARVINGS := true
 const CARVED := "res://assets/terrain/decorations/math/"
-const CARVING_SCALE := 1.3
+const CARVING_SCALE := 0.5          # drawn at the pack's pixel size, shown like its buildings
 ## [piece, cell x, cell y]: a standing stone and a paving slab per island.
 const CARVINGS := [
 	["stele_blue", 5.3, 7.2], ["slab_blue", 7.4, 8.3],
