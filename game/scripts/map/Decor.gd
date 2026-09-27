@@ -19,6 +19,23 @@ func _init(w: Node2D, g: MapGrid) -> void:
 	grid = g
 
 
+## The carved rocks (MapCfg.CARVED_ROCKS): each the pack rock's own prop scene
+## with its carved picture swapped in, so the rock's own box makes it solid.
+## Solid on return, and its cells taken.
+func carved_rocks() -> Node2D:
+	var group := Node2D.new()
+	group.name = "CarvedRocks"
+	for c: Array in MapCfg.CARVED_ROCKS:
+		var rock: Node2D = load(MapCfg.PROP_SCENE % c[1]).instantiate()
+		rock.name = c[0]
+		(rock.get_node("Sprite") as Sprite2D).texture = load(MapCfg.CARVED_ROCK % c[0])
+		rock.position = c[2]
+		group.add_child(rock)
+	solidify(group)
+	group.y_sort_enabled = true
+	return group
+
+
 ## The sheep, per island. Their own seed: they no longer share one with the
 ## props, which now come from a scene.
 func sheep() -> void:
