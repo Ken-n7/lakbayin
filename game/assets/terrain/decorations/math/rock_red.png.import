@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dxyw7uwca4u5s"
-path="res://.godot/imported/stele_red.png-28470a0428d31e358ed21cfa239c9d66.ctex"
+uid="uid://cf4l0b200f7n2"
+path="res://.godot/imported/rock_red.png-fe1de5f852e1bffa924ca325c4111f90.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/terrain/decorations/math/stele_red.png"
-dest_files=["res://.godot/imported/stele_red.png-28470a0428d31e358ed21cfa239c9d66.ctex"]
+source_file="res://assets/terrain/decorations/math/rock_red.png"
+dest_files=["res://.godot/imported/rock_red.png-fe1de5f852e1bffa924ca325c4111f90.ctex"]
 
 [params]
 

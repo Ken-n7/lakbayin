@@ -28,17 +28,18 @@ const TREES := ["res://assets/terrain/decorations/Tree1.png",
 const PAN_S := 70.0
 const WASH := 0.38                 # the dark wash over the scene
 ## Maths in the scene (client, 2026-09-27), two ways to compare: signs rising
-## out of the sea (`MathMotes`), and maths carved in stone on each island in
-## its station's signs (`tools/make_carvings.py`).
+## out of the sea (`MathMotes`), and maths carved into the pack's own rocks on
+## each island in its station's signs (`tools/make_carvings.py`).
 const SHOW_MOTES := true
 const SHOW_CARVINGS := true
 const CARVED := "res://assets/terrain/decorations/math/"
-const CARVING_SCALE := 0.5          # drawn at the pack's pixel size, shown like its buildings
-## [piece, cell x, cell y]: a standing stone and a paving slab per island.
+## The pack's rocks, so the pack's rocks' scale (see the Rock1-4 below).
+const CARVING_SCALE := 1.2
+## [piece, cell x, cell y]: a big rock and a small one per island.
 const CARVINGS := [
-	["stele_blue", 5.3, 7.2], ["slab_blue", 7.4, 8.3],
-	["stele_yellow", 20.2, 9.3], ["slab_yellow", 21.8, 7.6],
-	["stele_red", 37.4, 6.6], ["slab_red", 35.2, 8.4],
+	["rock_blue", 6.2, 10.3], ["stone_blue", 7.4, 8.9],
+	["rock_yellow", 20.2, 9.5], ["stone_yellow", 21.8, 7.9],
+	["rock_red", 37.4, 6.9], ["stone_red", 35.2, 8.8],
 ]
 
 ## Island: centre and radii in cells.

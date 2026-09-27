@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d36iw64fc3rxk"
-path="res://.godot/imported/slab_blue.png-6166debb19654f3e2d8d74b059555990.ctex"
+uid="uid://cm7h7yq035tcr"
+path="res://.godot/imported/rock_blue.png-bf7beaf831bd3205065be942eb8b542b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/terrain/decorations/math/slab_blue.png"
-dest_files=["res://.godot/imported/slab_blue.png-6166debb19654f3e2d8d74b059555990.ctex"]
+source_file="res://assets/terrain/decorations/math/rock_blue.png"
+dest_files=["res://.godot/imported/rock_blue.png-bf7beaf831bd3205065be942eb8b542b.ctex"]
 
 [params]
 
