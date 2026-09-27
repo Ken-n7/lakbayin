@@ -168,29 +168,82 @@ func open(name: String, data: Dictionary = {}) -> void:
 
 
 
-## The soft keyboard covers the bottom half of a landscape phone -- on this
-## screen it hid the password field and the Sign In button together. Lift the
-## whole screen by half the keyboard's height while it is up, which keeps the
-## focused field and the button under it in view without anyone having to know
-## to dismiss the keyboard first.
+## The soft keyboard covers over half of a landscape phone. While it is up, the
+## panel holding the field being typed in is lifted just enough to put that
+## field above it -- no more, and never so far the field leaves the top.
+##
+## It used to lift the whole screen by half the keyboard, whatever was being
+## typed in: the Feedback box and Question Management's fields, low on their
+## screens, stayed under it, and pop-ups (Rescue's amount, on the map's own
+## layer) did not move at all. Now it is the focused field that decides, and
+## what moves is its panel: the screen, or a pop-up on a layer of its own.
 ##
 ## One place for every screen: the alternative is each form handling it, and
 ## the ones that forget are the ones nobody can sign in on.
-func _process(_delta: float) -> void:
-	if current == null:
-		return
+
+## Gap kept between the field and the keyboard, and the top of the screen.
+const KEYBOARD_GAP := 8.0
+## Tests only: a keyboard this tall, in canvas units, as if one were up. -1 off.
+var fake_keyboard := -1.0
+var _lifted := {}      # panel -> [rest y, current lift]
+
+
+## The keyboard's height in canvas units; 0 when there is none.
+func keyboard_height() -> float:
+	if fake_keyboard >= 0.0:
+		return fake_keyboard
 	# Asked only where there is one: on desktop this warns every frame, which
 	# is 60 lines a second of "Virtual keyboard not supported".
 	if not DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
-		return
-	var keyboard := DisplayServer.virtual_keyboard_get_height()
+		return 0.0
+	var px := DisplayServer.virtual_keyboard_get_height()
 	var window_h := float(DisplayServer.window_get_size().y)
-	var want := 0.0
-	if keyboard > 0 and window_h > 0.0:
-		# Keyboard height is in real pixels; the screen is laid out in canvas
-		# units, so scale it before shifting anything.
-		want = -keyboard * (get_viewport_rect().size.y / window_h) * 0.5
-	current.position.y = lerpf(current.position.y, want, 0.25)
+	if px <= 0 or window_h <= 0.0:
+		return 0.0
+	# Real pixels; the screen is laid out in canvas units.
+	return px * get_viewport_rect().size.y / window_h
+
+
+## What moves for `field`: its ancestor sitting directly on Main or on a
+## CanvasLayer -- the screen, or a pop-up on a layer of its own.
+func _panel_of(field: Control) -> Control:
+	var n: Node = field
+	while n.get_parent() != null and n.get_parent() != self and not n.get_parent() is CanvasLayer:
+		n = n.get_parent()
+	return n as Control if n.get_parent() != null else null
+
+
+## How far `panel` should be lifted: 0 unless a field in it is being typed in.
+func _lift_wanted(panel: Control, field: Control, keyboard: float) -> float:
+	if keyboard <= 0.0 or field == null or _panel_of(field) != panel:
+		return 0.0
+	var now: float = _lifted[panel][1] if _lifted.has(panel) else 0.0
+	var r := field.get_global_rect()
+	var top := r.position.y + now          # where it sits unlifted
+	var bottom := r.end.y + now
+	var over := bottom + KEYBOARD_GAP - (get_viewport_rect().size.y - keyboard)
+	return clampf(over, 0.0, maxf(top - KEYBOARD_GAP, 0.0))
+
+
+func _process(_delta: float) -> void:
+	var keyboard := keyboard_height()
+	var focus := get_viewport().gui_get_focus_owner()
+	var field: Control = focus if (focus is LineEdit or focus is TextEdit) and focus.is_visible_in_tree() else null
+	var panel: Control = _panel_of(field) if field != null and keyboard > 0.0 else null
+	if panel != null and not _lifted.has(panel):
+		_lifted[panel] = [panel.position.y, 0.0]
+	for p: Control in _lifted.keys():
+		if not is_instance_valid(p):
+			_lifted.erase(p)
+			continue
+		var want := _lift_wanted(p, field, keyboard)
+		var lift: float = lerpf(_lifted[p][1], want, 0.25)
+		if absf(lift - want) < 0.5:
+			lift = want
+		_lifted[p][1] = lift
+		p.position.y = _lifted[p][0] - lift
+		if lift == 0.0 and want == 0.0:
+			_lifted.erase(p)
 
 
 ## Android's back button. The engine quits the app outright by default (see

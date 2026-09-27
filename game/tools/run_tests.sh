@@ -41,6 +41,7 @@ run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn
 run "rescue      " res://scripts/tests/rescue_test.tscn
 run "alltime     " res://scripts/tests/alltime_test.tscn
+run "keyboard    " res://scripts/tests/keyboard_test.tscn
 run "layout      " res://tools/layout.tscn
 
 # The two windowed tools need a GL context, so CI will skip them -- but they
