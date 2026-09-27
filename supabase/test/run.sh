@@ -8,7 +8,7 @@
 #   - schema.sql loads on a fresh project, and loads AGAIN over itself -- it is
 #     re-run in the SQL Editor after every change;
 #   - it upgrades a project that still has the previous schema (git HEAD);
-#   - rescue_test.sql;
+#   - rescue_test.sql, leaderboard_test.sql;
 #   - two teammates rescuing each other at the same moment, from two real
 #     connections: both go through, no deadlock.
 set -u
@@ -43,6 +43,13 @@ q -f supabase/schema.sql >/dev/null 2>&1
 out=$(q -t -A -f supabase/test/rescue_test.sql 2>&1)
 echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
 echo "$out" | grep -q -- "---- RESCUE SQL PASS" || fail=1
+echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
+
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+out=$(q -t -A -f supabase/test/leaderboard_test.sql 2>&1)
+echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
+echo "$out" | grep -q -- "---- LEADERBOARD SQL PASS" || fail=1
 echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
 
 # Two teammates, each rescuing the other, at the same moment: each holds its

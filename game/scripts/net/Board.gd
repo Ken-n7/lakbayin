@@ -45,3 +45,39 @@ static func players(session_id: String) -> Array:
 			"over": row.get("sessions") is Dictionary and Teams.expired(row.get("sessions")),
 		})
 	return out
+
+
+## The all-time board (client, 2026-09-27): every team of every finished game,
+## best first, from `team_results`. Ties go to the earlier game. `{error, rows}`,
+## rows as [{team_id, session_id, name, gems, members, game_no, played_at,
+## player_ids}]. Up to `limit` -- the board shows the top 50 and, below them,
+## wherever the player's own teams stand.
+static func all_time(limit := 500) -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		"/rest/v1/team_results?select=team_id,session_id,name,gems,members,game_no,played_at,player_ids"
+		+ "&order=gems.desc,game_no.asc&limit=%d" % limit)
+	return {"error": got.error, "rows": got.data if got.error == "" and got.data is Array else []}
+
+
+## Who played for one team, best first: `{error, rows}`, rows as
+## [{profile_id, username, gems, correct, items_done, finish_s, eliminated}].
+static func team_players(team_id: String) -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		MEMBERS + "?select=profile_id,gems,correct,items_done,finish_s,eliminated,profiles(username)"
+		+ "&team_id=eq." + team_id + "&order=gems.desc")
+	if got.error != "" or not (got.data is Array):
+		return {"error": got.error if got.error != "" else "no data", "rows": []}
+	var out: Array = []
+	for row: Dictionary in got.data:
+		var who: Variant = row.get("profiles")
+		var t: Variant = row.get("finish_s")
+		out.append({
+			"profile_id": str(row.get("profile_id", "")),
+			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else "?",
+			"gems": int(row.get("gems", 0)),
+			"correct": int(row.get("correct", 0)),
+			"items_done": int(row.get("items_done", 0)),
+			"finish_s": int(t) if t != null else -1,
+			"eliminated": bool(row.get("eliminated", false)),
+		})
+	return {"error": "", "rows": out}

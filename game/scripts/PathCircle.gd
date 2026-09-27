@@ -18,6 +18,9 @@ const WALL_HEIGHT_FRAC := 0.45   # only the base blocks; the roof is walkable
 ## overhangs it. Full sprite width would make a tower on a vertical trail bend
 ## step 58px aside just to keep its own wall off its doorstep.
 const WALL_WIDTH_FRAC := 0.62
+## The item number over each tower. World pixels, so at play zoom (0.95) this
+## is about its own size on a 640x360 screen.
+const NUMBER_SIZE := 32
 
 var index := 0
 var state := "locked"
@@ -51,13 +54,16 @@ func setup(circle_index: int, building_path: String, lift: Vector2, world: Node2
 
 	# The item number, floating above the roof. One constant color in every
 	# state; it just disappears once the item is done.
-	# Two sizes over the labels' 14 (client): it is read from across the map.
-	_label = Art.label(str(index + 1), Pal.LABEL + 2, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	_label.position = Vector2(lift.x - 20.0, lift.y - bh - 26.0)
-	_label.size = Vector2(40, 22)
+	# NUMBER_SIZE, not a UI size (client, twice): it is read from across the
+	# map, and at play zoom the old 16 came out a sliver over the roof.
+	_label = Art.label(str(index + 1), NUMBER_SIZE, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	_label.position = Vector2(lift.x - 30.0, lift.y - bh - 42.0)
+	_label.size = Vector2(60, 40)
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	Art.shadow(_label)
+	_label.add_theme_color_override("font_outline_color", Color(0.1, 0.07, 0.05))
+	_label.add_theme_constant_override("outline_size", 8)
+	Art.shadow(_label, Color(0, 0, 0, 0.6), 2, 0)
 	add_child(_label)
 
 	set_state("locked")

@@ -543,6 +543,34 @@ create or replace view public.team_scores with (security_invoker = on) as
   left join public.members m on m.team_id = t.id
   group by t.session_id, t.id, t.name, s.state, s.ends_at;
 
+-- The all-time board players see (client, 2026-09-27): every team of every
+-- finished game, best first, the list growing as each game ends. A game is
+-- finished once it is ended, or its clock has run out while still marked
+-- running -- `Teams.expired()`'s rule, and the one `team_scores` charges the
+-- -25 by, so every total here has its penalties in. Games are numbered in the
+-- order they were played. Teams nobody played for are left out.
+--
+-- Every finished game counts for now. The client means to record only games
+-- hosted by certain admins; that is a `where` on `s.admin_id` here, when it
+-- comes.
+create or replace view public.team_results with (security_invoker = on) as
+  with done as (
+    select s.id, s.created_at, coalesce(s.ended_at, s.ends_at) as ended_at,
+           row_number() over (order by s.created_at, s.id) as game_no
+      from public.sessions s
+     where s.state = 'ended' or (s.state = 'running' and s.ends_at <= now())
+  )
+  select ts.team_id, ts.session_id, ts.name, ts.gems, ts.members,
+         done.game_no::int as game_no, done.created_at as played_at,
+         (select coalesce(array_agg(m.profile_id order by m.profile_id), '{}')
+            from public.members m where m.team_id = ts.team_id) as player_ids
+    from public.team_scores ts
+    join done on done.id = ts.session_id
+   where ts.members > 0;
+
+-- Said outright, not left to Supabase's default privileges on `public`.
+grant select on public.team_results to authenticated;
+
 -- 6. Row level security -----------------------------------------------------
 alter table public.profiles  enable row level security;
 alter table public.sessions  enable row level security;

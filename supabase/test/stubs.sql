@@ -20,3 +20,10 @@ do $$ begin
     create publication supabase_realtime;
   end if;
 end $$;
+-- Supabase's default privileges on `public`: the API roles may use every table,
+-- view and function made there, and row level security decides what they see.
+-- Without these, plain Postgres refuses what a real project allows.
+grant usage on schema public to anon, authenticated;
+alter default privileges in schema public grant all on tables to anon, authenticated;
+alter default privileges in schema public grant all on functions to anon, authenticated;
+alter default privileges in schema public grant all on sequences to anon, authenticated;
