@@ -137,7 +137,7 @@ PIECES = {
     "yellow_b": ("Rock2", True, [("2+3x4", 32, 28, 1)]),
     # Red, Station 3: powers.
     "red_a": ("Rock4", True, [("v^2", 39, 22, 1), ("2^3", 33, 38, -1)]),
-    "red_b": ("Rock2", False, [("2^3=8", 32, 27, 3)]),
+    "red_b": ("Rock2", False, [("2^3=8", 32, 26, 3)]),
     "red_c": ("Rock3", False, [("4^2", 35, 27, -1), ("16", 31, 35, 1)]),
     "red_d": ("Rock1", False, [("_9", 31, 30, 0)]),
 }
