@@ -29,10 +29,9 @@ OUT = "assets/terrain/decorations/math"
 INK = (0x16, 0x1C, 0x2E, 255)       # the pack's outline and cracks
 LIP = (0xB6, 0xE2, 0xE0, 255)       # a touch lighter than its lightest stone
 # Gold inlay, one character a rock (client: "one gold character on one rock,
-# and they vary every rock"): the gold, its shade where the cut falls away,
-# and a glint.
+# and they vary every rock"): the gold, in a cut dark on its shaded sides,
+# and a glint low down where the light reaches in.
 GOLD = (0xF2, 0xC1, 0x4E, 255)
-GOLD_DEEP = (0x9C, 0x6A, 0x1A, 255)
 GLINT = (0xFF, 0xF4, 0xC2, 255)
 
 # 5x7 cuts, and 3x5 raised ones for powers (a leading "^").
@@ -85,19 +84,27 @@ def carve(im, text, cx, y0, gold=-1):
                 if ch == "#":
                     (inlay if i == gold else cut).add((x + c, y0 + dy + r))
         x += len(rows[0]) + 1
+    stone = lambda q: im.getpixel(q)[3] == 255 and im.getpixel(q) != INK and q not in cut and q not in inlay
     for p in cut:
         im.putpixel(p, INK)
-    for p in inlay:
-        im.putpixel(p, GOLD)
-    # Under each stroke: the pale lip of a cut, or the gold's own shade.
+    # The gold is set down in a cut, not laid on the rock: light comes from
+    # the top left, so the cut's walls on those sides are in shadow -- dark
+    # over and left of each stroke -- and the gold itself stays bright. (The
+    # first try shaded under the gold instead, which read as a drop shadow:
+    # raised; shading the gold's own top turned its thin strokes brown.)
+    for (px, py) in inlay:
+        im.putpixel((px, py), GOLD)
+        for q in ((px, py - 1), (px - 1, py)):
+            if stone(q):
+                im.putpixel(q, INK)
+    # Under each stroke, cut or gold: the pale lip where the light catches.
     for (px, py) in cut | inlay:
         q = (px, py + 1)
-        if q in cut or q in inlay or im.getpixel(q)[3] != 255 or im.getpixel(q) == INK:
-            continue
-        im.putpixel(q, GOLD_DEEP if (px, py) in inlay else LIP)
-    # A glint on the gold's first stroke, top left.
+        if stone(q):
+            im.putpixel(q, LIP)
+    # A glint low on the gold, where the light reaches into the cut.
     if inlay:
-        im.putpixel(min(inlay, key=lambda p: (p[1], p[0])), GLINT)
+        im.putpixel(max(inlay, key=lambda p: (p[1], -p[0])), GLINT)
 
 
 def rock(name, flip, cuts):
