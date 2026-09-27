@@ -213,10 +213,15 @@ func _build_tower(at: Vector2) -> void:
 	var holder := Node2D.new()
 	holder.name = "TowerSigns"
 	holder.position = at + Vector2(0, 1)
+	# Over the island's vignette, so they read as brightly as on the board;
+	# the tower is on the right, clear of the menu column.
+	holder.z_index = 1
 	_world.add_child(holder)
 	var signs := TowerSymbols.new()
 	signs.signs = ["+", "x²", "÷", "( )"]
-	signs.position = Vector2(0, -Art.tex(TOWER).get_height() * 0.5 * 0.5 - 1)
+	# The whole 256px sheet is drawn here, not the trimmed cell the board uses:
+	# the tower itself runs from art row 46 to 230, so its base is 13 px up.
+	signs.position = Vector2(0, -13) + TowerSymbols.top_of((230 - 46) * 0.5) - Vector2(0, 1)
 	holder.add_child(signs)
 
 

@@ -63,7 +63,8 @@ func setup(circle_index: int, building_path: String, lift: Vector2, world: Node2
 	# NUMBER_SIZE, not a UI size (client, twice): it is read from across the
 	# map, and at play zoom the old 16 came out a sliver over the roof.
 	_label = Art.label(str(index + 1), NUMBER_SIZE, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	_label.position = Vector2(lift.x - 30.0, lift.y - bh - 42.0)
+	# 54 over the top, not 42: the signs circling the top rise above its rim.
+	_label.position = Vector2(lift.x - 30.0, lift.y - bh - 54.0)
 	_label.size = Vector2(60, 40)
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -75,7 +76,7 @@ func setup(circle_index: int, building_path: String, lift: Vector2, world: Node2
 	symbols = TowerSymbols.new()
 	symbols.name = "Symbols"
 	symbols.station = Game.station_of_item(index)
-	symbols.position = Vector2(lift.x, lift.y - bh * 0.5)
+	symbols.position = lift + TowerSymbols.top_of(bh)
 	add_child(symbols)
 
 	set_state("locked")
