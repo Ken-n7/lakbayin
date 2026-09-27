@@ -27,6 +27,12 @@ var state := "locked"
 var wall: Rect2   # local to this node; the caller offsets it by the anchor position
 
 var _label: Label
+## Its station's signs circling it until it is answered (TowerSymbols).
+var symbols: TowerSymbols
+## False until the board first says where this stop stands: a stop already
+## done then -- a restored run -- just drops its signs; one done after is
+## answered in front of the player, and its signs whirl off.
+var _settled := false
 
 
 ## `lift` is local: where the tower building stands relative to the anchor
@@ -66,12 +72,25 @@ func setup(circle_index: int, building_path: String, lift: Vector2, world: Node2
 	Art.shadow(_label, Color(0, 0, 0, 0.6), 2, 0)
 	add_child(_label)
 
+	symbols = TowerSymbols.new()
+	symbols.name = "Symbols"
+	symbols.station = Game.station_of_item(index)
+	symbols.position = Vector2(lift.x, lift.y - bh * 0.5)
+	add_child(symbols)
+
 	set_state("locked")
+	_settled = false
 
 
 ## Only "done" looks different -- it drops the number. Locked and current towers
 ## are deliberately identical; which one is yours is the number sequence, and the
 ## "!" over the player when you reach it.
 func set_state(s: String) -> void:
+	if s == "done" and state != "done" and is_instance_valid(symbols):
+		if _settled:
+			symbols.burst()
+		else:
+			symbols.queue_free()
 	state = s
+	_settled = true
 	_label.visible = s != "done"

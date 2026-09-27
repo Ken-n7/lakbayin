@@ -279,6 +279,20 @@ const CARVED_ROCKS := [
 	# Station 3, powers.
 	["red_a", "Rock4", Vector2(2096, 256)], ["red_b", "Rock2", Vector2(2352, 288)],
 	["red_c", "Rock3", Vector2(2480, 672)], ["red_d", "Rock1", Vector2(2608, 640)],
+	# More (client: "one on each of the first island's three plateaus, and the
+	# rest everywhere, the base camp too"). The plateaus are small -- a tower,
+	# its trees and its stairs -- so each takes a rock beside its tower, clear
+	# of the doorstep and of the way up.
+	["blue_p3", "Rock3", Vector2(816, 1440)],     # plateau of tower 5
+	["blue_p1", "Rock1", Vector2(1408, 1168)],    # plateau of tower 2
+	["blue_p2", "Rock1", Vector2(1704, 1248)],    # plateau of tower 1
+	["blue_d", "Rock3", Vector2(1968, 1120)], ["blue_e", "Rock2", Vector2(1088, 1472)],
+	["yellow_c", "Rock4", Vector2(912, 544)], ["yellow_d", "Rock1", Vector2(1168, 480)],
+	["yellow_e", "Rock2", Vector2(1072, 672)],
+	["red_e", "Rock2", Vector2(2192, 512)], ["red_f", "Rock1", Vector2(2816, 640)],
+	["red_g", "Rock3", Vector2(1840, 384)],
+	# Base Camp: north of the start, off the way in from the bridge.
+	["camp_a", "Rock3", Vector2(2880, 1360)], ["camp_b", "Rock2", Vector2(2752, 1396)],
 ]
 ## The hero on the map: sprite, shadow and the Foot box walls stop.
 const HERO_SCENE := "res://scenes/Hero.tscn"
