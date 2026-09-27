@@ -82,5 +82,29 @@ func _ready() -> void:
 	main.open("home")
 	await frames(3)
 	check("hidden with the backdrop where a screen has its own scene", not motes.is_visible_in_tree())
+
+	# Home's own island: the black castle, a tower with maths going round it,
+	# and carved rocks.
+	var home: Control = main.current
+	var castle_black := home.find_children("*", "Sprite2D", true, false).any(
+		func(sp: Sprite2D) -> bool:
+			var tex: Texture2D = sp.texture
+			if tex is AtlasTexture:
+				tex = (tex as AtlasTexture).atlas      # the castle is a cell of its sheet
+			return tex != null and tex.resource_path.ends_with("Black_Castle.png"))
+	check("Home's castle is the black one", castle_black)
+	var tower := home.find_child("Tower", true, false) as Sprite2D
+	check("Home has a tower", tower != null and tower.texture.resource_path.ends_with("Black_Tower.png"))
+	var signs := home.find_children("*", "TowerSymbols", true, false)
+	# Each station's own signs in the mix: an operation, a bracket, a power.
+	var mix: Array = (signs[0] as TowerSymbols).signs if signs.size() == 1 else []
+	var every := range(TowerSymbols.SIGNS.size()).all(func(st: int) -> bool:
+		return mix.any(func(m: String) -> bool:
+			return (TowerSymbols.SIGNS[st] as Array).any(func(x: String) -> bool: return m.contains(x))))
+	check("with maths circling it, a little of every station", signs.size() == 1 and every, str(mix))
+	var home_rocks := ["blue_b", "yellow_a", "red_c"].filter(func(n: String) -> bool:
+		var r := home.find_child(n, true, false) as Sprite2D
+		return r != null and r.texture.resource_path.contains("/math/"))
+	check("and carved rocks", home_rocks.size() == 3, str(home_rocks))
 	completed = true
 	finish("BACKDROP")
