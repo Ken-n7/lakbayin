@@ -36,23 +36,34 @@ func _ready() -> void:
 		and main.backdrop.get_index() < main.current.get_index())
 
 	var ms: Array = motes.get("_motes")
-	check("a few dozen, not a swarm", ms.size() >= 12 and ms.size() <= 40, str(ms.size()))
-	var spread := ms.map(func(m: Dictionary) -> float: return m.x)
-	check("spread across the whole width of the pan",
-		spread.min() < motes.area.x * 0.1 and spread.max() > motes.area.x * 0.9)
+	var spread := ms.map(func(mm: Dictionary) -> float: return mm.lane)
+	check("spread across the whole width of the pan", spread.min() < 0.1 and spread.max() > 0.9)
+	check("fewer than before: sixteen over the whole pan", ms.size() == 16, str(ms.size()))
+	# Every way, not only up: headings in every quarter of the circle.
+	var quarters := {}
+	for mm: Dictionary in ms:
+		quarters[int(fposmod((mm.dir as Vector2).angle(), TAU) / (PI * 0.5))] = true
+	check("they drift in every direction, not only up", quarters.size() == 4, str(quarters.keys()))
+	var rising := ms.filter(func(mm: Dictionary) -> bool: return (mm.dir as Vector2).y < 0.0).size()
+	check("more rise than sink", rising > ms.size() / 2, "%d of %d" % [rising, ms.size()])
 	var m: Dictionary = ms[0]
 	var a: Array = motes.place(m, 10.0)
-	var b: Array = motes.place(m, 11.0)
-	check("they rise", (b[1] as Vector2).y < (a[1] as Vector2).y or b[0] < a[0])
-	check("faded out at the bottom and the top, full between",
+	var b: Array = motes.place(m, 10.5)
+	check("they move", (a[1] as Vector2).distance_to(b[1]) > 1.0)
+	# Each drift starts somewhere new: the same moment of two drifts in a row.
+	var period: float = m.travel / m.speed
+	var here: Vector2 = motes.place(m, 10.0)[1]
+	var next: Vector2 = motes.place(m, 10.0 + period)[1]
+	check("each drift begins somewhere new", here.distance_to(next) > 2.0, "%s / %s" % [here, next])
+	check("faded in and out at each end of a drift, full between",
 		MathMotes.fade(0.0) == 0.0 and MathMotes.fade(1.0) == 0.0 and MathMotes.fade(0.5) == 1.0)
 	var inside := true
 	for mm: Dictionary in ms:
-		for t in range(0, 400, 7):
+		for t in range(0, 900, 3):
 			var at: Array = motes.place(mm, float(t))
 			if MathMotes.fade(at[0]) > 0.0:
 				var pos: Vector2 = at[1]
-				inside = inside and pos.x > -20 and pos.x < motes.area.x + 20 and pos.y > -60 and pos.y < motes.area.y + 40
+				inside = inside and pos.x > 0 and pos.x < motes.area.x and pos.y > 0 and pos.y < motes.area.y
 	check("seen only over the scene, never off it", inside)
 	var again := MathMotes.new(motes.area)
 	add_child(again)
