@@ -388,7 +388,8 @@ func _run() -> void:
 	check("paused", bool(adv.get("hud").paused))
 	check("resume button", _find_button(adv, "Resume") != null)
 	check("home button", _find_button(adv, "Home") != null)
-	check("board button", _find_button(adv, "Leaderboard") != null)
+	# Hidden mid-game (client, 2026-09-27), not removed: `hud.menu_leaderboard`.
+	check("no Leaderboard in the game menu", _find_button(adv, "Leaderboard") == null)
 	check("restart button", _find_button(adv, "Restart") != null)
 	check("new game button", _find_button(adv, "New Game") != null)
 	_click(adv, "Resume")
@@ -422,14 +423,22 @@ func _run() -> void:
 	await _continue_quest()   # team name is remembered from the last run
 	adv = _map()
 	check("back on the map", adv.has_method("_try_enter_station"))
+	# Switched back on, it opens the board OVER the map, and ← returns to the
+	# game -- it used to close the map and send the player Home.
+	adv.get("hud").menu_leaderboard = true
 	adv.get("hud").open_menu()
 	await _wait(1)
 	_click(adv, "Leaderboard")
 	await _wait(3)
-	check("leaderboard from pause", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
-	_click(_screen(), "Back")
+	check("switched on: the board opens over the map", _map() == adv
+			and adv.get("_overlay") != null
+			and _script_of(adv.get("_overlay"), "res://scripts/LeaderboardScreen.gd"))
+	check("the hero stands while it is open", not adv.get("hud").pad.visible
+			if adv.get("hud").pad != null else adv.get("_overlay") != null)
+	(adv.get("_overlay") as Control).call("go_back")
 	await _wait(3)
-	check("back to home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	check("← returns to the game, not Home", _map() == adv and adv.get("_overlay") == null)
+	adv.get("hud").menu_leaderboard = false
 
 	print("== 8. hero select variations ==")
 	Game.player_name = ""
