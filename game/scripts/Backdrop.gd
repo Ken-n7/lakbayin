@@ -27,6 +27,19 @@ const TREES := ["res://assets/terrain/decorations/Tree1.png",
 ## than watched: a moving background that pulls the eye is a distraction.
 const PAN_S := 70.0
 const WASH := 0.38                 # the dark wash over the scene
+## Maths in the scene (client, 2026-09-27), two ways to compare: signs rising
+## out of the sea (`MathMotes`), and maths carved in stone on each island in
+## its station's signs (`tools/make_carvings.py`).
+const SHOW_MOTES := true
+const SHOW_CARVINGS := true
+const CARVED := "res://assets/terrain/decorations/math/"
+const CARVING_SCALE := 1.5
+## [piece, cell x, cell y]: a standing stone and a paving slab per island.
+const CARVINGS := [
+	["stele_blue", 5.3, 7.2], ["slab_blue", 7.4, 8.3],
+	["stele_yellow", 20.2, 9.3], ["slab_yellow", 21.8, 7.6],
+	["stele_red", 37.4, 6.6], ["slab_red", 35.2, 8.4],
+]
 
 ## Island: centre and radii in cells.
 const ISLANDS := [
@@ -56,9 +69,10 @@ func _ready() -> void:
 	# own node after the world, moved with it (`_pan_to`): inside the y-sorted
 	# world it would sort under the islands, and a z_index lifts it over the
 	# screens in front too -- it drew on the sign-in form.
-	_motes = MathMotes.new(Vector2(W * TILE, H * TILE))
-	_motes.name = "MathMotes"
-	add_child(_motes)
+	if SHOW_MOTES:
+		_motes = MathMotes.new(Vector2(W * TILE, H * TILE))
+		_motes.name = "MathMotes"
+		add_child(_motes)
 	_clouds = Clouds.new(W * TILE * 0.6)
 	add_child(_clouds)
 	var wash := ColorRect.new()
@@ -134,6 +148,10 @@ func _build_islands() -> void:
 		var t := Art.anim_sprite(_world, TREES[i % TREES.size()], _at(trees[i][0], trees[i][1]),
 				0.42, 3.0, 1.0 if i % 2 == 0 else -1.0)
 		t.frame = i % 6          # out of step, or the whole wood sways as one
+	if SHOW_CARVINGS:
+		for c: Array in CARVINGS:
+			var spr := Art.sprite(_world, Art.tex(CARVED + c[0] + ".png"), _at(c[1], c[2]), CARVING_SCALE)
+			spr.name = c[0]
 	for r in [["Rock2", 13.6, 6.0], ["Rock4", 27.4, 7.2], ["Rock1", 41.0, 7.6]]:
 		Art.sprite(_world, Art.tex("res://assets/terrain/decorations/%s.png" % r[0]),
 				_at(r[1], r[2]), 1.2)

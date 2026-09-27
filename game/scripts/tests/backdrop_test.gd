@@ -60,6 +60,14 @@ func _ready() -> void:
 	check("the same composition every launch", str(again.get("_motes")) == str(ms))
 	again.queue_free()
 
+	# Carved in stone: a standing stone and a slab on each island.
+	var carved := ["stele_blue", "slab_blue", "stele_yellow", "slab_yellow", "stele_red", "slab_red"]
+	var found := carved.filter(func(c: String) -> bool:
+		var spr := main.backdrop.find_child(c, true, false) as Sprite2D
+		return spr != null and spr.texture != null)
+	check("each island has its carved stone and slab", found.size() == carved.size() or not Backdrop.SHOW_CARVINGS,
+		str(found))
+
 	main.open("home")
 	await frames(3)
 	check("hidden with the backdrop where a screen has its own scene", not motes.is_visible_in_tree())
