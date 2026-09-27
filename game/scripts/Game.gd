@@ -156,6 +156,10 @@ var session_state := ""
 ## eliminated player is out: they watch the rest of the adventure from the map
 ## (client; `AdventureScreen._begin_spectating`). Playing alone, they carry on.
 var eliminated := false
+## This player's one rescue is spent (client: ONE chance per player per
+## adventure). The server enforces it (`public.rescue`); this keeps the button
+## honest, and comes back from the member row on a restore.
+var rescue_sent := false
 ## The session the score belongs to, "" when playing offline.
 var session_id := ""
 
@@ -230,6 +234,7 @@ func begin_adventure(seconds: int = 600) -> void:
 	adventure_active = true
 	clock_paused = false
 	eliminated = false
+	rescue_sent = false
 	current_station = 0
 	items_done = 0
 	towers_entered = [false, false, false]
@@ -259,6 +264,7 @@ func restore_from(row: Dictionary) -> void:
 	items_done = clampi(int(row.get("items_done", 0)), 0, TOTAL_ITEMS)
 	wrong = maxi(items_done - correct, 0)   # wrong and skipped are not kept apart
 	eliminated = bool(row.get("eliminated", false))
+	rescue_sent = row.get("rescued_at") != null
 	current_station = station_of_item(items_done)
 	var end := 0
 	for s in ITEMS_PER_STATION.size():
@@ -360,6 +366,33 @@ func _apply(delta: int) -> void:
 		eliminated = true
 		eliminated_changed.emit()
 	gems_changed.emit(gems)
+
+
+## Why this player cannot rescue a teammate right now, or "" when they can.
+## A rescue gives away at least 1 gem and keeps at least 1, so it takes 2.
+## The server checks all of it again; this is what the button says.
+func rescue_block() -> String:
+	if session_id == "":
+		return "Rescue is for team games — join a Quest"
+	if rescue_sent:
+		return "You have used your rescue"
+	if eliminated:
+		return "You are out of gems"
+	if gems < 2:
+		return "You need at least 2 gems to rescue"
+	return ""
+
+
+## The most this player may give: everything but the 1 gem they keep.
+func rescue_max() -> int:
+	return maxi(gems - 1, 0)
+
+
+## A rescue the server has taken: the gems leave this player's purse now, and
+## their one chance is spent.
+func give_rescue(amount: int) -> void:
+	rescue_sent = true
+	_apply(-amount)
 
 
 ## One hint per item, -5 gems each (design doc: "Use of Hint: -5 gems").

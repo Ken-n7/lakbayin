@@ -66,10 +66,11 @@ static func finish_run(session_id: String) -> Dictionary:
 	return await _call("finish_run", {"p_session": session_id})
 
 
-## Send 10 gems to a team-mate. One per sender per adventure, which the server
-## enforces -- the dropdown only decides what is easy, never what is allowed.
-static func rescue(session_id: String, to_profile: String) -> Dictionary:
-	return await _call("rescue", {"p_session": session_id, "p_to": to_profile})
+## Give `amount` gems to a team-mate. One per sender per adventure, at least 1
+## and never the last one, which the server enforces -- the rescue screen only
+## decides what is easy, never what is allowed. `row` is the GIVER's.
+static func rescue(session_id: String, to_profile: String, amount: int) -> Dictionary:
+	return await _call("rescue", {"p_session": session_id, "p_to": to_profile, "p_amount": amount})
 
 
 ## `{"error": String, "row": Dictionary}` -- the member row as the server left it.

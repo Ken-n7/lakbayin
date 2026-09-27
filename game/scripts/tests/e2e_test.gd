@@ -290,7 +290,9 @@ func _run() -> void:
 
 	# circle 2: wrong
 	ov = await _open_circle(adv, 1)
-	check("no rescue (paused feature)", _find_button(ov, "Rescue") == null)
+	# Rescue is for team games: playing alone there is nobody to give gems to.
+	var rescue := _find_button(ov, "Rescue")
+	check("no Rescue when playing alone", rescue == null or not rescue.is_visible_in_tree())
 	_find_line_edit(ov).text = "999"
 	_click(ov, "Submit Answer")
 	await _wait(2)

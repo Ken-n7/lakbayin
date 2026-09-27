@@ -250,6 +250,9 @@ func _share_position(delta: float) -> void:
 
 
 func _on_broadcast(event: String, data: Dictionary) -> void:
+	if event == "rescue":
+		_on_rescue_news(data)
+		return
 	if event != "pos" or str(data.get("sid", "")) != Game.session_id \
 			or not is_instance_valid(self):
 		return
@@ -257,6 +260,35 @@ func _on_broadcast(event: String, data: Dictionary) -> void:
 		_refresh_peers()
 		return
 	_peers.move(str(data.get("id", "")), data)
+
+
+## A teammate gave this player gems (`RescueOverlay`, on their phone). The
+## message only says who and how many: the gems themselves come from the
+## server's copy of this player's row, the one thing that decides them, so a
+## message that arrives alone -- or is not from a teammate at all -- moves no
+## gems, and a lost one costs only the banner.
+func _on_rescue_news(data: Dictionary) -> void:
+	if not is_instance_valid(self) or str(data.get("sid", "")) != Game.session_id \
+			or str(data.get("to", "")) != Net.user_id:
+		return
+	var amount := int(data.get("amount", 0))
+	var who := str(data.get("from", "")).strip_edges()
+	Sfx.play("rescue")
+	hud.announce("%s rescued you!  +%d gem%s" % [who if who != "" else "A teammate",
+			amount, "" if amount == 1 else "s"])
+
+
+## Rescue from the map's menu. The question screen opens its own.
+func open_rescue() -> void:
+	if _overlay != null or Game.rescue_block() != "":
+		return
+	var r: Control = preload("res://scripts/RescueOverlay.gd").new()
+	r.finished.connect(func(summary: String) -> void:
+		if _overlay == r:
+			close_overlay()
+		if summary != "":
+			hud.flash(summary))
+	_show_overlay(r)
 
 
 ## Online with nothing to join: say why and keep the board shut. The old
@@ -1356,7 +1388,9 @@ func _show_overlay(overlay: Control) -> void:
 func close_overlay() -> void:
 	if _overlay != null:
 		# A briefing overlay unlocks its station's circles on the way out.
-		if bool(_overlay.get("intro_only")):
+		# `== true`, not bool(): the rescue screen has no `intro_only`, and
+		# bool(null) is an error in Godot 4 -- it left that overlay stuck open.
+		if _overlay.get("intro_only") == true:
 			Game.towers_entered[int(_overlay.get("station_index"))] = true
 		_overlay.queue_free()
 		_overlay = null

@@ -254,7 +254,7 @@ static func teammates(session_id: String) -> Array:
 	if team == null:
 		return []
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		MEMBERS + "?select=profile_id,gems,eliminated,profiles(username)"
+		MEMBERS + "?select=profile_id,gems,eliminated,finished,profiles(username)"
 		+ "&session_id=eq." + session_id + "&team_id=eq." + str(team) + "&order=gems")
 	var out: Array = []
 	for row: Dictionary in (got.data if got.data is Array else []):
@@ -266,6 +266,7 @@ static func teammates(session_id: String) -> Array:
 			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else "?",
 			"gems": int(row.get("gems", 0)),
 			"eliminated": bool(row.get("eliminated", false)),
+			"finished": bool(row.get("finished", false)),
 		})
 	return out
 
