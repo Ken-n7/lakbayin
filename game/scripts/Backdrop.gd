@@ -33,13 +33,14 @@ const WASH := 0.38                 # the dark wash over the scene
 const SHOW_MOTES := true
 const SHOW_CARVINGS := true
 const CARVED := "res://assets/terrain/decorations/math/"
-## The pack's rocks, so the pack's rocks' scale (see the Rock1-4 below).
-const CARVING_SCALE := 1.2
-## [piece, cell x, cell y]: a big rock and a small one per island.
+## [piece, cell x, cell y, scale]: the pack's rocks, around the pack's rocks'
+## own 1.2. A different set on each island, and not in the same spots -- three
+## on Blue, two on Yellow, four on Red.
 const CARVINGS := [
-	["rock_blue", 6.2, 10.3], ["stone_blue", 7.4, 8.9],
-	["rock_yellow", 20.2, 9.5], ["stone_yellow", 21.8, 7.9],
-	["rock_red", 37.4, 6.9], ["stone_red", 35.2, 8.8],
+	["blue_a", 6.4, 10.2, 1.2], ["blue_b", 8.7, 8.3, 1.0], ["blue_c", 4.4, 9.9, 1.1],
+	["yellow_a", 20.6, 9.9, 1.25], ["yellow_b", 21.7, 8.1, 1.0],
+	["red_a", 37.6, 6.8, 1.15], ["red_b", 34.4, 9.1, 1.0], ["red_c", 37.4, 10.9, 1.0],
+	["red_d", 35.8, 10.6, 0.9],
 ]
 
 ## Island: centre and radii in cells.
@@ -151,7 +152,7 @@ func _build_islands() -> void:
 		t.frame = i % 6          # out of step, or the whole wood sways as one
 	if SHOW_CARVINGS:
 		for c: Array in CARVINGS:
-			var spr := Art.sprite(_world, Art.tex(CARVED + c[0] + ".png"), _at(c[1], c[2]), CARVING_SCALE)
+			var spr := Art.sprite(_world, Art.tex(CARVED + c[0] + ".png"), _at(c[1], c[2]), c[3])
 			spr.name = c[0]
 	for r in [["Rock2", 13.6, 6.0], ["Rock4", 27.4, 7.2], ["Rock1", 41.0, 7.6]]:
 		Art.sprite(_world, Art.tex("res://assets/terrain/decorations/%s.png" % r[0]),

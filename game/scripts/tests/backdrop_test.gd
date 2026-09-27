@@ -71,12 +71,12 @@ func _ready() -> void:
 	check("the same composition every launch", str(again.get("_motes")) == str(ms))
 	again.queue_free()
 
-	# Carved into the pack's rocks: a big one and a small one on each island.
-	var carved := ["rock_blue", "stone_blue", "rock_yellow", "stone_yellow", "rock_red", "stone_red"]
+	# Carved into the pack's rocks, a different set on each island.
+	var carved := Backdrop.CARVINGS.map(func(c: Array) -> String: return c[0])
 	var found := carved.filter(func(c: String) -> bool:
 		var spr := main.backdrop.find_child(c, true, false) as Sprite2D
 		return spr != null and spr.texture != null)
-	check("each island has its two carved rocks", found.size() == carved.size() or not Backdrop.SHOW_CARVINGS,
+	check("every carved rock is in the scene", found.size() == carved.size() or not Backdrop.SHOW_CARVINGS,
 		str(found))
 
 	main.open("home")

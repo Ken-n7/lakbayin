@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://clx637yb5jg4"
-path="res://.godot/imported/stone_blue.png-db49ff64880da9a298bdbacd0df0cc3d.ctex"
+uid="uid://mkfp431bt2u8"
+path="res://.godot/imported/red_a.png-5331a967cf7a831428c1db3bb0467135.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/terrain/decorations/math/stone_blue.png"
-dest_files=["res://.godot/imported/stone_blue.png-db49ff64880da9a298bdbacd0df0cc3d.ctex"]
+source_file="res://assets/terrain/decorations/math/red_a.png"
+dest_files=["res://.godot/imported/red_a.png-5331a967cf7a831428c1db3bb0467135.ctex"]
 
 [params]
 
