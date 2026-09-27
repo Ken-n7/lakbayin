@@ -40,6 +40,7 @@ run "smoke       " res://scripts/tests/smoke_test.tscn
 run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn
 run "rescue      " res://scripts/tests/rescue_test.tscn
+run "alltime     " res://scripts/tests/alltime_test.tscn
 run "layout      " res://tools/layout.tscn
 
 # The two windowed tools need a GL context, so CI will skip them -- but they
@@ -62,7 +63,7 @@ fi
 # user create databases. See supabase/test/run.sh.
 if command -v psql >/dev/null && [[ -n "${PGHOST:-}" ]] && psql -X -q -c "select 1" >/dev/null 2>&1; then
 	if out=$(../supabase/test/run.sh 2>&1); then
-		echo "ok    server SQL   $(echo "$out" | grep -E '^---- ' | tail -1)"
+		echo "ok    server SQL   $(echo "$out" | grep -E '^---- ' | sed 's/^---- //;s/ ---- /: /;s/, 0 failures//' | paste -sd ';' | sed 's/;/;  /g')"
 	else
 		echo "FAIL  server SQL"; echo "$out" | grep -E "^FAIL" | head -8; fail=1
 	fi

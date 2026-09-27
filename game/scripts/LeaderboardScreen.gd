@@ -29,6 +29,16 @@ var _live := true         # the teacher's board follows answers as they land
 
 func setup(data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# A player's board is the all-time one (client, 2026-09-27): every team of
+	# every finished game. This per-game board is the teacher's, and anyone's
+	# when a game is named -- History's results, the live panel -- and the
+	# in-game panel over the map, which ← must close, not leave the game.
+	if not _is_admin() and str(data.get("session", "")) == "" and not data.get("close", false) == true:
+		var all: Control = preload("res://scripts/AllTimeBoard.gd").new()
+		all.set("main", main)
+		add_child(all)
+		all.setup(data)
+		return
 	_sid = str(data.get("session", ""))
 	_title = str(data.get("title", ""))
 	_back = str(data.get("back", ""))
@@ -260,6 +270,10 @@ func _cell(text: String, weight: int, color: int = -1) -> Label:
 
 
 func go_back() -> void:
+	for c in get_children():
+		if c.has_method("go_back"):
+			c.call("go_back")          # the all-time board, and its team panel
+			return
 	if _close:
 		Sfx.play("panel_close")
 		queue_free()
