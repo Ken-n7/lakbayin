@@ -10,7 +10,10 @@ extends Control
 
 const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
 const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
-const CASTLE := "res://assets/buildings/Red_Castle.png"
+const CASTLE := "res://assets/buildings/Black_Castle.png"
+## A tower on the island's right, like the board's, with maths circling it.
+const TOWER := "res://assets/buildings/Black_Tower.png"
+const CARVED := "res://assets/terrain/decorations/math/%s.png"
 const TREE := "res://assets/terrain/decorations/Tree1.png"
 
 const INSET := 16      # safe-area gutter, ~5% of the 360px canvas height
@@ -190,10 +193,31 @@ func _build_props() -> void:
 
 	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Rock2.png"), _at(9.8, 4.8), 1.4)
 	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Rock4.png"), _at(16.6, 6.6), 1.4)
+	_build_tower(_at(17.2, 8.3))
+	# The carved rocks of the menus and the board, a few here too.
+	for c in [["blue_b", 10.4, 9.4, 1.2], ["yellow_a", 7.9, 7.3, 1.15], ["red_c", 15.2, 9.6, 1.1]]:
+		var r := Art.sprite(_world, Art.tex(CARVED % c[0]), _at(c[1], c[2]), c[3])
+		r.name = c[0]
 	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Stump 1.png"), _at(11.6, 8.3), 0.4)
 
 	# The island's lower middle is left empty on purpose -- that is the hero's
 	# patrol band, and anything standing there y-sorts in front of him.
+
+
+## The tower, and its signs going round it -- all three stations' mixed, as
+## Home is all three. The signs hang off a holder at the tower's foot so the
+## y-sort puts them in front of it, as on the board.
+func _build_tower(at: Vector2) -> void:
+	var t := Art.sprite(_world, Art.tex(TOWER), at, 0.5)
+	t.name = "Tower"
+	var holder := Node2D.new()
+	holder.name = "TowerSigns"
+	holder.position = at + Vector2(0, 1)
+	_world.add_child(holder)
+	var signs := TowerSymbols.new()
+	signs.signs = ["+", "x²", "÷", "( )"]
+	signs.position = Vector2(0, -Art.tex(TOWER).get_height() * 0.5 * 0.5 - 1)
+	holder.add_child(signs)
 
 
 ## One adventurer pacing the shore in front of the castle. A looping tween

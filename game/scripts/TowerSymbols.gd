@@ -23,6 +23,8 @@ const COLOR := Color("ffe9a8")
 const SIGNS := [["+", "−", "×", "÷"], ["(", ")", "×", "+"], ["x²", "2³", "4²", "√"]]
 
 var station := 0
+## Its own signs instead of a station's (Home's tower: a little of each).
+var signs: Array = []
 var _font: Font
 var _t := 0.0
 var _angle := 0.0
@@ -92,13 +94,13 @@ func place(i: int) -> Array:
 
 
 func _draw() -> void:
-	var signs: Array = SIGNS[clampi(station, 0, SIGNS.size() - 1)]
+	var set: Array = signs if not signs.is_empty() else SIGNS[clampi(station, 0, SIGNS.size() - 1)]
 	for i in COUNT:
 		var at: Array = place(i)
 		var a: float = at[1]
 		if a <= 0.01:
 			continue
-		var text: String = signs[i % signs.size()]
+		var text: String = set[i % set.size()]
 		var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE).x
 		var base: Vector2 = at[0] - Vector2(w * 0.5, -SIZE * 0.35)
 		# A streak behind a sign on its dash.
