@@ -36,6 +36,10 @@ run "rules       " --script res://test_rules.gd
 run "mathtext    " --script res://test_mathtext.gd
 run "auth        " --script res://test_auth.gd
 run "collisions  " --script res://test_collisions.gd
+# The towers change per game (Terrain.tower_seed): a few games' boards too.
+for s in 11 4242 90210 777777; do
+	run "  seed $(printf '%-6s' $s)" --script res://test_collisions.gd -- $s
+done
 run "smoke       " res://scripts/tests/smoke_test.tscn
 run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn

@@ -12,9 +12,21 @@ func _initialize() -> void:
 	# A local named `Game` would shadow the autoload, which is a compile error, and
 	# the autoload is not a compile-time identifier in a `--script` run anyway.
 	var G: Node = root.get_node("Game")
+	# Which towers (Terrain.tower_seed): `-- <seed>`, 0 (the board as drawn)
+	# if none. run_tests.sh walks the drawn board and a few games' boards.
+	var args := OS.get_cmdline_user_args()
+	var seed := int(args[0]) if args.size() > 0 else 0
+	G.begin_adventure()
+	G.solo_seed = seed
 	var screen: Control = load("res://scripts/AdventureScreen.gd").new()
 	root.add_child(screen)
 	screen.setup({})
+	var tr: Object = screen.world.get("terrain")     # untyped: see G above
+	assert(tr.tower_seed == seed, "the board was not built for seed %d" % seed)
+	if seed != 0:
+		assert(tr.tower_try >= 0, "no pick of towers held for seed %d: %s" % [seed, tr.tower_skips])
+		print("seed %d: towers from try %d, ways %s" % [seed, tr.tower_try, tr.tower_ways])
+	print("towers at: ", screen._circles.map(func(c: Node2D) -> Vector2i: return MapGrid.cell_at(c.position)))
 
 	for i in 3:
 		var at: Vector2 = screen.stations.nodes[i].position

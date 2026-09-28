@@ -43,6 +43,10 @@ var _zoom_out: TextureButton
 ## A player watching after they are done sees their own hero too, where they
 ## stopped; the Quest Keeper is no member, so it makes no odds for them.
 var include_me := false
+## Which towers the board stands (Terrain.tower_seed): set before it is
+## added, or taken from the session `watch()` is given -- so the Quest
+## Keeper's map has the towers the class has.
+var tower_seed := 0
 
 
 func _ready() -> void:
@@ -57,15 +61,26 @@ func _ready() -> void:
 	sea.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	sea.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(sea)
-	world = MapWorld.new()
-	add_child(world)
-	world.build()
-	_peers = Peers.new()
-	world.add_child(_peers)
+	_build_world()
 	_build_buttons()
 	resized.connect(func() -> void: _set_zoom(world.scale.x, size * 0.5))
 	# The whole board from the first frame -- the lowest zoom there is.
 	_set_zoom.call_deferred(0.0, Vector2.ZERO)
+
+
+func _build_world() -> void:
+	var old := world
+	world = MapWorld.new()
+	world.tower_seed = tower_seed
+	add_child(world)
+	move_child(world, 1)              # over the sea, under the buttons
+	world.build()
+	_peers = Peers.new()
+	world.add_child(_peers)
+	if old != null:
+		world.scale = old.scale
+		world.position = old.position
+		old.queue_free()
 
 
 ## Starts following a session: who is in it, and where they walk.
@@ -73,6 +88,11 @@ func watch(session_id: String) -> void:
 	if session_id == _sid:
 		return
 	_sid = session_id
+	# That game's towers, rebuilt if this board was built for another.
+	if session_id != "" and Game.seed_of(session_id) != tower_seed:
+		tower_seed = Game.seed_of(session_id)
+		if world != null:
+			_build_world()
 	_rows = {}
 	var rt: Realtime = Net.realtime()
 	if not rt.broadcast.is_connected(_on_broadcast):

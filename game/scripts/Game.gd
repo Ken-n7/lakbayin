@@ -162,6 +162,9 @@ var eliminated := false
 var rescue_sent := false
 ## The session the score belongs to, "" when playing offline.
 var session_id := ""
+## A run with no session to follow (offline, explore): its own towers, fixed
+## when it begins (`board_seed`).
+var solo_seed := 0
 
 
 ## The server owns the clock (SPECS §3: "durungan an ira pag-answer dapat").
@@ -244,7 +247,27 @@ func begin_adventure(seconds: int = 600) -> void:
 	# over would refuse every answer until the fresh fetch landed.
 	session_id = ""
 	session_state = ""
+	solo_seed = randi() % 2000000000 + 1
 	adventure_started.emit()
+
+
+## Which towers this run's board stands (Terrain.tower_seed): a game's
+## session, so every phone in it -- and the Quest Keeper's map -- builds the
+## same board, and a phone coming back builds it again; with none, the run's
+## own. 0 is the board as drawn.
+func board_seed() -> int:
+	# `Net` looked up, not named: this script is compiled where the other
+	# autoloads are not identifiers yet (a `--script` suite), and naming one
+	# fails the whole of Game with it.
+	var net: Node = (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Net")
+	if joined_session != "" and net != null and net.signed_in():
+		return seed_of(joined_session)
+	return solo_seed
+
+
+## A session's tower seed: positive, never 0.
+static func seed_of(session: String) -> int:
+	return (hash(session) & 0x3FFFFFFF) + 1
 
 
 ## Only while the clock runs does an answer count. The server refuses a score

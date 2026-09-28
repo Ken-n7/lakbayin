@@ -45,6 +45,28 @@ var lifts := {}
 var guard_stairs: Array = []
 ## The seed that built this board (MAP_SEED, or the first after it that held).
 var seed_used := 0
+## The towers change from game to game (client, 2026-09-28): with a
+## `tower_seed`, each district's circles come from its pool of known-good
+## spots (TowerPool, tools/make_tower_pool.tscn), picked and put in walking
+## order by that seed -- the same seed, the same board, on every phone in a
+## game. 0: the board as it was drawn, the one the props were dressed round.
+var tower_seed := 0
+## Which try at `tower_seed` held (a pick that cannot be walked is passed over).
+var tower_try := -1
+## A pick that could not be built, per try, for anyone asking why.
+var tower_skips: Array[String] = []
+## Per district, which walking order its towers take: 0 the shortest, 1 or 2
+## round the island one way or the other.
+var tower_ways: Array[int] = []
+const TOWER_TRIES := 24
+## A walking order may go the long way round -- the other way about the
+## island -- if it is no more than this much longer than the shortest.
+const ROUTE_SLACK := 1.15
+## Stops are at least this far apart, in cells, when picked from the pool.
+const POOL_GAP := 4.0
+static var _base_seed := -1      # the terrain seed that holds; the same for every game
+var _tower_rng := RandomNumberGenerator.new()
+var _pool := false               # picking from the pool this try
 
 var _rng := RandomNumberGenerator.new()
 var _why := ""
@@ -58,15 +80,41 @@ func _init(g: MapGrid) -> void:
 
 # --- Generate ---------------------------------------------------------------
 func generate() -> void:
-	for attempt in MapCfg.TERRAIN_TRIES:
+	# The ground is the same for every game; only the towers move.
+	if _base_seed < 0 or tower_seed == 0:
+		_pool = false
+		for attempt in MapCfg.TERRAIN_TRIES:
+			_reset()
+			seed_used = MapCfg.MAP_SEED + attempt
+			_rng.seed = seed_used
+			_why = ""
+			if _try():
+				_base_seed = seed_used
+				break
+			print("terrain: seed %d skipped -- %s" % [seed_used, _why])
+		if _base_seed < 0:
+			push_error("terrain: no seed from %d held -- %s" % [MapCfg.MAP_SEED, _why])
+			return
+		if tower_seed == 0:
+			return
+	_pool = true
+	for k in TOWER_TRIES:
 		_reset()
-		seed_used = MapCfg.MAP_SEED + attempt
+		seed_used = _base_seed
 		_rng.seed = seed_used
+		_tower_rng.seed = hash([tower_seed, k])
 		_why = ""
 		if _try():
+			tower_try = k
 			return
-		print("terrain: seed %d skipped -- %s" % [seed_used, _why])
-	push_error("terrain: no seed from %d held -- %s" % [MapCfg.MAP_SEED, _why])
+		tower_skips.append(_why)
+	# No pick held: the board as drawn, which always does.
+	push_warning("terrain: no tower pick from seed %d held -- %s" % [tower_seed, _why])
+	_pool = false
+	_reset()
+	seed_used = _base_seed
+	_rng.seed = seed_used
+	_try()
 
 
 func _reset() -> void:
@@ -76,6 +124,7 @@ func _reset() -> void:
 	_no_road.clear()
 	grid.solid.clear()
 	anchors = []
+	tower_ways = []
 	lifts = {}
 	guard_stairs = []
 	_used = {}
@@ -663,6 +712,8 @@ func _summit_cell(part: Dictionary) -> Vector2i:
 ## on its plateaus -- each with open ground round it, then put in walking
 ## order from `entry` to `goal`.
 func _circle_cells(i: int, entry: Vector2i, goal: Vector2i, building: String) -> Array[Vector2i]:
+	if _pool:
+		return _pool_cells(i, entry, goal, building)
 	var n: int = Game.ITEMS_PER_STATION[i]
 	var pools := {1: [], 2: []}
 	for c: Vector2i in grid.land:
@@ -699,6 +750,87 @@ func _circle_cells(i: int, entry: Vector2i, goal: Vector2i, building: String) ->
 	return _order(picked, entry, goal)
 
 
+## A game's circles from district `i`'s pool: its plateau spots up there (the
+## walk climbs, as it always has), the rest spread over its terrace -- each the
+## best of a few random spots, farthest from those already picked -- then put
+## in walking order, which may go either way round the island.
+func _pool_cells(i: int, entry: Vector2i, goal: Vector2i, building: String) -> Array[Vector2i]:
+	var n: int = Game.ITEMS_PER_STATION[i]
+	var high: Array[Vector2i] = []
+	var low: Array[Vector2i] = []
+	for spot: Array in TowerPool.SPOTS[i]:
+		var c: Vector2i = spot[0]
+		if _circle_lift(c, building) == Vector2.INF:
+			continue                     # on this try's road already
+		(high if int(spot[1]) == 2 else low).append(c)
+	var picked: Array[Vector2i] = []
+	var want_high := mini(int(ceil(n * MapCfg.CIRCLES_HIGH)), high.size())
+	for group: Array in [[high, want_high], [low, n]]:
+		var pool: Array[Vector2i] = []
+		pool.assign(group[0])
+		while picked.size() < int(group[1]) and not pool.is_empty():
+			var best := Vector2i(-1, -1)
+			var score := -1.0
+			for _k in 4:
+				var c: Vector2i = pool[_tower_rng.randi_range(0, pool.size() - 1)]
+				var d := minf(Vector2(c - entry).length(), Vector2(c - goal).length())
+				for p in picked:
+					d = minf(d, Vector2(c - p).length())
+				if d > score:
+					score = d
+					best = c
+			pool.erase(best)
+			if score < POOL_GAP:
+				continue
+			picked.append(best)
+		if int(group[1]) == want_high and picked.size() < want_high:
+			want_high = picked.size()
+	return _route_either_way(picked, entry, goal)
+
+
+## The walking order: the shortest (`_order`), or a sweep round the island's
+## middle the other way about, when that is not much longer -- so the numbers
+## do not always run the same way round. Never shuffled: each next tower is on
+## from the last.
+func _route_either_way(pts: Array[Vector2i], a: Vector2i, b: Vector2i) -> Array[Vector2i]:
+	var best := _order(pts, a, b)
+	if pts.size() < 3:
+		return best
+	var mid := Vector2.ZERO
+	for p in pts:
+		mid += Vector2(p)
+	mid /= pts.size()
+	var ways: Array = [best]
+	var kinds: Array[int] = [0]
+	for turn in [1.0, -1.0]:
+		var start := (Vector2(a) - mid).angle()
+		var sweep := pts.duplicate()
+		sweep.sort_custom(func(p: Vector2i, q: Vector2i) -> bool:
+			return fposmod(((Vector2(p) - mid).angle() - start) * turn, TAU) \
+				< fposmod(((Vector2(q) - mid).angle() - start) * turn, TAU))
+		# Then untangled like the shortest, so it never doubles back across
+		# itself: another way round, not a zig-zag.
+		var ends: Array = [a]
+		ends.append_array(sweep)
+		ends.append(b)
+		var way := _untangle(ends)
+		if way != best and not ways.has(way) and _walk_length(way, a, b) <= _walk_length(best, a, b) * ROUTE_SLACK:
+			ways.append(way)
+			kinds.append(1 if turn > 0.0 else 2)
+	var pick := _tower_rng.randi_range(0, ways.size() - 1)
+	tower_ways.append(kinds[pick])
+	return ways[pick]
+
+
+static func _walk_length(route: Array[Vector2i], a: Vector2i, b: Vector2i) -> float:
+	var at := a
+	var length := 0.0
+	for p in route:
+		length += Vector2(p - at).length()
+		at = p
+	return length + Vector2(b - at).length()
+
+
 func _open_around(c: Vector2i, level: int, r: int) -> bool:
 	for dy in range(-r, r + 1):
 		for dx in range(-r, r + 1):
@@ -728,6 +860,12 @@ static func _order(pts: Array[Vector2i], a: Vector2i, b: Vector2i) -> Array[Vect
 		route.append(at)
 		left.remove_at(bi)
 	route.append(b)
+	return _untangle(route)
+
+
+## `route` (both ends included, both kept) with every pair of legs that
+## crosses swapped straight (2-opt) until none does; the ends dropped.
+static func _untangle(route: Array) -> Array[Vector2i]:
 	var better := true
 	while better:
 		better = false
@@ -904,6 +1042,31 @@ func _tower_cells(c: Vector2i, building: String) -> Array[Vector2i]:
 ## has stood down, its circles once its own has.
 func _validate() -> bool:
 	var towers: Array = _tower_indices()
+	# A pick from the pool is walked with everything that will stand on the
+	# board: the props and carved rocks, and the picked towers' own walls.
+	var extra: Array[Rect2] = []
+	if _pool:
+		# Loaded, not preloaded: PathCircle names Game, which a `--script`
+		# suite compiling this has no identifier for yet.
+		var circle: GDScript = load("res://scripts/PathCircle.gd")
+		for r in TowerPool.WALLS:
+			extra.append(r)
+		for st in towers.size():
+			var building: String = MapCfg.CIRCLE_BUILDINGS[st]
+			var size := Art.cell(building, 0, 0).region.size * MapCfg.CIRCLE_TOWER_SCALE
+			var hw: float = size.x * 0.5 * circle.WALL_WIDTH_FRAC
+			var wh: float = size.y * circle.WALL_HEIGHT_FRAC
+			for n in Game.ITEMS_PER_STATION[st]:
+				var base: Vector2 = anchors[towers[st] + 1 + n] + Vector2(0, -MapCfg.CIRCLE_LIFT)
+				extra.append(Rect2(base + Vector2(-hw, -wh), Vector2(hw * 2.0, wh)))
+	grid.solid.append_array(extra)
+	var ok := _validate_walk(towers)
+	for r in extra:
+		grid.solid.erase(r)
+	return ok
+
+
+func _validate_walk(towers: Array) -> bool:
 	var stairs: Array[Rect2] = []
 	for g: Dictionary in guard_stairs:
 		stairs.append(Rect2(Vector2(g.top as Vector2i) * MapCfg.TILE, Vector2(1, 2) * MapCfg.TILE))

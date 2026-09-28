@@ -54,10 +54,19 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = get_instance_id()       # towers along the way do not move alike
 	_angle = rng.randf() * TAU
+	# Speeds spread over the range, dealt out at random: no two signs keep
+	# pace, which random draws alone did not promise.
+	var speeds: Array = range(COUNT).map(func(k: int) -> float:
+		return lerpf(0.75, 1.3, (k + rng.randf_range(0.3, 0.7)) / COUNT))
+	for k in range(COUNT - 1, 0, -1):
+		var j := rng.randi_range(0, k)
+		var t: float = speeds[k]
+		speeds[k] = speeds[j]
+		speeds[j] = t
 	for i in COUNT:
 		_each.append({
 			"gap": TAU * i / COUNT + rng.randf_range(-0.4, 0.4),   # not evenly spaced
-			"speed": rng.randf_range(0.75, 1.3),                    # drifts against the rest
+			"speed": speeds[i],                                      # drifts against the rest
 			"reach": rng.randf_range(0.85, 1.12),                   # its own ring...
 			"breathe": rng.randf_range(0.06, 0.14),                 # ...that swells and shrinks
 			"breathe_f": rng.randf_range(0.5, 1.3),
