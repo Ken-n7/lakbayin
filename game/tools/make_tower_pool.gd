@@ -1,0 +1,228 @@
+extends Node
+
+## Every spot a circle's tower may stand in, per district, for the towers that
+## change from game to game (MapCfg.TOWER_POOL / Terrain.tower_seed). Built on
+## the board as it is -- MAP_SEED's terrain, MapProps' trees and rocks, the
+## carved rocks -- so a spot is known good before any game picks it:
+##   * the circle rules: raised ground (terrace or plateau), flat and open
+##     round it, the tower's footprint flat on its level;
+##   * nothing under or beside the tower: its footprint and a cell round it
+##     free of every prop and wall (today's circle towers aside -- they move);
+##   * clear of buildings, signs, bridges, stairs and the fixed stops;
+##   * walked to: reachable from the base camp with the knights stood down;
+##   * and today's own spots, which the board was dressed round.
+## Writes scripts/config/TowerPool.gd. Run windowless:
+##   godot --headless --path game res://tools/make_tower_pool.tscn
+
+const OUT := "res://scripts/config/TowerPool.gd"
+## Areas marked by hand for more spots (client, 2026-09-28), in cells --
+## [x0, y0, x1, y1] of each purple mark on the board overview, read off the
+## client's drawing. Every cell inside passes the same checks as any other,
+## on any level; trees, rocks and props stay where they are -- only the gaps
+## between them are used.
+const MARKS := [
+	[5.7, 7.0, 18.8, 12.9], [34.5, 8.7, 42.0, 20.8], [26.4, 12.7, 28.8, 14.2],   # Station 2
+	[71.5, 9.5, 72.6, 10.3], [83.3, 12.5, 84.7, 13.2], [70.3, 14.4, 71.5, 15.6],  # Station 3
+	[56.8, 24.2, 63.0, 26.9],
+	[10.4, 30.2, 20.6, 33.9], [21.7, 30.5, 23.1, 31.8], [45.2, 33.5, 46.3, 35.0], # Station 1
+	[57.9, 34.3, 60.3, 37.1], [15.8, 36.6, 18.6, 37.9], [43.4, 42.0, 46.0, 44.0],
+]
+## A mark's reach past its drawn edge, in cells: a dot marks the cells round it.
+const MARK_PAD := 0.6
+const DOT_PAD := 2.2
+const BRIDGE_CLEAR := 4        # cells kept between a spot and any bridge
+const STOP_CLEAR := 4.0        # cells from the camp, a station's door, the gate
+
+
+var _circle_keepouts: Array[Rect2] = []
+
+
+## Which mark `c` is inside (an ellipse in each mark's box), or -1.
+static func _mark_of(c: Vector2i) -> int:
+	var p := Vector2(c) + Vector2(0.5, 0.5)
+	for m in MARKS.size():
+		var r: Array = MARKS[m]
+		var mid := Vector2((r[0] + r[2]) * 0.5, (r[1] + r[3]) * 0.5)
+		var rad := Vector2((r[2] - r[0]) * 0.5, (r[3] - r[1]) * 0.5)
+		# A dot marks a place, not a tile: the nearest workable tile round it.
+		rad += Vector2.ONE * (DOT_PAD if maxf(rad.x, rad.y) < 1.6 else MARK_PAD)
+		var d := (p - mid) / rad
+		if d.length_squared() <= 1.0:
+			return m
+	return -1
+
+
+## The cells that must be clear for a tower on `cells`: its footprint, the
+## doorstep row under it and the row before that. Beside it a tree or a rock
+## may stand -- the plateaus' carved rocks do, where their towers stood.
+static func _clear_cells(cells: Array[Vector2i]) -> Array[Vector2i]:
+	var lo := cells[0]
+	var hi := cells[-1]
+	var out: Array[Vector2i] = []
+	for y in range(lo.y, hi.y + 3):
+		for x in range(lo.x, hi.x + 1):
+			out.append(Vector2i(x, y))
+	return out
+
+
+## MapGrid.clear_of_buildings, less today's circle towers' own keep-outs.
+func _clear_of_buildings(g: MapGrid, r: Rect2) -> bool:
+	for b: Rect2 in g.station_rects:
+		if _circle_keepouts.any(func(k: Rect2) -> bool: return k.is_equal_approx(b)):
+			continue
+		var box := b.grow(-MapCfg.TILE)
+		if box.size.x > 0.0 and box.size.y > 0.0 and box.intersects(r):
+			return false
+	return true
+
+
+func _why(g: MapGrid, tr: Terrain, c: Vector2i, walls: Array[Rect2], circle_cells: Dictionary,
+		reaches: Array, fixed: Array[Vector2i], marked := false) -> String:
+	var T := float(MapCfg.TILE)
+	var i := int(g.island_of.get(c, -1)) - 1
+	var building: String = MapCfg.CIRCLE_BUILDINGS[i]
+	var h := int(g.height.get(c, 0))
+	# The design's circles stand on the heights; a spot marked by hand may be
+	# on any level -- the shore, the summit.
+	if not marked and h != 1 and h != 2: return "low ground (level %d)" % h
+	if marked:
+		# A marked spot may stand near an edge: its doorstep and the cells
+		# beside it flat, and no stair beside it -- the ring round the tower
+		# the design asks of its own spots is too much for a strip of shore.
+		for k: Vector2i in [c, c + Vector2i(-1, 0), c + Vector2i(1, 0), c + Vector2i(0, 1)]:
+			if not tr._flat(k, h): return "too near an edge or cliff to stand at its door"
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				if g.stairs.has(c + Vector2i(dx, dy)): return "on a stair"
+	elif not tr._open_around(c, h, 1): return "not flat and open round it (edge, cliff or stair)"
+	# Walked to once its own knight stands aside -- and not before.
+	if not reaches[i + 1].has(c): return "cannot be walked to"
+	if reaches[i].has(c): return "reachable before its knight stands aside"
+	var cells := tr._tower_cells(c, building)
+	for k: Vector2i in cells:
+		if not tr._flat(k, h): return "footprint not flat"
+	var lo := cells[0]
+	var hi := cells[-1] + Vector2i(0, 2)
+	for k: Vector2i in _clear_cells(cells):
+		if g.taken.has(k) and not circle_cells.has(k): return "a tree, rock or prop is in the way"
+		var box := Rect2(Vector2(k) * T + Vector2(2, 2), Vector2(T - 4, T - 4))
+		for r in walls:
+			if box.intersects(r): return "a tree, rock, building or wall is in the way"
+	var area := Rect2(Vector2(lo) * T, Vector2(hi - lo + Vector2i.ONE) * T)
+	if not _clear_of_buildings(g, area): return "too close to a building or the gate"
+	if not g.clear_of_signs(area): return "over a signboard"
+	for b: Dictionary in MapCfg.BRIDGES:
+		if (b.cells as Rect2i).grow(BRIDGE_CLEAR).has_point(c): return "too close to a bridge"
+	if fixed.any(func(f: Vector2i) -> bool: return Vector2(f - c).length() < STOP_CLEAR):
+		return "too close to a station, the camp or the gate"
+	# The game lays its road to each tower's door (Terrain._road): from the
+	# station, round this tower's own footprint, it has to get there. Free
+	# walking is not enough -- two spots on a shore strip passed that and never
+	# once held in a game.
+	var door: Vector2i = MapGrid.cell_at(g.anchors[_station_anchor(i)])
+	tr._no_road.clear()
+	for k: Vector2i in cells:
+		tr._no_road[k] = true
+	var leg: Array = tr._route(door, 0, c)
+	tr._no_road.clear()
+	if leg.is_empty():
+		return "the path cannot reach its door"
+	return ""
+
+
+## The anchor index of district `i`'s station.
+static func _station_anchor(i: int) -> int:
+	var k := 1
+	for st in i:
+		k += 1 + Game.ITEMS_PER_STATION[st]
+	return k
+
+
+func _ready() -> void:
+	# The board as drawn (tower seed 0), never a run's own: a pool planned on
+	# a game's pick would move with every run of this tool.
+	Game.begin_adventure()
+	Game.solo_seed = 0
+	var screen: Control = load("res://scripts/AdventureScreen.gd").new()
+	add_child(screen)
+	screen.setup({})
+	var world: MapWorld = screen.world
+	var g: MapGrid = screen.grid
+	var tr: Terrain = world.terrain
+	var T := float(MapCfg.TILE)
+	# What can be walked to with the knights standing aside one by one:
+	# reaches[k] with the first k stood down.
+	var reaches: Array = [g.flood(g.anchors[0], 0)]
+	for b: Dictionary in screen.barricades.list:
+		screen.barricades.open(b)
+		reaches.append(g.flood(g.anchors[0], 0))
+	# Today's circle towers move, so their walls do not count against a spot.
+	var circle_walls: Array[Rect2] = []
+	for c: Node2D in screen._circles:
+		var w: Rect2 = c.get("wall")
+		circle_walls.append(Rect2(w.position + c.position, w.size))
+	var walls: Array[Rect2] = []
+	for r: Rect2 in g.solid:
+		if not circle_walls.any(func(cw: Rect2) -> bool: return cw.is_equal_approx(r)):
+			walls.append(r)
+	for b: Rect2 in g.station_rects:
+		for cn: Node2D in screen._circles:
+			if b.has_point(cn.get_meta("tower_mid")):
+				_circle_keepouts.append(b)
+	var circle_cells := {}
+	for c: Node2D in screen._circles:
+		circle_cells[MapGrid.cell_at(c.position)] = true
+	var fixed: Array[Vector2i] = []
+	for k in g.anchors.size():
+		var cell := MapGrid.cell_at(g.anchors[k])
+		if not circle_cells.has(cell):
+			fixed.append(cell)
+	var pools: Array = []
+	var report: Array = []            # [mark, cell, why] for every marked cell
+	for i in MapCfg.DISTRICTS.size():
+		var pool: Array[Vector2i] = []
+		for c: Vector2i in g.land:
+			if int(g.island_of.get(c, -1)) != i + 1:
+				continue
+			var mark := _mark_of(c)
+			var why := _why(g, tr, c, walls, circle_cells, reaches, fixed, mark >= 0)
+			if mark >= 0:
+				report.append([mark, c, why])
+			if why == "":
+				pool.append(c)
+		# Today's own spots are in every pool: the board was dressed round
+		# them -- the plateaus' carved rocks stand beside their towers -- and
+		# test_collisions has always walked them.
+		for cn: Node2D in screen._circles:
+			var cc := MapGrid.cell_at(cn.position)
+			if int(g.island_of.get(cc, -1)) == i + 1 and not pool.has(cc):
+				pool.append(cc)
+		pool.sort()
+		pools.append(pool)
+		var hi_n := pool.filter(func(c: Vector2i) -> bool: return int(g.height.get(c, 0)) == 2).size()
+		print("district %d: %d spots (%d on plateaus), needs %d" % [i, pool.size(), hi_n, Game.ITEMS_PER_STATION[i]])
+	var src := "## Generated by tools/make_tower_pool.gd -- do not edit by hand; re-run it\n"
+	src += "## after the board, its props or its carved rocks change.\n"
+	src += "## Every spot a circle's tower may stand in, per district, [cell, level].\n"
+	src += "class_name TowerPool\n\nconst SPOTS := [\n"
+	for i in pools.size():
+		var row: PackedStringArray = []
+		for c: Vector2i in pools[i]:
+			row.append("[Vector2i(%d, %d), %d]" % [c.x, c.y, int(g.height.get(c, 0))])
+		src += "\t[" + ", ".join(row) + "],\n"
+	src += "]\n\n"
+	# Every tree's, stump's and rock's solid box, carved rocks too: fixed, so a
+	# game's pick of towers is walked round them before the board is built.
+	src += "## Every prop's solid box (MapProps and the carved rocks), for the walk check.\n"
+	src += "const WALLS := [\n"
+	var feet: Array[Rect2] = (world.decor as Decor).feet
+	for r: Rect2 in feet:
+		src += "\tRect2(%.1f, %.1f, %.1f, %.1f),\n" % [r.position.x, r.position.y, r.size.x, r.size.y]
+	src += "]\n"
+	var f := FileAccess.open(OUT, FileAccess.WRITE)
+	f.store_string(src)
+	f.close()
+	print("wrote ", OUT)
+	for r: Array in report:
+		print("MARK %d %d %d %s" % [r[0], r[1].x, r[1].y, r[2] if r[2] != "" else "OK"])
+	get_tree().quit()

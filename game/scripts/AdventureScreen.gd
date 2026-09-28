@@ -594,6 +594,7 @@ func setup(data: Dictionary) -> void:
 		Game.begin_adventure()
 	# The board itself is `MapWorld`, shared with the teacher's map view.
 	var board := MapWorld.new()
+	board.tower_seed = Game.board_seed()
 	world = board
 	add_child(world)
 	board.build()
@@ -1366,6 +1367,7 @@ func _begin_spectating(why: String, finish_s := -1) -> void:
 	move_child(layer, 0)
 	var watch := MapWatch.new()
 	watch.include_me = true
+	watch.tower_seed = (world as MapWorld).tower_seed   # this run's towers
 	layer.add_child(watch)
 	watch.watch(Game.session_id)
 	world.visible = false          # MapWatch draws its own board

@@ -21,6 +21,9 @@ var terrain: Terrain
 var props: Node2D
 ## The rocks with maths carved in them (MapCfg.CARVED_ROCKS).
 var carved: Node2D
+## Which towers (Terrain.tower_seed): set before `build()`. 0, the board as
+## drawn -- what the tools and most tests build.
+var tower_seed := 0
 ## For `tools/scatter_props`: the board with no props at all, to plan them on.
 var bare := false
 ## The cloud layers, for the screen to tell them what to keep clear of.
@@ -39,6 +42,7 @@ func build() -> void:
 	set_meta("tile", MapCfg.TILE)
 	# The ground and the walk, then everything that stands on them.
 	terrain = Terrain.new(grid)
+	terrain.tower_seed = tower_seed
 	terrain.generate()
 	terrain.paint(self, builder)
 	grid.anchors = terrain.anchors
