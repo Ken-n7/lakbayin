@@ -278,28 +278,7 @@ func _on_rescue_news(data: Dictionary) -> void:
 			amount, "" if amount == 1 else "s"])
 
 
-## The standings as a panel over the map, not a screen of their own: opening
-## the board used to close the map, and ← went Home, out of the game. The
-## hero stands while it is open; ← closes it and play goes on where it was.
-## Behind `hud.menu_leaderboard`, which is off for now.
-func open_board() -> void:
-	if _overlay != null:
-		return
-	var b: Control = preload("res://scripts/LeaderboardScreen.gd").new()
-	b.set("main", main)
-	_overlay = b
-	_close_card()
-	hud.set_pad(false)
-	hud.ui_layer.add_child(b)
-	b.setup({"session": Game.session_id if Game.session_id != "" else Game.joined_session,
-			"close": true, "live": false})
-	b.tree_exiting.connect(func() -> void:
-		if _overlay == b:
-			_overlay = null
-			hud.set_pad(true))
-
-
-## Rescue from the map's menu. The question screen opens its own.
+## Rescue from the map: the top bar's button. The question screen opens its own.
 func open_rescue() -> void:
 	if _overlay != null or Game.rescue_block() != "":
 		return
@@ -832,20 +811,34 @@ func _slip(dy: float, stair_low: int) -> void:
 	var here := player.position
 	var at := MapGrid.cell_at(here)
 	var c := Vector2i(-1, -1)
-	for k in [at, MapGrid.cell_at(here + Vector2(0, dy))]:
+	# Where the feet are, where they step, and the box's leading edge: walking
+	# straight at a foot, the box meets the ramp's rock before the feet do.
+	var edge := hero_box.position.y if dy < 0.0 else hero_box.end.y
+	for k in [at, MapGrid.cell_at(here + Vector2(0, dy)), MapGrid.cell_at(here + Vector2(0, dy + edge))]:
 		if grid.stairs.has(k):
 			c = k
 			break
 	# ...or on the high ground at a ramp's top: that ramp, not a neighbour's foot.
+	var beside := false
 	for k in [at + Vector2i(-1, 0), at + Vector2i(1, 0)]:
 		if c.x < 0 and grid.stairs.has(k) and bool(grid.stairs[k].top) \
 				and k - Vector2i(int(grid.stairs[k].side), 0) == at:
 			c = k
+			beside = true
 	if c.x < 0:
 		return
 	var d := absf(dy)
-	var mid := clampf(grid.ramp_mid_x(c, here.y + dy) - here.x, -d, d)
 	var high := -float(grid.stairs[c].side)          # which way the high ground is
+	# Just off the top, the box still part over the ramp's back: on, onto the
+	# high ground -- and no further than clear of the ramp. Steering to the
+	# ramp's middle here pulled the hero back onto its back and he stuck.
+	if beside and dy < 0.0:
+		var feet := Rect2(hero_box.position + here, hero_box.size)
+		if feet.intersects(Rect2(Vector2(c) * MapCfg.TILE, Vector2.ONE * MapCfg.TILE)) \
+				and grid.box_walkable(here + Vector2(high * d, 0.0), hero_box, hero_level, stair_low):
+			player.position = here + Vector2(high * d, 0.0)
+		return
+	var mid := clampf(grid.ramp_mid_x(c, here.y + dy) - here.x, -d, d)
 	var tries: Array[Vector2] = []
 	if absf(mid) > 0.01:
 		tries.append(Vector2(mid, dy))
@@ -1063,8 +1056,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact"):
 		end_look()
 		_interact()
-	elif event.is_action_pressed("pause"):
-		hud.open_menu()
 
 
 ## Dev-only sizing knob: [ shrinks, ] grows, the readout is the number to bake
@@ -1101,7 +1092,7 @@ static func _pointer(event: InputEvent) -> Dictionary:
 
 
 ## The board's one pointer: a tap, or a look once it has moved PAN_SLOP px.
-## Touches that land on the HUD (GO, MENU, the plates, the hero pointer) are
+## Touches that land on the HUD (GO, the plates, Rescue, the hero pointer) are
 ## the HUD's, never the board's.
 func _on_pointer(p: Dictionary) -> void:
 	match p.kind:
@@ -1110,7 +1101,7 @@ func _on_pointer(p: Dictionary) -> void:
 				end_look()
 				return
 			# The same finger index down again means its last lift never reached
-			# the board (a quiz or the menu took it): that press is over.
+			# the board (a quiz or the rescue screen took it): that press is over.
 			if (_press.is_empty() or _press.id == p.id) and not hud.owns_touch(p.pos):
 				_press = {"id": p.id, "at": p.pos, "panning": false}
 		"move":
@@ -1331,15 +1322,13 @@ func _refresh_circles() -> bool:
 	return _current_circle >= 0 and _current_circle != was
 
 
-## Android's back button, routed here by Main: leaving a station mid-question
-## is not on offer, so back opens the pause menu instead.
+## Android's back button, routed here by Main. Swallowed: there is no way
+## out of a run but playing it (client, 2026-10-01). Defined so Main does not
+## fall back to opening Home.
 func go_back() -> void:
 	# Done but not over: no way out until everyone is (client).
 	if _spectate != "":
 		hud.flash("The results open when everyone is done")
-		return
-	if _overlay == null and not hud.paused and not _frozen:
-		hud.open_menu()
 
 
 # --- Spectating ---------------------------------------------------------------

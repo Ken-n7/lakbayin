@@ -21,7 +21,8 @@ var trail := {}       # Vector2i -> true, the road corridor: decor keeps off it
 var taken := {}       # Vector2i -> true, cells a prop already stands on
 var height := {}      # Vector2i -> level: 0 the ground, 1 a terrace, 2 the summit
 var cliff := {}       # Vector2i -> level, the cliff face under that level's south edge
-var stairs := {}      # Vector2i -> {low, tile, top, side}: a ramp's two cells, low and low+1 meet
+var stairs := {}      # Vector2i -> {low, tile, top, side, row}: a ramp's three cells
+                      # (rows 0-2: top, middle, foot), where low and low+1 meet
 
 # --- Boxes, in world px -----------------------------------------------------
 var solid: Array[Rect2] = []          # walls: buildings, boulders, guards
@@ -82,13 +83,15 @@ func is_walkable(pos: Vector2) -> bool:
 ## May a walker at `level` stand in `c`? Ground of that height takes them; a
 ## ramp takes either of the two levels it joins; a cliff takes nobody. A
 ## walker on a ramp now (`stair_low` its lower level, else -1) may step off it
-## onto either level.
+## onto either level -- or onto the ramp up from its top, where two stand one
+## above the other and the upper one's foot is the lower one's landing.
 func cell_ok(c: Vector2i, level: int, stair_low := -1) -> bool:
 	if not land.has(c) or cliff.has(c):
 		return false
 	if stairs.has(c):
 		var low := int(stairs[c].low)
-		return level == low or level == low + 1 or stair_low == low
+		return level == low or level == low + 1 or stair_low == low \
+			or (stair_low >= 0 and stair_low + 1 == low)
 	var h := int(height.get(c, 0))
 	if stair_low >= 0:
 		return h == stair_low or h == stair_low + 1
@@ -96,11 +99,11 @@ func cell_ok(c: Vector2i, level: int, stair_low := -1) -> bool:
 
 
 ## The level after standing at `pos`: the ground's own height, or on a ramp,
-## whatever it was.
+## whatever it was -- one of the two it joins.
 func level_at(pos: Vector2, was: int) -> int:
 	var c := cell_at(pos)
 	if stairs.has(c):
-		return was
+		return clampi(was, int(stairs[c].low), int(stairs[c].low) + 1)
 	return int(height.get(c, 0))
 
 
@@ -170,10 +173,10 @@ func box_walkable(pos: Vector2, box: Rect2, level := 0, stair_low := -1) -> bool
 
 
 ## Whether `p`, in ramp cell `c`, is on the ramp's grass rather than the open
-## corner of its top tile or the rock of its foot -- measured off the art
-## (Tilemap row 4-5, cols 0 and 3). In the ramp's own frame: x from its low
-## side (0) to its high side (32), y from the top tile's top (0) to the foot's
-## bottom (64).
+## corner of its top or the rock of its foot -- measured off the art (rows
+## 6-8 of the level sheets, tools/make_tall_ramp.py). In the ramp's own frame:
+## x from its low side (0) to its high side (32), y from the top's top (0) to
+## the foot's bottom (96).
 func on_ramp(p: Vector2, c: Vector2i) -> bool:
 	var span := _ramp_span(c, p.y)
 	var x := _ramp_x(c, p.x)
@@ -198,16 +201,27 @@ func _flip(c: Vector2i, x: float) -> float:
 	return MapCfg.TILE - x if int(stairs[c].side) > 0 else x
 
 
-## The grass's [from, to] across the ramp's frame at world height `y`.
+## The grass's [from, to] across the ramp's frame at world height `y`: the
+## slanted top, the middle all grass, the foot narrowing to its rock.
 func _ramp_span(c: Vector2i, y: float) -> Vector2:
 	var t := float(MapCfg.TILE)
-	var top_y := float(c.y if bool(stairs[c].top) else c.y - 1) * t
-	var ry := clampf(y - top_y, 4.0, t * 2.0)
+	var top_y := float(c.y - int(stairs[c].row)) * t
+	var ry := clampf(y - top_y, 4.0, t * 3.0)
 	if ry < t:
 		return Vector2(maxf(0.0, t - 1.0 - (ry - 4.0)), t)   # the slope's edge, 45 degrees
+	if ry < t * 2.0:
+		return Vector2(0.0, t)                               # the middle row
+	ry -= t
 	if ry < t * 1.6:
 		return Vector2(0.0, maxf(20.0, t - (ry - t)))         # the foot narrows toward the rock
 	return Vector2(0.0, 16.0)
+
+
+## The world rect of the ramp whose top cell is `top`: one cell across, three
+## down.
+static func ramp_rect(top: Vector2i) -> Rect2:
+	var t := float(MapCfg.TILE)
+	return Rect2(Vector2(top) * t, Vector2(1.0, 3.0) * t)
 
 
 static func clear_of(r: Rect2, boxes: Array) -> bool:

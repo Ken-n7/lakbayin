@@ -8,7 +8,7 @@ extends Node2D
 
 const RADIUS := 46.0
 
-## Left half of the game's 640x360 design canvas -- GO/MENU keep the right
+## Left half of the game's 640x360 design canvas -- GO keeps the right
 ## half to themselves. A touch here always spawns the stick, so it also means
 ## a bare tap on the left no longer falls through to the circle-inspect tap
 ## (`AdventureScreen._tap_at`); that gesture still works on the right half.

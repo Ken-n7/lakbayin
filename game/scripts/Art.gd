@@ -448,6 +448,34 @@ static func shore_foam(parent: Node, land: Dictionary, tile: float) -> Node2D:
 	return layer
 
 
+## The sheet at `path` with three more rows: the pack's ramp with a middle
+## row, so there is room to step on and off it from the side, made from its
+## own pixels by tools/make_tall_ramp.py. Rows 6-8 (top, middle, foot): col 0
+## the ramp with its high ground to the right, col 3 the same mirrored.
+## Returns the key `tex()` serves it under.
+static func tall_ramps(path: String) -> String:
+	var key := path + "#tall-ramps"
+	if _tex_cache.has(key):
+		return key
+	var t := SHEET_TILE
+	var src := tex(path).get_image()
+	if src.is_compressed():
+		src.decompress()
+	src.convert(Image.FORMAT_RGBA8)
+	var l := tex(path.replace("Tilemap_color", "TallRamp_color")).get_image()
+	if l.is_compressed():
+		l.decompress()
+	l.convert(Image.FORMAT_RGBA8)
+	var r := l.duplicate()
+	r.flip_x()
+	var img := Image.create(src.get_width(), src.get_height() + 3 * t, false, Image.FORMAT_RGBA8)
+	img.blit_rect(src, Rect2i(Vector2i.ZERO, src.get_size()), Vector2i.ZERO)
+	img.blit_rect(l, Rect2i(0, 0, t, 3 * t), Vector2i(0, src.get_height()))
+	img.blit_rect(r, Rect2i(0, 0, t, 3 * t), Vector2i(3 * t, src.get_height()))
+	_tex_cache[key] = ImageTexture.create_from_image(img)
+	return key
+
+
 static func terrain_layer(tex_path: String, tile: int, coords: Array = []) -> TileMapLayer:
 	var region := Vector2i(SHEET_TILE, SHEET_TILE)
 	var src := TileSetAtlasSource.new()

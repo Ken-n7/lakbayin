@@ -23,13 +23,16 @@ extends RefCounted
 ##    points and coves, plateaus of every shape -- then cleaned so the tiles
 ##    can draw them. Messy, but never broken.
 ##
-## Stairs are the pack's two-cell ramps, which fit one way only: beside a
-## convex south corner of the higher ground, the ramp's top level with the
-## corner and its foot beside the cliff below it. So stairs are found, not
-## drawn: every corner the shapes happen to make is a candidate.
+## Stairs are the pack's ramps, which fit one way only: beside a convex south
+## corner of the higher ground, the ramp's top level with the corner and its
+## foot beside the cliff below it. So stairs are found, not drawn: every corner
+## the shapes happen to make is a candidate. With a middle row (client,
+## 2026-10-01: "2 wide not 1"): a ramp is walked on and off from the side, so
+## it keeps the pack's one cell that way and gains a row north-south -- top,
+## middle, foot, from the pack's own art (`Art.tall_ramps`, rows 6-8).
 
-const SLOPE_LEFT := [Vector2i(0, 4), Vector2i(0, 5)]     # higher ground to its right
-const SLOPE_RIGHT := [Vector2i(3, 4), Vector2i(3, 5)]    # higher ground to its left
+const SLOPE_LEFT := [Vector2i(0, 6), Vector2i(0, 7), Vector2i(0, 8)]    # higher ground to its right
+const SLOPE_RIGHT := [Vector2i(3, 6), Vector2i(3, 7), Vector2i(3, 8)]   # higher ground to its left
 const CLIFF_ROW := 4                                      # cliff over land
 const CLIFF_SEA_ROW := 5                                  # cliff with its foot in the sea
 const D4 := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
@@ -71,6 +74,7 @@ var _pool := false               # picking from the pool this try
 var _rng := RandomNumberGenerator.new()
 var _why := ""
 var _used := {}                 # (cell, low level) a stair or its margin takes
+var _ramps: Array = []          # every ramp laid, [top, foot, side, rails], two rows until lengthened
 var _no_road := {}              # cells every road goes round: the circles' towers
 
 
@@ -128,6 +132,7 @@ func _reset() -> void:
 	lifts = {}
 	guard_stairs = []
 	_used = {}
+	_ramps = []
 
 
 func _fail(why: String) -> bool:
@@ -157,7 +162,7 @@ func _try() -> bool:
 	_lay_cliffs()
 	if not _place_stops(parts):
 		return false
-	return _validate()
+	return _lengthen_stairs() and _validate()
 
 
 var _noise_land: FastNoiseLite
@@ -595,25 +600,55 @@ func _lay_ramp(ramp: Array, low: int, guarded := false) -> void:
 	if guarded:
 		guard_stairs.append({"top": ramp[0], "foot": ramp[1], "side": int(ramp[2])})
 	var tiles: Array = SLOPE_LEFT if int(ramp[2]) < 0 else SLOPE_RIGHT
-	grid.stairs[ramp[0]] = {"low": low, "tile": tiles[0], "top": true, "side": int(ramp[2])}
-	grid.stairs[ramp[1]] = {"low": low, "tile": tiles[1], "top": false, "side": int(ramp[2])}
+	grid.stairs[ramp[0]] = {"low": low, "tile": tiles[0], "top": true, "side": int(ramp[2]), "row": 0}
+	grid.stairs[ramp[1]] = {"low": low, "tile": tiles[2], "top": false, "side": int(ramp[2]), "row": 1}
 	# Stairs of one level keep their distance; stairs of different levels
 	# may stand closer, one above the other.
 	for c: Vector2i in [ramp[0], ramp[1]]:
 		for dy in range(-3, 4):
 			for dx in range(-5, 6):
 				_used[Vector3i(c.x + dx, c.y + dy, low)] = true
-	_rail(ramp[0], int(ramp[2]))
+	_ramps.append(ramp + [_rail(ramp[0], int(ramp[2]))])
 
 
-## A ramp is climbed from its foot and left at its top onto the higher ground
-## -- not off its back or its high outer side, which are air. Two thin walls.
-func _rail(top: Vector2i, side: int) -> void:
+## Every ramp gets its middle row: its top moves up a cell, onto the ground
+## beside the high ground's side that the ramp's own rules keep flat, and the
+## old top, open at the side now, is the middle. Done last, after the stops
+## and the roads, so the board is the one it was with the pack's two-row ramp
+## -- the props, the carved rocks and the tower pool were all fitted to that.
+func _lengthen_stairs() -> bool:
+	for ramp: Array in _ramps:
+		var s := int(ramp[2])
+		var mid: Vector2i = ramp[0]
+		var top := mid + UP
+		var low := int(grid.stairs[mid].low)
+		if not _flat(top, low):
+			return _fail("no room for the stair at %s to grow a row" % mid)
+		var tiles: Array = SLOPE_LEFT if s < 0 else SLOPE_RIGHT
+		grid.stairs[top] = {"low": low, "tile": tiles[0], "top": true, "side": s, "row": 0}
+		grid.stairs[mid] = {"low": low, "tile": tiles[1], "top": true, "side": s, "row": 1}
+		grid.stairs[ramp[1]].row = 2
+		for r: Rect2 in ramp[3]:
+			grid.solid.erase(r)
+		_rail(top, s)
+		for g: Dictionary in guard_stairs:
+			if g.top == mid:
+				g.top = top
+	return true
+
+
+## A ramp is climbed from its foot or from the side, and left at its top onto
+## the higher ground -- not off its back, or the open side of its slanted top,
+## which are air. Two thin walls round the top cell. Returns them.
+func _rail(top: Vector2i, side: int) -> Array[Rect2]:
 	var t := float(MapCfg.TILE)
 	var at := Vector2(top) * t
-	grid.block(Rect2(at + Vector2(0, -2), Vector2(t, 4)))
 	var x := at.x if side < 0 else at.x + t
-	grid.block(Rect2(Vector2(x - 2, at.y), Vector2(4, t)))
+	var walls: Array[Rect2] = [Rect2(at + Vector2(0, -2), Vector2(t, 4)),
+		Rect2(Vector2(x - 2, at.y), Vector2(4, t))]
+	for w in walls:
+		grid.block(w)
+	return walls
 
 
 ## Under every south edge of every level, the cliff face -- in the cell below,
@@ -758,10 +793,18 @@ func _pool_cells(i: int, entry: Vector2i, goal: Vector2i, building: String) -> A
 	var n: int = Game.ITEMS_PER_STATION[i]
 	var high: Array[Vector2i] = []
 	var low: Array[Vector2i] = []
+	# The pool was checked against the pack's two-row ramps: keep its towers a
+	# cell off the row they grow (`_lengthen_stairs`) as well.
+	var wide := {}
+	for ramp: Array in _ramps:
+		for ring in MapGrid.rings((ramp[0] as Vector2i) + UP, 1):
+			wide[ring] = true
 	for spot: Array in TowerPool.SPOTS[i]:
 		var c: Vector2i = spot[0]
 		if _circle_lift(c, building) == Vector2.INF:
 			continue                     # on this try's road already
+		if wide.has(c) or _tower_cells(c, building).any(func(k: Vector2i) -> bool: return wide.has(k)):
+			continue
 		(high if int(spot[1]) == 2 else low).append(c)
 	var picked: Array[Vector2i] = []
 	var want_high := mini(int(ceil(n * MapCfg.CIRCLES_HIGH)), high.size())
@@ -1069,7 +1112,7 @@ func _validate() -> bool:
 func _validate_walk(towers: Array) -> bool:
 	var stairs: Array[Rect2] = []
 	for g: Dictionary in guard_stairs:
-		stairs.append(Rect2(Vector2(g.top as Vector2i) * MapCfg.TILE, Vector2(1, 2) * MapCfg.TILE))
+		stairs.append(MapGrid.ramp_rect(g.top as Vector2i))
 	for opened in range(-1, guard_stairs.size()):
 		var held: Array[Rect2] = stairs.slice(opened + 1)
 		grid.solid.append_array(held)
@@ -1114,7 +1157,7 @@ func paint(world: Node2D, builder: MapBuilder) -> void:
 		var shade := Node2D.new()
 		shade.name = "Shadows%d" % level
 		world.add_child(shade)
-		var layer := Art.terrain_layer(MapCfg.LEVEL_COLORS[level], MapCfg.TILE)
+		var layer := Art.terrain_layer(Art.tall_ramps(MapCfg.LEVEL_COLORS[level]), MapCfg.TILE)
 		layer.name = "Level%d" % level
 		world.add_child(layer)
 		# A ramp stands on the ground of its low level (the guide): that

@@ -54,15 +54,17 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = get_instance_id()       # towers along the way do not move alike
 	_angle = rng.randf() * TAU
-	# Speeds spread over the range, dealt out at random: no two signs keep
-	# pace, which random draws alone did not promise.
+	# Speeds spread over the range, and dealt so neighbours are two steps of
+	# it apart or more -- evens then odds, from a random start, either way
+	# round: no two signs side by side keep pace. A shuffle let neighbours
+	# draw adjacent steps and crawl along together.
 	var speeds: Array = range(COUNT).map(func(k: int) -> float:
 		return lerpf(0.75, 1.3, (k + rng.randf_range(0.3, 0.7)) / COUNT))
-	for k in range(COUNT - 1, 0, -1):
-		var j := rng.randi_range(0, k)
-		var t: float = speeds[k]
-		speeds[k] = speeds[j]
-		speeds[j] = t
+	var order: Array = range(0, COUNT, 2) + range(1, COUNT, 2)
+	if rng.randf() < 0.5:
+		order.reverse()
+	var start := rng.randi_range(0, COUNT - 1)
+	speeds = range(COUNT).map(func(i: int) -> float: return speeds[order[(i + start) % COUNT]])
 	for i in COUNT:
 		_each.append({
 			"gap": TAU * i / COUNT + rng.randf_range(-0.4, 0.4),   # not evenly spaced
@@ -106,12 +108,21 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## Straight out from where each one is at the moment it leaves, turned a
-## little so no two go quite the way their neighbours do.
+## Out round the ring, each its own way: in the order they are circling at
+## the moment they leave, a sixth of the way round apart from the first one's
+## heading, turned a little so no two go quite the way their neighbours do.
+## Straight out from where each one was let a whirl that bunched them send
+## them all off the one way.
 func _fix_dirs() -> void:
-	for i in COUNT:
-		var a := _angle_of(i) + (0.35 if i % 2 == 0 else -0.35)
-		_dirs.append(Vector2(cos(a), sin(a) * 0.8).normalized())
+	var by_angle: Array = range(COUNT)
+	var first := _angle_of(0)
+	by_angle.sort_custom(func(a: int, b: int) -> bool:
+		return fposmod(_angle_of(a) - first, TAU) < fposmod(_angle_of(b) - first, TAU))
+	_dirs.resize(COUNT)
+	for rank in COUNT:
+		var i: int = by_angle[rank]
+		var a := first + TAU * rank / COUNT + (0.35 if i % 2 == 0 else -0.35)
+		_dirs[i] = Vector2(cos(a), sin(a) * 0.8).normalized()
 
 
 func _angle_of(i: int) -> float:

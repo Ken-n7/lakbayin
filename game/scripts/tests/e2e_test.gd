@@ -383,62 +383,14 @@ func _run() -> void:
 	adv = _map()
 	check("reached adventure from continue", adv.has_method("_try_enter_station"))
 	check("team name carried into the run", Game.team_name == "Test Team")
-	adv.get("hud").open_menu()
+	# No menu (client, 2026-10-01): the only choice is to play. Back leaves
+	# the player on the map, the run going.
+	adv.call("go_back")
 	await _wait(1)
-	check("paused", bool(adv.get("hud").paused))
-	check("resume button", _find_button(adv, "Resume") != null)
-	check("home button", _find_button(adv, "Home") != null)
-	# Hidden mid-game (client, 2026-09-27), not removed: `hud.menu_leaderboard`.
-	check("no Leaderboard in the game menu", _find_button(adv, "Leaderboard") == null)
-	check("restart button", _find_button(adv, "Restart") != null)
-	check("new game button", _find_button(adv, "New Game") != null)
-	_click(adv, "Resume")
-	await _wait(1)
-	check("resumed", not bool(adv.get("hud").paused))
-
-	# Restart drops the run and starts a fresh one on a rebuilt map.
-	Game.gems = 999
-	Game.completed_stations[0] = true
-	var rows_before: int = Game.leaderboard.size()
-	adv.get("hud").open_menu()
-	await _wait(1)
-	_click(adv, "Restart")
-	await _wait(4)
-	adv = _map()
-	check("restart reopened the map", adv.has_method("_try_enter_station"))
-	check("restart reset gems", Game.gems == Game.START_GEMS, str(Game.gems))
-	check("restart reset stations", (Game.completed_stations as Array) == [false, false, false])
-	check("restart scored nothing", Game.leaderboard.size() == rows_before)
-
-	# New Game goes back to hero creation, also without scoring the run.
-	adv.get("hud").open_menu()
-	await _wait(1)
-	_click(adv, "New Game")
-	await _wait(4)
-	check("new game reached hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
-	check("new game dropped the run", not Game.adventure_active)
-	check("new game scored nothing", Game.leaderboard.size() == rows_before)
-	_click(_screen(), "Back")
-	await _wait(3)
-	await _continue_quest()   # team name is remembered from the last run
-	adv = _map()
-	check("back on the map", adv.has_method("_try_enter_station"))
-	# Switched back on, it opens the board OVER the map, and ← returns to the
-	# game -- it used to close the map and send the player Home.
-	adv.get("hud").menu_leaderboard = true
-	adv.get("hud").open_menu()
-	await _wait(1)
-	_click(adv, "Leaderboard")
-	await _wait(3)
-	check("switched on: the board opens over the map", _map() == adv
-			and adv.get("_overlay") != null
-			and _script_of(adv.get("_overlay"), "res://scripts/LeaderboardScreen.gd"))
-	check("the hero stands while it is open", not adv.get("hud").pad.visible
-			if adv.get("hud").pad != null else adv.get("_overlay") != null)
-	(adv.get("_overlay") as Control).call("go_back")
-	await _wait(3)
-	check("← returns to the game, not Home", _map() == adv and adv.get("_overlay") == null)
-	adv.get("hud").menu_leaderboard = false
+	check("back opens nothing", _map() == adv and adv.get("_overlay") == null
+			and not bool(adv.get("hud").paused) and Game.adventure_active)
+	for gone in ["Resume", "Home", "Restart", "New Game", "Leaderboard"]:
+		check("no %s on the map" % gone, _find_button(adv, gone) == null)
 
 	print("== 8. hero select variations ==")
 	Game.player_name = ""
@@ -477,15 +429,10 @@ func _run() -> void:
 	# a say, so the default is what survives.
 	check("duration came from Game, not the player",
 		Game.duration_seconds == 600, str(Game.duration_seconds))
-	adv = _map()
-	adv.get("hud").open_menu()
-	await _wait(1)
-	_click(adv, "Home")
+	# Out of the run the way a test can, not a player: there is no Home on the map.
+	Game.abandon_adventure()
+	_main_scene.call("open", "home")
 	await _wait(4)
-	check("home lands on title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	check("home ends adventure", not Game.adventure_active)
-	var res8: Dictionary = Game.last_run
-	check("unfinished penalty recorded (25)", int(res8.get("gems", 0)) == 25, str(res8.get("gems")))
 
 	print("== 9. summary buttons / natural end ==")
 	await _continue_quest()

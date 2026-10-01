@@ -117,7 +117,6 @@ func _setup_input() -> void:
 		"move_up": [KEY_W, KEY_UP],
 		"move_down": [KEY_S, KEY_DOWN],
 		"interact": [KEY_E, KEY_SPACE, KEY_ENTER],
-		"pause": [KEY_ESCAPE],
 	}
 	for action in binds:
 		if not InputMap.has_action(action):
@@ -303,12 +302,6 @@ func restore_from(row: Dictionary) -> void:
 ## and no -25 for the stations left unfinished.
 func abandon_adventure() -> void:
 	adventure_active = false
-
-
-## A do-over: same discard, then straight into a fresh run.
-func restart_adventure() -> void:
-	abandon_adventure()
-	begin_adventure(int(duration_seconds))
 
 
 func end_adventure() -> void:

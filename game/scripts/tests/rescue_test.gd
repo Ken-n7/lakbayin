@@ -284,34 +284,51 @@ func _map_and_news() -> void:
 	Game.session_id = ""
 	await frames(2)
 
-	# Playing alone: the menu has no Rescue.
-	adv.hud.open_menu()
+	# Playing alone: no Rescue on the top bar.
+	adv.hud.refresh()
 	await frames(2)
-	check("menu, playing alone: no Rescue", _menu_button(adv, "Rescue") == null)
-	_close_menu(adv)
-	await frames(2)
+	var mb := _hud_button(adv, "Rescue")
+	check("playing alone: no Rescue on the bar", mb == null)
 
 	Game.session_id = SID
-	adv.hud.open_menu()
+	adv.hud.refresh()
 	await frames(2)
-	var mb := _menu_button(adv, "Rescue a teammate")
-	check("menu, team game: Rescue a teammate, under Resume", mb != null and not mb.disabled)
+	mb = _hud_button(adv, "Rescue")
+	check("team game: Rescue on the bar, right after the gems", mb != null and not mb.disabled
+			and mb.get_parent() == adv.hud._bar and mb.get_index() == adv.hud._gems.get_parent().get_parent().get_index() + 1)
+	check("...and not focusable, so E / Space / Enter stay the map's", mb.focus_mode == Control.FOCUS_NONE)
+	check("the bar still fits the screen with it", adv.hud._bar.get_combined_minimum_size().x
+			<= adv.get_viewport_rect().size.x - 12.0,
+			"%d > %d" % [adv.hud._bar.get_combined_minimum_size().x, adv.get_viewport_rect().size.x - 12.0])
 	mb.pressed.emit()
 	await frames(4)
-	check("it closes the menu and opens the rescue screen", not adv.hud.paused
-			and adv._overlay != null and adv._overlay.has_signal("finished"))
+	check("it opens the rescue screen", adv._overlay != null and adv._overlay.has_signal("finished"))
 	check("the stick is put away while it is open", not adv.hud.pad.visible)
 	(adv._overlay as Control).call("_cancel")
 	await frames(3)
 	check("Cancel goes back to the map", adv._overlay == null and adv.hud.pad.visible)
 
+	Game.gems = 1
+	Game.gems_changed.emit(Game.gems)
+	await frames(1)
+	check("1 gem: greyed, and says why", mb.disabled and mb.tooltip_text.contains("at least 2"), mb.tooltip_text)
+	Game.gems = 50
 	Game.rescue_sent = true
-	adv.hud.open_menu()
+	Game.gems_changed.emit(Game.gems)
+	await frames(1)
+	check("once used, the bar says so and it is off", mb.text == "Rescued" and mb.disabled, mb.text)
+
+	# No menu: Esc and the back button leave the player on the map, playing.
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	Input.parse_input_event(esc)
 	await frames(2)
-	mb = _menu_button(adv, "Rescue used")
-	check("once used, the menu says so and it is off", mb != null and mb.disabled)
-	_close_menu(adv)
+	adv.go_back()
 	await frames(2)
+	check("Esc and back open nothing", main.current == adv and adv._overlay == null
+			and not adv.hud.paused and Game.adventure_active)
+	check("no MENU button on the pad", adv.hud._pad_buttons.size() == 1)
 
 	# The rescued player's phone: the news, over everything, and no gems from it.
 	var gems_before: int = Game.gems
@@ -346,14 +363,8 @@ func _map_and_news() -> void:
 	await frames(2)
 
 
-func _menu_button(adv: Node, text: String) -> Button:
-	for b in adv.hud.ui_layer.find_children("*", "Button", true, false):
+func _hud_button(adv: Node, text: String) -> Button:
+	for b in adv.hud.hud_layer.find_children("*", "Button", true, false):
 		if (b as Button).text.begins_with(text) and (b as Button).is_visible_in_tree():
 			return b
 	return null
-
-
-func _close_menu(adv: Node) -> void:
-	var resume := _menu_button(adv, "Resume")
-	if resume != null:
-		resume.pressed.emit()

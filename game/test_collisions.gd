@@ -191,6 +191,7 @@ func _initialize() -> void:
 	# everywhere it has to: the cell flood above is a point per 32px, and a box
 	# can stick in a gap a point slips through.
 	_assert_box_reach(screen, G)
+	_assert_climbs(screen)
 
 	# Each knight steps off his stair round every wall, never through one.
 	var boots: Rect2 = MapCfg.GUARD_BOOTS
@@ -396,6 +397,10 @@ func _assert_stairs(screen: Control) -> void:
 		var s: Dictionary = grid.stairs[c]
 		if bool(s.top):
 			continue
+		# Three rows (client, 2026-10-01): top, middle and this foot.
+		assert(int(s.row) == 2 and int(grid.stairs.get(c + Vector2i(0, -1), {}).get("row", -1)) == 1
+				and int(grid.stairs.get(c + Vector2i(0, -2), {}).get("row", -1)) == 0,
+				"the stairs at %s are not three rows" % c)
 		ramps += 1
 		var low := int(s.low)
 		var top: Vector2i = c + Vector2i(0, -1)
@@ -414,6 +419,62 @@ func _assert_stairs(screen: Control) -> void:
 		assert(down, "the stairs at %s cannot be come down" % c)
 	assert(ramps >= 6, "only %d staircases" % ramps)
 	print("stairs: %d, every one climbable and come down" % ramps)
+
+
+## The hero, by the real keys, climbs every ramp and comes back down: straight
+## up from the ground under its foot, and on from the side onto its middle row
+## -- the room the client asked for (2026-10-01) -- and off the other side.
+func _assert_climbs(screen: Control) -> void:
+	var grid: MapGrid = screen.grid
+	screen.skip_intro()
+	root.get_node("Game").call("_setup_input")   # the keys, before Game's own _ready
+	var was: Vector2 = screen.player.position
+	# Holds `action` for `secs`, or until `done` says the walk has got there.
+	var hold := func(action: String, secs: float, done := Callable()) -> void:
+		Input.action_press(action)
+		for i in int(secs * 60):
+			screen._process(1.0 / 60.0)
+			if done.is_valid() and done.call():
+				break
+		Input.action_release(action)
+	var placed := func(c: Vector2i, low: int) -> bool:
+		screen.player.position = MapGrid.cell_mid(c) + Vector2(0, 4)
+		screen.hero_level = low
+		return grid.box_walkable(screen.player.position, screen.hero_box, low)
+	var climbed := 0
+	for c: Vector2i in grid.stairs:
+		var st: Dictionary = grid.stairs[c]
+		var low := int(st.low)
+		var flat := func(k: Vector2i) -> bool:
+			return grid.land.has(k) and not grid.cliff.has(k) and not grid.stairs.has(k) \
+				and int(grid.height.get(k, -1)) == low
+		if int(st.row) == 2 and flat.call(c + Vector2i(0, 1)) and placed.call(c + Vector2i(0, 1), low):
+			hold.call("move_up", 3.0)
+			var top: int = screen.hero_level
+			# Up: off the ramp onto higher ground (on the summit's stacked pair,
+			# straight on up the next ramp too).
+			assert(top > low and not grid.stairs.has(MapGrid.cell_at(screen.player.position)),
+					"the hero cannot climb the stair at %s (stopped at %s)" % [c, screen.player.position])
+			hold.call("move_down", 3.0)
+			assert(screen.hero_level < top, "the hero cannot come down the stair at %s" % c)
+			climbed += 1
+		var side := int(st.side)
+		if int(st.row) == 1 and flat.call(c + Vector2i(side, 0)) and placed.call(c + Vector2i(side, 0), low):
+			var on := "move_right" if side < 0 else "move_left"
+			var off := "move_left" if side < 0 else "move_right"
+			# Until he is up, or the summit's stacked pair takes him on up the next.
+			var up := func() -> bool:
+				return screen.hero_level == low + 1 and not grid.stairs.has(MapGrid.cell_at(screen.player.position))
+			hold.call(on, 2.0, up)
+			assert(screen.hero_level == low + 1 and not grid.stairs.has(MapGrid.cell_at(screen.player.position)),
+					"the hero cannot cross the stair at %s from the side (stopped at %s)" % [c, screen.player.position])
+			hold.call(off, 2.0)
+			assert(screen.hero_level == low, "the hero cannot come back off the stair at %s" % c)
+			climbed += 1
+	assert(climbed >= 20, "only %d climbs" % climbed)
+	screen.player.position = was
+	screen.hero_level = 0
+	print("hero climbs and comes down %d times, from below and from the side" % climbed)
 
 
 func _reachable(screen: Control) -> Dictionary:

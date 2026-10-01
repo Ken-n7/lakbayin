@@ -46,12 +46,11 @@ func build(towers: Array, stairs: Array, houses := []) -> void:
 ## side, into the pocket.
 func _build_one(st: int, stair: Dictionary) -> Dictionary:
 	var top: Vector2i = stair.top
-	var foot: Vector2i = stair.foot
 	var t := float(MapCfg.TILE)
-	var ramp := Rect2(Vector2(top) * t, Vector2(t, t * 2.0))
+	var ramp := MapGrid.ramp_rect(top)
 	var g := {
 		"st": st,
-		"post": MapGrid.cell_mid(foot) + Vector2(0, t * 0.5 - 2.0),
+		"post": Vector2(ramp.get_center().x, ramp.end.y - 2.0),
 		"wall": ramp,
 		"span": ramp,
 		"rocks": [] as Array[Rect2],
@@ -252,9 +251,9 @@ func walk_path(g: Dictionary, from: Vector2, to: Vector2) -> Array[Vector2]:
 				continue
 			if n != goal and not clear.call(MapGrid.cell_mid(n)):
 				continue
-			# A diagonal step must not cut a wall's corner.
-			if d.x != 0 and d.y != 0 and n != goal \
-					and not _line_clear(MapGrid.cell_mid(c), MapGrid.cell_mid(n), clear):
+			# No step may cross a wall: a diagonal cut a wall's corner, and a
+			# straight one stepped over a stair's thin rail between two cells.
+			if n != goal and not _line_clear(MapGrid.cell_mid(c), MapGrid.cell_mid(n), clear):
 				continue
 			came[n] = c
 			queue.append(n)

@@ -2,8 +2,9 @@ class_name AdventureHud
 extends RefCounted
 
 ## Everything drawn over the board: the top bar (name, station, pips, gems,
-## clock), the prompt line, the controls crib, the gem gauge, the touch pad and
-## the pause menu.
+## clock, Rescue), the prompt line, the controls crib, the gem gauge and the
+## touch pad. Players have no menu (client, 2026-10-01): the only choice is to
+## play.
 ##
 ## Two CanvasLayers, because the player's Camera2D transforms every canvas item
 ## in layer 0 -- UI included -- so screen-space elements dragged around the
@@ -23,13 +24,14 @@ var dev: Control = null      # the cheat drawer, debug builds only
 var _gems: Label
 var _time: Label
 var _time_plate: PanelContainer
+var _rescue: Button               # team games only, beside the gems it gives away
 var _ribbon: HBoxContainer        # the station banner, re-coloured per station
 var _pips: HBoxContainer          # one dot per item in this station
 var _bar: HBoxContainer           # the three plates and the ribbon between
 var _shown_gems := -99999         # what the plate last showed, to flash the change
 var _gem_tw: Tween = null
 var _hint_bar: Label = null  # the controls crib, hidden while the board is frozen
-## The stick and the GO/MENU buttons. Null on desktop, where there is no pad.
+## The stick and the GO button. Null on desktop, where there is no pad.
 var pad: Node2D = null
 var _pad_buttons: Array[TouchScreenButton] = []
 ## The way back while the camera is off looking at the map: an arrow on the
@@ -37,15 +39,9 @@ var _pad_buttons: Array[TouchScreenButton] = []
 var hero_pointer: HeroPointer = null
 var _flash_active := false
 
-## The menu is up. The screen reads this to stop the hero walking and to
-## keep the board from taking taps behind the panel.
+## The board is held -- waiting on the session, or the run over. The screen
+## reads this to stop the hero walking and to keep the board from taking taps.
 var paused := false
-
-## Leaderboard in the in-game menu. Off (client, 2026-09-27): no standings
-## mid-game. Kept, not removed -- it may come back -- and it works: it opens the
-## board as a panel over the map (`AdventureScreen.open_board`), and ← returns
-## to the game. Home and the results screen keep their Leaderboard.
-var menu_leaderboard := false
 
 
 func _init(screen: Control) -> void:
@@ -75,8 +71,8 @@ func build() -> void:
 	prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(prompt)
 
-	var keys := ("joystick — move   ·   drag — look   ·   GO — enter   ·   MENU — menu" if Game.touch
-			else "WASD / arrows — move   ·   drag — look   ·   E — interact   ·   Esc — menu")
+	var keys := ("joystick — move   ·   drag — look   ·   GO — enter" if Game.touch
+			else "WASD / arrows — move   ·   drag — look   ·   E — interact")
 	var hint_bar: Label = Art.label(keys, Pal.TINY,
 			Pal.WHITE_DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	if Game.touch:
@@ -113,8 +109,9 @@ func build() -> void:
 ## shows between them, and each plate is one thing to read.
 ##   left   -- the player's own hero in a wooden frame, name and team
 ##   centre -- the station as a ribbon in its own livery, a dot per item
-##   right  -- gems (flashes on a change) and the clock (red in the last minute,
-##             "Paused" while the teacher holds it)
+##   right  -- gems (flashes on a change), Rescue in team games (it gives gems
+##             away, so it sits by them), and the clock (red in the last
+##             minute, "Paused" while the teacher holds it)
 ## All from the Tiny Swords UI pack already in `assets/ui`.
 ## The pack's wooden bar: thin end caps, made for a strip this height. The
 ## WoodTable and paper sheets carry 30px+ corners at any readable scale, which
@@ -210,12 +207,34 @@ func _build_top_bar() -> void:
 	gems_row.add_child(_gems)
 	bar.add_child(gems)
 
+	# Not focusable: E, Space and Enter are the map's interact keys, and a
+	# focused button would take them.
+	_rescue = Ui.button("Rescue", 74, Ui.H, Ui.SMALL)
+	_rescue.name = "Rescue"
+	_rescue.focus_mode = Control.FOCUS_NONE
+	_rescue.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_rescue.pressed.connect(func() -> void: adv.open_rescue())
+	bar.add_child(_rescue)
+	_refresh_rescue()
+
 	_time_plate = _plate(6)
 	_time = Art.label(Ui.mmss(int(Game.time_left)), Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
 	_time.custom_minimum_size = Vector2(58, 0)   # "Paused" and "10:00" alike
 	_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_time_plate.add_child(_time)
 	bar.add_child(_time_plate)
+
+
+## Rescue shows in team games, and is greyed with the reason once it cannot be
+## used -- the question screen's own Rescue button does the same.
+func _refresh_rescue() -> void:
+	if not is_instance_valid(_rescue):
+		return
+	_rescue.visible = Game.session_id != ""
+	var why := Game.rescue_block()
+	_rescue.disabled = why != ""
+	_rescue.text = "Rescued" if Game.rescue_sent else "Rescue"
+	_rescue.tooltip_text = why if why != "" else "Give some of your gems to a teammate"
 
 
 ## Whether the bar, ribbon and all, fits the screen as painted. Measured, not
@@ -269,7 +288,7 @@ func _paint_pips(station: int, done_in_station: int) -> void:
 
 # --- Touch controls ---------------------------------------------------------
 ## The stick is a raw-touch Node2D (its own finger index, like TouchScreenButton
-## tracks), and GO/MENU stay TouchScreenButtons -- both read real touch rather
+## tracks), and GO stays a TouchScreenButton -- both read real touch rather
 ## than mouse-emulated, so steering and pressing GO work on separate fingers at
 ## once. Each feeds a real InputMap action (the stick with analog strength), so
 ## `_process` and `_unhandled_input` stay untouched.
@@ -284,21 +303,19 @@ func _build_pad() -> void:
 	joystick.ignore = pointer_hit
 	pad.add_child(joystick)
 	# Measured in from the right edge, not from 640: `keep_height` makes the
-	# canvas ~800 wide on a 20:9 phone, and fixed coordinates left GO and MENU
-	# stranded 160px short of the thumb that reaches for them.
+	# canvas ~800 wide on a 20:9 phone, and fixed coordinates left GO
+	# stranded 160px short of the thumb that reaches for it.
 	var right := adv.get_viewport_rect().size.x
-	_touch_btn("interact", "GO", Vector2(right - 66, 290), 0.52, 20, false)
-	_touch_btn("pause", "MENU", Vector2(right - 34, 74), 0.34, 11, true)
+	_touch_btn("interact", "GO", Vector2(right - 66, 290), 0.52, 20)
 
 
-func _touch_btn(action: String, text: String, center: Vector2, s: float, font: int, red: bool) -> void:
-	var skin := "res://assets/ui/Small%sRoundButton_%s.png"
-	var col := "Red" if red else "Blue"
+func _touch_btn(action: String, text: String, center: Vector2, s: float, font: int) -> void:
+	var skin := "res://assets/ui/SmallBlueRoundButton_%s.png"
 	var b := TouchScreenButton.new()
-	b.texture_normal = Art.tex(skin % [col, "Regular"])
-	b.texture_pressed = Art.tex(skin % [col, "Pressed"])
+	b.texture_normal = Art.tex(skin % "Regular")
+	b.texture_pressed = Art.tex(skin % "Pressed")
 	b.action = action
-	b.passby_press = true   # a thumb sliding onto GO/MENU still presses it
+	b.passby_press = true   # a thumb sliding onto GO still presses it
 	# The art is 128px drawn from the node's origin, so the hit circle is its
 	# own centre at full size and rides `scale` down with the sprite.
 	var circle := CircleShape2D.new()
@@ -333,7 +350,7 @@ func close_dev() -> void:
 
 
 # --- Looking around the map -------------------------------------------------
-## While a finger drags the view, GO and MENU stop pressing themselves when a
+## While a finger drags the view, GO stops pressing itself when a
 ## finger slides onto them (`passby_press`): a look across the bottom-right
 ## corner would otherwise press GO on the way past.
 func set_panning(on: bool) -> void:
@@ -342,7 +359,7 @@ func set_panning(on: bool) -> void:
 
 
 ## A touch at `pos` (viewport px) that belongs to the HUD, not to the board:
-## GO or MENU, the hero pointer, or any HUD control that takes clicks (the top
+## GO, the hero pointer, or any HUD control that takes clicks (the top
 ## bar's plates, the dev drawer). The board neither pans nor taps from these.
 func owns_touch(pos: Vector2) -> bool:
 	if pad != null and pad.visible:
@@ -381,7 +398,7 @@ func point_to_hero(show: bool, at := Vector2.ZERO, dir := Vector2.RIGHT) -> void
 
 ## Hiding a TouchScreenButton releases its action on its own; the stick is a
 ## plain Node2D, so a held drag needs the same release told explicitly, or it
-## would survive into a quiz or the pause menu.
+## would survive into a quiz.
 func set_pad(on: bool) -> void:
 	if pad != null:
 		pad.visible = on
@@ -458,6 +475,7 @@ func on_gems(g: int) -> void:
 		_gem_tw.tween_interval(0.6)
 		_gem_tw.tween_callback(func() -> void: _gems.add_theme_color_override("font_color", Pal.CREAM))
 	_shown_gems = g
+	_refresh_rescue()
 
 
 ## The clock: red in the last minute, and "Paused" while the teacher holds it
@@ -476,6 +494,7 @@ func on_time(sec: int) -> void:
 
 func refresh() -> void:
 	on_gems(Game.gems)
+	_refresh_rescue()
 	on_time(int(ceilf(Game.time_left)))
 	var next := Game.completed_stations.find(false)
 	if Game.items_done >= Game.TOTAL_ITEMS:
@@ -487,11 +506,12 @@ func refresh() -> void:
 		# "Station 1: Master the Basics!" -> "Station 1 · Master the Basics!",
 		# or the topic's short name when the full title will not fit between
 		# the plates -- at 640 wide, Station 3's pushed the clock off-screen.
-		var full := str(meta.title).replace(": ", "  ·  ")
-		var brief := "Station %d  ·  %s" % [st + 1, str(meta.short)]
-		_paint_ribbon(RIBBON_ROW[st], full)
-		if not _fits():
-			_paint_ribbon(RIBBON_ROW[st], brief)
+		# With Rescue on the bar too, 640 wide has room for "Station 1" alone.
+		_paint_ribbon(RIBBON_ROW[st], str(meta.title).replace(": ", "  ·  "))
+		for text in ["Station %d  ·  %s" % [st + 1, str(meta.short)], "Station %d" % (st + 1)]:
+			if _fits():
+				break
+			_paint_ribbon(RIBBON_ROW[st], text)
 		_paint_pips(st, Game.item_in_station(Game.items_done))
 	# Label the boards on the map itself, otherwise all three look identical.
 	for i in adv.stations.locks.size():
@@ -501,84 +521,6 @@ func refresh() -> void:
 		elif i == next:
 			mark = "▶"
 		adv.stations.locks[i].text = "Station %d  %s" % [i + 1, mark]
-
-
-## Not a pause. Players have no pause button -- only the admin can stop the
-## clock, and one press stops it for everyone (SPECS §2, confirmed by the
-## client 2026-09-23). This menu never touched `Game.clock_paused` anyway; it
-## was only ever called "Paused", which was a lie the label told.
-func open_menu() -> void:
-	if paused:
-		return
-	paused = true
-	adv._close_card()
-	close_dev()
-	set_pad(false)
-	Sfx.play("panel_open")
-	var box := Ui.screen_panel(ui_layer, Vector2(300, 270), "Menu")
-	var menu := box.get_parent()
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 6)
-	# Not a pause -- only the teacher stops the clock -- and it has to say so,
-	# or a student reads the menu as a breather.
-	var note := Art.label("The clock keeps running.", Pal.SMALL, Pal.WRONG,
-		HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(note)
-	# label, kind, screen to open ("" = stay on the map), what to do with the
-	# run in progress. Resume is the one primary; New Game throws the run
-	# away, so it is last and the only red -- it was red beside Leaderboard,
-	# which made a harmless look match a destructive one.
-	for spec in [["Resume", Ui.RED, "", ""],
-			["Leaderboard", Ui.SMALL, "board", ""],
-			["Home", Ui.SMALL, "home", "end"],
-			["Restart", Ui.SMALL, "adventure", "restart"],
-			["New Game", Ui.SMALL_RED, "hero", "abandon"]]:
-		if spec[0] == "Leaderboard":
-			if menu_leaderboard:
-				var lb := Ui.button(spec[0], 200, Ui.H, spec[1])
-				lb.pressed.connect(func() -> void:
-					_leave_menu(menu, "", "")
-					adv.open_board())
-				Ui.centre_row(box, lb)
-			continue
-		var b := Ui.button(spec[0], 200, Ui.H, spec[1])
-		b.pressed.connect(_leave_menu.bind(menu, spec[2], spec[3]))
-		Ui.centre_row(box, b)
-		if spec[0] == "Resume" and Game.session_id != "":
-			_menu_rescue(box, menu)
-
-
-## Rescue from the map, not only from a question: whoever is running low needs
-## it now, not at the rescuer's next circle. Team games only; greyed with the
-## reason once it cannot be used.
-func _menu_rescue(box: VBoxContainer, menu: Control) -> void:
-	var why := Game.rescue_block()
-	var r := Ui.button("Rescue used" if Game.rescue_sent else "Rescue a teammate", 200, Ui.H, Ui.SMALL)
-	r.name = "Rescue"
-	r.disabled = why != ""
-	r.tooltip_text = why if why != "" else "Give some of your gems to a teammate"
-	r.pressed.connect(func() -> void:
-		_leave_menu(menu, "", "")
-		adv.open_rescue())
-	Ui.centre_row(box, r)
-
-
-## Every exit closes the menu. `drop` decides the fate of the run in
-## progress -- "end" scores it, "restart" and "abandon" discard it unscored --
-## and `screen` where to go next. Restart rebuilds the island, because `open()`
-## remakes the screen, and the gems go back to the starting purse.
-func _leave_menu(menu: Control, screen: String, drop: String) -> void:
-	paused = false
-	set_pad(true)
-	menu.queue_free()
-	if screen == "":
-		Sfx.play("panel_close")         # Resume: back to the map
-	match drop:
-		"end": Game.end_adventure()
-		"restart": Game.restart_adventure()
-		"abandon": Game.abandon_adventure()
-	if screen != "":
-		adv.main.open(screen)
 
 
 ## The arrow back to the hero: a wooden disc on the edge of the screen with an
