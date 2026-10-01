@@ -11,6 +11,10 @@ game/.godot/
 #   cd game && godot --headless --export-debug "Android" ../build/NumXventure.apk
 build/
 
+# The client's lesson posters (Canva PNGs, ~6MB): source material the Learn
+# screen was rebuilt from (LearnScreen.gd), not something the game loads.
+learn/
+
 # Bytecode from the one-off scripts in game/tools/
 __pycache__/
 *.py[cod]
