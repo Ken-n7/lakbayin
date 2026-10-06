@@ -29,7 +29,7 @@ const WORLD_H := 54
 
 # The Super Retro World sheets are 16x20; scale picked by eye against the
 # tileset's 64px cells with the [ and ] tuner (AdventureScreen._nudge_hero_scale).
-const UNIT_SCALE := 1.4
+const UNIT_SCALE := 1.6
 # Buildings are the tileset's own 64px art, so they take the tileset's scale.
 const BUILDING_SCALE := 0.5
 ## Each station's keep -- one building per station, each its own kind, so the

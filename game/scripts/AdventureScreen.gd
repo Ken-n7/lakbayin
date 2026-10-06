@@ -1045,7 +1045,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# Dev sizing knob: [ shrinks the hero, ] grows him, and the toast prints the
 	# number to bake into MapCfg.UNIT_SCALE.
-	if event is InputEventKey and (event as InputEventKey).pressed:
+	if OS.is_debug_build() and event is InputEventKey and (event as InputEventKey).pressed:
 		match (event as InputEventKey).keycode:
 			KEY_BRACKETLEFT:
 				_nudge_hero_scale(-HERO_SCALE_STEP)

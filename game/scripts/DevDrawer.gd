@@ -16,14 +16,11 @@ extends Control
 
 const PANEL_W := 124.0
 ## Top edge only -- the box is a container, so it takes whatever height its
-## buttons need, and nine of them nearly fill the 360px canvas.
+## buttons need, and eleven of them nearly fill the 360px canvas.
 const PANEL_Y := 4.0
 const TAB := Vector2(18.0, 40.0)
 const TAB_Y := 150.0
 const FAST_WALK := 3.0
-## What Zoom steps through, from the shipped MapCfg.PLAY_ZOOM up -- for picking
-## a camera on the phone itself rather than guessing at a desk.
-const ZOOMS := [0.75, 0.85, 0.95, 1.05, 1.2]
 
 ## One row per button: label, and the method it calls. Adding a tool is a line
 ## here plus the method. A toggle rewrites its own label with a trailing dot.
@@ -36,7 +33,8 @@ const TOOLS := [
 	["Freeze", "_freeze"],
 	["+1:00", "_add_minute"],
 	["Show Walls", "_show_walls"],
-	["Zoom 0.75", "_zoom"],
+	["Hero -", "_hero_smaller"],
+	["Hero +", "_hero_bigger"],
 	["End Run", "_end_run"],
 ]
 
@@ -219,16 +217,16 @@ func _show_walls() -> void:
 	_mark("_show_walls", true)
 
 
+## The [ and ] sizing knob as buttons, for tuning on a phone with no keyboard.
+## The toast prints the number to bake into MapCfg.UNIT_SCALE.
+func _hero_smaller() -> void:
+	_adv._nudge_hero_scale(-_adv.HERO_SCALE_STEP)
+
+
+func _hero_bigger() -> void:
+	_adv._nudge_hero_scale(_adv.HERO_SCALE_STEP)
+
+
 ## Straight to the summary, for testing the end of a run without playing one.
-## The next zoom along, applied at once and kept for the rest of the run.
-func _zoom() -> void:
-	var at := ZOOMS.find(_adv.play_zoom)
-	var z: float = ZOOMS[(at + 1) % ZOOMS.size()]
-	_adv.play_zoom = z
-	if not _adv._dev_aerial and not _adv._frozen:
-		(_adv._cam as Camera2D).zoom = Vector2(z, z)
-	_buttons["_zoom"].text = "Zoom %.2f" % z
-
-
 func _end_run() -> void:
 	Game.end_adventure()

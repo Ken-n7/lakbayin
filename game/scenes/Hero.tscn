@@ -134,7 +134,7 @@ scale = Vector2(0.3, 0.3)
 texture = ExtResource("1_3a4aj")
 
 [node name="Spr" type="AnimatedSprite2D" parent="." unique_id=701777230]
-scale = Vector2(1.4, 1.4)
+scale = Vector2(1.6, 1.6)
 sprite_frames = SubResource("SpriteFrames_fwrl0")
 animation = &"down"
 frame = 1

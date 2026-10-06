@@ -35,7 +35,7 @@ const PREDICT_S := 0.3
 const KEEP := 12            # positions held per player; ~2s of walking
 ## Further off than this is a teleport or a rejoin: snap, do not glide.
 const SNAP_DIST := 240.0
-const HERO_SCALE := 1.4           # MapCfg.UNIT_SCALE; not named, see _make()
+const HERO_SCALE := 1.6           # MapCfg.UNIT_SCALE; not named, see _make()
 const HERO_FOOT := Vector2(0, -10)
 
 var _markers := {}          # profile_id -> Node2D
