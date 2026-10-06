@@ -368,6 +368,20 @@ static func anim_sprite(parent: Node, path: String, at: Vector2, s: float, fps :
 	return a
 
 
+## Moves the sort point up from the frame's bottom to the art's, picture left
+## where it was. A sheet with empty rows under its art (the bushes: ~50 of 128)
+## otherwise sorts that far below what is drawn, and hides a hero standing in
+## front of it.
+static func sit_on_art(a: AnimatedSprite2D) -> void:
+	var f := a.sprite_frames.get_frame_texture(a.animation, 0) as AtlasTexture
+	var img := f.atlas.get_image()
+	if img.is_compressed():
+		img.decompress()
+	var gap := f.region.size.y - float(img.get_region(Rect2i(f.region)).get_used_rect().end.y)
+	a.offset.y += gap
+	a.position.y -= gap * a.scale.y
+
+
 ## Text floating over open terrain or artwork needs this to stay readable.
 static func shadow(l: Control, col: Color = Color(0, 0, 0, 0.85), off := 1, outline := 2) -> void:
 	l.add_theme_color_override("font_shadow_color", col)

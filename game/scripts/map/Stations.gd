@@ -183,4 +183,3 @@ func _build_outpost(i: int, base: Vector2, keep_hw: float) -> void:
 		var g := Art.anim_sprite(world, MapCfg.UNIT_SHEET % [col, MapCfg.DOOR_GUARDS[n]],
 				base + Vector2(dx, MapCfg.DOOR_GUARD_DROP),
 				MapCfg.DOOR_GUARD_SCALE, MapCfg.DOOR_GUARD_FPS, signf(dx))
-		g.z_index = MapCfg.GUARD_Z

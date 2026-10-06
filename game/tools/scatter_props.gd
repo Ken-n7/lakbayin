@@ -521,6 +521,7 @@ func _save(world: MapWorld) -> void:
 	for b: Dictionary in _bushes:
 		var bush := Art.anim_sprite(shrubs, BUSH % int(b.v), b.at, BUSH_SCALE, BUSH_FPS,
 			float(b.flip), 8)
+		Art.sit_on_art(bush)
 		bush.name = "Bush"
 		bush.autoplay = bush.animation
 		bush.frame = rng.randi_range(0, 7)

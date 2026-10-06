@@ -177,8 +177,6 @@ const GUARD_IDLE_SHEET := "res://assets/units/%s/Warrior_Idle.png"
 const GUARD_WALK_SHEET := "res://assets/units/%s/Warrior_Run.png"
 const GUARD_IDLE_FPS := 5.0
 const GUARD_WALK_FPS := 9.0
-## Over the grass, at the same depth as the outpost guards he matches.
-const GUARD_Z := 1
 ## Knights who step aside to behind their station's left-hand house, and how
 ## far behind its wall they stand. The others take the nearest open ground.
 const GUARD_REST_BEHIND_HOUSE := [true, false, false]

@@ -14,6 +14,10 @@ func _ready() -> void:
 	rng.seed = int(Time.get_unix_time_from_system()) + randi()
 	if OS.is_debug_build():
 		rng.seed = absi(position.x) * 31 + absi(position.y) * 17
+	# Stand on the feet, as Art.anim_sprite() does: centred, a sheep y-sorted by
+	# its middle and a hero behind it drew over it.
+	var spr := get_child(0) as AnimatedSprite2D
+	spr.offset.y = -spr.sprite_frames.get_frame_texture("idle", 0).get_height() * 0.5
 	_home = position
 	_pick_target()
 
