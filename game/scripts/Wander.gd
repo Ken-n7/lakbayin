@@ -30,7 +30,9 @@ func _process(delta: float) -> void:
 		position += dir * _speed * delta
 		if not _walkable(position + dir * 4.0):
 			_pick_target()
-		spr.scale = Vector2(0.45 * (1.0 if dir.x >= 0.0 else -1.0), 0.45)
+		# Face the way it walks, at the size it was placed at (MapCfg.SHEEP_SCALE):
+		# a 0.45 left here from the first draft halved every sheep that moved.
+		spr.scale.x = absf(spr.scale.y) * (1.0 if dir.x >= 0.0 else -1.0)
 	if spr.animation != ("walk" if moving else "idle"):
 		spr.play("walk" if moving else "idle")
 	_timer += delta

@@ -131,18 +131,18 @@ func build_keep(i: int, at: Vector2, _accent: String, lift := Vector2(0, -MapCfg
 	# Its own node, y-sorted at the text's top edge: the hero stands on the
 	# doorstep, right on the sign, and drew half over it and half under (it
 	# sorted at the doorstep, a tie). Now whoever stands on it is in front.
-	var sign := Node2D.new()
-	sign.position = at + Vector2(0, sign_y)
-	world.add_child(sign)
+	var board := Node2D.new()
+	board.position = at + Vector2(0, sign_y)
+	world.add_child(board)
 	var title := Art.title(Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER))
 	title.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, 0)
 	title.size = Vector2(MapCfg.SIGN_BOX.x, 20)
-	sign.add_child(title)
+	board.add_child(title)
 	locks.append(title)
 	var topic := Art.label(QuestionGen.station_meta(i).short, 11, Color(1, 1, 1, 0.92), HORIZONTAL_ALIGNMENT_CENTER)
 	topic.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, MapCfg.SIGN_LINE_GAP)
 	topic.size = Vector2(MapCfg.SIGN_BOX.x, 16)
-	sign.add_child(topic)
+	board.add_child(topic)
 	# Both sit over grass and roof, so they need the same shadow the map prompts
 	# use to stay readable.
 	for l in [title, topic]:

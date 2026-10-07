@@ -157,7 +157,11 @@ func _swatch_style(selected: bool, hover := false) -> StyleBox:
 func _save_hero() -> void:
 	# The account's name. Offline (the suites, a dev run) there is none, and
 	# a name already saved is kept.
-	if Net.signed_in():
+	# Not a teacher's: the profile is the device's, and a name in it is what
+	# lets the next student who signs in on this phone skip choosing a hero.
+	if Net.signed_in() and Net.role == "admin":
+		pass
+	elif Net.signed_in():
 		Game.player_name = Net.username
 	elif Game.player_name == "":
 		Game.player_name = "Adventurer"
