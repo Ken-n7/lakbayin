@@ -31,6 +31,9 @@ var _bar: HBoxContainer           # the three plates and the ribbon between
 var _shown_gems := -99999         # what the plate last showed, to flash the change
 var _gem_tw: Tween = null
 var _hint_bar: Label = null  # the controls crib, hidden while the board is frozen
+var _crib_tw: Tween = null
+## How long the phone's crib stays up once play starts (set_crib).
+const CRIB_HOLD_S := 10.0
 ## The stick and the GO button. Null on desktop, where there is no pad.
 var pad: Node2D = null
 var _pad_buttons: Array[TouchScreenButton] = []
@@ -355,8 +358,20 @@ func _touch_btn(action: String, text: String, center: Vector2, s: float, font: i
 ## The controls crib, hidden while the board is frozen: the aerial POV is the
 ## one screen the client asked to be left alone to look at.
 func set_crib(on: bool) -> void:
-	if _hint_bar != null and is_instance_valid(_hint_bar):
-		_hint_bar.visible = on
+	if _hint_bar == null or not is_instance_valid(_hint_bar):
+		return
+	if _crib_tw != null and _crib_tw.is_valid():
+		_crib_tw.kill()
+	_hint_bar.modulate.a = 1.0
+	_hint_bar.visible = on
+	# On a phone it runs along the top, across the numbers of the towers up
+	# there (seen on a device): a reminder for the first moments of play, then
+	# it fades and leaves the top of the board clear.
+	if on and Game.touch:
+		_crib_tw = _hint_bar.create_tween()
+		_crib_tw.tween_interval(CRIB_HOLD_S)
+		_crib_tw.tween_property(_hint_bar, "modulate:a", 0.0, 1.0)
+		_crib_tw.tween_callback(func() -> void: _hint_bar.visible = false)
 
 
 ## The drawer stays out of the way of anything that wants the whole screen.
