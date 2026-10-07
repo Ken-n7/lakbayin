@@ -8,6 +8,7 @@ Used by classroom.py --move SECONDS. Counts what each phone sent and heard,
 how late it heard it, and anything Realtime said was wrong.
 """
 import json
+import math
 import random
 import statistics
 import threading
@@ -112,6 +113,7 @@ class Mover(threading.Thread):
         next_snap = time.time()
         next_turn = time.time()
         quiz_until = 0.0              # answering a question until then
+        last_send = None
         walk_until = None
         x, y = random.uniform(400, 2800), random.uniform(300, 1500)
         heading = random.uniform(0, 6.28)
@@ -131,6 +133,8 @@ class Mover(threading.Thread):
                     quiz_until, walk_until = 0.0, now + random.uniform(8, 15)
                     threading.Thread(target=self._answer, daemon=True).start()
             in_quiz = quiz_until > 0.0
+            if in_quiz:
+                last_send = None      # standing: no distance piles up meanwhile
             if in_quiz and (QUIET_QUIZ or now < next_pos):
                 pass                  # silent, or between keepalives
             elif in_quiz:
@@ -148,14 +152,23 @@ class Mover(threading.Thread):
             if self.walks and end is not None and not in_quiz and (now >= next_pos or turn):
                 if turn:
                     next_turn = now + random.uniform(1.5, 4.5)
-                heading += random.uniform(-0.4, 0.4) if (turn or not ON_CHANGE) else 0.0
-                x += 150 * POS_EVERY_S * (1 if random.random() < 0.5 else -1)
-                y += 150 * POS_EVERY_S * (1 if random.random() < 0.5 else -1)
+                # Walked since the last send at 150px/s along the heading, as a
+                # hero does; a turn picks a new heading. Kept on the islands'
+                # span by turning back at its edges.
+                step = now - (last_send or now)
+                last_send = now
+                x += math.cos(heading) * 150 * step
+                y += math.sin(heading) * 150 * step
+                if turn or not ON_CHANGE:
+                    heading += random.uniform(-1.2, 1.2)
+                if not (500 < x < 2700) or not (400 < y < 1500):
+                    heading = math.atan2(950 - y, 1600 - x)
                 try:
                     self._send(ws, "broadcast", {"type": "broadcast", "event": "pos", "payload": {
                         "sid": self.session, "id": self.user, "name": self.label, "team": self.team,
                         "hero": 1, "x": round(x) if ON_CHANGE else x, "y": round(y) if ON_CHANGE else y,
-                        "vx": 150, "vy": 0, "face": "right",
+                        "vx": round(math.cos(heading) * 150), "vy": round(math.sin(heading) * 150),
+                        "face": "right" if math.cos(heading) >= 0 else "left",
                         "moving": True, "ts": round(now, 2) if ON_CHANGE else now, "sent": now}},
                         self.in_topic if CHANNEL == "hub" else None)
                     self.sent += 1
