@@ -177,7 +177,9 @@ def main():
     ap.add_argument("--pos-every", type=float, default=rt.POS_EVERY_S, metavar="S",
                     help="seconds between a walker's positions (the app's "
                          "AdventureScreen.POS_EVERY_S, %.2f today)" % rt.POS_EVERY_S)
-    ap.add_argument("--channel", choices=["shared", "team"], default="shared",
+    ap.add_argument("--snap-every", type=float, default=rt.SNAP_EVERY_S, metavar="S",
+                    help="hub: seconds between the teacher's snapshots")
+    ap.add_argument("--channel", choices=["shared", "team", "hub"], default="shared",
                     help="Realtime channels: one for everyone (the app today) or "
                          "one per session and team; the teacher joins every team's")
     args = ap.parse_args()
@@ -185,6 +187,7 @@ def main():
     MOVE_S = args.move
     rt.POS_EVERY_S = args.pos_every
     rt.CHANNEL = args.channel
+    rt.SNAP_EVERY_S = args.snap_every
 
     stamp = str(int(time.time()))
     teacher = Api("teacher")
@@ -218,7 +221,13 @@ def main():
         students.append(s)
         s.start()
         time.sleep(0.15)                 # a class does not tap in lockstep
-    time.sleep(6)
+    # Start once the class is in, as a teacher waits for "everyone ready"; a
+    # fixed few seconds started on a slow day with most still signing in.
+    for _ in range(120):
+        if all(st.joined_at is not None or st.error for st in students):
+            break
+        time.sleep(0.5)
+    time.sleep(2)
 
     ends = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + 1800)) + "Z"
     print("== teacher starts the game ==")
@@ -227,9 +236,11 @@ def main():
                   what="start")
     if MOVE_S:
         # The teacher's map: everyone, so every channel there is.
-        for t in ([""] if args.channel == "shared" else team_names):
+        for t in ([""] if args.channel != "team" else team_names):
             watcher = rt.Mover("teacher", teacher.user, teacher.token, session["id"], t,
                                MOVE_S, go, walks=False)
+            # hub: the teacher listens to every phone's own channel.
+            watcher.hub_inputs = [m.in_topic for m in phones if m.walks]
             phones.append(watcher)
             watcher.start()
         time.sleep(1)

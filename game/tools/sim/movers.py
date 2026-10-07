@@ -19,8 +19,12 @@ from api import KEY, URL
 
 TOPIC = "realtime:numxventure"
 ## "shared": one channel for everyone (the app today). "team": one per session
-## and team, the fix being measured.
+## and team. "hub": every phone sends on a channel of its own that only the
+## teacher joins; the teacher sends everyone one snapshot of all positions,
+## SNAP_EVERY_S apart, on the session's snapshot channel -- the whole class on
+## one map, without every position going to every phone.
 CHANNEL = "shared"
+SNAP_EVERY_S = 0.25
 POS_EVERY_S = 0.15          # AdventureScreen.POS_EVERY_S, while walking
 HEARTBEAT_S = 25.0
 
@@ -42,13 +46,26 @@ class Mover(threading.Thread):
         self.joined = False
         self._ref = 0
         self._lock = threading.Lock()
-        self.topic = TOPIC if CHANNEL == "shared" else f"{TOPIC}:{session}:{team.replace(' ', '_')}"
+        self.topic = TOPIC if CHANNEL in ("shared", "hub") else f"{TOPIC}:{session}:{team.replace(' ', '_')}"
+        # hub: where this phone's positions go, and where snapshots come from.
+        self.in_topic = f"{TOPIC}:in:{session}:{user}"
+        self.snap_topic = f"{TOPIC}:snap:{session}"
+        self.hub_inputs = []          # the teacher: every phone's in_topic
+        self._latest = {}             # the teacher: id -> latest position
+        self.snaps_sent = 0
 
-    def _send(self, ws, event, payload):
+    def _send(self, ws, event, payload, topic=None):
         self._ref += 1
         with self._lock:
-            ws.send(json.dumps({"topic": self.topic if event != "heartbeat" else "phoenix",
+            ws.send(json.dumps({"topic": "phoenix" if event == "heartbeat" else (topic or self.topic),
                                 "event": event, "payload": payload, "ref": str(self._ref)}))
+
+    def _join_plain(self, ws, topic):
+        """A broadcast-only channel: no presence, no table changes."""
+        self._send(ws, "phx_join", {"config": {"broadcast": {"self": False},
+                                               "presence": {"enabled": False},
+                                               "postgres_changes": []},
+                                    "access_token": self.token}, topic)
 
     def run(self):
         ws_url = URL.replace("https://", "wss://") + f"/realtime/v1/websocket?apikey={KEY}&vsn=1.0.0"
@@ -65,7 +82,12 @@ class Mover(threading.Thread):
             "access_token": self.token})
         self._send(ws, "presence", {"type": "presence", "event": "track",
                                     "payload": {"sid": self.session, "where": "map", "name": self.label}})
+        if CHANNEL == "hub":
+            self._join_plain(ws, self.snap_topic)
+            for t in (self.hub_inputs if not self.walks else [self.in_topic]):
+                self._join_plain(ws, t)
         ws.settimeout(0.02)
+        next_snap = time.time()
         x, y = random.uniform(400, 2800), random.uniform(300, 1500)
         heading = random.uniform(0, 6.28)
         next_pos = next_beat = time.time()
@@ -83,12 +105,25 @@ class Mover(threading.Thread):
                     self._send(ws, "broadcast", {"type": "broadcast", "event": "pos", "payload": {
                         "sid": self.session, "id": self.user, "name": self.label, "team": self.team,
                         "hero": 1, "x": x, "y": y, "vx": 150.0, "vy": 0.0, "face": "right",
-                        "moving": True, "ts": now, "sent": now}})
+                        "moving": True, "ts": now, "sent": now}},
+                        self.in_topic if CHANNEL == "hub" else None)
                     self.sent += 1
                 except Exception as e:
                     self.trouble.append(f"send: {e}")
                     break
                 next_pos = now + POS_EVERY_S
+            if CHANNEL == "hub" and not self.walks and end is not None and now >= next_snap:
+                next_snap = now + SNAP_EVERY_S
+                if self._latest:
+                    try:
+                        self._send(ws, "broadcast", {"type": "broadcast", "event": "snap",
+                                                     "payload": {"p": list(self._latest.values())}},
+                                   self.snap_topic)
+                        self.snaps_sent += 1
+                    except Exception as e:
+                        self.trouble.append(f"snap: {e}")
+                        break
+                    self._latest = {}
             if now >= next_beat:
                 try:
                     self._send(ws, "heartbeat", {})
@@ -113,7 +148,19 @@ class Mover(threading.Thread):
 
     def _take(self, msg):
         ev, p = msg.get("event"), msg.get("payload") or {}
-        if ev == "broadcast" and p.get("event") == "pos":
+        if ev == "broadcast" and p.get("event") == "snap":
+            now = time.time()
+            for q in (p.get("payload") or {}).get("p", []):
+                if q.get("id") != self.user:
+                    self.heard += 1
+                    if self.heard % 7 == 0:
+                        self.lag.append(now - q["sent"])
+        elif ev == "broadcast" and p.get("event") == "pos" and CHANNEL == "hub":
+            # The teacher, collecting for the next snapshot.
+            q = p.get("payload") or {}
+            self._latest[q.get("id")] = q
+            self.heard += 1
+        elif ev == "broadcast" and p.get("event") == "pos":
             self.heard += 1
             sent = (p.get("payload") or {}).get("sent")
             if sent and self.heard % 7 == 0:
@@ -148,7 +195,10 @@ def report(movers, seconds):
     by_topic = {}
     for w in walkers:
         by_topic[w.topic] = by_topic.get(w.topic, 0) + w.sent
-    expected = [by_topic.get(m.topic, 0) - (m.sent if m.walks else 0) for m in movers]
+    expected = [by_topic.get(m.topic, 0) - (m.sent if m.walks else 0) for m in movers] \
+        if CHANNEL == "team" else [sent - m.sent for m in movers]
+    if CHANNEL == "hub":
+        print(f"   snapshots sent by the teacher: {sum(m.snaps_sent for m in movers)}")
     heard = [m.heard for m in movers]
     ratio = [h / e for h, e in zip(heard, expected) if e]
     print(f"   delivered: {sum(heard)}  ({sum(heard) / seconds:.0f}/s out)  "
