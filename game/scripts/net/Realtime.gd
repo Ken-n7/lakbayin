@@ -73,6 +73,61 @@ var _leaving := {}
 const PRESENCE_GRACE_S := 5.0
 ## What this phone announces, re-sent after every (re)join.
 var _tracked := {}
+## Position channels, beside the main topic: topic -> the ref of its join.
+## Heroes' positions are most of the traffic, and Supabase's free tier counts
+## every message delivered: on the one shared topic a class of 30 walking was
+## cut off ("Too many messages per second", MERGE_CHECKLIST "Server load").
+## So positions go through the teacher, battle-royale style (PosHub): each
+## phone sends on a channel of its own that only the teacher joins, and the
+## teacher sends everyone one snapshot of all of them. Broadcast only -- no
+## presence, no table changes.
+var _pos_topics := {}
+
+
+## Where one player's positions go: only they and the teacher are on it.
+## Ids only: Realtime topics take no spaces.
+static func in_topic(session_id: String, profile_id: String) -> String:
+	return "%s:in:%s:%s" % [TOPIC, session_id, profile_id]
+
+
+## Where the teacher's snapshots of everyone come out; every phone is on it.
+static func snap_topic(session_id: String) -> String:
+	return "%s:snap:%s" % [TOPIC, session_id]
+
+
+## The position channels this device is on: its own and the snapshots on a
+## phone; every player's and the snapshots on the teacher's. Replaces the last
+## set.
+func watch_positions(topics: Array) -> void:
+	for t: String in _pos_topics.keys():
+		if not topics.has(t):
+			if _state == WebSocketPeer.STATE_OPEN:
+				_send(t, "phx_leave", {})
+			_pos_topics.erase(t)
+	for t: String in topics:
+		if not _pos_topics.has(t):
+			_pos_topics[t] = ""
+			_join_pos(t)
+
+
+func _join_pos(topic: String) -> void:
+	if _state != WebSocketPeer.STATE_OPEN:
+		return               # joined when the socket opens (_process)
+	_pos_topics[topic] = str(_ref + 1)
+	_send(topic, "phx_join", {
+		"config": {"broadcast": {"self": false}, "presence": {"enabled": false},
+			"postgres_changes": []},
+		"access_token": Net.access_token,
+	})
+
+
+## A position ("pos"), or the teacher's snapshot ("snap"), to one of those
+## channels. Dropped while it is not up, like any broadcast: the next one is a
+## moment away.
+func send_position(topic: String, payload: Dictionary, event := "pos") -> void:
+	if _state != WebSocketPeer.STATE_OPEN or str(_pos_topics.get(topic, "")) == "":
+		return
+	_send(topic, "broadcast", {"type": "broadcast", "event": event, "payload": payload})
 
 
 func open_socket() -> void:
@@ -138,6 +193,7 @@ func _send_track() -> void:
 
 func close_socket() -> void:
 	_wanted.clear()
+	_pos_topics = {}
 	_tracked = {}
 	_presence = {}
 	_leaving = {}
@@ -163,6 +219,8 @@ func _process(delta: float) -> void:
 		if now == WebSocketPeer.STATE_OPEN:
 			_joined = false
 			_join()
+			for t: String in _pos_topics:
+				_join_pos(t)
 			opened.emit()
 		elif now == WebSocketPeer.STATE_CLOSED:
 			_joined = false
@@ -203,6 +261,8 @@ func _process(delta: float) -> void:
 		if _joined and Net.access_token != _joined_token:
 			_joined_token = Net.access_token
 			_send(TOPIC, "access_token", {"access_token": _joined_token})
+			for t: String in _pos_topics:
+				_send(t, "access_token", {"access_token": _joined_token})
 
 	while _ws.get_available_packet_count() > 0:
 		var text := _ws.get_packet().get_string_from_utf8()
@@ -315,6 +375,13 @@ func _handle(msg: Dictionary) -> void:
 				_joined = false
 				live = false
 				_rejoin_in = RECONNECT_S
+			# A position channel dropped the same way: join it again.
+			var pt := str(msg.get("topic", ""))
+			if _pos_topics.has(pt) and str(msg.get("ref", "")) == str(_pos_topics[pt]):
+				_pos_topics[pt] = ""
+				get_tree().create_timer(RECONNECT_S).timeout.connect(func() -> void:
+					if _pos_topics.has(pt) and str(_pos_topics[pt]) == "":
+						_join_pos(pt))
 
 
 func _presence_add(joins: Variant) -> void:

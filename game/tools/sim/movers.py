@@ -151,7 +151,9 @@ class Mover(threading.Thread):
         if ev == "broadcast" and p.get("event") == "snap":
             now = time.time()
             for q in (p.get("payload") or {}).get("p", []):
-                if q.get("id") != self.user:
+                # Simulated walkers only (they carry "sent"): a real phone in
+                # the same session is not in what they were sent.
+                if q.get("id") != self.user and q.get("sent"):
                     self.heard += 1
                     if self.heard % 7 == 0:
                         self.lag.append(now - q["sent"])

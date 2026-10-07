@@ -714,12 +714,28 @@ func _patch(fields: Dictionary) -> Dictionary:
 ## Everything on the session side follows the state from here: the code, the
 ## status line, the clock or the duration, Start and why it waits, and the
 ## two run buttons.
+## Every student's position comes through here and goes out to the class as
+## one snapshot (PosHub) -- from the lobby, where heroes already stand on the
+## map, until the session ends.
+var _hub: PosHub = null
+func _feed_hub(state: String) -> void:
+	if state == "ended":
+		if _hub != null:
+			_hub.stop()
+		return
+	if _hub == null:
+		_hub = PosHub.new()
+		add_child(_hub)
+	_hub.follow(str(_session.get("id", "")), _lobby.players.keys())
+
+
 func _refresh_state() -> void:
 	var state := str(_session.get("state", ""))
 	# Out of time is over, whatever the row says -- the same rule the players
 	# go by, so nothing is offered for a dead clock.
 	if _session.is_empty() or Teams.expired(_session):
 		state = "ended"
+	_feed_hub(state)
 	# The music follows the session as the players' phones do: battle songs in
 	# the lobby, The Journey once it runs, Victory! once it is over.
 	if main != null:

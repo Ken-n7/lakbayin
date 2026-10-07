@@ -245,7 +245,9 @@ func _init() -> void:
 		{"ts": 1.2, "pos": Vector2(20, 0), "vel": Vector2(100, 0), "face": "right", "moving": true}]}
 	assert(PeersScript._sample_at(trail, 1.1).pos == Vector2(10, 0), "interpolates between positions")
 	assert(PeersScript._sample_at(trail, 1.3).pos.is_equal_approx(Vector2(30, 0)), "walks on past the newest")
-	assert(PeersScript._sample_at(trail, 9.0).pos.is_equal_approx(Vector2(50, 0)), "but only for PREDICT_S")
+	# 20 + 100 px/s for PREDICT_S, read off Peers rather than copied here.
+	assert(PeersScript._sample_at(trail, 9.0).pos.is_equal_approx(
+		Vector2(20.0 + 100.0 * PeersScript.PREDICT_S, 0)), "but only for PREDICT_S")
 
 	# A refresh updates heroes where they stand rather than rebuilding them --
 	# rebuilding reset every walk cycle on every answer anyone gave.

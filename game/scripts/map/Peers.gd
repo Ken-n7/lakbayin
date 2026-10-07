@@ -33,9 +33,11 @@ const STALE_S := 12.0
 ## newest position instead stuttered: catch up, stand, jump. Past the newest
 ## one it walks on at the last velocity for at most PREDICT_S, so a lost
 ## "stopped" cannot send a hero off across the sea.
-const DELAY_S := 0.25
-const PREDICT_S := 0.3
-const KEEP := 12            # positions held per player; ~2s of walking
+## Positions come twice a second (AdventureScreen.POS_EVERY_S), so the delay
+## covers one gap and a bit: two of them are in hand when a hero is drawn.
+const DELAY_S := 0.6
+const PREDICT_S := 0.6
+const KEEP := 12            # positions held per player; ~6s of walking at 2 a second
 ## Further off than this is a teleport or a rejoin: snap, do not glide.
 const SNAP_DIST := 240.0
 const HERO_SCALE := 1.6           # MapCfg.UNIT_SCALE; not named, see _make()

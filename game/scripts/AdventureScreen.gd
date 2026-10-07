@@ -181,6 +181,7 @@ func _sync_session() -> void:
 	rt.watch("members", "session_id=eq." + sid)
 	# On the teacher's list as here, on the board -- which is what "ready" is.
 	rt.track({"sid": sid, "where": "map", "name": Net.username})
+	_watch_positions()
 	if not rt.presence_changed.is_connected(_show_waiting):
 		rt.presence_changed.connect(_show_waiting)
 	_refresh_peers()
@@ -190,17 +191,21 @@ func _sync_session() -> void:
 ## while walking and every few seconds standing still, so someone who opens
 ## the map late still sees who is standing where.
 ##
-## ponytail: one topic for every session, filtered by `sid` on arrival. Fine
-## at one live class; a topic per session if several ever run at once (Q12).
-## Sends scale as players x rate and deliveries as players squared: 8 players
-## all walking at once is ~375 deliveries a second (~7 sends each, to 7
-## others), 40 would be ~10,000 -- check Supabase's per-second quota before a
-## class that size shares one board. POS_EVERY_S is the knob.
-## Walking: often enough that the other boards' guess (see `Peers`) never
-## drifts far. A turn or a stop goes out almost at once, since that is exactly
-## where a guess from the last velocity goes wrong. Standing: a keepalive.
-const POS_EVERY_S := 0.15
-const POS_TURN_S := 0.05
+## Through the teacher (PosHub): each position goes on this player's own
+## channel (`Realtime.in_topic`), which only the teacher joins, and comes back
+## to everyone inside the teacher's snapshots (`snap_topic`). Sent to the whole
+## class directly, every position reached every phone, and a class of 30 was
+## cut off by Supabase's free tier. Measured (tools/sim/classroom.py --move
+## --channel hub): 30 students at 0.5s, snapshots at 0.25s, 99-100% delivered,
+## nothing cut. If the teacher's screen is gone, no snapshots come and heroes
+## fall back to their towers (Peers.STALE_S).
+## Walking: twice a second; Peers draws heroes DELAY_S behind, between two
+## positions already in, so that reads as smooth. A turn or a stop goes out
+## sooner, since that is exactly where a guess from the last velocity goes
+## wrong -- but no faster than POS_TURN_S, or a weaving thumb is a flood.
+## Standing: a keepalive.
+const POS_EVERY_S := 0.5
+const POS_TURN_S := 0.3
 const POS_IDLE_S := 3.0
 var _my_team := ""
 var _pos_clock := 0.0
@@ -228,7 +233,7 @@ func _share_position(delta: float) -> void:
 	_pos_idle = 0.0
 	_vel_sent = vel
 	var spr: AnimatedSprite2D = player.get_node("Spr")
-	Net.realtime().send_broadcast("pos", {
+	Net.realtime().send_position(Realtime.in_topic(Game.session_id, Net.user_id), {
 		"sid": Game.session_id,
 		"id": Net.user_id,
 		"name": Net.username,
@@ -246,17 +251,30 @@ func _share_position(delta: float) -> void:
 	})
 
 
+## This player's own channel, where its positions go, and the snapshots of
+## everyone that come back from the teacher.
+func _watch_positions() -> void:
+	if Game.session_id == "":
+		return
+	Net.realtime().watch_positions([Realtime.in_topic(Game.session_id, Net.user_id),
+		Realtime.snap_topic(Game.session_id)])
+
+
 func _on_broadcast(event: String, data: Dictionary) -> void:
 	if event == "rescue":
 		_on_rescue_news(data)
 		return
-	if event != "pos" or str(data.get("sid", "")) != Game.session_id \
+	if event != "snap" or str(data.get("sid", "")) != Game.session_id \
 			or not is_instance_valid(self):
 		return
 	if _peers == null or not is_instance_valid(_peers):
 		_refresh_peers()
 		return
-	_peers.move(str(data.get("id", "")), data)
+	# Everyone who moved since the teacher's last snapshot; this player too,
+	# which Peers ignores.
+	for p: Variant in data.get("p", []):
+		if p is Dictionary:
+			_peers.move(str((p as Dictionary).get("id", "")), p)
 
 
 ## A teammate gave this player gems (`RescueOverlay`, on their phone). The
