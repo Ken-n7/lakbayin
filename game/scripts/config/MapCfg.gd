@@ -242,7 +242,9 @@ const SIGN_LINE_GAP := 18.0
 
 # --- Camp and gate ----------------------------------------------------------
 const CAMP_FIRE := "res://assets/fx/Fire_01.png"
-const CAMP_FIRE_OFFSET := Vector2(0, -26)
+## Beside where the hero starts, not under them: straight above, the flame
+## stood behind their head like a hat.
+const CAMP_FIRE_OFFSET := Vector2(-36, -6)
 const CAMP_FIRE_SCALE := 0.7
 const CAMP_FIRE_FPS := 9.0
 const CAMP_KEEPOUT := Rect2(-48, -60, 96, 80)
