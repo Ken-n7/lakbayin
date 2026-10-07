@@ -1319,6 +1319,14 @@ func _refresh_circles() -> bool:
 			state = "current"
 			_current_circle = n
 		(_circles[n] as Node2D).set_state(state)
+	# The answered tower's firefly flies on to the next one -- or up and away
+	# when there is no next one yet -- leading the player there.
+	if was >= 0 and was != _current_circle and (_circles[was] as Node2D).state == "done":
+		var to: Vector2 = (_circles[_current_circle].number_mid() if _current_circle >= 0
+				else Vector2.INF)
+		var secs: float = _circles[was].send_firefly(to)
+		if _current_circle >= 0:
+			_circles[_current_circle].firefly_arrives_in(secs)
 	return _current_circle >= 0 and _current_circle != was
 
 

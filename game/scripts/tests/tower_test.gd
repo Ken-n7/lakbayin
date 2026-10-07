@@ -46,14 +46,14 @@ func _ready() -> void:
 		"%d vs %d" % [TowerSymbols.SIZE, c.NUMBER_SIZE])
 	check("station 1's tower: the four operations", s.station == 0 and TowerSymbols.SIGNS[0].has("+"))
 	check("station 3's tower: powers", (tower(12).get("symbols") as TowerSymbols).station == 2)
+	var num: Label = c.get("_label")
 	check("round the tower's top, under its number",
-		# The number's box sits 54 px over the tower's top edge; the tower is
-		# drawn 92 px tall (its art trimmed).
-		absf(s.position.y - (c.get("_label") as Label).position.y - (92.0 * (1.0 - TowerSymbols.TOP) + 54.0)) < 1.0
-		# Their highest (the far side, at the widest breath, bobbing up) stays
-		# under the number's figure.
-		and s.position.y - TowerSymbols.RADIUS.y * 1.26 - 5.0 > (c.get("_label") as Label).position.y + 34.0,
-		"%s, number at %s" % [s.position, (c.get("_label") as Label).position])
+		# The number's box sits 24 px over the tower's top edge, at rest (it
+		# floats); the tower is drawn 92 px tall (its art trimmed).
+		absf(s.position.y - float(c.get("_label_y")) - (92.0 * (1.0 - TowerSymbols.TOP) + 24.0)) < 1.0
+		# The ring reaches up into the number, so the number is drawn over it.
+		and num.get_index() > s.get_index(),
+		"%s, number at %s" % [s.position, c.get("_label_y")])
 
 	# At rest: they go round, and stay on the ring.
 	c.set_state("locked")
