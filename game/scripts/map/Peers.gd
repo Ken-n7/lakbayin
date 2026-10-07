@@ -9,8 +9,8 @@ extends Node2D
 ## database writes). Somebody whose position has not arrived yet, or has gone
 ## quiet, stands at the circle their `items_done` puts them on instead.
 
-## One colour per team, in the order Game Controls lists the teams. Six, for
-## the client's 6 teams of 5; Game Controls still caps at MAX_TEAMS.
+## One colour per team, in the order Game Controls lists the teams: six, for
+## the client's 6 teams of 5 (GameControlsScreen.MAX_TEAMS).
 const TEAM_COLOURS := [
 	Color("4aa3df"),   # blue
 	Color("e8663c"),   # red

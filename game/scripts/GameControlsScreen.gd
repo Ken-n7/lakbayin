@@ -23,7 +23,7 @@ const SIDE_W := 196.0
 ## Four is the ceiling the client asked for, and they sit in one row: at this
 ## width four fit across a 640 canvas and the group stays centred however many
 ## there are.
-const MAX_TEAMS := 4
+const MAX_TEAMS := 6
 const CARD_W := 188.0
 ## A player's line on a card: tall enough to tap, which the 14px rows were not.
 const CHIP_H := 26.0

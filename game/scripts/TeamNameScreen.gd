@@ -16,7 +16,9 @@ const PANEL := Vector2(360, 230)
 const LOBBY := Vector2(600, 330)
 ## A team box: its name, its count, and a line per player on it.
 const CARD := Vector2(132, 64)
-const NAME_LINE := 18.0
+## One line in a card, measured: a 20px label and the column's 1px gap. At 18
+## a full team of 5 cut the card's last line ("Tap to join") in half.
+const NAME_LINE := 21.0
 ## Names shown per box before "+N more": four fit the 360px canvas with
 ## everything else on the screen; a team of six would push Ready off it.
 const SHOW_NAMES := 4
@@ -31,7 +33,7 @@ var _go: Button
 var _session := {}
 var _lobby := Lobby.new()
 var _mine := ""              # the team this player is on, "" for none yet
-var _cards: HBoxContainer
+var _cards: GridContainer
 var _status: Label
 var _steps: Label            # "1 Pick a team -> 2 Ready!", the current one lit
 var _banner: PanelContainer  # the status line's backing, coloured by state
@@ -210,12 +212,20 @@ func _build_lobby() -> void:
 	head.add_child(balance)
 	box.add_child(head)
 
+	# Up to six teams (the client's 6 of 5): a grid, three across at most, that
+	# scrolls when two full rows outgrow a 360px screen. One row of six ran
+	# off the panel's sides.
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
 	var centre := CenterContainer.new()
+	centre.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(centre)
-	_cards = HBoxContainer.new()
-	_cards.add_theme_constant_override("separation", 10)
-	_cards.alignment = BoxContainer.ALIGNMENT_CENTER
+	scroll.add_child(centre)
+	_cards = GridContainer.new()
+	_cards.add_theme_constant_override("h_separation", 10)
+	_cards.add_theme_constant_override("v_separation", 8)
 	centre.add_child(_cards)
 
 	_banner = PanelContainer.new()
@@ -247,7 +257,7 @@ func _build_lobby() -> void:
 
 ## The teams, who is on each, and which one is this player's -- drawn from
 ## `_lobby`, which the socket keeps current, so this never waits on the
-## network. Rebuilt whole on every change: four boxes at most.
+## network. Rebuilt whole on every change: six boxes at most.
 func _draw_lobby() -> void:
 	if not is_instance_valid(_cards):
 		return
@@ -264,6 +274,9 @@ func _draw_lobby() -> void:
 		_cards.remove_child(c)
 		c.queue_free()
 	var locked := str(_session.get("state", "")) != "lobby"
+	# Two, three in a row; four as two by two; five and six as rows of three.
+	var n := _lobby.teams.size()
+	_cards.columns = maxi(1, 2 if n == 4 else mini(n, 3))
 	# Every box the same height, so a team with more players does not read
 	# as the "bigger" choice.
 	var most := 2
@@ -307,7 +320,13 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	var mine := id == _mine
 	var members := _lobby.members_of(id)
 	var box := Button.new()
-	box.custom_minimum_size = Vector2(CARD.x, 44 + NAME_LINE * most + 18)
+	# More than three teams means two rows, and two rows of full cards do not
+	# fit a 360px screen: then a card is its name, its count and one line of
+	# names, and the banner below says to tap one.
+	var compact := _lobby.teams.size() > 3
+	# Every line, and the column's 4px inset top and bottom.
+	box.custom_minimum_size = Vector2(CARD.x,
+			NAME_LINE * (3 if compact else most + 3) + 8)
 	box.focus_mode = Control.FOCUS_NONE
 	box.disabled = mine or locked
 	box.tooltip_text = "" if box.disabled else "Join " + str(t.name)
@@ -340,6 +359,18 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	# You first, so your own name is never the one cut off.
 	var ordered := members.filter(func(w: Dictionary) -> bool: return w.profile_id == Net.user_id) \
 		+ members.filter(func(w: Dictionary) -> bool: return w.profile_id != Net.user_id)
+	if compact:
+		var who_all := ordered.map(func(w: Dictionary) -> String:
+			return ("★ " if w.profile_id == Net.user_id else "") + str(w.username))
+		var names := Art.label(", ".join(who_all) if not who_all.is_empty() else "nobody yet",
+				Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+		names.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		names.clip_text = true
+		names.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(names)
+		if not box.disabled:
+			box.pressed.connect(func() -> void: _pick(id))
+		return box
 	for i in mini(ordered.size(), SHOW_NAMES):
 		var who: Dictionary = ordered[i]
 		var me: bool = who.profile_id == Net.user_id
