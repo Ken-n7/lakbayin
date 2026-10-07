@@ -177,10 +177,14 @@ def main():
     ap.add_argument("--pos-every", type=float, default=rt.POS_EVERY_S, metavar="S",
                     help="seconds between a walker's positions (the app's "
                          "AdventureScreen.POS_EVERY_S, %.2f today)" % rt.POS_EVERY_S)
+    ap.add_argument("--channel", choices=["shared", "team"], default="shared",
+                    help="Realtime channels: one for everyone (the app today) or "
+                         "one per session and team; the teacher joins every team's")
     args = ap.parse_args()
     global MOVE_S
     MOVE_S = args.move
     rt.POS_EVERY_S = args.pos_every
+    rt.CHANNEL = args.channel
 
     stamp = str(int(time.time()))
     teacher = Api("teacher")
@@ -222,10 +226,12 @@ def main():
                   {"state": "running", "ends_at": ends, "remaining_s": None},
                   what="start")
     if MOVE_S:
-        watcher = rt.Mover("teacher", teacher.user, teacher.token, session["id"], "",
-                           MOVE_S, go, walks=False)
-        phones.append(watcher)
-        watcher.start()
+        # The teacher's map: everyone, so every channel there is.
+        for t in ([""] if args.channel == "shared" else team_names):
+            watcher = rt.Mover("teacher", teacher.user, teacher.token, session["id"], t,
+                               MOVE_S, go, walks=False)
+            phones.append(watcher)
+            watcher.start()
         time.sleep(1)
         go.set()
 

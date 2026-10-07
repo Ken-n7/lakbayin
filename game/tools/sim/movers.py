@@ -18,6 +18,9 @@ import websocket
 from api import KEY, URL
 
 TOPIC = "realtime:numxventure"
+## "shared": one channel for everyone (the app today). "team": one per session
+## and team, the fix being measured.
+CHANNEL = "shared"
 POS_EVERY_S = 0.15          # AdventureScreen.POS_EVERY_S, while walking
 HEARTBEAT_S = 25.0
 
@@ -39,11 +42,12 @@ class Mover(threading.Thread):
         self.joined = False
         self._ref = 0
         self._lock = threading.Lock()
+        self.topic = TOPIC if CHANNEL == "shared" else f"{TOPIC}:{session}:{team.replace(' ', '_')}"
 
     def _send(self, ws, event, payload):
         self._ref += 1
         with self._lock:
-            ws.send(json.dumps({"topic": TOPIC if event != "heartbeat" else "phoenix",
+            ws.send(json.dumps({"topic": self.topic if event != "heartbeat" else "phoenix",
                                 "event": event, "payload": payload, "ref": str(self._ref)}))
 
     def run(self):
@@ -119,7 +123,7 @@ class Mover(threading.Thread):
         elif ev == "postgres_changes":
             self.db_changes += 1
         elif ev == "phx_reply":
-            if p.get("status") == "ok" and msg.get("topic") == TOPIC:
+            if p.get("status") == "ok" and msg.get("topic") == self.topic:
                 self.joined = True
             elif p.get("status") != "ok":
                 self.trouble.append(f"reply {p.get('status')}: {json.dumps(p.get('response'))[:160]}")
@@ -135,11 +139,16 @@ class Mover(threading.Thread):
 def report(movers, seconds):
     walkers = [m for m in movers if m.walks]
     sent = sum(m.sent for m in walkers)
-    print(f"\n== realtime: {len(movers)} phones ({len(walkers)} walking) for {seconds}s ==")
+    print(f"\n== realtime: {len(movers)} connections ({len(walkers)} walking) for {seconds}s, "
+          f"channel {CHANNEL} ({len({m.topic for m in movers})} channel(s)) ==")
     print(f"   joined: {sum(m.joined for m in movers)}/{len(movers)}")
     print(f"   positions sent: {sent}  ({sent / seconds:.0f}/s in)")
-    # Each walker's position should reach every other phone (self: false).
-    expected = [sent - m.sent for m in movers]
+    # Each walker's position should reach every other phone on its channel
+    # (self: false).
+    by_topic = {}
+    for w in walkers:
+        by_topic[w.topic] = by_topic.get(w.topic, 0) + w.sent
+    expected = [by_topic.get(m.topic, 0) - (m.sent if m.walks else 0) for m in movers]
     heard = [m.heard for m in movers]
     ratio = [h / e for h, e in zip(heard, expected) if e]
     print(f"   delivered: {sum(heard)}  ({sum(heard) / seconds:.0f}/s out)  "
