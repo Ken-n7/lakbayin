@@ -53,7 +53,9 @@ func build_camp(at: Vector2) -> void:
 	Art.anim_sprite(world, MapCfg.CAMP_FIRE, at + MapCfg.CAMP_FIRE_OFFSET,
 			MapCfg.CAMP_FIRE_SCALE, MapCfg.CAMP_FIRE_FPS)
 	var l := Art.label("BASE CAMP", 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER)
-	l.position = at + Vector2(-70, -54)
+	# The hero starts right here: high enough to clear their head and team
+	# arrow (Peers.ARROW_Y) at the 1.6 hero size.
+	l.position = at + Vector2(-70, -72)
 	l.size = Vector2(140, 20)
 	Art.shadow(l)
 	world.add_child(l)
@@ -126,15 +128,21 @@ func build_keep(i: int, at: Vector2, _accent: String, lift := Vector2(0, -MapCfg
 	var sign_box := Rect2(at + Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y), MapCfg.SIGN_BOX)
 	grid.keep_out(sign_box)
 	grid.sign_rects.append(sign_box)
+	# Its own node, y-sorted at the text's top edge: the hero stands on the
+	# doorstep, right on the sign, and drew half over it and half under (it
+	# sorted at the doorstep, a tie). Now whoever stands on it is in front.
+	var sign := Node2D.new()
+	sign.position = at + Vector2(0, sign_y)
+	world.add_child(sign)
 	var title := Art.title(Art.label("Station %d" % (i + 1), 14, Color("ffe9a8"), HORIZONTAL_ALIGNMENT_CENTER))
-	title.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y)
+	title.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, 0)
 	title.size = Vector2(MapCfg.SIGN_BOX.x, 20)
-	st.add_child(title)
+	sign.add_child(title)
 	locks.append(title)
 	var topic := Art.label(QuestionGen.station_meta(i).short, 11, Color(1, 1, 1, 0.92), HORIZONTAL_ALIGNMENT_CENTER)
-	topic.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, sign_y + MapCfg.SIGN_LINE_GAP)
+	topic.position = Vector2(-MapCfg.SIGN_BOX.x * 0.5, MapCfg.SIGN_LINE_GAP)
 	topic.size = Vector2(MapCfg.SIGN_BOX.x, 16)
-	st.add_child(topic)
+	sign.add_child(topic)
 	# Both sit over grass and roof, so they need the same shadow the map prompts
 	# use to stay readable.
 	for l in [title, topic]:
