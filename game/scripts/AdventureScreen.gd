@@ -405,6 +405,7 @@ func _take_team(row: Dictionary) -> void:
 	if team == _my_team:
 		return
 	_my_team = team
+	_show_my_arrow()
 	Sfx.play("team_changed")
 	if team != "":
 		hud.flash("Your Quest Keeper moved you to another team")
@@ -462,7 +463,26 @@ func _refresh_peers() -> void:
 			return
 		_peers.set_team_order((teams.data if teams.data is Array else []).map(
 			func(t: Dictionary) -> String: return str(t.get("id", ""))))
+		_show_my_arrow()
 	_draw_peers()
+
+
+## The team arrow over the player's own hero, in the colour their team-mates'
+## phones show it (Peers' order). None without a team: solo and Explore.
+func _show_my_arrow() -> void:
+	if player == null:
+		return
+	var arrow: Node2D = player.get_node_or_null("Arrow")
+	if _my_team == "" or _peers == null or not is_instance_valid(_peers):
+		if arrow != null:
+			arrow.visible = false
+		return
+	if arrow == null:
+		arrow = Peers.team_arrow(Color.WHITE)
+		arrow.position.y = Peers.ARROW_Y
+		player.add_child(arrow)
+	Peers.tint_arrow(arrow, _peers.colour_of(_my_team))
+	arrow.visible = true
 
 
 func _draw_peers() -> void:

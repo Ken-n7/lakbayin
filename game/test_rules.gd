@@ -220,8 +220,8 @@ func _init() -> void:
 	assert(spots.has(Vector2(0, 0)), "nothing done stands at the first circle")
 
 	# Two teams, two colours, and the same team keeps its colour.
-	assert(P._colour("a") == P._colour("a"), "a team's colour is stable")
-	assert(P._colour("a") != P._colour("z"), "two teams read apart")
+	assert(P.colour_of("a") == P.colour_of("a"), "a team's colour is stable")
+	assert(P.colour_of("a") != P.colour_of("z"), "two teams read apart")
 
 	# A live position beats the circle: bea is standing on the road, not on 3.
 	P.move("b", {"x": 555.0, "y": 77.0, "face": "left", "moving": true, "hero": 4})

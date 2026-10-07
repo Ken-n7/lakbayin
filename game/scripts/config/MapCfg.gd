@@ -330,7 +330,7 @@ const HERO_FOOT_OFFSET := Vector2(0, -10)
 ## The "!" over his head when something is in reach. Cleared above the frame,
 ## which is HERO_FRAME_H tall before `_hero_scale`.
 const HERO_FRAME_H := 20.0
-const BANG_CLEARANCE := 24.0
+const BANG_CLEARANCE := 34.0   # over the team arrow (Peers.ARROW_Y)
 const BANG_BOX := Vector2(40, 20)
 ## It bobs so it catches the eye without a marker on the ground under it.
 const BANG_BOB := 4.0

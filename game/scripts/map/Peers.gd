@@ -40,6 +40,10 @@ const KEEP := 12            # positions held per player; ~2s of walking
 const SNAP_DIST := 240.0
 const HERO_SCALE := 1.6           # MapCfg.UNIT_SCALE; not named, see _make()
 const HERO_FOOT := Vector2(0, -10)
+## The team arrow's tip, just over a hero's head (20px frame x HERO_SCALE = 32),
+## and the name above the arrow.
+const ARROW_Y := -34.0
+const TAG_Y := -58.0
 
 var _markers := {}          # profile_id -> Node2D
 var _team_order: Array = []
@@ -111,7 +115,8 @@ func refresh(rows: Array, anchors: Array, gate: Vector2, me: String) -> void:
 			marker.set_meta("fallback", _stop(done) + Vector2(spread, (k % 2) * FAN_STAGGER))
 			var tag: Label = marker.get_node("Tag")
 			tag.text = str(row.get("username", tag.text))
-			tag.add_theme_color_override("font_color", _colour(team))
+			tag.add_theme_color_override("font_color", colour_of(team))
+			tint_arrow(marker.get_node("Arrow"), colour_of(team))
 		# Out of the adventure: still shown, because a teacher and a team-mate
 		# both want to know where somebody stopped.
 		marker.modulate.a = 0.45 if bool(row.get("eliminated", false)) else 1.0
@@ -228,8 +233,9 @@ func _stop(done: int) -> Vector2:
 
 
 ## Teams take colours in `set_team_order`'s order; one missing from it takes
-## the next free colour and keeps it for as long as the board is open.
-func _colour(team_id: String) -> Color:
+## the next free colour and keeps it for as long as the board is open. Public:
+## the player's own hero asks it too, so their arrow matches everyone's.
+func colour_of(team_id: String) -> Color:
 	if team_id == "":
 		return Color.WHITE
 	var at := _team_order.find(team_id)
@@ -267,15 +273,40 @@ func _make(id: String, username: String, team_id: String) -> Node2D:
 	tag.name = "Tag"
 	tag.text = username
 	tag.add_theme_font_size_override("font_size", 11)
-	tag.add_theme_color_override("font_color", _colour(team_id))
+	tag.add_theme_color_override("font_color", colour_of(team_id))
 	tag.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	tag.add_theme_constant_override("outline_size", 4)
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tag.position = Vector2(-40, -48)
+	tag.position = Vector2(-40, TAG_Y)
 	tag.custom_minimum_size = Vector2(80, 0)
 	tag.size = Vector2(80, 14)
 	node.add_child(tag)
+	var arrow := team_arrow(colour_of(team_id))
+	arrow.position.y = ARROW_Y
+	node.add_child(arrow)
 	return node
+
+
+## A small down arrow in a team's colour, its tip at the origin, to stand over
+## a hero's head: the team at a glance, which the coloured name alone was not
+## (client). A dark rim under the fill so it reads on any grass.
+static func team_arrow(col: Color) -> Node2D:
+	var arrow := Node2D.new()
+	arrow.name = "Arrow"
+	var rim := Polygon2D.new()
+	rim.polygon = PackedVector2Array([Vector2(-6.5, -9.5), Vector2(6.5, -9.5), Vector2(0, 1)])
+	rim.color = Color(0.1, 0.07, 0.05)
+	arrow.add_child(rim)
+	var fill := Polygon2D.new()
+	fill.name = "Fill"
+	fill.polygon = PackedVector2Array([Vector2(-4.5, -8), Vector2(4.5, -8), Vector2(0, -1.5)])
+	fill.color = col
+	arrow.add_child(fill)
+	return arrow
+
+
+static func tint_arrow(arrow: Node2D, col: Color) -> void:
+	(arrow.get_node("Fill") as Polygon2D).color = col
 
 
 ## The hero sheet a player picked, which only arrives with their first
