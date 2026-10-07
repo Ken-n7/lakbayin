@@ -25,9 +25,12 @@ def main():
     ap.add_argument("--seconds", type=int, default=90)
     ap.add_argument("--pos-every", type=float, default=0.5)
     ap.add_argument("--first", type=int, default=0, help="first simclass index to use")
+    ap.add_argument("--on-change", action="store_true",
+                    help="send on turns + a heartbeat, as the app does now")
     a = ap.parse_args()
     rt.CHANNEL = "hub"
     rt.POS_EVERY_S = a.pos_every
+    rt.ON_CHANGE = a.on_change
 
     look = Api("look")
     look.sign_in(f"simclass{a.first:03d}@numxventure-test.dev", "letmein123")

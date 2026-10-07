@@ -17,7 +17,13 @@ extends Node
 ## If it goes, no snapshots come and the phones' heroes fall back to their
 ## towers (Peers.STALE_S); answers and gems never pass through here.
 
-const SNAP_S := 0.25
+## Three a second: each phone's positions already come a second apart walking
+## straight (AdventureScreen.POS_EVERY_S), so a fourth bought ~0.1s of lag for
+## 30 more deliveries a second.
+const SNAP_S := 1.0 / 3.0
+## What a phone needs of a position: who, where, which way. Its name and team
+## come with the roster (Peers.refresh), the session from the channel.
+const KEEP_KEYS := ["id", "hero", "x", "y", "vx", "vy", "ts", "face", "moving", "sent"]
 
 var _sid := ""
 var _players: Array = []
@@ -56,7 +62,11 @@ func stop() -> void:
 
 func _on_broadcast(event: String, data: Dictionary) -> void:
 	if event == "pos" and _sid != "" and str(data.get("sid", "")) == _sid:
-		_moved[str(data.get("id", ""))] = data
+		var slim := {}
+		for k: String in KEEP_KEYS:
+			if data.has(k):
+				slim[k] = data[k]
+		_moved[str(data.get("id", ""))] = slim
 
 
 func _process(delta: float) -> void:

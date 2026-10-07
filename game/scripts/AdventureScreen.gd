@@ -199,14 +199,17 @@ func _sync_session() -> void:
 ## --channel hub): 30 students at 0.5s, snapshots at 0.25s, 99-100% delivered,
 ## nothing cut. If the teacher's screen is gone, no snapshots come and heroes
 ## fall back to their towers (Peers.STALE_S).
-## Walking: twice a second; Peers draws heroes DELAY_S behind, between two
-## positions already in, so that reads as smooth. A turn or a stop goes out
-## sooner, since that is exactly where a guess from the last velocity goes
-## wrong -- but no faster than POS_TURN_S, or a weaving thumb is a flood.
-## Standing: a keepalive.
-const POS_EVERY_S := 0.5
+## Sent when it changes, not on a clock: a hero walking straight is where the
+## other boards' guess from the last velocity is already right (Peers), so a
+## straight walk needs only a heartbeat, POS_EVERY_S. A turn, a change of pace
+## or a stop -- the velocity off by more than TURN_PX_S -- goes out at once,
+## but no faster than POS_TURN_S, or a weaving thumb is a flood. Standing: a
+## keepalive.
+const POS_EVERY_S := 1.0
 const POS_TURN_S := 0.3
 const POS_IDLE_S := 3.0
+## ~13 degrees at walking speed: a wobbling thumb is not a turn.
+const TURN_PX_S := 35.0
 var _my_team := ""
 var _pos_clock := 0.0
 var _pos_idle := 0.0
@@ -223,7 +226,7 @@ func _share_position(delta: float) -> void:
 	if _pos_prev != Vector2.INF and delta > 0.0:
 		vel = (player.position - _pos_prev) / delta
 	_pos_prev = player.position
-	var turned := vel.distance_to(_vel_sent) > 20.0
+	var turned := vel.distance_to(_vel_sent) > TURN_PX_S
 	var due := (turned and _pos_clock >= POS_TURN_S) \
 		or (vel != Vector2.ZERO and _pos_clock >= POS_EVERY_S) \
 		or _pos_idle >= POS_IDLE_S
@@ -239,13 +242,15 @@ func _share_position(delta: float) -> void:
 		"name": Net.username,
 		"team": _my_team,
 		"hero": Game.hero_id,
-		"x": player.position.x,
-		"y": player.position.y,
+		# Whole pixels and two decimals of a second: the decimals a float
+		# carries were most of every message, for nothing anyone can see.
+		"x": roundi(player.position.x),
+		"y": roundi(player.position.y),
 		# The sender's own clock, so the other boards can space positions by
 		# when they happened rather than by when the network delivered them.
-		"ts": Time.get_ticks_msec() / 1000.0,
-		"vx": vel.x,
-		"vy": vel.y,
+		"ts": snappedf(Time.get_ticks_msec() / 1000.0, 0.01),
+		"vx": roundi(vel.x),
+		"vy": roundi(vel.y),
 		"face": str(spr.animation),
 		"moving": vel.length() > 1.0,
 	})

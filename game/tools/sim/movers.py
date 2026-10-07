@@ -25,6 +25,10 @@ TOPIC = "realtime:numxventure"
 ## one map, without every position going to every phone.
 CHANNEL = "shared"
 SNAP_EVERY_S = 0.25
+## Send like the app does since it sends on change: on each turn (here every
+## 1.5-4.5s, a real player's straight stretches) and a POS_EVERY_S heartbeat
+## between. Off: a position every POS_EVERY_S, every one a new direction.
+ON_CHANGE = False
 POS_EVERY_S = 0.15          # AdventureScreen.POS_EVERY_S, while walking
 HEARTBEAT_S = 25.0
 
@@ -53,6 +57,8 @@ class Mover(threading.Thread):
         self.hub_inputs = []          # the teacher: every phone's in_topic
         self._latest = {}             # the teacher: id -> latest position
         self.snaps_sent = 0
+        self.snaps_heard = 0
+        self.snap_bytes = 0
 
     def _send(self, ws, event, payload, topic=None):
         self._ref += 1
@@ -88,6 +94,7 @@ class Mover(threading.Thread):
                 self._join_plain(ws, t)
         ws.settimeout(0.02)
         next_snap = time.time()
+        next_turn = time.time()
         x, y = random.uniform(400, 2800), random.uniform(300, 1500)
         heading = random.uniform(0, 6.28)
         next_pos = next_beat = time.time()
@@ -97,15 +104,19 @@ class Mover(threading.Thread):
             if end is None and self.go.is_set():
                 end = now + self.seconds
                 self.t0 = now
-            if self.walks and end is not None and now >= next_pos:
-                heading += random.uniform(-0.4, 0.4)
+            turn = ON_CHANGE and now >= next_turn
+            if self.walks and end is not None and (now >= next_pos or turn):
+                if turn:
+                    next_turn = now + random.uniform(1.5, 4.5)
+                heading += random.uniform(-0.4, 0.4) if (turn or not ON_CHANGE) else 0.0
                 x += 150 * POS_EVERY_S * (1 if random.random() < 0.5 else -1)
                 y += 150 * POS_EVERY_S * (1 if random.random() < 0.5 else -1)
                 try:
                     self._send(ws, "broadcast", {"type": "broadcast", "event": "pos", "payload": {
                         "sid": self.session, "id": self.user, "name": self.label, "team": self.team,
-                        "hero": 1, "x": x, "y": y, "vx": 150.0, "vy": 0.0, "face": "right",
-                        "moving": True, "ts": now, "sent": now}},
+                        "hero": 1, "x": round(x) if ON_CHANGE else x, "y": round(y) if ON_CHANGE else y,
+                        "vx": 150, "vy": 0, "face": "right",
+                        "moving": True, "ts": round(now, 2) if ON_CHANGE else now, "sent": now}},
                         self.in_topic if CHANNEL == "hub" else None)
                     self.sent += 1
                 except Exception as e:
@@ -140,15 +151,17 @@ class Mover(threading.Thread):
                 break
             if not raw:
                 continue
-            self._take(json.loads(raw))
+            self._take(json.loads(raw), raw)
         try:
             ws.close()
         except Exception:
             pass
 
-    def _take(self, msg):
+    def _take(self, msg, raw=""):
         ev, p = msg.get("event"), msg.get("payload") or {}
         if ev == "broadcast" and p.get("event") == "snap":
+            self.snaps_heard += 1
+            self.snap_bytes += len(raw)
             now = time.time()
             for q in (p.get("payload") or {}).get("p", []):
                 # Simulated walkers only (they carry "sent"): a real phone in
@@ -200,7 +213,10 @@ def report(movers, seconds):
     expected = [by_topic.get(m.topic, 0) - (m.sent if m.walks else 0) for m in movers] \
         if CHANNEL == "team" else [sent - m.sent for m in movers]
     if CHANNEL == "hub":
-        print(f"   snapshots sent by the teacher: {sum(m.snaps_sent for m in movers)}")
+        heard = sum(m.snaps_heard for m in movers)
+        print(f"   snapshots: {sum(m.snaps_sent for m in movers)} sent by a sim teacher, "
+              f"{heard} heard ({heard / seconds:.0f}/s), "
+              f"avg {sum(m.snap_bytes for m in movers) / max(heard, 1):.0f} bytes each")
     heard = [m.heard for m in movers]
     ratio = [h / e for h, e in zip(heard, expected) if e]
     print(f"   delivered: {sum(heard)}  ({sum(heard) / seconds:.0f}/s out)  "
