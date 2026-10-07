@@ -82,6 +82,15 @@ def main():
     for m in walkers:
         m.join(a.seconds + 30)
     rt.report(walkers, a.seconds)
+    # The answers themselves, through REST as the app sends them.
+    took = sorted(t for m in walkers for (what, t, ok) in m.api.calls if what == "apply_answer" and ok)
+    failed = sum(1 for m in walkers for (what, t, ok) in m.api.calls if what == "apply_answer" and not ok)
+    if took:
+        print(f"   answers: {len(took)} saved, {failed} failed, "
+              f"p50 {took[len(took) // 2] * 1000:.0f}ms  p95 {took[int(len(took) * .95) - 1] * 1000:.0f}ms"
+              f"  max {took[-1] * 1000:.0f}ms")
+    signin = [ok for m in walkers for (what, t, ok) in m.api.calls if what == "sign_in"]
+    print(f"   sign-ins: {sum(signin)} ok, {len(signin) - sum(signin)} failed")
 
 
 if __name__ == "__main__":
