@@ -9,12 +9,15 @@ extends Node2D
 ## database writes). Somebody whose position has not arrived yet, or has gone
 ## quiet, stands at the circle their `items_done` puts them on instead.
 
-## Four teams, four colours, in the order Game Controls lists the teams.
+## One colour per team, in the order Game Controls lists the teams. Six, for
+## the client's 6 teams of 5; Game Controls still caps at MAX_TEAMS.
 const TEAM_COLOURS := [
 	Color("4aa3df"),   # blue
 	Color("e8663c"),   # red
 	Color("52b262"),   # green
 	Color("d9a125"),   # amber
+	Color("c39cf0"),   # purple, light: the summit is dark
+	Color("e86fae"),   # pink
 ]
 
 ## Side-by-side spacing for markers sharing a circle, and the half-step down
