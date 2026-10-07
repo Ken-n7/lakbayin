@@ -280,7 +280,14 @@ func _ready() -> void:
 	_check("Start Session again (a second window) keeps the same code",
 		"" if str(screen_b._session.get("code", "")) == code_a
 		else "%s then %s -- the first code died" % [code_a, screen_b._session.get("code", "")])
-	# Ended behind both screens' backs: both must say the code is dead.
+	# Ended behind both screens' backs: both must say the code is dead. Not
+	# before their stream is live -- a change made between the join and
+	# "subscribed" is never delivered (see realtime_check.gd), so ending it the
+	# moment the screens had a code failed every run.
+	for _i in 60:
+		if Net.realtime().live:
+			break
+		await get_tree().create_timer(0.25).timeout
 	await Net.rest(HTTPClient.METHOD_PATCH, "/rest/v1/sessions?id=eq." + str(screen_a._session.get("id", "")),
 		{"state": "ended"})
 	var shown := false

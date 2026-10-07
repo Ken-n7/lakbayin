@@ -246,8 +246,12 @@ func _looking_around() -> void:
 	touch(Vector2(500, 150), true, 1)
 	await slide(Vector2(500, 150), Vector2(420, 120), 1)
 	check("a look holds while the stick steers", _map._looking)
-	await frames(10)
-	check("the hero walks while the player looks", _map.player.position.x < walk_from.x - 1.0)
+	# On the clock, not a frame count: the hero walks speed x frame time, and
+	# headless frames are ~1ms, so ten of them came to about one pixel -- the
+	# check's own threshold. It failed on a fast run, never on a slow one.
+	await wait_until(func() -> bool: return _map.player.position.x < walk_from.x - 1.0, 1.0)
+	check("the hero walks while the player looks", _map.player.position.x < walk_from.x - 1.0,
+			"%s -> %s" % [walk_from, _map.player.position])
 	touch(Vector2(420, 120), false, 1)
 	await frames(3)
 	check("lifting the look while still walking goes home", not _map._looking)
