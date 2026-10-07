@@ -29,12 +29,20 @@ SNAP_EVERY_S = 0.25
 ## 1.5-4.5s, a real player's straight stretches) and a POS_EVERY_S heartbeat
 ## between. Off: a position every POS_EVERY_S, every one a new direction.
 ON_CHANGE = False
+## Answering questions: walk 8-15s, then stand at a tower 8-15s and submit an
+## answer (apply_answer, a real row change). QUIET_QUIZ: send nothing while
+## answering (the app now); else a standing keepalive every 3s (before).
+ANSWER = False
+QUIET_QUIZ = False
+## Which member changes a phone gets: "session" (every classmate's, before),
+## "own" (its own row, the app now), "" (none).
+MEMBERS = ""
 POS_EVERY_S = 0.15          # AdventureScreen.POS_EVERY_S, while walking
 HEARTBEAT_S = 25.0
 
 
 class Mover(threading.Thread):
-    def __init__(self, label, user, token, session, team, seconds, go, walks=True):
+    def __init__(self, label, user, token, session, team, seconds, go, walks=True, api=None):
         super().__init__(daemon=True)
         self.label, self.user, self.token = label, user, token
         self.session, self.team = session, team
@@ -56,6 +64,9 @@ class Mover(threading.Thread):
         self.snap_topic = f"{TOPIC}:snap:{session}"
         self.hub_inputs = []          # the teacher: every phone's in_topic
         self._latest = {}             # the teacher: id -> latest position
+        self.api = api
+        self.answers = 0
+        self.rows_heard = 0           # classmates' progress rows inside snapshots
         self.snaps_sent = 0
         self.snaps_heard = 0
         self.snap_bytes = 0
@@ -80,9 +91,14 @@ class Mover(threading.Thread):
         except Exception as e:
             self.trouble.append(f"connect: {e}")
             return
+        changes = [{"event": "*", "schema": "public", "table": "sessions",
+                    "filter": f"id=eq.{self.session}"}]
+        if MEMBERS and self.walks:
+            changes.append({"event": "*", "schema": "public", "table": "members",
+                            "filter": f"session_id=eq.{self.session}" if MEMBERS == "session"
+                            else f"profile_id=eq.{self.user}"})
         self._send(ws, "phx_join", {
-            "config": {"postgres_changes": [{"event": "*", "schema": "public", "table": "sessions",
-                                             "filter": f"id=eq.{self.session}"}],
+            "config": {"postgres_changes": changes,
                        "broadcast": {"self": False},
                        "presence": {"key": self.user, "enabled": True}},
             "access_token": self.token})
@@ -95,6 +111,8 @@ class Mover(threading.Thread):
         ws.settimeout(0.02)
         next_snap = time.time()
         next_turn = time.time()
+        quiz_until = 0.0              # answering a question until then
+        walk_until = None
         x, y = random.uniform(400, 2800), random.uniform(300, 1500)
         heading = random.uniform(0, 6.28)
         next_pos = next_beat = time.time()
@@ -104,8 +122,30 @@ class Mover(threading.Thread):
             if end is None and self.go.is_set():
                 end = now + self.seconds
                 self.t0 = now
-            turn = ON_CHANGE and now >= next_turn
-            if self.walks and end is not None and (now >= next_pos or turn):
+            if ANSWER and self.walks and end is not None:
+                if walk_until is None:
+                    walk_until = now + random.uniform(8, 15)
+                if quiz_until == 0.0 and now >= walk_until:
+                    quiz_until = now + random.uniform(8, 15)
+                elif quiz_until and now >= quiz_until:
+                    quiz_until, walk_until = 0.0, now + random.uniform(8, 15)
+                    threading.Thread(target=self._answer, daemon=True).start()
+            in_quiz = quiz_until > 0.0
+            if in_quiz and (QUIET_QUIZ or now < next_pos):
+                pass                  # silent, or between keepalives
+            elif in_quiz:
+                next_pos = now + 3.0  # a standing keepalive, as the app did
+                try:
+                    self._send(ws, "broadcast", {"type": "broadcast", "event": "pos", "payload": {
+                        "sid": self.session, "id": self.user, "x": round(x), "y": round(y),
+                        "vx": 0, "vy": 0, "face": "down", "moving": False,
+                        "ts": round(now, 2), "sent": now}}, self.in_topic if CHANNEL == "hub" else None)
+                    self.sent += 1
+                except Exception as e:
+                    self.trouble.append(f"send: {e}")
+                    break
+            turn = ON_CHANGE and now >= next_turn and not in_quiz
+            if self.walks and end is not None and not in_quiz and (now >= next_pos or turn):
                 if turn:
                     next_turn = now + random.uniform(1.5, 4.5)
                 heading += random.uniform(-0.4, 0.4) if (turn or not ON_CHANGE) else 0.0
@@ -157,11 +197,21 @@ class Mover(threading.Thread):
         except Exception:
             pass
 
+    def _answer(self):
+        try:
+            self.api.rpc("apply_answer", {"p_session": self.session,
+                                          "p_correct": random.random() < 0.7})
+            self.answers += 1
+        except Exception as e:
+            self.trouble.append(f"answer: {str(e)[:80]}")
+
     def _take(self, msg, raw=""):
         ev, p = msg.get("event"), msg.get("payload") or {}
         if ev == "broadcast" and p.get("event") == "snap":
             self.snaps_heard += 1
             self.snap_bytes += len(raw)
+            self.rows_heard += sum(1 for r in (p.get("payload") or {}).get("r", [])
+                                   if r.get("profile_id") != self.user)
             now = time.time()
             for q in (p.get("payload") or {}).get("p", []):
                 # Simulated walkers only (they carry "sent"): a real phone in
@@ -226,8 +276,11 @@ def report(movers, seconds):
     if lag:
         print(f"   lag send->heard: median {statistics.median(lag) * 1000:.0f}ms  "
               f"p95 {lag[int(len(lag) * 0.95) - 1] * 1000:.0f}ms  max {lag[-1] * 1000:.0f}ms")
+    db = sum(m.db_changes for m in movers)
     print(f"   presence messages: {sum(m.presence_msgs for m in movers)}  "
-          f"db changes heard: {sum(m.db_changes for m in movers)}")
+          f"db changes heard: {db} ({db / seconds:.1f}/s)  "
+          f"answers given: {sum(m.answers for m in movers)}  "
+          f"classmates' progress rows in snapshots: {sum(m.rows_heard for m in movers)}")
     bad = [(m.label, t) for m in movers for t in m.trouble] + \
           [(m.label, "closed: " + m.closed) for m in movers if m.closed]
     # By kind, with how many phones each hit: thousands of lines say one thing.

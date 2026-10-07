@@ -27,10 +27,17 @@ def main():
     ap.add_argument("--first", type=int, default=0, help="first simclass index to use")
     ap.add_argument("--on-change", action="store_true",
                     help="send on turns + a heartbeat, as the app does now")
+    ap.add_argument("--answer", action="store_true", help="walk, then stand and answer, repeat")
+    ap.add_argument("--quiet-quiz", action="store_true", help="send nothing while answering")
+    ap.add_argument("--members", choices=["", "session", "own"], default="",
+                    help="member changes each phone subscribes to")
     a = ap.parse_args()
     rt.CHANNEL = "hub"
     rt.POS_EVERY_S = a.pos_every
     rt.ON_CHANGE = a.on_change
+    rt.ANSWER = a.answer
+    rt.QUIET_QUIZ = a.quiet_quiz
+    rt.MEMBERS = a.members
 
     look = Api("look")
     look.sign_in(f"simclass{a.first:03d}@numxventure-test.dev", "letmein123")
@@ -60,7 +67,7 @@ def main():
         except ApiError as e:
             if "duplicate" not in str(e) and "already" not in str(e):
                 print(f"  student {n}: {e}")
-        m = rt.Mover(f"simclass{n:03d}", api.user, api.token, sid, team["id"], a.seconds, go)
+        m = rt.Mover(f"simclass{n:03d}", api.user, api.token, sid, team["id"], a.seconds, go, api=api)
         walkers.append(m)
         m.start()
         time.sleep(0.1)

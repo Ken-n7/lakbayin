@@ -175,10 +175,11 @@ func _sync_session() -> void:
 	if not rt.broadcast.is_connected(_on_broadcast):
 		rt.broadcast.connect(_on_broadcast)
 	rt.watch("sessions", "id=eq." + sid)
-	# Everyone else in this session, on this board. Scoped to the session, so
-	# the fan-out is the session's size -- see `Teams.everyone()` for the
-	# number that decides whether this stays affordable.
-	rt.watch("members", "session_id=eq." + sid)
+	# This player's own row: gems the server settled, a team move, being
+	# removed. Everyone else's progress comes in the teacher's snapshots
+	# (PosHub) -- watched for the whole session, every answer reached all 31
+	# devices -- with a read every PEERS_FALLBACK_S when none arrive.
+	rt.watch("members", "profile_id=eq." + Net.user_id)
 	# On the teacher's list as here, on the board -- which is what "ready" is.
 	rt.track({"sid": sid, "where": "map", "name": Net.username})
 	_watch_positions()
@@ -219,6 +220,12 @@ var _vel_sent := Vector2.ZERO
 
 func _share_position(delta: float) -> void:
 	if Game.session_id == "" or player == null:
+		return
+	# Answering a question: nothing to send -- the hero stands at the tower,
+	# and Peers puts a quiet hero there on everyone's board (STALE_S). The
+	# moment it closes, one goes out.
+	if _overlay != null and is_instance_valid(_overlay):
+		_pos_idle = POS_IDLE_S
 		return
 	_pos_clock += delta
 	_pos_idle += delta
@@ -265,6 +272,50 @@ func _watch_positions() -> void:
 		Realtime.snap_topic(Game.session_id)])
 
 
+## No snapshot this long -- the teacher's screen is closed or offline --
+## and classmates' progress is read straight from the server instead.
+const PEERS_FALLBACK_S := 20.0
+var _last_snap := 0.0
+var _last_fallback := 0.0
+
+
+func _check_peers_fallback() -> void:
+	if Game.session_id == "" or not Game.adventure_active:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _last_snap > PEERS_FALLBACK_S and now - _last_fallback > PEERS_FALLBACK_S:
+		_last_fallback = now
+		_refresh_peers()
+
+
+## Classmates' progress from a snapshot: applied like the change feed used to
+## be, an answer moving a marker with no fetch.
+func _take_rows(rows: Array) -> void:
+	var newcomer := false
+	for r: Variant in rows:
+		if not (r is Dictionary):
+			continue
+		var pid := str((r as Dictionary).get("profile_id", ""))
+		if pid == Net.user_id or pid == "":
+			continue
+		if bool((r as Dictionary).get("gone", false)):
+			_peer_rows.erase(pid)
+			continue
+		if not _peer_rows.has(pid):
+			newcomer = true
+			continue
+		var row: Dictionary = _peer_rows[pid]
+		for k in ["items_done", "gems", "eliminated"]:
+			if (r as Dictionary).has(k):
+				row[k] = r[k]
+		if (r as Dictionary).has("team_id"):
+			row.team_id = "" if r.team_id == null else str(r.team_id)
+	if newcomer:
+		_refresh_peers()      # a newcomer's name costs one read
+	else:
+		_draw_peers()
+
+
 func _on_broadcast(event: String, data: Dictionary) -> void:
 	if event == "rescue":
 		_on_rescue_news(data)
@@ -275,6 +326,9 @@ func _on_broadcast(event: String, data: Dictionary) -> void:
 	if _peers == null or not is_instance_valid(_peers):
 		_refresh_peers()
 		return
+	_last_snap = Time.get_ticks_msec() / 1000.0
+	if data.has("r"):
+		_take_rows(data.r)
 	# Everyone who moved since the teacher's last snapshot; this player too,
 	# which Peers ignores.
 	for p: Variant in data.get("p", []):
@@ -923,6 +977,7 @@ static func _facing(dir: Vector2) -> String:
 
 func _process(delta: float) -> void:
 	_share_position(delta)
+	_check_peers_fallback()
 	if _overlay != null and is_instance_valid(_overlay) and Game.adventure_active:
 		return
 	if hud.paused or _frozen or not Game.adventure_active or _spectate != "":

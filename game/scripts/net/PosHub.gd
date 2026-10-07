@@ -29,6 +29,12 @@ var _sid := ""
 var _players: Array = []
 ## profile id -> their latest position since the last snapshot.
 var _moved := {}
+## profile id -> their progress row since the last snapshot ({} once gone).
+## Phones used to get every classmate's row from the database on every
+## answer -- 31 deliveries an answer; it rides in the snapshot instead, and a
+## phone's own feed carries only its own row.
+var _rows := {}
+const ROW_KEYS := ["profile_id", "team_id", "items_done", "gems", "eliminated"]
 var _clock := 0.0
 
 
@@ -36,6 +42,8 @@ func _ready() -> void:
 	var rt: Realtime = Net.realtime()
 	if not rt.broadcast.is_connected(_on_broadcast):
 		rt.broadcast.connect(_on_broadcast)
+	if not rt.changed.is_connected(_on_row):
+		rt.changed.connect(_on_row)
 
 
 ## Follow `session_id`'s players: their channels in, the snapshot channel out.
@@ -58,6 +66,26 @@ func follow(session_id: String, player_ids: Array) -> void:
 func stop() -> void:
 	follow("", [])
 	_moved = {}
+	_rows = {}
+
+
+## Game Controls watches this session's members: each change, kept for the
+## next snapshot. Deletes come unfiltered, matched against who is followed.
+func _on_row(table: String, type: String, record: Dictionary) -> void:
+	if table != "members" or _sid == "":
+		return
+	var pid := str(record.get("profile_id", ""))
+	if type == "DELETE":
+		if _players.has(pid):
+			_rows[pid] = {"profile_id": pid, "gone": true}
+		return
+	if str(record.get("session_id", "")) != _sid:
+		return
+	var row := {}
+	for k: String in ROW_KEYS:
+		if record.has(k):
+			row[k] = record[k]
+	_rows[pid] = row
 
 
 func _on_broadcast(event: String, data: Dictionary) -> void:
@@ -74,11 +102,14 @@ func _process(delta: float) -> void:
 	if _clock > 0.0:
 		return
 	_clock = SNAP_S
-	if _sid == "" or _moved.is_empty():
+	if _sid == "" or (_moved.is_empty() and _rows.is_empty()):
 		return
-	Net.realtime().send_position(Realtime.snap_topic(_sid),
-		{"sid": _sid, "p": _moved.values()}, "snap")
+	var snap := {"sid": _sid, "p": _moved.values()}
+	if not _rows.is_empty():
+		snap["r"] = _rows.values()
+	Net.realtime().send_position(Realtime.snap_topic(_sid), snap, "snap")
 	_moved = {}
+	_rows = {}
 
 
 func _exit_tree() -> void:
