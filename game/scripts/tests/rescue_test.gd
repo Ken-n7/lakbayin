@@ -322,6 +322,24 @@ func _map_and_news() -> void:
 	await frames(1)
 	check("back on the board: open again", not mb.disabled, mb.tooltip_text)
 
+	# A dropped connection: Rescue waits for it, and so does the next question
+	# -- nothing piles up to burst out on the way back.
+	adv._conn = "offline"
+	adv.hud._refresh_rescue()
+	adv.hud.set_connection("offline")
+	await frames(1)
+	check("offline: Rescue greyed, and says why", mb.disabled
+			and mb.tooltip_text.contains("Reconnecting"), mb.tooltip_text)
+	check("...a new question is held back", adv._connection_block().contains("Reconnecting"))
+	check("...and the board says so", adv.hud._conn_label.visible
+			and adv.hud._conn_label.text.contains("Reconnecting"))
+	adv._conn = "good"
+	adv.hud._refresh_rescue()
+	adv.hud.set_connection("good")
+	await frames(1)
+	check("online again: Rescue open, nothing shown", not mb.disabled
+			and not adv.hud._conn_label.visible, mb.tooltip_text)
+
 	# No menu: Esc and the back button leave the player on the map, playing.
 	var esc := InputEventKey.new()
 	esc.keycode = KEY_ESCAPE

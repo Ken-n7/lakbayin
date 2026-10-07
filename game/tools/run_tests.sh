@@ -48,6 +48,7 @@ run "alltime     " res://scripts/tests/alltime_test.tscn
 run "keyboard    " res://scripts/tests/keyboard_test.tscn
 run "backdrop    " res://scripts/tests/backdrop_test.tscn
 run "tower       " res://scripts/tests/tower_test.tscn
+run "netretry    " res://scripts/tests/net_retry_test.tscn
 run "layout      " res://tools/layout.tscn
 
 # The two windowed tools need a GL context, so CI will skip them -- but they

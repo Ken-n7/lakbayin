@@ -54,8 +54,35 @@ func _init() -> void:
 ## request costs a student their adventure.
 func _new_http() -> HTTPRequest:
 	var req := HTTPRequest.new()
+	# Godot's default is no timeout at all: on a dying connection a request
+	# hung for good, and every answer queued behind it (Scores) with it.
+	req.timeout = REQUEST_TIMEOUT_S
 	add_child(req)
 	return req
+
+
+const REQUEST_TIMEOUT_S := 12.0
+## The line, from the requests: when one last failed to get through (-1 since
+## one got through), and how long the last that did took.
+var _rest_failed_at := -1.0
+var _rest_rtt := 0.0
+
+
+## "good", "weak" or "offline" -- what a game's signal bars say. Offline: the
+## live connection silent past 8s, or a request failing to get through in the
+## last 10s. Weak: slow replies, or an answer waiting more than 3s to be saved
+## (`waiting_s`, Scores.waiting_s() -- passed in: this file naming Scores,
+## which names Net, broke every `--script` run that loads it).
+## The board shows it and holds back what would pile up (AdventureScreen).
+func connection(waiting_s := 0.0) -> String:
+	var now := Time.get_ticks_msec() / 1000.0
+	var silent := _realtime.silent_for() if _realtime != null else 0.0
+	if silent > 8.0 or (_rest_failed_at >= 0.0 and now - _rest_failed_at < 10.0):
+		return "offline"
+	if silent > 4.0 or (_realtime != null and _realtime.rtt > 1.0) \
+			or _rest_rtt > 1.5 or waiting_s > 3.0:
+		return "weak"
+	return "good"
 
 
 func configured() -> bool:
@@ -259,6 +286,18 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 		return {"error": "request failed to start (%d)" % err, "data": null}
 	var res: Array = await http.request_completed
 	http.queue_free()
+	# Never reached the server -- no connection, or the timeout above. Said
+	# apart from a refusal, so a scoring call is retried rather than dropped.
+	if int(res[0]) != HTTPRequest.RESULT_SUCCESS:
+		_rest_failed_at = Time.get_ticks_msec() / 1000.0
+		# No line, no address, no secure handshake: nothing was sent. Anything
+		# later -- a timeout, the line dropping mid-call -- may have reached
+		# the server and been done there, the reply lost on the way back.
+		var unsent := int(res[0]) in [HTTPRequest.RESULT_CANT_CONNECT,
+			HTTPRequest.RESULT_CANT_RESOLVE, HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR]
+		return {"error": "No connection", "data": null, "network": true, "maybe_sent": not unsent}
+	_rest_failed_at = -1.0
+	_rest_rtt = Time.get_unix_time_from_system() - sent
 	_learn_clock(res[2], sent)
 	var code: int = res[1]
 	var text := (res[3] as PackedByteArray).get_string_from_utf8()

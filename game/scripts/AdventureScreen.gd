@@ -147,6 +147,7 @@ func _sync_session() -> void:
 			main.open("team")
 		return
 	Game.restore_from(mine)
+	Scores.know(mine)        # what a lost reply is checked against (Scores)
 	_my_team = str(mine.get("team_id", ""))
 	Game.apply_session(session)
 	_apply_session_state()
@@ -216,6 +217,12 @@ var _pos_clock := 0.0
 var _pos_idle := 0.0
 var _pos_prev := Vector2.INF     # last frame's position, for the velocity
 var _vel_sent := Vector2.ZERO
+## The line as Net.connection() last read it: "good", "weak" or "offline".
+## Read twice a second (_watch_connection), shown under the top bar, and what
+## holds back positions, new questions and Rescue while it is bad -- the way a
+## game greys its buttons rather than let a bad connection pile actions up.
+var _conn := "good"
+var _conn_clock := 0.0
 
 
 func _share_position(delta: float) -> void:
@@ -224,7 +231,9 @@ func _share_position(delta: float) -> void:
 	# Answering a question: nothing to send -- the hero stands at the tower,
 	# and Peers puts a quiet hero there on everyone's board (STALE_S). The
 	# moment it closes, one goes out.
-	if _overlay != null and is_instance_valid(_overlay):
+	# Offline: nothing would arrive, so nothing is queued up to burst out on
+	# the way back. Same as a question: one goes out once the line is back.
+	if (_overlay != null and is_instance_valid(_overlay)) or _conn == "offline":
 		_pos_idle = POS_IDLE_S
 		return
 	_pos_clock += delta
@@ -233,9 +242,12 @@ func _share_position(delta: float) -> void:
 	if _pos_prev != Vector2.INF and delta > 0.0:
 		vel = (player.position - _pos_prev) / delta
 	_pos_prev = player.position
+	# A weak line gets half as much: a turn no sooner than twice the usual
+	# gap, a straight walk every other second.
+	var slow := 2.0 if _conn == "weak" else 1.0
 	var turned := vel.distance_to(_vel_sent) > TURN_PX_S
-	var due := (turned and _pos_clock >= POS_TURN_S) \
-		or (vel != Vector2.ZERO and _pos_clock >= POS_EVERY_S) \
+	var due := (turned and _pos_clock >= POS_TURN_S * slow) \
+		or (vel != Vector2.ZERO and _pos_clock >= POS_EVERY_S * slow) \
 		or _pos_idle >= POS_IDLE_S
 	if not due:
 		return
@@ -270,6 +282,29 @@ func _watch_positions() -> void:
 		return
 	Net.realtime().watch_positions([Realtime.in_topic(Game.session_id, Net.user_id),
 		Realtime.snap_topic(Game.session_id)])
+
+
+func _watch_connection(delta: float) -> void:
+	_conn_clock -= delta
+	if _conn_clock > 0.0:
+		return
+	_conn_clock = 0.5
+	var was := _conn
+	_conn = Net.connection(Scores.waiting_s()) if Game.session_id != "" else "good"
+	if _conn != was:
+		hud.set_connection(_conn)
+		hud._refresh_rescue()
+
+
+## Why a question cannot be opened over this line, or "". Offline: the answer
+## would only wait. Weak with the last answer still unsaved: one more would
+## stack behind it. Answers already given are never lost (Scores retries).
+func _connection_block() -> String:
+	if _conn == "offline":
+		return "Reconnecting — your answers are saved, wait a moment"
+	if _conn == "weak" and Scores.pending() > 0:
+		return "Saving your last answer — one moment"
+	return ""
 
 
 ## No snapshot this long -- the teacher's screen is closed or offline --
@@ -379,6 +414,8 @@ func rescue_block() -> String:
 		return "Rescue opens once the adventure starts"
 	if hud != null and hud.paused:
 		return "The adventure is paused"
+	if _conn == "offline":
+		return "Reconnecting — Rescue is back once you are online"
 	return Game.rescue_block()
 
 
@@ -430,6 +467,7 @@ func _on_score_reply(reply: Dictionary) -> void:
 ## The server's copy of this player's row -- from a scoring reply or from the
 ## socket. Gems follow it.
 func _take_server_row(row: Dictionary) -> void:
+	Scores.know(row)
 	# Only with nothing still on its way: an older reply taken over a newer
 	# local sum would briefly undo it.
 	if row.is_empty() or Scores.pending() > 0:
@@ -976,6 +1014,7 @@ static func _facing(dir: Vector2) -> String:
 
 
 func _process(delta: float) -> void:
+	_watch_connection(delta)
 	_share_position(delta)
 	_check_peers_fallback()
 	if _overlay != null and is_instance_valid(_overlay) and Game.adventure_active:
@@ -1371,6 +1410,10 @@ func _act_on(target: Dictionary) -> void:
 	if why != "":
 		Sfx.play("blocked")
 		hud.flash(why + "!")
+		return
+	if kind == "circle" and _connection_block() != "":
+		Sfx.play("blocked")
+		hud.flash(_connection_block())
 		return
 	match kind:
 		"tower":

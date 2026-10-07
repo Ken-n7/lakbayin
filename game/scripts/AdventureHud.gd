@@ -31,6 +31,7 @@ var _bar: HBoxContainer           # the three plates and the ribbon between
 var _shown_gems := -99999         # what the plate last showed, to flash the change
 var _gem_tw: Tween = null
 var _hint_bar: Label = null  # the controls crib, hidden while the board is frozen
+var _conn_label: Label = null   # "Weak connection" / "Reconnecting…", while it is
 var _crib_tw: Tween = null
 ## How long the phone's crib stays up once play starts (set_crib).
 const CRIB_HOLD_S := 10.0
@@ -113,6 +114,25 @@ func build() -> void:
 	# Both float over open terrain, so they need a shadow to stay readable.
 	for l in [prompt, hint_bar]:
 		Art.shadow(l)
+
+	# The line, when it is bad -- a game's red signal bars, in words. Nothing
+	# while it is fine; under the clock, on the right.
+	_conn_label = Art.label("", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_RIGHT)
+	_conn_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_conn_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_conn_label.offset_left = -330.0
+	_conn_label.offset_right = -10.0
+	_conn_label.offset_top = 50.0
+	_conn_label.offset_bottom = 74.0
+	_conn_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_conn_label.visible = false
+	var conn_plate := StyleBoxFlat.new()
+	conn_plate.bg_color = Color(0, 0, 0, 0.6)
+	conn_plate.set_corner_radius_all(6)
+	conn_plate.content_margin_left = 8.0
+	conn_plate.content_margin_right = 8.0
+	_conn_label.add_theme_stylebox_override("normal", conn_plate)
+	hud_layer.add_child(_conn_label)
 
 	_build_pad()
 	hero_pointer = HeroPointer.new()
@@ -357,6 +377,17 @@ func _touch_btn(action: String, text: String, center: Vector2, s: float, font: i
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Art.shadow(l)
 	pad.add_child(l)
+
+
+## "good", "weak" or "offline" (Net.connection()): nothing, amber, red.
+func set_connection(state: String) -> void:
+	if not is_instance_valid(_conn_label):
+		return
+	_conn_label.visible = state != "good"
+	_conn_label.text = ("Reconnecting… your answers are saved" if state == "offline"
+			else "Weak connection")
+	_conn_label.add_theme_color_override("font_color",
+			Pal.WRONG_BRIGHT if state == "offline" else Pal.GOLD)
 
 
 ## The controls crib, hidden while the board is frozen: the aerial POV is the

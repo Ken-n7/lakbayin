@@ -28,7 +28,13 @@ signal subscribed
 signal closed(code: int)
 
 ## Phoenix drops a socket it has not heard from; ask sooner than its own 30s.
-const HEARTBEAT_S := 25.0
+## Often enough to notice a dead line too: a WiFi that died leaves the socket
+## looking open for minutes, and the reply to each heartbeat is what says the
+## line still works (`silent_for()`, Net.connection()).
+const HEARTBEAT_S := 5.0
+## Heard nothing at all this long on an "open" socket: it is dead. Close it,
+## and the reconnect takes over.
+const STALL_S := 15.0
 ## A dropped socket on classroom WiFi comes back on its own after this long.
 ## Without it, one blip and the teacher's pause never reaches that phone again.
 const RECONNECT_S := 2.0
@@ -40,6 +46,13 @@ var _ref := 0
 var _since_beat := 0.0
 var _retry_in := -1.0
 var _rejoin_in := -1.0
+## The line's health: when anything last came in, the heartbeat's round trip,
+## and when the socket went down (-1 while up).
+var _last_heard := 0.0
+var _beat_ref := ""
+var _beat_sent := 0.0
+var rtt := 0.0
+var _down_at := -1.0
 ## The ref our live `phx_join` went out under. A channel's `phx_close` carries
 ## its own join ref, so a close for a join we already replaced is ignored --
 ## re-joining the topic closes the old channel, and reacting to that would loop.
@@ -138,6 +151,10 @@ func open_socket() -> void:
 	var live := _ws.get_ready_state()
 	if live == WebSocketPeer.STATE_OPEN or live == WebSocketPeer.STATE_CONNECTING:
 		return
+	# Down from the first try, not only after an open line drops: a phone that
+	# never got through was otherwise "silent for 0s", which read as good.
+	if _down_at < 0.0:
+		_down_at = Time.get_ticks_msec() / 1000.0
 	var url := Net.url.replace("https://", "wss://") \
 		+ "/realtime/v1/websocket?apikey=" + Net.anon_key + "&vsn=1.0.0"
 	var err := _ws.connect_to_url(url)
@@ -209,6 +226,27 @@ func is_open() -> bool:
 	return _state == WebSocketPeer.STATE_OPEN
 
 
+## The socket's own state, not the cached one (tests).
+func get_ws_state() -> int:
+	return _ws.get_ready_state()
+
+
+## Anything to keep up: tables watched or position channels joined.
+func active() -> bool:
+	return not _wanted.is_empty() or not _pos_topics.is_empty()
+
+
+## Seconds without word from the server: since the socket went down, or since
+## the last message on an open one. 0 when nothing is being kept up.
+func silent_for() -> float:
+	if not active():
+		return 0.0
+	var now := Time.get_ticks_msec() / 1000.0
+	if _state != WebSocketPeer.STATE_OPEN:
+		return now - _down_at if _down_at >= 0.0 else 0.0
+	return now - _last_heard
+
+
 func _process(delta: float) -> void:
 	_ws.poll()
 	var now := _ws.get_ready_state()
@@ -217,15 +255,19 @@ func _process(delta: float) -> void:
 		if OS.get_environment("RT_DEBUG") != "":
 			print("RT socket state -> ", now, " close code ", _ws.get_close_code(), " ", _ws.get_close_reason())
 		if now == WebSocketPeer.STATE_OPEN:
+			_down_at = -1.0
+			_last_heard = Time.get_ticks_msec() / 1000.0
 			_joined = false
 			_join()
 			for t: String in _pos_topics:
 				_join_pos(t)
 			opened.emit()
 		elif now == WebSocketPeer.STATE_CLOSED:
+			if _down_at < 0.0:
+				_down_at = Time.get_ticks_msec() / 1000.0
 			_joined = false
 			live = false
-			if not _wanted.is_empty():
+			if active():
 				_retry_in = RECONNECT_S
 			# Our own connection dropped. Everyone goes into the same grace a
 			# single leave gets: a reconnect inside it (the usual case, 2s)
@@ -241,6 +283,12 @@ func _process(delta: float) -> void:
 			_presence_publish()
 			closed.emit(_ws.get_close_code())
 	_expire_leaves()
+	# Still down with something to keep up, and no retry coming: a connect
+	# that failed at once (no network yet -- WiFi coming back) never leaves
+	# CLOSED, so the transition above never fires and nothing tried again.
+	# Seen on a phone: offline, back, and the live channel stayed dead.
+	if _state == WebSocketPeer.STATE_CLOSED and active() and _retry_in < 0.0:
+		_retry_in = RECONNECT_S
 	if _retry_in > 0.0:
 		_retry_in -= delta
 		if _retry_in <= 0.0:
@@ -254,9 +302,14 @@ func _process(delta: float) -> void:
 			_rejoin_in = -1.0
 			_join()
 
+	if silent_for() > STALL_S:
+		_ws.close(-1)        # a dead line: dropped at once, the reconnect takes over
+		return
 	_since_beat += delta
 	if _since_beat >= HEARTBEAT_S:
 		_since_beat = 0.0
+		_beat_ref = str(_ref + 1)
+		_beat_sent = Time.get_ticks_msec() / 1000.0
 		_send("phoenix", "heartbeat", {})
 		if _joined and Net.access_token != _joined_token:
 			_joined_token = Net.access_token
@@ -265,6 +318,7 @@ func _process(delta: float) -> void:
 				_send(t, "access_token", {"access_token": _joined_token})
 
 	while _ws.get_available_packet_count() > 0:
+		_last_heard = Time.get_ticks_msec() / 1000.0
 		var text := _ws.get_packet().get_string_from_utf8()
 		if OS.get_environment("RT_DEBUG") != "":
 			print("RT<< ", text.substr(0, 400))
@@ -328,6 +382,8 @@ func _handle(msg: Dictionary) -> void:
 				live = true
 				subscribed.emit()
 		"phx_reply":
+			if _beat_ref != "" and str(msg.get("ref", "")) == _beat_ref:
+				rtt = Time.get_ticks_msec() / 1000.0 - _beat_sent
 			var reply: Variant = msg.get("payload")
 			if reply is Dictionary and str((reply as Dictionary).get("status", "")) == "error":
 				push_warning("Realtime: join refused -- %s" % str(reply))
