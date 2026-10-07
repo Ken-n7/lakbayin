@@ -37,7 +37,6 @@ var _btn_submit: Button
 var _btn_hint: Button
 var _btn_skip: Button
 ## Give a teammate gems (client, 2026-09-27) -- team games only.
-var _btn_rescue: Button
 var _inrow: HBoxContainer
 var _ask: Label                # the question, over its answer box
 var _ask_row: Control          # question + answer on the left, keypad right
@@ -168,17 +167,13 @@ func _build() -> void:
 	var btn_skip := Ui.button("Skip  −15", 100, Ui.H, Ui.SMALL)
 	btn_skip.pressed.connect(_skip)
 	Ui.quiet(btn_skip)
-	# Where the mockups put it: with the helps, "Rescue". Team games only --
-	# playing alone there is nobody to give gems to.
-	_btn_rescue = Ui.button("Rescue", 100, Ui.H, Ui.SMALL)
-	_btn_rescue.pressed.connect(_open_rescue)
-	Ui.quiet(_btn_rescue)
+	# No Rescue here: it lives on the map's top bar, by the gems and the clock
+	# (client, 2026-10-07). The mockups had one with the helps.
 	_btn_submit = Ui.button("Submit Answer", 170, Ui.H, Ui.RED)
 	_btn_submit.pressed.connect(_submit)
 	Ui.quiet(_btn_submit)
 	action.add_child(_btn_hint)
 	action.add_child(btn_skip)
-	action.add_child(_btn_rescue)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(12, 0)
 	action.add_child(gap)
@@ -259,7 +254,6 @@ func _next_question() -> void:
 	_hint_text.text = ""
 	_input.text = ""
 	_btn_hint.disabled = false
-	_refresh_rescue()
 
 
 func _submit() -> void:
@@ -464,30 +458,6 @@ func _filter_input(text: String) -> void:
 
 ## A line under the question for a moment -- mostly why something was refused,
 ## so that is its sound unless told otherwise.
-## Rescue shows in team games, and says why when it cannot be used: spent,
-## out of gems, or too few to give one and keep one.
-func _refresh_rescue() -> void:
-	if not is_instance_valid(_btn_rescue):
-		return
-	_btn_rescue.visible = Game.session_id != ""
-	var why := Game.rescue_block()
-	_btn_rescue.disabled = why != ""
-	_btn_rescue.text = "Rescued" if Game.rescue_sent else "Rescue"
-	_btn_rescue.tooltip_text = why if why != "" else "Give some of your gems to a teammate"
-
-
-func _open_rescue() -> void:
-	if Game.rescue_block() != "":
-		return
-	var r: Control = preload("res://scripts/RescueOverlay.gd").new()
-	add_child(r)
-	r.setup({})
-	r.finished.connect(func(summary: String) -> void:
-		if summary != "":
-			_flash_trouble(summary, "")
-		_refresh_rescue())
-
-
 func _flash_trouble(msg: String, sound := "refused") -> void:
 	if sound != "":
 		Sfx.play(sound)

@@ -112,47 +112,26 @@ func _rules() -> void:
 	check("...and an unspent one stays open", not Game.rescue_sent)
 
 
-# --- The question screen's Rescue button -------------------------------------
+# --- The question screen has no Rescue -----------------------------------------
+## It lives on the map's top bar only (client, 2026-10-07).
 func _question_screen() -> void:
-	for alone in [true, false]:
-		fresh(50)
-		if alone:
-			Game.session_id = ""
-		var q: Control = load("res://scripts/QuizOverlay.gd").new()
-		q.station_index = 0
-		add_child(q)
-		q.setup({})
-		await frames(2)
-		var b: Button = q.get("_btn_rescue")
-		if alone:
-			check("question screen, playing alone: no Rescue", not b.is_visible_in_tree())
-		else:
-			check("question screen, team game: Rescue beside Hint and Skip",
-					b.is_visible_in_tree() and not b.disabled and b.get_parent() == q.get("_btn_skip").get_parent())
-			b.pressed.emit()
-			await frames(4)
-			var r: Node = q.find_children("*", "Control", false, false).filter(
-					func(c: Node) -> bool: return c.has_signal("finished")).front()
-			check("Rescue opens the rescue screen over the question", r != null)
-			if r != null:
-				# Cancelled: the button is still there to use.
-				r.call("_cancel")
-				await frames(2)
-				check("cancelled: Rescue still ready", not b.disabled and b.text == "Rescue")
-			b.pressed.emit()
-			await frames(4)
-			r = q.find_children("*", "Control", false, false).filter(
-					func(c: Node) -> bool: return c.has_signal("finished")).front()
-			Game.give_rescue(10)          # what a confirmed rescue does, then it closes
-			r.call("_close", "You gave 10 gems to ben")
-			await frames(2)
-			check("once used, the button says so and is off", b.disabled and b.text == "Rescued",
-					"%s %s" % [b.disabled, b.text])
-			check("...and the question screen says what was given",
-					label_text(q, "You gave 10 gems to ben") != "")
-			check("...and why", b.tooltip_text.contains("used"), b.tooltip_text)
-		q.queue_free()
-		await frames(1)
+	fresh(50)
+	var q: Control = load("res://scripts/QuizOverlay.gd").new()
+	q.station_index = 0
+	add_child(q)
+	q.setup({})
+	await frames(2)
+	var rescues := q.find_children("*", "Button", true, false).filter(
+			func(b: Node) -> bool: return (b as Button).text.begins_with("Rescue"))
+	check("question screen, team game: no Rescue (it is on the top bar)", rescues.is_empty())
+	check("...Hint and Skip still there", _q_button(q, "Hint") and _q_button(q, "Skip"))
+	q.queue_free()
+	await frames(1)
+
+
+func _q_button(q: Node, text: String) -> bool:
+	return q.find_children("*", "Button", true, false).any(
+			func(b: Node) -> bool: return (b as Button).text.begins_with(text))
 
 
 # --- Picking a teammate, choosing the amount, giving ------------------------
