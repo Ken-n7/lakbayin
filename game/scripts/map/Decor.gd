@@ -155,7 +155,9 @@ func _sheep_at(rng: RandomNumberGenerator, isl := 0) -> Node2D:
 				if not grid.land.has(k) or grid.cliff.has(k) or grid.stairs.has(k) \
 						or int(grid.height.get(k, -1)) != h:
 					room = false
-		if room and grid.clear_of_buildings(Rect2(MapGrid.cell_mid(c) - Vector2(16, 16), Vector2(32, 32))):
+		# Not on a rock, a tree or a stump either: it would start inside one.
+		if room and not grid.taken.has(c) and grid.is_walkable(MapGrid.cell_mid(c)) \
+				and grid.clear_of_buildings(Rect2(MapGrid.cell_mid(c) - Vector2(16, 16), Vector2(32, 32))):
 			spots.append(c)
 	spots.sort()
 	sheep.position = MapGrid.cell_mid(spots[rng.randi_range(0, spots.size() - 1)]) \

@@ -51,6 +51,9 @@ func build() -> void:
 	# Sheep keep to their own level, off cliffs and stairs (Wander.gd).
 	set_meta("no_walk", grid.cliff.merged(grid.stairs))
 	set_meta("height", grid.height)
+	# ...and round the rocks, trees and stumps, as the hero does: the same
+	# list, so a gate that opens lets them through too.
+	set_meta("solid", grid.solid)
 	# The carved rocks, beside the generated props rather than among them, so
 	# scatter_props (planning on the `bare` board) plants round them and never
 	# writes over them.

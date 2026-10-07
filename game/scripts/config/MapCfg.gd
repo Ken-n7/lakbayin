@@ -316,7 +316,9 @@ const SHEEP_IDLE := "res://assets/terrain/resources/Sheep_Idle.png"
 const SHEEP_WALK := "res://assets/terrain/resources/Sheep_Move.png"
 const SHEEP_IDLE_FPS := 5.0
 const SHEEP_WALK_FPS := 7.0
-const SHEEP_SCALE := 0.9
+## 0.45: the size players knew. Walking sheep were always drawn at 0.45 (a
+## number in Wander.gd), standing ones at 0.9; one size now, the familiar one.
+const SHEEP_SCALE := 0.45
 
 const SHADOW_SHEET := "res://assets/terrain/tileset/Shadow.png"
 

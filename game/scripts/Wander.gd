@@ -8,6 +8,8 @@ var _home := Vector2.ZERO
 var _target := Vector2.ZERO
 var _speed := 26.0
 var _timer := 0.0
+## How far round a wall a sheep's feet keep (half its body, near enough).
+const SOLID_MARGIN := 8.0
 
 
 func _ready() -> void:
@@ -59,5 +61,10 @@ func _walkable(p: Vector2) -> bool:
 		var home := Vector2i(floori(_home.x / t), floori(_home.y / t))
 		if (world.get_meta("no_walk", {}) as Dictionary).has(c) \
 				or int(height.get(c, -1)) != int(height.get(home, -2)):
+			return false
+	# Not through a rock, a trunk or a building: the walls the hero bumps
+	# into, a little wider, since a sheep is wider than its feet.
+	for r: Rect2 in world.get_meta("solid", []):
+		if r.grow(SOLID_MARGIN).has_point(p):
 			return false
 	return layer.get_cell_source_id(c) != -1
