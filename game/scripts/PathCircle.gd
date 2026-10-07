@@ -46,6 +46,11 @@ var _settle := 1.0
 ## Seconds the arriving firefly stays hidden: the one flying in is still on
 ## its way (firefly_arrives_in).
 var _arrive_wait := 0.0
+## Where the firefly was when this stopped being the current tower: the flight
+## leaves from there (set_state() hides it before send_firefly() runs).
+var _fly_from := Vector2.ZERO
+## True while it crosses the board: refreshes leave it alone till it lands.
+var _flying := false
 ## Its station's signs circling it until it is answered (TowerSymbols).
 var symbols: TowerSymbols
 ## False until the board first says where this stop stands: a stop already
@@ -149,12 +154,19 @@ func set_state(s: String) -> void:
 			symbols.queue_free()
 	if s == "current" and state != "current":
 		_settle = 0.0
+	if state == "current" and s != "current":
+		# Answered before its own firefly landed (skipped ahead) means it was
+		# never placed: it leaves from the number rather than the doorstep.
+		_fly_from = _firefly.position if _firefly.visible else _label.position + _label.size * 0.5
 	state = s
 	_settled = true
 	_label.visible = s != "done"
 	_label.add_theme_color_override("font_color", Pal.GOLD if s == "current" else Pal.CREAM)
-	_firefly.visible = s == "current"
-	_trail.emitting = s == "current"
+	# A firefly in flight, or one waiting for it to land, is the flight's to
+	# show: a refresh mid-way (Rescue opened and shut) must not cut it short.
+	if not _flying and _arrive_wait <= 0.0:
+		_firefly.visible = s == "current"
+		_trail.emitting = s == "current"
 	set_process(s != "done")
 
 
@@ -192,10 +204,9 @@ func number_mid() -> Vector2:
 ## no next tower yet (a station still to enter, or the last circle): it flies
 ## up and fades. Returns how long the flight takes.
 func send_firefly(to: Vector2) -> float:
-	# Answered before its own firefly landed (skipped ahead): it was never
-	# placed, so it leaves from the number rather than the doorstep.
-	var from := _firefly.position if _firefly.visible else _label.position + _label.size * 0.5
+	var from := _fly_from
 	_arrive_wait = 0.0
+	_flying = true
 	var end := from + Vector2(0, -90) if to == Vector2.INF else to_local(to)
 	var lift := 40.0 + from.distance_to(end) * 0.25
 	var bend := (from + end) * 0.5 + Vector2(0, -lift)
@@ -212,7 +223,8 @@ func send_firefly(to: Vector2) -> float:
 		_firefly.visible = false
 		_trail.emitting = false
 		_firefly.z_index = 0
-		_firefly.modulate.a = 1.0)
+		_firefly.modulate.a = 1.0
+		_flying = false)
 	return secs
 
 
