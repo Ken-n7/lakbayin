@@ -64,12 +64,28 @@ func build() -> void:
 	# Full-width, not centre-anchored: PRESET_CENTER_BOTTOM puts the box's left
 	# edge at mid-screen, so a 640-wide label started in the middle and ran off
 	# the right edge -- centred text ended up hanging off the screen.
-	prompt = Art.label("", Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	prompt.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	prompt.offset_top = -104.0
-	prompt.offset_bottom = -74.0
+	# The row is full-width; the CenterContainer keeps the label hugging its
+	# text, so the plate behind it is only as wide as what it says.
+	var prompt_row := CenterContainer.new()
+	prompt_row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	prompt_row.offset_top = -104.0
+	prompt_row.offset_bottom = -74.0
+	prompt_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_layer.add_child(prompt_row)
+	# "Tap GO — Answer Quest!" is the one line that says what to do next; bare
+	# text over grass and trees was easy to miss, so it sits on a dark plate.
+	prompt = Art.label("", Pal.H2, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	var plate := StyleBoxFlat.new()
+	plate.bg_color = Color(0, 0, 0, 0.6)
+	plate.set_corner_radius_all(8)
+	plate.content_margin_left = 12.0
+	plate.content_margin_right = 12.0
+	plate.content_margin_top = 2.0
+	plate.content_margin_bottom = 2.0
+	prompt.add_theme_stylebox_override("normal", plate)
 	prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud_layer.add_child(prompt)
+	prompt.visible = false
+	prompt_row.add_child(prompt)
 
 	var keys := ("joystick — move   ·   drag — look   ·   GO — enter" if Game.touch
 			else "WASD / arrows — move   ·   drag — look   ·   E — interact")
@@ -449,7 +465,9 @@ func flash(text: String) -> void:
 	if not is_instance_valid(prompt):
 		return
 	_flash_active = true
-	Art.toast(prompt, text, 1.2, "", func() -> void: _flash_active = false)
+	Art.toast(prompt, text, 1.2, "", func() -> void:
+		_flash_active = false
+		prompt.visible = false)   # an empty plate is a dark blob
 
 
 ## The prompt line -- what pressing E would do, right now. Ignored while a
@@ -459,6 +477,7 @@ func set_prompt(text: String) -> void:
 	if _flash_active or not is_instance_valid(prompt):
 		return
 	prompt.text = text
+	prompt.visible = text != ""
 
 
 ## The gem plate, and a flash of the change: green up, red down. A number
