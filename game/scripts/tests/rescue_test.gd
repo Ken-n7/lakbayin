@@ -318,6 +318,31 @@ func _map_and_news() -> void:
 	await frames(1)
 	check("once used, the bar says so and it is off", mb.text == "Rescued" and mb.disabled, mb.text)
 
+	# The old menu could not open while paused or while watching; the bar's
+	# button must not either (a finished player giving gems after their finish).
+	Game.rescue_sent = false
+	adv.hud.paused = true
+	await frames(1)
+	check("paused by the Quest Keeper: greyed, and says why", mb.disabled
+			and mb.tooltip_text.contains("paused"), mb.tooltip_text)
+	adv.open_rescue()
+	await frames(2)
+	check("...and it does not open", adv._overlay == null)
+	adv.hud.paused = false
+	adv._spectate = "finished"
+	adv.hud._refresh_rescue()
+	adv.hud.set_pad(false)
+	await frames(1)
+	check("finished and watching: greyed", mb.disabled and mb.tooltip_text.contains("done"), mb.tooltip_text)
+	adv.open_rescue()
+	await frames(2)
+	check("...it does not open, and the stick stays away", adv._overlay == null and not adv.hud.pad.visible)
+	adv._spectate = ""
+	adv.hud._refresh_rescue()
+	adv.hud.set_pad(true)
+	await frames(1)
+	check("back on the board: open again", not mb.disabled, mb.tooltip_text)
+
 	# No menu: Esc and the back button leave the player on the map, playing.
 	var esc := InputEventKey.new()
 	esc.keycode = KEY_ESCAPE

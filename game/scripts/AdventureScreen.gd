@@ -72,9 +72,6 @@ var _card: Control = null       # the tapped circle's info card
 ## Dev knobs the drawer drives: a walk-speed multiplier, and the flag that stops
 ## `_process()` dragging the camera back to the hero while the board is framed.
 var _speed_mult := 1.0
-## The walking camera's zoom. MapCfg.PLAY_ZOOM, unless the dev drawer's Zoom
-## is trying another on a real phone.
-var play_zoom := MapCfg.PLAY_ZOOM
 ## The hero's Foot box, relative to their feet, from scenes/Hero.tscn -- the
 ## part of them that walls stop. A point at the feet if the scene has none.
 var hero_box := Rect2()
@@ -280,7 +277,10 @@ func _on_rescue_news(data: Dictionary) -> void:
 
 ## Rescue from the map: the top bar's button. The question screen opens its own.
 func open_rescue() -> void:
-	if _overlay != null or Game.rescue_block() != "":
+	var why := rescue_block()
+	if _overlay != null or why != "":
+		if why != "":
+			hud.flash(why)
 		return
 	var r: Control = preload("res://scripts/RescueOverlay.gd").new()
 	r.finished.connect(func(summary: String) -> void:
@@ -289,6 +289,20 @@ func open_rescue() -> void:
 		if summary != "":
 			hud.flash(summary))
 	_show_overlay(r)
+
+
+## Why Rescue is not on offer right now, or "". The game's own rules, plus the
+## board's: the old menu that held Rescue could not open while paused, before
+## the start or while watching, and the top-bar button must not either -- a
+## finished player giving gems away after their finish is recorded.
+func rescue_block() -> String:
+	if _spectate != "":
+		return "You are done — Rescue is for players still on the board"
+	if _frozen:
+		return "Rescue opens once the adventure starts"
+	if hud != null and hud.paused:
+		return "The adventure is paused"
+	return Game.rescue_block()
 
 
 ## Online with nothing to join: say why and keep the board shut. The old
@@ -729,6 +743,7 @@ func _start_intro() -> void:
 	_frozen = true
 	Game.clock_paused = true
 	hud.set_pad(false)
+	hud._refresh_rescue()
 	_cam.position_smoothing_enabled = false
 	_clamp_cam(false)
 	var z := _aerial_zoom()
@@ -761,14 +776,14 @@ func _swoop() -> void:
 	# the clamped play camera will be, so there is no jump at the end.
 	var z0 := _cam.zoom.x
 	var p0 := _cam.position
-	var to := _settled_cam(player.position, play_zoom)
+	var to := _settled_cam(player.position, MapCfg.PLAY_ZOOM)
 	_intro_tw = create_tween()
 	_intro_tw.tween_interval(MapCfg.SWOOP_HOLD)
 	_intro_tw.tween_method(func(t: float) -> void:
-		var z := z0 * pow(play_zoom / z0, t)
+		var z := z0 * pow(MapCfg.PLAY_ZOOM / z0, t)
 		_cam.zoom = Vector2(z, z)
-		var span := 1.0 / z0 - 1.0 / play_zoom
-		var w := (1.0 / z - 1.0 / play_zoom) / span if absf(span) > 0.0001 else 0.0
+		var span := 1.0 / z0 - 1.0 / MapCfg.PLAY_ZOOM
+		var w := (1.0 / z - 1.0 / MapCfg.PLAY_ZOOM) / span if absf(span) > 0.0001 else 0.0
 		_cam.position = to + (p0 - to) * w
 		if is_instance_valid(_sky):
 			_sky.progress(t),
@@ -813,8 +828,9 @@ func skip_intro() -> void:
 	_start_music()
 	hud.set_crib(true)
 	_frozen = false
+	hud._refresh_rescue()
 	Game.clock_paused = false
-	_cam.zoom = Vector2(play_zoom, play_zoom)
+	_cam.zoom = Vector2(MapCfg.PLAY_ZOOM, MapCfg.PLAY_ZOOM)
 	_clamp_cam(true)
 	_cam.position = player.position
 	_cam.position_smoothing_enabled = true
@@ -1341,7 +1357,10 @@ func _refresh_circles() -> bool:
 		(_circles[n] as Node2D).set_state(state)
 	# The answered tower's firefly flies on to the next one -- or up and away
 	# when there is no next one yet -- leading the player there.
-	if was >= 0 and was != _current_circle and (_circles[was] as Node2D).state == "done":
+	# Only on to the very next tower: a rejoin jumping several ahead must not
+	# send one flying across the map.
+	if was >= 0 and (_circles[was] as Node2D).state == "done" \
+			and (_current_circle == was + 1 or (_current_circle < 0 and Game.items_done == was + 1)):
 		var to: Vector2 = (_circles[_current_circle].number_mid() if _current_circle >= 0
 				else Vector2.INF)
 		var secs: float = _circles[was].send_firefly(to)
@@ -1370,6 +1389,7 @@ func _begin_spectating(why: String, finish_s := -1) -> void:
 	if _spectate != "" or Game.session_id == "" or not Game.adventure_active:
 		return
 	_spectate = why
+	hud._refresh_rescue()
 	end_look()
 	_press = {}
 	_close_card()

@@ -44,7 +44,11 @@ var _flash_active := false
 
 ## The board is held -- waiting on the session, or the run over. The screen
 ## reads this to stop the hero walking and to keep the board from taking taps.
-var paused := false
+## Rescue greys out with it.
+var paused := false:
+	set(v):
+		paused = v
+		_refresh_rescue()
 
 
 func _init(screen: Control) -> void:
@@ -250,7 +254,7 @@ func _refresh_rescue() -> void:
 	if not is_instance_valid(_rescue):
 		return
 	_rescue.visible = Game.session_id != ""
-	var why := Game.rescue_block()
+	var why: String = adv.rescue_block()
 	_rescue.disabled = why != ""
 	_rescue.text = "Rescued" if Game.rescue_sent else "Rescue"
 	_rescue.tooltip_text = why if why != "" else "Give some of your gems to a teammate"
@@ -480,6 +484,7 @@ func flash(text: String) -> void:
 	if not is_instance_valid(prompt):
 		return
 	_flash_active = true
+	_fit_prompt(text)
 	Art.toast(prompt, text, 1.2, "", func() -> void:
 		_flash_active = false
 		prompt.visible = false)   # an empty plate is a dark blob
@@ -491,8 +496,20 @@ func flash(text: String) -> void:
 func set_prompt(text: String) -> void:
 	if _flash_active or not is_instance_valid(prompt):
 		return
+	_fit_prompt(text)
 	prompt.text = text
 	prompt.visible = text != ""
+
+
+## The prompt hugs its text, up to PROMPT_MAX_W; longer (a server's error in
+## a flash) wraps onto more lines instead of running off both sides.
+const PROMPT_MAX_W := 560.0
+func _fit_prompt(text: String) -> void:
+	var w := prompt.get_theme_font("font").get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT,
+			-1, prompt.get_theme_font_size("font_size")).x
+	var wraps := w > PROMPT_MAX_W
+	prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if wraps else TextServer.AUTOWRAP_OFF
+	prompt.custom_minimum_size.x = PROMPT_MAX_W if wraps else 0.0
 
 
 ## The gem plate, and a flash of the change: green up, red down. A number
