@@ -24,12 +24,17 @@ import time
 import urllib.parse
 
 from api import Api, ApiError
+import movers as rt
 
 ITEMS = [8, 3, 3]
 START_GEMS = 50
 CORRECT, WRONG, HINT, SKIP, PERFECT = 10, -5, -5, -15, 10
 
 findings = []
+# --move: every phone also on Realtime, walking from the teacher's Start.
+MOVE_S = 0
+go = threading.Event()
+phones = []
 lock = threading.Lock()
 
 
@@ -93,6 +98,11 @@ class Student(threading.Thread):
                                   "team_id": team[0]["id"],
                                   "profile_id": self.api.user}, what="join")
         self.joined_at = time.time() - started
+        if MOVE_S:
+            m = rt.Mover(name, self.api.user, self.api.token, self.session, self.team, MOVE_S, go)
+            with lock:
+                phones.append(m)
+            m.start()
 
         # Wait for the teacher, the way a frozen board does.
         for _ in range(120):
@@ -159,7 +169,18 @@ def main():
                          "needs the service key -- so every run otherwise leaves "
                          "N more accounts behind, and spends the sign-up budget "
                          "measuring something already measured.")
+    ap.add_argument("--move", type=int, default=0, metavar="SECONDS",
+                    help="every student also joins Realtime as the app does and "
+                         "broadcasts its position at the app's rate for SECONDS "
+                         "from the teacher's Start; the teacher watches. Measures "
+                         "the fan-out of one shared topic.")
+    ap.add_argument("--pos-every", type=float, default=rt.POS_EVERY_S, metavar="S",
+                    help="seconds between a walker's positions (the app's "
+                         "AdventureScreen.POS_EVERY_S, %.2f today)" % rt.POS_EVERY_S)
     args = ap.parse_args()
+    global MOVE_S
+    MOVE_S = args.move
+    rt.POS_EVERY_S = args.pos_every
 
     stamp = str(int(time.time()))
     teacher = Api("teacher")
@@ -200,6 +221,13 @@ def main():
     teacher.patch(f"sessions?id=eq.{session['id']}",
                   {"state": "running", "ends_at": ends, "remaining_s": None},
                   what="start")
+    if MOVE_S:
+        watcher = rt.Mover("teacher", teacher.user, teacher.token, session["id"], "",
+                           MOVE_S, go, walks=False)
+        phones.append(watcher)
+        watcher.start()
+        time.sleep(1)
+        go.set()
 
     time.sleep(12)
     print("== teacher pauses everyone ==")
@@ -214,8 +242,13 @@ def main():
     for s in students:
         s.join(timeout=240)
     print("== everyone finished ==")
+    move_code = 0
+    if MOVE_S:
+        for m in phones:
+            m.join(timeout=MOVE_S + 30)
+        move_code = rt.report(phones, MOVE_S)
 
-    code = report(teacher, session["id"], students, team_names)
+    code = report(teacher, session["id"], students, team_names) or move_code
 
     # Put the teacher's project back the way it was found. Deleting the
     # session cascades its teams and members; the questions are ours by
@@ -296,8 +329,13 @@ def report(teacher, session, students, team_names):
         print("  nothing to report -- every score matched and nothing was refused wrongly")
     for kind, count in kinds.items():
         print(f"  {kind}: {count}")
-    for kind, text in findings[:15]:
-        print(f"    [{kind}] {text}")
+    # A few of each kind: the first fifteen were all pause refusals, which hid
+    # the errors behind them.
+    shown = collections.Counter()
+    for kind, text in findings:
+        if shown[kind] < 5:
+            shown[kind] += 1
+            print(f"    [{kind}] {text}")
     print("==========================================")
     return 1 if mismatched or fails else 0
 
