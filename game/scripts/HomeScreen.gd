@@ -85,8 +85,9 @@ func _logout_in_settings() -> bool:
 	return true
 
 
-## A teacher never picked a character, so there is no portrait to stand there.
-func _show_portrait() -> bool:
+## The gem total in the header and "Your gems are saved." on Quit: a teacher
+## plays no adventures, so has no gems.
+func _has_gems() -> bool:
 	return true
 
 
@@ -273,7 +274,7 @@ func _build_header() -> void:
 	head.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(head)
 
-	if _show_portrait():
+	if _has_gems():
 		_load_gems(head)
 
 	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -281,21 +282,19 @@ func _build_header() -> void:
 	Art.shadow(who, Pal.SHADOW, 2, 0)
 	head.add_child(who)
 
-	# The chosen character stands beside the name, per the mockup's header --
-	# for a player. A teacher never picked one, so the name sits alone.
-	if _show_portrait():
-		var wrap := Control.new()
-		wrap.custom_minimum_size = Vector2(28, 28)
-		wrap.clip_contents = true
-		wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		var face := AnimatedSprite2D.new()
-		face.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id), 1.0)
-		face.animation = "right"
-		face.scale = Vector2(1.4, 1.4)
-		# Centred on the text's line (measured): at y 20 it sat 5px under it.
-		face.position = Vector2(14, 13)
-		wrap.add_child(face)
-		head.add_child(wrap)
+	# The chosen character stands beside the name, per the mockup's header.
+	var wrap := Control.new()
+	wrap.custom_minimum_size = Vector2(28, 28)
+	wrap.clip_contents = true
+	wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var face := AnimatedSprite2D.new()
+	face.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id), 1.0)
+	face.animation = "right"
+	face.scale = Vector2(1.4, 1.4)
+	# Centred on the text's line (measured): at y 20 it sat 5px under it.
+	face.position = Vector2(14, 13)
+	wrap.add_child(face)
+	head.add_child(wrap)
 
 	if _logout_in_settings():
 		return
@@ -417,7 +416,7 @@ func go_back() -> void:
 var _dialog: Control = null
 
 
-## Change Character (once there is one to change) and Log Out.
+## Change Character (players and teachers alike) and Log Out.
 ## Two groups (client, redesigned per ui-ux-pro-max): Audio -- each volume
 ## with a mute toggle on its icon -- and Account, where Log Out asks first.
 func _open_settings() -> void:
@@ -434,10 +433,10 @@ func _open_settings() -> void:
 	sounds.drag_ended.connect(func(_changed: bool) -> void: Sfx.play("button"))
 
 	Ui.section(box, "Account")
-	# Players only: a Quest Keeper never picks one, whatever this device last held.
-	if _show_portrait() and Game.player_name != "":
-		var hero := _account_button(box, "Change Character", "hero", Ui.SMALL)
-		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
+	var hero := _account_button(box, "Change Character", "hero", Ui.SMALL)
+	# Back to whichever home this is: the player's, or the teacher's dashboard.
+	var back := "admin" if Net.role == "admin" else "home"
+	hero.pressed.connect(func() -> void: main.open("hero", {"then": back}))
 	var out := _account_button(box, "Log Out", "exit", Ui.SMALL_RED)
 	out.pressed.connect(_confirm_logout)
 
@@ -509,9 +508,9 @@ func _confirm_logout() -> void:
 
 func _confirm_quit() -> void:
 	_dialog = Ui.dim(self)
-	var box := Ui.screen_panel(_dialog, Vector2(300, 150 if _show_portrait() else 124), "Quit NumXventure?")
+	var box := Ui.screen_panel(_dialog, Vector2(300, 150 if _has_gems() else 124), "Quit NumXventure?")
 	box.add_theme_constant_override("separation", 10)
-	if _show_portrait():                 # a player's reassurance; a teacher has no gems
+	if _has_gems():                      # a player's reassurance; a teacher has no gems
 		box.add_child(Art.label("Your gems are saved.", Pal.SMALL, Pal.INK_MUTED,
 			HORIZONTAL_ALIGNMENT_CENTER))
 	var row := HBoxContainer.new()

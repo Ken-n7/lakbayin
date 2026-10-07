@@ -39,8 +39,8 @@ func go_back() -> void:
 	get_tree().quit()
 
 
-## A teacher never picked a character.
-func _show_portrait() -> bool:
+## A teacher plays no adventures: no gem total, nothing to reassure on Quit.
+func _has_gems() -> bool:
 	return false
 
 
