@@ -65,6 +65,6 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 | `classroom.py` | a whole class played against the live backend |
 | `join_and_walk.py` | fill a real session with walking students (`--bundle S` for path bundles) |
 | `movers.py` | phones walking on Realtime, with delivery and lag figures |
-| `relay_load.py` | simulated phones against the relay (needs `relay.gd --test-auth`) |
+| `relay_load.py` | simulated phones against the relay (needs `relay.gd --test-auth`); `--code` for real accounts in a live session, through the published relay |
 | `netreport_listen.py` | print and save the network reports test phones send |
 | `leaderboard_live.py`, `rescue_live.py`, `ratelimit.py` | live checks of boards, Rescue, and the auth rate limit |
