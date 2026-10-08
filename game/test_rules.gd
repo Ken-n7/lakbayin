@@ -306,6 +306,33 @@ func _init() -> void:
 	var behind := (tick - float(still.offset) - float(still.lag)) - float(still.play)
 	assert(behind < 0.2, "after standing, the walk plays from now: %.2fs behind" % behind)
 
+	# Relay data a little late (up to FAST_DRY_S) does not grow the buffer --
+	# the hero walks on along the last step; later than that it grows once,
+	# and FAST_SETTLE_S calm takes a step back off.
+	var late := {"pts": [], "offset": 0.0, "lag": PeersScript.FAST_LAG_MIN, "settled": 0.0,
+		"dry": false, "face": "down", "fast": true}
+	for i in 11:
+		late.pts.append([i * 0.05, Vector2(i * 7.5, 0)])            # walking until t = 0.5
+	var t: float = 0.45 + PeersScript.FAST_LAG_MIN                        # playing t = 0.45
+	for frame in 7:                                                  # to ~0.07s past the newest
+		t += 1.0 / 60.0
+		PeersScript._play(late, t, 1.0 / 60.0)
+	assert(is_equal_approx(float(late.lag), PeersScript.FAST_LAG_MIN),
+		"a little late: no more buffer (%.2f)" % late.lag)
+	assert(PeersScript._path_at(late.pts, late.play).pos.x > 75.0, "...walked on along the last step")
+	for frame in 6:                                                  # past FAST_DRY_S
+		t += 1.0 / 60.0
+		PeersScript._play(late, t, 1.0 / 60.0)
+	var grown: float = PeersScript.FAST_LAG_MIN + PeersScript.FAST_LAG_GROW
+	assert(is_equal_approx(float(late.lag), grown), "really late: a step more buffer (%.2f)" % late.lag)
+	for i in range(11, 80):                                          # the walk comes in again
+		late.pts.append([i * 0.05, Vector2(i * 7.5, 0)])
+	for frame in int((PeersScript.FAST_SETTLE_S + 0.2) * 60):
+		t += 1.0 / 60.0
+		PeersScript._play(late, t, 1.0 / 60.0)
+	assert(is_equal_approx(float(late.lag), grown - PeersScript.LAG_SHRINK),
+		"calm for FAST_SETTLE_S: a step back off (%.2f)" % late.lag)
+
 
 	# A refresh updates heroes where they stand rather than rebuilding them --
 	# rebuilding reset every walk cycle on every answer anyone gave.

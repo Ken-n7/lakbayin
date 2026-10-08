@@ -54,12 +54,22 @@ const LAG_SETTLE_S := 5.0
 ## only has to cover the network's jitter, not a third of a second of
 ## waiting. A player's data counts as fast for FAST_HOLD_S after the last
 ## fast sample, so a phone that drops back to the hub path changes over once,
-## not on every snapshot. Tuned against the relay load tests (SPECS).
-const FAST_LAG_START := 0.25
-const FAST_LAG_MIN := 0.15
+## not on every snapshot. Tuned against the relay load tests (SPECS), then on
+## two phones (2026-10-09): mobile data's hiccups kept ~0.3s of buffer, half
+## the delay seen. So a message up to FAST_DRY_S late does not grow it -- the
+## hero walks on along their last step meanwhile (CARRY_S) and glides back
+## onto the real path if they turned (GLIDE_PX_S) -- and FAST_SETTLE_S calm
+## takes it down a step.
+const FAST_LAG_START := 0.15
+const FAST_LAG_MIN := 0.1
 const FAST_LAG_MAX := 0.8
 const FAST_LAG_GROW := 0.1
 const FAST_HOLD_S := 2.0
+const FAST_DRY_S := 0.1
+const FAST_SETTLE_S := 2.0
+## A correction never moves a hero faster than this, three times walking pace:
+## walking itself, catching up included, is never held back.
+const GLIDE_PX_S := 3.0 * MapCfg.PLAYER_SPEED
 const CATCH_UP := 1.15
 const EASE := 0.88
 const CARRY_S := 0.3
@@ -249,8 +259,10 @@ func _process(delta: float) -> void:
 		if _is_live(id):
 			at = _play(_live[id], now, delta)
 			goal = at.pos
-		if marker.position.distance_to(goal) > SNAP_DIST or _is_live(id):
+		if marker.position.distance_to(goal) > SNAP_DIST:
 			marker.position = goal
+		elif _is_live(id):
+			marker.position = marker.position.move_toward(goal, GLIDE_PX_S * delta)
 		else:
 			# Back to a circle after going quiet: walk there, do not blink.
 			marker.position = marker.position.move_toward(goal, 200.0 * delta)
@@ -283,8 +295,9 @@ static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 	if walking and next > newest + CARRY_S:
 		next = newest + CARRY_S
 	# Out of path while they were walking: their line is slower than allowed
-	# for. A little more buffer from now on -- once per running dry.
-	if next > newest and walking:
+	# for. A little more buffer from now on -- once per running dry. Relay
+	# data has FAST_DRY_S of grace, walked on along the last step.
+	if next > newest + (FAST_DRY_S if fast else 0.0) and walking:
 		if not bool(got.dry):
 			got["dry"] = true
 			got["lag"] = minf(float(got.lag) + (FAST_LAG_GROW if fast else LAG_GROW),
@@ -293,7 +306,7 @@ static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 	elif next <= newest:
 		got["dry"] = false
 	var least := FAST_LAG_MIN if fast else LAG_MIN
-	if now - float(got.settled) > LAG_SETTLE_S and float(got.lag) > least:
+	if now - float(got.settled) > (FAST_SETTLE_S if fast else LAG_SETTLE_S) and float(got.lag) > least:
 		got["lag"] = maxf(float(got.lag) - LAG_SHRINK, least)
 		got["settled"] = now
 	got["play"] = next
