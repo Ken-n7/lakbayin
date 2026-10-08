@@ -208,6 +208,24 @@ func relay() -> RelayLink:
 	return _relay
 
 
+## The relay's row (schema 7b) for relay `owner`: taken if it is free, stale
+## or already theirs -- how tools/relay.gd and RelayHost publish and keep it.
+## "" when `owner` holds it now, "held" when another relay does, else the error.
+func claim_relay(owner: String, url: String, hz: int) -> String:
+	var got: Dictionary = await rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/claim_relay",
+		{"p_owner": owner, "p_url": url, "p_hz": hz})
+	if got.error != "":
+		return str(got.error)
+	return "" if got.data == true else "held"
+
+
+## Lets the relay's row go, if it is `owner`'s. "" or the error.
+func release_relay(owner: String) -> String:
+	var got: Dictionary = await rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/release_relay",
+		{"p_owner": owner})
+	return str(got.error)
+
+
 ## The realtime socket, made on first use and kept as a child of this node.
 ## Nothing opens one until something asks to watch a table.
 func realtime() -> Realtime:

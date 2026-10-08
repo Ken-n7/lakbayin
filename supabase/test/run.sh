@@ -8,7 +8,8 @@
 #   - schema.sql loads on a fresh project, and loads AGAIN over itself -- it is
 #     re-run in the SQL Editor after every change;
 #   - it upgrades a project that still has the previous schema (git HEAD);
-#   - rescue_test.sql, leaderboard_test.sql;
+#   - rescue_test.sql, leaderboard_test.sql, relay_test.sql;
+#   - two relays taking the free relay row at the same moment: exactly one does;
 #   - two teammates rescuing each other at the same moment, from two real
 #     connections: both go through, no deadlock.
 set -u
@@ -51,6 +52,37 @@ out=$(q -t -A -f supabase/test/leaderboard_test.sql 2>&1)
 echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
 echo "$out" | grep -q -- "---- LEADERBOARD SQL PASS" || fail=1
 echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
+
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+out=$(q -t -A -f supabase/test/relay_test.sql 2>&1)
+echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
+echo "$out" | grep -q -- "---- RELAY SQL PASS" || fail=1
+echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
+
+# Two relays taking the free row at the same moment, from two connections:
+# exactly one gets it -- a class is never split between two relays.
+q -c "insert into auth.users (id, email, raw_user_meta_data) values
+	('00000000-0000-0000-0000-0000000000a0', 'h@t.dev', '{\"username\":\"home\",\"role\":\"admin\"}'),
+	('00000000-0000-0000-0000-0000000000b0', 't@t.dev', '{\"username\":\"teacher\",\"role\":\"admin\"}')
+	on conflict do nothing; update public.relay set url = null;" >/dev/null 2>&1
+claim() {   # claim <user> <owner>
+	psql -X -q -t -A -d "$DB" -c "begin;
+		select set_config('request.jwt.claim.sub', '$1', true);
+		set local role authenticated;
+		select public.claim_relay('$2', 'wss://$2', 20);
+		select pg_sleep(1);
+		commit;" 2>&1 | grep -E '^(t|f)$|ERROR'
+}
+claim 00000000-0000-0000-0000-0000000000a0 home > /tmp/nx_relay_a.$$ &
+claim 00000000-0000-0000-0000-0000000000b0 backup > /tmp/nx_relay_b.$$ & wait
+won=$(cat /tmp/nx_relay_a.$$ /tmp/nx_relay_b.$$ | sort | tr '\n' ' ')
+if [[ $won == "f t " ]]; then
+	echo "ok    two relays taking the free row at once: exactly one gets it"
+else
+	echo "FAIL  two relays at once gave: $won"; fail=1
+fi
+rm -f /tmp/nx_relay_a.$$ /tmp/nx_relay_b.$$
 
 # Two teammates, each rescuing the other, at the same moment: each holds its
 # transaction open for a second after the call, so the other's lands mid-way.

@@ -677,6 +677,37 @@ create policy read_relay  on public.relay for select to authenticated using (tru
 create policy admin_relay on public.relay for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
+-- Two machines can run a relay -- the home laptop, and the teacher's Game
+-- Controls as its backup (game/scripts/relay/RelayHost.gd) -- but a class must
+-- all be on one, or it splits into two halves that cannot see each other. So
+-- the row has an owner. A relay takes it only when it is free (no url),
+-- stale (not refreshed for 180s, the phones' RelayLink.STALE_S) or already
+-- its own, and keeps it by refreshing it; nobody takes it back from a relay
+-- that is still refreshing. Rows from before owners (owner null) are free.
+-- Both run as the caller, so the admin-only policy above still decides.
+alter table public.relay add column if not exists owner text;
+insert into public.relay (id) values (1) on conflict (id) do nothing;
+
+-- True if p_owner holds the row now (and it says p_url).
+create or replace function public.claim_relay(p_owner text, p_url text, p_hz int)
+returns boolean language sql as $$
+  with taken as (
+    update public.relay
+       set owner = p_owner, url = p_url, hz = p_hz, updated_at = now()
+     where id = 1
+       and (owner is null or owner = p_owner or url is null
+            or updated_at < now() - interval '180 seconds')
+    returning 1)
+  select exists (select 1 from taken)
+$$;
+
+-- Lets the row go, if it is p_owner's: the next relay to ask gets it at once.
+create or replace function public.release_relay(p_owner text)
+returns void language sql as $$
+  update public.relay set url = null, hz = 0, updated_at = now()
+   where id = 1 and owner = p_owner
+$$;
+
 -- 8. Reset (commented out on purpose) ---------------------------------------
 -- Uncomment, run, then run this file again for a clean slate. Deletes every
 -- row. Accounts live in auth.users and survive -- delete those in the

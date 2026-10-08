@@ -9,12 +9,16 @@ extends SceneTree
 ## than 127.0.0.1 or with --url.
 ##
 ## --url wss://... publishes that address to Supabase's `relay` row, so phones
-## find it, and refreshes it every PUBLISH_S; --unpublish clears it and quits
-## (tools/relay/run.sh, when it stops). Both sign in as the admin in
+## find it, and refreshes it every PUBLISH_S -- while no other relay holds the
+## row (the teacher's Game Controls standing in, RelayHost): a class is never
+## split between two. --unpublish lets the row go, if it is this machine's,
+## and quits (tools/relay/run.sh, when it stops). Both sign in as the admin in
 ## NUMX_RELAY_EMAIL / NUMX_RELAY_PASSWORD -- ~/.config/numxventure/relay.env,
 ## never the repo.
 
 const PUBLISH_S := 60
+## This relay, to the row: one per machine.
+var relay_owner := "home:" + OS.get_unique_id().left(8)
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -30,7 +34,8 @@ func _run() -> void:
 	var url := _arg(args, "--url", "")
 	if args.has("--unpublish"):
 		if await _sign_in():
-			print("unpublished: ", await _publish("", 0))
+			var err: String = await root.get_node("Net").release_relay(relay_owner)
+			print("unpublished" if err == "" else "unpublish failed: " + err)
 		quit()
 		return
 	if url != "" and args.has("--test-auth"):
@@ -59,15 +64,17 @@ func _run() -> void:
 	print("relay on %s:%s, %d snapshots a second" % [bind, _arg(args, "--port", str(RelayServer.PORT)), relay.hz])
 	var last := [0, 0, 0]
 	var t := 0
-	if url != "":
-		print("published %s: %s" % [url, await _publish(url, relay.hz)])
+	var held := "-"
 	while true:
+		if url != "" and t % PUBLISH_S == 0:
+			var got: String = await root.get_node("Net").claim_relay(relay_owner, url, relay.hz)
+			if got != held:
+				held = got
+				print("published " + url if got == ""
+					else "another relay holds the row; this one waits" if got == "held"
+					else "publish failed (again in %ds): %s" % [PUBLISH_S, got])
 		await create_timer(5.0).timeout
 		t += 5
-		if url != "" and t % PUBLISH_S == 0:
-			var failed := await _publish(url, relay.hz)
-			if failed != "":
-				print("publish failed (again in %ds): %s" % [PUBLISH_S, failed])
 		print("t=%4d  peers %3d  rooms %2d  in %5.0f/s  out %6.0f/s  %6.1f KB/s out  denied %d" % [t,
 			relay.peer_count(), relay.room_count(), (relay.msgs_in - last[0]) / 5.0,
 			(relay.msgs_out - last[1]) / 5.0, (relay.bytes_out - last[2]) / 5120.0, relay.denied])
@@ -83,15 +90,6 @@ func _sign_in() -> bool:
 	if err != "":
 		print("sign in failed: ", err)
 	return err == ""
-
-
-## The relay's address, or "" to say it is gone. Returns "" or the error.
-func _publish(url: String, hz: int) -> String:
-	var now := Time.get_datetime_string_from_system(true) + "Z"
-	var got: Dictionary = await root.get_node("Net").rest(HTTPClient.METHOD_POST, "/rest/v1/relay",
-		{"id": 1, "url": url if url != "" else null, "hz": hz, "updated_at": now},
-		"resolution=merge-duplicates")
-	return str(got.error)
 
 
 class TestAuth:
