@@ -25,6 +25,11 @@ var applied := 0
 var answer_posts := 0
 ## Apply the next answer, then hang up without replying.
 var drop_next_reply := false
+## Signing back in (_restore): a token for the refresh, a profile for the
+## read -- or the profile's reply lost, or the token refused.
+var auth := false
+var profile_down := false
+var token_refused := false
 
 
 func _ready() -> void:
@@ -110,11 +115,13 @@ func _ready() -> void:
 			stuck += 1
 	check("a connect that fails at once is tried again", stuck <= 1,
 		"closed with no retry coming in %d of 12 looks" % stuck)
-	await _wait(2.0)       # past the 8s Net.connection() waits before "offline"
+	await _wait(5.0)       # past the 11s (two heartbeats) Net.connection() waits before "offline"
 	check("...and the line reads offline meanwhile", Net.connection() == "offline", Net.connection())
 	rt.close_socket()
 
 	_bridge()
+	_line_measures()
+	await _restore()
 
 	_server.stop()
 	Net.url = was_url
@@ -122,6 +129,58 @@ func _ready() -> void:
 	Net.access_token = was_token
 	completed = true
 	finish("NETRETRY")
+
+
+## Signing back in at launch. No line is not a sign-out: the saved login is
+## kept and tried again (the splash shows "No connection" and waits). A line
+## that dies between the token and the profile is not done either -- a
+## teacher was left with no role and sent to the students' home. A refusal
+## is still a refusal.
+func _restore() -> void:
+	Net.url = "http://127.0.0.1:%d" % PORT
+	Net.access_token = ""
+	Net.role = ""
+	Net.username = ""
+	Net.refresh_token = "rt1"
+	Net._save_session()
+	_server.stop()
+	var e: String = await Net.restore_session()
+	check("no line at launch: 'no connection', not signed out", e == Net.NO_CONNECTION and not Net.signed_in(), e)
+	_server.listen(PORT, "127.0.0.1")
+	auth = true
+	profile_down = true
+	e = await Net.restore_session()
+	check("...the token came but not the profile: not done yet", e == Net.NO_CONNECTION and Net.role == "", e)
+	profile_down = false
+	e = await Net.restore_session()
+	check("...and the next try finishes it, role and all", e == "" and Net.role == "admin" and Net.username == "stu",
+		"%s / %s / %s" % [e, Net.role, Net.username])
+	Net.access_token = ""
+	Net.role = ""
+	token_refused = true
+	e = await Net.restore_session()
+	check("a refused login is a refusal, not a lost line", e != "" and e != Net.NO_CONNECTION, e)
+	auth = false
+	token_refused = false
+	Net.access_token = ""
+	Net.refresh_token = ""
+	Net.role = ""
+	Net.username = ""
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(Net.SESSION_PATH))
+
+
+## One slow call is not a weak line: the typical one is what counts.
+func _line_measures() -> void:
+	var was: Array[float] = Net.get("_rest_rtts").duplicate()
+	for s: float in [0.4, 0.5, 3.6, 0.45, 0.5]:
+		Net._note_rtt(s)
+	check("one 3.6s call among quick ones: the line's time stays quick", float(Net.get("_rest_rtt")) < 1.0,
+		str(Net.get("_rest_rtt")))
+	for s: float in [2.0, 2.2, 1.9]:
+		Net._note_rtt(s)
+	check("...but a run of slow ones shows", float(Net.get("_rest_rtt")) > 1.5, str(Net.get("_rest_rtt")))
+	Net.set("_rest_rtts", was)
+	Net.set("_rest_rtt", 0.0)
 
 
 ## The teacher's bridge (PosHub): relay students go into its snapshots only
@@ -182,6 +241,18 @@ func _process(_delta: float) -> void:
 		var body := '{"message":"the adventure is not running"}' if refuse \
 			else '[{"gems":60,"items_done":1}]'
 		var status := "400 Bad Request" if refuse else "200 OK"
+		if auth:
+			var line: String = text.substr(0, text.find("\r\n"))
+			if line.contains("/auth/v1/token"):
+				status = "400 Bad Request" if token_refused else "200 OK"
+				body = '{"error":"invalid_grant","error_description":"Invalid Refresh Token"}' if token_refused \
+					else '{"access_token":"at1","refresh_token":"rt2","user":{"id":"u1"}}'
+			elif line.contains("/rest/v1/profiles"):
+				if profile_down:
+					p.disconnect_from_host()      # the line died: no reply
+					_peers.erase(p)
+					continue
+				body = '[{"username":"stu","role":"admin"}]'
 		if stateful:
 			var first_line: String = text.substr(0, text.find("\r\n"))
 			if first_line.begins_with("POST") and first_line.contains("apply_answer"):

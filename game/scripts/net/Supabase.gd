@@ -55,7 +55,7 @@ func _ready() -> void:
 ## broadcast). For NetReport, which must get through when the socket cannot.
 func broadcast_rest(topic: String, event: String, payload: Dictionary) -> Dictionary:
 	return await _call(HTTPClient.METHOD_POST, "/realtime/v1/api/broadcast",
-		{"messages": [{"topic": topic, "event": event, "payload": payload}]})
+		{"messages": [{"topic": topic, "event": event, "payload": payload}]}, false, "", "", false)
 
 
 ## One `HTTPRequest` per call, not one for the client.
@@ -77,10 +77,17 @@ func _new_http() -> HTTPRequest:
 
 
 const REQUEST_TIMEOUT_S := 12.0
+## The error of a call that never reached the server (or whose reply never
+## came back) -- told apart from the server saying no.
+const NO_CONNECTION := "No connection"
 ## The line, from the requests: when one last failed to get through (-1 since
-## one got through), and how long the last that did took.
+## one got through), and how long they typically take -- the median of the
+## last RTT_KEEP, so one slow call (a phone setting up a fresh secure
+## connection took 1.5-3.6s now and then) does not read as a weak line.
 var _rest_failed_at := -1.0
 var _rest_rtt := 0.0
+var _rest_rtts: Array[float] = []
+const RTT_KEEP := 5
 ## For NetReport: calls that got an answer, calls that never did, and why
 ## the last of those failed (HTTPRequest.RESULT_*).
 var http_ok := 0
@@ -97,12 +104,24 @@ var http_last_failure := -1
 func connection(waiting_s := 0.0) -> String:
 	var now := Time.get_ticks_msec() / 1000.0
 	var silent := _realtime.silent_for() if _realtime != null else 0.0
-	if silent > 8.0 or (_rest_failed_at >= 0.0 and now - _rest_failed_at < 10.0):
+	# The socket is only heard every HEARTBEAT_S when nothing else is said --
+	# and with movement on the relay, nothing else often is. Weak once a
+	# heartbeat is overdue, offline once two are.
+	if silent > Realtime.HEARTBEAT_S * 2.0 + 1.0 or (_rest_failed_at >= 0.0 and now - _rest_failed_at < 10.0):
 		return "offline"
-	if silent > 4.0 or (_realtime != null and _realtime.rtt > 1.0) \
+	if silent > Realtime.HEARTBEAT_S + 2.0 or (_realtime != null and _realtime.rtt > 1.0) \
 			or _rest_rtt > 1.5 or waiting_s > 3.0:
 		return "weak"
 	return "good"
+
+
+func _note_rtt(seconds: float) -> void:
+	_rest_rtts.append(seconds)
+	if _rest_rtts.size() > RTT_KEEP:
+		_rest_rtts.pop_front()
+	var sorted := _rest_rtts.duplicate()
+	sorted.sort()
+	_rest_rtt = sorted[sorted.size() / 2]
 
 
 func configured() -> bool:
@@ -205,10 +224,18 @@ func signed_in() -> bool:
 
 ## Signing back in after a restart, with no password. Returns "" on success,
 ## or why not -- "no saved session" being the ordinary answer on a fresh
-## install, not an error worth showing anybody.
+## install, not an error worth showing anybody, and NO_CONNECTION when the
+## server could not be reached: the login is still good, try again (the
+## splash does; it used to send a signed-in student to the Sign In form).
+##
+## Signed in is not enough: a line that died between the token and the
+## profile left a teacher with no role, and the splash sent them to the
+## students' home. Then only the profile is fetched again.
 func restore_session() -> String:
-	if signed_in():
+	if signed_in() and role != "":
 		return ""
+	if signed_in():
+		return await _load_profile()
 	var cfg := ConfigFile.new()
 	if cfg.load(SESSION_PATH) != OK:
 		return "no saved session"
@@ -260,11 +287,19 @@ func _verify(email: String, code: String, type: String) -> String:
 ## A token is only half a session -- the display name and the role live in
 ## `profiles`, so every way in loads them before it reports success.
 func _finish(reply: Dictionary) -> String:
+	if bool(reply.get("network", false)):
+		return NO_CONNECTION
 	var err := _remember(reply)
 	if err != "":
 		return err
+	return await _load_profile()
+
+
+func _load_profile() -> String:
 	var got := await rest(HTTPClient.METHOD_GET,
 		"/rest/v1/profiles?select=username,role&id=eq." + user_id)
+	if bool(got.get("network", false)):
+		return NO_CONNECTION
 	if got.error != "":
 		return got.error
 	var rows: Variant = got.data
@@ -304,7 +339,9 @@ func _learn_clock(headers: PackedStringArray, sent: float) -> void:
 			return
 
 
-func _call(method: int, path: String, body: Variant, retry := true, prefer := "", as_token := "") -> Dictionary:
+## `counts`: false for calls that say nothing about the game's own line
+## (NetReport's), which then leave the line's measures alone.
+func _call(method: int, path: String, body: Variant, retry := true, prefer := "", as_token := "", counts := true) -> Dictionary:
 	if not configured():
 		return {"error": "Supabase is not configured -- see supabase/README.md", "data": null}
 	if not is_inside_tree():
@@ -337,7 +374,8 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 	# Never reached the server -- no connection, or the timeout above. Said
 	# apart from a refusal, so a scoring call is retried rather than dropped.
 	if int(res[0]) != HTTPRequest.RESULT_SUCCESS:
-		_rest_failed_at = Time.get_ticks_msec() / 1000.0
+		if counts:
+			_rest_failed_at = Time.get_ticks_msec() / 1000.0
 		Dial.forget(host)           # a changed network, maybe: dial again next time
 		http_failed += 1
 		http_last_failure = int(res[0])
@@ -346,9 +384,10 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 		# the server and been done there, the reply lost on the way back.
 		var unsent := int(res[0]) in [HTTPRequest.RESULT_CANT_CONNECT,
 			HTTPRequest.RESULT_CANT_RESOLVE, HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR]
-		return {"error": "No connection", "data": null, "network": true, "maybe_sent": not unsent}
-	_rest_failed_at = -1.0
-	_rest_rtt = Time.get_unix_time_from_system() - sent
+		return {"error": NO_CONNECTION, "data": null, "network": true, "maybe_sent": not unsent}
+	if counts:
+		_rest_failed_at = -1.0
+		_note_rtt(Time.get_unix_time_from_system() - sent)
 	http_ok += 1
 	_learn_clock(res[2], sent)
 	var code: int = res[1]

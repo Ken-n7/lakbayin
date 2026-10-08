@@ -10,8 +10,14 @@ const BAR_H := 10.0
 
 var main: Control
 
+## No connection at launch: try the saved login again this often, up to the
+## last, for as long as it takes -- the login is still good.
+const RETRY_S := [2.0, 4.0, 8.0, 15.0]
+
 var _bar: ColorRect
 var _done := false
+var _status: Label
+var _other: Button
 
 
 func setup(_data: Dictionary) -> void:
@@ -49,10 +55,16 @@ func setup(_data: Dictionary) -> void:
 	_bar.size = Vector2(0, BAR_H)
 	track.add_child(_bar)
 
-	var loading := Art.label("Loading...", Pal.BODY, Color(1, 1, 1, 0.8),
+	_status = Art.label("Loading...", Pal.BODY, Color(1, 1, 1, 0.8),
 			HORIZONTAL_ALIGNMENT_CENTER)
-	Art.shadow(loading)
-	col.add_child(loading)
+	Art.shadow(_status)
+	col.add_child(_status)
+	# Only while waiting on the line: a way out to the Sign In form.
+	_other = Ui.button("Use another account", 190, Ui.H, Ui.SMALL)
+	_other.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_other.visible = false
+	_other.pressed.connect(func() -> void: main.open("login"))
+	col.add_child(_other)
 
 	var tw := create_tween()
 	tw.tween_property(_bar, "size:x", BAR_W, HOLD)
@@ -83,9 +95,25 @@ func skip() -> void:
 	# token before deciding, so a returning student never sees the form.
 	# Not for a tool run: the live checks leave a throwaway account's login in
 	# the tools' own file, and a screenshot tool should not open signed in as it.
-	if not Net.signed_in() and Game.profile_suffix() != "-tools":
-		await Net.restore_session()
-	if not Net.signed_in():
+	# No line is not "signed out": wait here and try again, rather than show a
+	# signed-in student the Sign In form (where signing in would fail too).
+	if (not Net.signed_in() or Net.role == "") and Game.profile_suffix() != "-tools":
+		var tries := 0
+		var err: String = await Net.restore_session()
+		while err == Net.NO_CONNECTION:
+			if not is_inside_tree():
+				return                  # "Use another account" took them on
+			var wait: float = RETRY_S[mini(tries, RETRY_S.size() - 1)]
+			tries += 1
+			_status.text = "No connection — trying again..."
+			_other.visible = true
+			await get_tree().create_timer(wait).timeout
+			if not is_inside_tree():
+				return
+			err = await Net.restore_session()
+	if not is_inside_tree():
+		return
+	if not Net.signed_in() or Net.role == "":
 		main.open("login")
 	else:
 		main.open("admin" if Net.role == "admin" else "home")
