@@ -16,7 +16,8 @@ extends Control
 
 const PANEL_W := 124.0
 ## Top edge only -- the box is a container, so it takes whatever height its
-## buttons need, and eleven of them nearly fill the 360px canvas.
+## buttons need: thirteen take 305 of the 360px canvas (drawer_test fails the
+## day they no longer fit).
 const PANEL_Y := 4.0
 const TAB := Vector2(18.0, 40.0)
 const TAB_Y := 150.0
@@ -37,6 +38,7 @@ const TOOLS := [
 	["Hero +", "_hero_bigger"],
 	["End Run", "_end_run"],
 	["Relay Off", "_relay_off"],
+	["Echo Ghost", "_echo_ghost"],
 ]
 
 var _adv: Control
@@ -184,6 +186,13 @@ func _fast_walk() -> void:
 func _relay_off() -> void:
 	Net.relay().set_off(not RelayLink.off)
 	_mark("_relay_off", RelayLink.off)
+
+
+## Your own walk as the relay gives it back, drawn as one more hero: the gap
+## is about the delay a classmate on a line like yours sees.
+func _echo_ghost() -> void:
+	RelayLink.echo = not RelayLink.echo
+	_mark("_echo_ghost", RelayLink.echo)
 
 
 func _freeze() -> void:

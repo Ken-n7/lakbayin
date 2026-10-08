@@ -58,9 +58,24 @@ func report() -> Dictionary:
 	var relay: RelayLink = Net.get("_relay")
 	if is_instance_valid(relay):
 		r["relay"] = {"up": relay.up, "host": relay.host, "rtt_ms": int(relay.rtt * 1000.0),
-			"hz": relay.hz, "snaps": relay.snaps_in, "last_close": relay.last_close}
+			"hz": relay.hz, "snaps": relay.snaps_in, "last_close": relay.last_close,
+			"echo_ms": relay.echo_ms(), "lag_ms": _relay_lag_ms()}
 	if is_instance_valid(rt):
 		r["rt"] = {"socket": rt.socket_kind(), "state": rt.get_ws_state(), "rtt_ms": int(rt.rtt * 1000.0),
 			"silent_s": snappedf(rt.silent_for(), 0.1), "opens": rt.opens, "closes": rt.closes,
 			"first_open_s": snappedf(rt.first_open_s, 0.1)}
 	return r
+
+
+## The playback buffer of the heroes this phone is playing from the relay,
+## in ms (Peers): what is shown behind is about the fastest trip plus this.
+func _relay_lag_ms() -> int:
+	var peers: Node = get_tree().get_first_node_in_group("peers")
+	if peers == null:
+		return -1
+	var lags: Array = (peers.get("_live") as Dictionary).values().filter(
+		func(g: Dictionary) -> bool: return bool(g.get("fast", false))).map(
+		func(g: Dictionary) -> float: return float(g.get("lag", 0.0)))
+	if lags.is_empty():
+		return -1
+	return int(lags.reduce(func(a: float, b: float) -> float: return a + b, 0.0) / lags.size() * 1000.0)

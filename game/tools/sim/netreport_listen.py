@@ -46,7 +46,11 @@ def _relay(r):
     if not r:
         return "-"
     if r.get("up"):
-        return f"UP {r.get('hz')}/s rtt {r.get('rtt_ms')}ms snaps {r.get('snaps')}"
+        e = r.get("echo_ms") or []
+        echo = f" echo {e[0]}/{e[1]}/{e[2]}ms (fast/med/p95)" if len(e) == 3 else ""
+        lag = r.get("lag_ms", -1)
+        shown = f" buffer {lag}ms -> others shown ~{e[0] + lag}ms behind" if len(e) == 3 and lag >= 0 else ""
+        return f"UP {r.get('hz')}/s rtt {r.get('rtt_ms')}ms snaps {r.get('snaps')}{echo}{shown}"
     return f"down ({r.get('last_close') or 'connecting'})"
 
 

@@ -28,6 +28,14 @@ const UNPUBLISHED_RETRY_S := 60.0
 ## Debug builds: the hub path only, as if the relay could not be reached --
 ## for trying the bridge on real phones (DevDrawer).
 static var off := false
+## Debug builds: this phone's own walk as it comes back from the relay, drawn
+## as one more hero ("Your echo", DevDrawer) -- the gap between you and it is
+## about what a classmate on a line like this one sees.
+static var echo := false
+const ECHO_KEEP := 200
+## Seconds each of this phone's own samples took to come back (up to the
+## relay and down again), newest last -- for NetReport.
+var echo_trips: Array[float] = []
 
 var up := false
 var rtt := 0.0
@@ -195,9 +203,19 @@ func _take_snap(heroes: Dictionary) -> void:
 		return
 	snaps_in += 1
 	var out: Array = []
+	var now := Time.get_ticks_msec() / 1000.0
 	for i: int in heroes:
 		if i == idx and _role == "player":
-			continue                    # this hero is drawn from this phone
+			# This hero is drawn from this phone; its echo only timed (and,
+			# debugging, drawn as a ghost).
+			for q: Array in heroes[i]:
+				echo_trips.append(now - int(q[0]) / 1000.0)
+			if echo_trips.size() > ECHO_KEEP:
+				echo_trips = echo_trips.slice(echo_trips.size() - ECHO_KEEP)
+			if echo:
+				out.append({"id": "echo", "name": "Your echo", "hero": _hero, "fast": true,
+					"p": (heroes[i] as Array).map(func(q: Array) -> Array: return [int(q[0]) / 1000.0, q[1], q[2]])})
+			continue
 		var who: Dictionary = _roster.get(i, {})
 		if who.is_empty():
 			continue                    # the roster is on its way
@@ -207,6 +225,15 @@ func _take_snap(heroes: Dictionary) -> void:
 		out.append({"id": str(who.get("id", "")), "hero": int(who.get("hero", 1)), "p": pts, "fast": true})
 	if not out.is_empty():
 		snap.emit(out)
+
+
+## [fastest, median, p95] echo trip in ms, or [] before any.
+func echo_ms() -> Array:
+	if echo_trips.is_empty():
+		return []
+	var s := echo_trips.duplicate()
+	s.sort()
+	return [int(s[0] * 1000.0), int(s[s.size() / 2] * 1000.0), int(s[int(s.size() * 0.95)] * 1000.0)]
 
 
 func _down(code: int, reason: String) -> void:

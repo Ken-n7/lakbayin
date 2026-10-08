@@ -94,6 +94,7 @@ func set_team_order(team_ids: Array) -> void:
 
 
 func _init() -> void:
+	add_to_group("peers")          # NetReport reads the playback buffer
 	# Y-sorted with everything else, so a hero behind a tower is behind it.
 	y_sort_enabled = true
 
