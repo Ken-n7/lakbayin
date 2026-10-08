@@ -9,6 +9,7 @@ const PORT := 47391
 var _server := TCPServer.new()
 var _peer: WebSocketPeer
 var _got: Array[String] = []
+var _bin: Array[PackedByteArray] = []
 
 
 func _initialize() -> void:
@@ -81,6 +82,18 @@ func _socket() -> void:
 		assert(ws.get_packet().get_string_from_utf8() == text.to_upper(), "client got %d bytes intact" % n)
 	print("socket: 5 / 300 / 70000 bytes each way")
 
+	# Binary both ways, told apart from text.
+	assert(ws.send(PackedByteArray([1, 2, 250])) == OK)
+	assert(await _until(func() -> bool: return _bin.size() > 0, ws))
+	assert(_bin.pop_front() == PackedByteArray([1, 2, 250]), "binary out")
+	_peer.send(PackedByteArray([9, 8, 7]), WebSocketPeer.WRITE_MODE_BINARY)
+	_peer.send_text("after")
+	assert(await _until(func() -> bool: return ws.get_available_packet_count() >= 2, ws))
+	assert(ws.get_packet() == PackedByteArray([9, 8, 7]) and not ws.was_string_packet(), "binary in")
+	assert(ws.get_packet().get_string_from_utf8() == "after" and ws.was_string_packet(), "then text")
+	_got.clear()
+	print("socket: binary")
+
 	# Several frames landing in one read come out as several packets.
 	for i in 3:
 		_peer.send_text("burst %d" % i)
@@ -144,4 +157,8 @@ func _pump() -> void:
 		return
 	_peer.poll()
 	while _peer.get_available_packet_count() > 0:
-		_got.append(_peer.get_packet().get_string_from_utf8())
+		var data := _peer.get_packet()
+		if _peer.was_string_packet():
+			_got.append(data.get_string_from_utf8())
+		else:
+			_bin.append(data)

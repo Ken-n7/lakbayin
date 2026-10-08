@@ -657,6 +657,26 @@ begin
   end if;
 end $$;
 
+-- 7b. Movement relay ---------------------------------------------------------
+-- Where the movement relay is (game/scripts/relay/RelayServer.gd, started by
+-- game/tools/relay/run.sh). One row: the relay writes its address on start
+-- (a Cloudflare quick tunnel's changes on every restart), refreshes
+-- `updated_at` every minute, and clears `url` when it stops. Phones read it
+-- when they enter a session; no row, no url or a stale one means today's
+-- path through the teacher. Safe to run again on a live project.
+create table if not exists public.relay (
+  id          int primary key default 1 check (id = 1),
+  url         text,
+  hz          int,
+  updated_at  timestamptz not null default now()
+);
+alter table public.relay enable row level security;
+drop policy if exists read_relay  on public.relay;
+drop policy if exists admin_relay on public.relay;
+create policy read_relay  on public.relay for select to authenticated using (true);
+create policy admin_relay on public.relay for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
 -- 8. Reset (commented out on purpose) ---------------------------------------
 -- Uncomment, run, then run this file again for a clean slate. Deletes every
 -- row. Accounts live in auth.users and survive -- delete those in the

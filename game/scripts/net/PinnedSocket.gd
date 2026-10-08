@@ -27,7 +27,9 @@ var _shaking := false         # TCP/TLS up, waiting for the 101 reply
 var _since := 0
 var _buf := PackedByteArray()
 var _frag := PackedByteArray()
-var _packets: Array[PackedByteArray] = []
+var _frag_text := true
+var _packets: Array = []         # [data, was text]
+var _last_text := true
 var _close_code := -1
 var _close_reason := ""
 var _rng := RandomNumberGenerator.new()
@@ -93,7 +95,23 @@ func get_available_packet_count() -> int:
 
 
 func get_packet() -> PackedByteArray:
-	return _packets.pop_front() if not _packets.is_empty() else PackedByteArray()
+	if _packets.is_empty():
+		return PackedByteArray()
+	var got: Array = _packets.pop_front()
+	_last_text = got[1]
+	return got[0]
+
+
+## As WebSocketPeer: whether the packet get_packet() last gave was text.
+func was_string_packet() -> bool:
+	return _last_text
+
+
+## As WebSocketPeer.send: binary unless told otherwise.
+func send(data: PackedByteArray, mode := WebSocketPeer.WRITE_MODE_BINARY) -> Error:
+	if _state != WebSocketPeer.STATE_OPEN:
+		return ERR_UNCONFIGURED
+	return _send(0x1 if mode == WebSocketPeer.WRITE_MODE_TEXT else 0x2, data)
 
 
 ## As WebSocketPeer: a negative code drops the line at once, anything else
@@ -235,9 +253,11 @@ func _frames() -> void:
 				data[i] = data[i] ^ mask[i & 3]
 		match b0 & 0x0F:
 			0x0, 0x1, 0x2:
+				if b0 & 0x0F != 0x0:
+					_frag_text = b0 & 0x0F == 0x1     # a continuation keeps its first frame's kind
 				_frag.append_array(data)
 				if b0 & 0x80:
-					_packets.append(_frag)
+					_packets.append([_frag, _frag_text])
 					_frag = PackedByteArray()
 			0x8:
 				var code := (data[0] << 8) | data[1] if data.size() >= 2 else 1005

@@ -230,6 +230,13 @@ func rest(method: int, path: String, body: Variant = null, prefer := "") -> Dict
 	return await _call(method, path, body, true, prefer)
 
 
+## A PostgREST or auth call made as someone else -- the movement relay
+## (RelayServer) checking a student's own token: whatever their row-level
+## security lets them see, and nothing of this device's own session.
+func rest_as(token: String, method: int, path: String) -> Dictionary:
+	return await _call(method, path, null, false, "", token)
+
+
 func _verify(email: String, code: String, type: String) -> String:
 	return await _finish(await _call(HTTPClient.METHOD_POST, "/auth/v1/verify", {
 		"type": type,
@@ -285,14 +292,14 @@ func _learn_clock(headers: PackedStringArray, sent: float) -> void:
 			return
 
 
-func _call(method: int, path: String, body: Variant, retry := true, prefer := "") -> Dictionary:
+func _call(method: int, path: String, body: Variant, retry := true, prefer := "", as_token := "") -> Dictionary:
 	if not configured():
 		return {"error": "Supabase is not configured -- see supabase/README.md", "data": null}
 	if not is_inside_tree():
 		return {"error": "Supabase client is not in the scene tree yet", "data": null}
 	var headers := [
 		"apikey: " + anon_key,
-		"Authorization: Bearer " + (access_token if access_token else anon_key),
+		"Authorization: Bearer " + (as_token if as_token != "" else access_token if access_token else anon_key),
 		"Content-Type: application/json",
 		"Prefer: return=representation" + ("," + prefer if prefer != "" else ""),
 	]
