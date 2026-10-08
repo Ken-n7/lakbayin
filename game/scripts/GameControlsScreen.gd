@@ -91,6 +91,9 @@ func setup(data: Dictionary) -> void:
 	if bool(data.get("new", false)):
 		_fresh = true
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Debug builds, `-- --hub-debug`: the live message panel (HubDebug).
+	if OS.is_debug_build() and "--hub-debug" in OS.get_cmdline_user_args():
+		_add_hub_debug.call_deferred()
 	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 
 	var box := Ui.screen_panel(self, PANEL, "Game Controls")
@@ -714,6 +717,18 @@ func _patch(fields: Dictionary) -> Dictionary:
 ## Everything on the session side follows the state from here: the code, the
 ## status line, the clock or the duration, Start and why it waits, and the
 ## two run buttons.
+## Bottom left, over the map and the panel alike: the last child drawn.
+func _add_hub_debug() -> void:
+	var dbg := HubDebug.new()
+	dbg.gc = self
+	add_child(dbg)
+	dbg.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	dbg.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	dbg.offset_left = 4.0
+	dbg.offset_bottom = -4.0
+	dbg.z_index = 20
+
+
 ## Every student's position comes through here and goes out to the class as
 ## one snapshot (PosHub) -- from the lobby, where heroes already stand on the
 ## map, until the session ends.

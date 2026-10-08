@@ -28,6 +28,8 @@ def main():
     ap.add_argument("--on-change", action="store_true",
                     help="send on turns + a heartbeat, as the app does now")
     ap.add_argument("--answer", action="store_true", help="walk, then stand and answer, repeat")
+    ap.add_argument("--bundle", type=float, default=0.0, metavar="S",
+                    help="send the path as bundles every S seconds, as the app does")
     ap.add_argument("--quiet-quiz", action="store_true", help="send nothing while answering")
     ap.add_argument("--members", choices=["", "session", "own"], default="",
                     help="member changes each phone subscribes to")
@@ -38,6 +40,7 @@ def main():
     rt.ANSWER = a.answer
     rt.QUIET_QUIZ = a.quiet_quiz
     rt.MEMBERS = a.members
+    rt.BUNDLE_S = a.bundle
 
     look = Api("look")
     look.sign_in(f"simclass{a.first:03d}@numxventure-test.dev", "letmein123")

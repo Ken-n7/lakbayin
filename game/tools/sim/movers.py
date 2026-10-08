@@ -34,6 +34,10 @@ ON_CHANGE = False
 ## answer (apply_answer, a real row change). QUIET_QUIZ: send nothing while
 ## answering (the app now); else a standing keepalive every 3s (before).
 ANSWER = False
+## Bundles, as the app sends since 2026-10-08 (AdventureScreen): the path
+## sampled every 0.1s, sent every BUNDLE_S with an overlap, every 3s standing.
+## 0: the older single positions.
+BUNDLE_S = 0.0
 QUIET_QUIZ = False
 ## Which member changes a phone gets: "session" (every classmate's, before),
 ## "own" (its own row, the app now), "" (none).
@@ -67,6 +71,7 @@ class Mover(threading.Thread):
         self._latest = {}             # the teacher: id -> latest position
         self.api = api
         self.answers = 0
+        self.bundle_bytes = 0
         self.rows_heard = 0           # classmates' progress rows inside snapshots
         self.snaps_sent = 0
         self.snaps_heard = 0
@@ -118,6 +123,10 @@ class Mover(threading.Thread):
         x, y = random.uniform(400, 2800), random.uniform(300, 1500)
         heading = random.uniform(0, 6.28)
         next_pos = next_beat = time.time()
+        next_sample = time.time()
+        path = []                     # bundle mode: [(t, x, y)]
+        moved = False
+        last_bundle = 0.0
         end = None
         while end is None or time.time() < end:
             now = time.time()
@@ -135,7 +144,7 @@ class Mover(threading.Thread):
             in_quiz = quiz_until > 0.0
             if in_quiz:
                 last_send = None      # standing: no distance piles up meanwhile
-            if in_quiz and (QUIET_QUIZ or now < next_pos):
+            if BUNDLE_S or (in_quiz and (QUIET_QUIZ or now < next_pos)):
                 pass                  # silent, or between keepalives
             elif in_quiz:
                 next_pos = now + 3.0  # a standing keepalive, as the app did
@@ -149,7 +158,7 @@ class Mover(threading.Thread):
                     self.trouble.append(f"send: {e}")
                     break
             turn = ON_CHANGE and now >= next_turn and not in_quiz
-            if self.walks and end is not None and not in_quiz and (now >= next_pos or turn):
+            if not BUNDLE_S and self.walks and end is not None and not in_quiz and (now >= next_pos or turn):
                 if turn:
                     next_turn = now + random.uniform(1.5, 4.5)
                 # Walked since the last send at 150px/s along the heading, as a
@@ -176,6 +185,35 @@ class Mover(threading.Thread):
                     self.trouble.append(f"send: {e}")
                     break
                 next_pos = now + POS_EVERY_S
+            if BUNDLE_S and self.walks and end is not None:
+                # A thumb weaving: the heading drifts every sample.
+                if not in_quiz and now >= next_sample:
+                    next_sample = now + 0.1
+                    heading += random.uniform(-0.25, 0.25)
+                    x += math.cos(heading) * 15.0
+                    y += math.sin(heading) * 15.0
+                    if not (500 < x < 2700) or not (400 < y < 1500):
+                        heading = math.atan2(950 - y, 1600 - x)
+                    path.append((now, round(x), round(y)))
+                    moved = True
+                keep = BUNDLE_S + (0.3 if BUNDLE_S <= 0.5 else 0.5)
+                while len(path) > 1 and now - path[0][0] > keep:
+                    path.pop(0)
+                due = (moved and now - last_bundle >= BUNDLE_S) or now - last_bundle >= 3.0
+                if not in_quiz and path and due:
+                    try:
+                        self._send(ws, "broadcast", {"type": "broadcast", "event": "pos", "payload": {
+                            "sid": self.session, "id": self.user, "hero": 1, "sent": now,
+                            "p": {"t": round(path[0][0], 2), "dt": 0.1,
+                                  "x": [q[1] for q in path], "y": [q[2] for q in path]}}},
+                            self.in_topic if CHANNEL == "hub" else None)
+                        self.sent += 1
+                        self.bundle_bytes += len(json.dumps(path))
+                    except Exception as e:
+                        self.trouble.append(f"send: {e}")
+                        break
+                    last_bundle = now
+                    moved = False
             if CHANNEL == "hub" and not self.walks and end is not None and now >= next_snap:
                 next_snap = now + SNAP_EVERY_S
                 if self._latest:
@@ -268,6 +306,8 @@ def report(movers, seconds):
           f"channel {CHANNEL} ({len({m.topic for m in movers})} channel(s)) ==")
     print(f"   joined: {sum(m.joined for m in movers)}/{len(movers)}")
     print(f"   positions sent: {sent}  ({sent / seconds:.0f}/s in)")
+    if BUNDLE_S and sent:
+        print(f"   bundles: avg {sum(m.bundle_bytes for m in walkers) / sent:.0f} bytes of path each")
     # Each walker's position should reach every other phone on its channel
     # (self: false).
     by_topic = {}
@@ -287,7 +327,7 @@ def report(movers, seconds):
           if ratio else "   delivered: nothing expected")
     lag = sorted(x for m in movers for x in m.lag)
     if lag:
-        print(f"   lag send->heard: median {statistics.median(lag) * 1000:.0f}ms  "
+        print(f"   lag send->heard: min {lag[0] * 1000:.0f}ms  median {statistics.median(lag) * 1000:.0f}ms  "
               f"p95 {lag[int(len(lag) * 0.95) - 1] * 1000:.0f}ms  max {lag[-1] * 1000:.0f}ms")
     db = sum(m.db_changes for m in movers)
     print(f"   presence messages: {sum(m.presence_msgs for m in movers)}  "

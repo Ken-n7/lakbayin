@@ -324,6 +324,9 @@ func _process(delta: float) -> void:
 			print("RT<< ", text.substr(0, 400))
 		var msg: Variant = JSON.parse_string(text)
 		if msg is Dictionary:
+			if debug:
+				_tally(received, _kind(str(msg.get("event", "")), msg.get("payload")),
+					str(msg.get("topic", "")), msg.get("payload"), "<<")
 			_handle(msg)
 
 
@@ -440,6 +443,54 @@ func _handle(msg: Dictionary) -> void:
 						_join_pos(pt))
 
 
+## --- Debug counters (HubDebug) ---------------------------------------------
+## Off unless a debug panel turns them on: what came in and went out, by
+## kind, and the last messages for the panel's log. Nothing is kept otherwise.
+var debug := false
+var received := {}          # kind -> count since the panel last looked
+var sent := {}
+var log_lines: Array[String] = []
+const LOG_KEEP := 14
+
+
+## "pos", "snap", "postgres_changes", "presence_diff", "heartbeat"...
+static func _kind(event: String, payload: Variant) -> String:
+	if event == "broadcast" and payload is Dictionary:
+		return str((payload as Dictionary).get("event", "broadcast"))
+	return event
+
+
+func _tally(into: Dictionary, kind: String, topic: String, payload: Variant, dir: String) -> void:
+	into[kind] = int(into.get(kind, 0)) + 1
+	if kind == "heartbeat" or kind == "phx_reply":
+		return
+	var what := ""
+	var inner: Variant = (payload as Dictionary).get("payload") if payload is Dictionary else null
+	match kind:
+		"pos":
+			if inner is Dictionary and inner.get("p") is Dictionary:
+				var xs: Array = inner.p.get("x", [])
+				var ys: Array = inner.p.get("y", [])
+				what = "%s %d pts -> (%d,%d)" % [str(inner.get("id", "")).left(6), xs.size(),
+					int(xs[-1]) if not xs.is_empty() else 0, int(ys[-1]) if not ys.is_empty() else 0]
+			elif inner is Dictionary:
+				what = "%s (%d,%d)" % [str(inner.get("id", "")).left(6),
+					int(inner.get("x", 0)), int(inner.get("y", 0))]
+		"snap":
+			if inner is Dictionary:
+				what = "%d heroes, %d rows" % [(inner.get("p", []) as Array).size(),
+					(inner.get("r", []) as Array).size()]
+		"postgres_changes":
+			var d: Variant = (payload as Dictionary).get("data") if payload is Dictionary else null
+			if d is Dictionary:
+				what = "%s %s" % [d.get("type", ""), d.get("table", "")]
+	var short := topic.trim_prefix(TOPIC).get_slice(":", 1)
+	log_lines.append("%s %s %-6s %-5s %s" % [Time.get_time_string_from_system(), dir,
+		kind.left(6), short.left(5), what])
+	if log_lines.size() > LOG_KEEP:
+		log_lines.pop_front()
+
+
 func _presence_add(joins: Variant) -> void:
 	if not (joins is Dictionary):
 		return
@@ -502,6 +553,8 @@ func _send(topic: String, event: String, payload: Dictionary) -> void:
 	_ref += 1
 	if OS.get_environment("RT_DEBUG") != "":
 		print("RT>> ", event, " ", JSON.stringify(payload).substr(0, 300))
+	if debug:
+		_tally(sent, _kind(event, payload), topic, payload, ">>")
 	_ws.send_text(JSON.stringify({
 		"topic": topic,
 		"event": event,

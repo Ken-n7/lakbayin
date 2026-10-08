@@ -27,19 +27,34 @@ const FAN_STAGGER := 12.0
 ## A position older than this is a phone that has gone away; fall back to the
 ## circle rather than leave a hero frozen mid-road.
 const STALE_S := 12.0
-## Heroes are drawn DELAY_S in the past, between two positions that have both
-## already arrived -- so a message landing late or two landing together, which
-## is how classroom WiFi delivers them, changes nothing on screen. Chasing the
-## newest position instead stuttered: catch up, stand, jump. Past the newest
-## one it walks on at the last velocity for at most PREDICT_S, so a lost
-## "stopped" cannot send a hero off across the sea.
-## Positions come on every turn and stop, and a heartbeat a second apart
-## walking straight (AdventureScreen.POS_EVERY_S). Drawn DELAY_S back; between
-## heartbeats the walk carries on at the last velocity for up to PREDICT_S,
-## which covers the second plus the trip through the teacher's snapshots.
-const DELAY_S := 0.6
-const PREDICT_S := 1.2
-const KEEP := 12            # positions held per player: several seconds of walking
+## Playback, the way a video call plays sound: each player's walk arrives as
+## a bundle of their path every AdventureScreen.BUNDLE_S and is played
+## back `lag` seconds behind -- every turn as it was walked, nothing guessed.
+## Guessing between single positions jumped whenever a real thumb weaved.
+##
+## `lag` is per player and counts from the fastest a bundle of theirs has come
+## (`offset`): it starts at LAG_START and grows by LAG_GROW whenever playback
+## reaches the end of what has arrived (that phone's line is slower than
+## allowed for), then shrinks by LAG_SHRINK for every LAG_SETTLE_S without.
+## Playback never jumps: behind where it should be it runs CATCH_UP times
+## faster, ahead of it EASE times; out of path it carries on along the last
+## step for CARRY_S, then waits for more.
+## Sized for a bundle every 0.33s (AdventureScreen.BUNDLE_S) and the trip
+## through the teacher: ~0.9s behind real time to start. Grows gently and
+## comes back quickly -- at +0.25 / -0.05 per 15s a few hiccups left it near
+## the top for minutes (client: "the delay is too long", 2026-10-08).
+const LAG_START := 0.75
+const LAG_MIN := 0.5
+const LAG_MAX := 1.3
+const LAG_GROW := 0.15
+const LAG_SHRINK := 0.05
+const LAG_SETTLE_S := 5.0
+const CATCH_UP := 1.15
+const EASE := 0.88
+const CARRY_S := 0.3
+const KEEP_S := 8.0          # seconds of path held per player
+## Slower than this between two points is standing, not walking.
+const STILL_PX_S := 15.0
 ## Further off than this is a teleport or a rejoin: snap, do not glide.
 const SNAP_DIST := 240.0
 const HERO_SCALE := 1.6           # MapCfg.UNIT_SCALE; not named, see _make()
@@ -51,7 +66,8 @@ const TAG_Y := -58.0
 
 var _markers := {}          # profile_id -> Node2D
 var _team_order: Array = []
-## profile_id -> {pos, face, moving, hero, name, team, t}
+## profile_id -> {pts: [[sender time, Vector2]], offset, lag, play, dry, settled,
+## face, hero, t (when a bundle last came)}
 var _live := {}
 var _roster := {}           # profile_id -> the last row refresh() saw
 var _anchors: Array = []
@@ -126,46 +142,73 @@ func refresh(rows: Array, anchors: Array, gate: Vector2, me: String) -> void:
 		marker.modulate.a = 0.45 if bool(row.get("eliminated", false)) else 1.0
 
 
-## A position off the socket. Somebody who joined since the last refresh is
-## drawn from the message itself until the roster catches up.
+## A bundle off the socket: a stretch of the player's path. Somebody who
+## joined since the last refresh is drawn from it until the roster catches up.
 ##
-## `ts` is the sender's own clock. Its offset from ours is taken as the
-## smallest gap seen (the fastest a message has ever come), which is steady
-## while network delay jumps about -- that steadiness is the smoothness.
+## Times are the sender's own clock; its offset from ours is the smallest gap
+## seen between a bundle's last point and its arrival -- the fastest trip,
+## steady while network delay jumps about. A single position (an older sender)
+## is a one-point bundle.
 func move(id: String, data: Dictionary) -> void:
 	if id == _me or id == "":
 		return
 	var now := Time.get_ticks_msec() / 1000.0
-	var ts := float(data.get("ts", now))
+	var incoming := _points(data, now)
+	if incoming.is_empty():
+		return
 	var got: Dictionary = _live.get(id, {})
-	var samples: Array = got.get("samples", [])
+	var pts: Array = got.get("pts", [])
 	# A restarted sender's clock starts again from zero: start over with it.
-	if not samples.is_empty() and ts < float(samples[-1].ts):
-		samples = []
+	if not pts.is_empty() and float(incoming[-1][0]) < float(pts[-1][0]) - 30.0:
+		pts = []
 		got.erase("offset")
-	samples.append({
-		"ts": ts,
-		"pos": Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))),
-		"vel": Vector2(float(data.get("vx", 0.0)), float(data.get("vy", 0.0))),
-		"face": str(data.get("face", "down")),
-		"moving": bool(data.get("moving", false)),
-	})
-	if samples.size() > KEEP:
-		samples.pop_front()
-	got["samples"] = samples
-	got["offset"] = minf(float(got.get("offset", INF)), now - ts)
-	got["hero"] = int(data.get("hero", 1))
+		got.erase("play")
+	for q: Array in incoming:
+		# Bundles overlap the one before: only what is new.
+		if pts.is_empty() or float(q[0]) > float(pts[-1][0]) + 0.001:
+			pts.append(q)
+	while pts.size() > 2 and float(pts[-1][0]) - float(pts[0][0]) > KEEP_S:
+		pts.pop_front()
+	got["pts"] = pts
+	got["offset"] = minf(float(got.get("offset", INF)), now - float(incoming[-1][0]))
+	if not got.has("lag"):
+		got["lag"] = LAG_START
+		got["settled"] = now
+		got["dry"] = false
+		got["face"] = "down"
+	got["hero"] = int(data.get("hero", got.get("hero", 1)))
 	got["t"] = now
 	_live[id] = got
 
 	var marker: Node2D = _markers.get(id)
 	if marker == null:
 		marker = _make(id, str(data.get("name", "?")), str(data.get("team", "")))
-		marker.set_meta("fallback", samples[-1].pos)
-		marker.position = samples[-1].pos
+		marker.set_meta("fallback", pts[-1][1])
+		marker.position = pts[0][1]
 		_markers[id] = marker
 		add_child(marker)
 	_dress(marker, got.hero)
+
+
+## [[sender time, Vector2]] from a message: a bundle {t, dt, x: [], y: []}, a
+## list of [t, x, y], or one position {ts, x, y}.
+static func _points(data: Dictionary, now: float) -> Array:
+	var out: Array = []
+	var p: Variant = data.get("p")
+	if p is Dictionary:
+		var t0 := float(p.get("t", now))
+		var dt := float(p.get("dt", 0.1))
+		var xs: Array = p.get("x", [])
+		var ys: Array = p.get("y", [])
+		for i in mini(xs.size(), ys.size()):
+			out.append([t0 + i * dt, Vector2(float(xs[i]), float(ys[i]))])
+	elif p is Array:
+		for q: Variant in p:
+			if q is Array and (q as Array).size() >= 3:
+				out.append([float(q[0]), Vector2(float(q[1]), float(q[2]))])
+	elif data.has("x"):
+		out.append([float(data.get("ts", now)), Vector2(float(data.x), float(data.get("y", 0.0)))])
+	return out
 
 
 func _process(delta: float) -> void:
@@ -183,7 +226,7 @@ func _process(delta: float) -> void:
 		var goal: Vector2 = marker.get_meta("fallback")
 		var at := {"face": "down", "moving": false}
 		if _is_live(id):
-			at = _sample_at(_live[id], now - float(_live[id].offset) - DELAY_S)
+			at = _play(_live[id], now, delta)
 			goal = at.pos
 		if marker.position.distance_to(goal) > SNAP_DIST or _is_live(id):
 			marker.position = goal
@@ -198,24 +241,84 @@ func _process(delta: float) -> void:
 			spr.frame = 1
 
 
-## Where a player was at sender time `rt`: between the two positions either
-## side of it, or walked on from the newest for at most PREDICT_S.
-static func _sample_at(live: Dictionary, rt: float) -> Dictionary:
-	var samples: Array = live.samples
-	var last: Dictionary = samples[-1]
-	if rt >= float(last.ts):
-		var ahead := minf(rt - float(last.ts), PREDICT_S)
-		return {"pos": last.pos + last.vel * ahead, "face": last.face,
-			"moving": last.moving and ahead < PREDICT_S}
-	for i in range(samples.size() - 1, 0, -1):
-		var a: Dictionary = samples[i - 1]
-		var b: Dictionary = samples[i]
-		if rt >= float(a.ts):
-			var span := maxf(float(b.ts) - float(a.ts), 0.001)
-			var w := clampf((rt - float(a.ts)) / span, 0.0, 1.0)
-			return {"pos": (a.pos as Vector2).lerp(b.pos, w), "face": b.face,
-				"moving": a.moving or b.moving}
-	return {"pos": samples[0].pos, "face": samples[0].face, "moving": false}
+## One frame of a player's playback: move their clock on, steered towards
+## `lag` behind, and where that puts them on their path.
+static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
+	var pts: Array = got.pts
+	var newest := float(pts[-1][0])
+	var target: float = now - float(got.offset) - float(got.lag)
+	# First sight, or back after a long gap: start where it should be.
+	if not got.has("play") or absf(target - float(got.play)) > 3.0:
+		got["play"] = target
+	var off: float = target - float(got.play)
+	var rate := CATCH_UP if off > 0.1 else (EASE if off < -0.1 else 1.0)
+	var next: float = float(got.play) + delta * rate
+	var walking := _speed_at(pts, newest) > STILL_PX_S
+	if next > newest + CARRY_S:
+		next = newest + CARRY_S
+	# Out of path while they were walking: their line is slower than allowed
+	# for. A little more buffer from now on -- once per running dry.
+	if next > newest and walking:
+		if not bool(got.dry):
+			got["dry"] = true
+			got["lag"] = minf(float(got.lag) + LAG_GROW, LAG_MAX)
+			got["settled"] = now
+	elif next <= newest:
+		got["dry"] = false
+	if now - float(got.settled) > LAG_SETTLE_S and float(got.lag) > LAG_MIN:
+		got["lag"] = maxf(float(got.lag) - LAG_SHRINK, LAG_MIN)
+		got["settled"] = now
+	got["play"] = next
+	var at := _path_at(pts, next)
+	if at.moving:
+		got["face"] = at.face
+	else:
+		at.face = got.face
+	return at
+
+
+## Where a path puts a player at sender time `t`: between the two points
+## either side, or on along the last step for at most CARRY_S.
+static func _path_at(pts: Array, t: float) -> Dictionary:
+	if pts.size() == 1 or t <= float(pts[0][0]):
+		return {"pos": pts[0][1] if t <= float(pts[0][0]) else pts[-1][1], "face": "down", "moving": false}
+	var n := pts.size()
+	if t >= float(pts[-1][0]):
+		var a: Array = pts[n - 2]
+		var b: Array = pts[n - 1]
+		var vel := _vel(a, b)
+		var ahead := minf(t - float(b[0]), CARRY_S)
+		return {"pos": (b[1] as Vector2) + vel * ahead, "face": _face(vel),
+			"moving": vel.length() > STILL_PX_S and ahead < CARRY_S}
+	var lo := 0
+	var hi := n - 1
+	while hi - lo > 1:
+		var mid := (lo + hi) / 2
+		if float(pts[mid][0]) <= t:
+			lo = mid
+		else:
+			hi = mid
+	var p: Array = pts[lo]
+	var q: Array = pts[hi]
+	var w := clampf((t - float(p[0])) / maxf(float(q[0]) - float(p[0]), 0.001), 0.0, 1.0)
+	var v := _vel(p, q)
+	return {"pos": (p[1] as Vector2).lerp(q[1], w), "face": _face(v), "moving": v.length() > STILL_PX_S}
+
+
+static func _vel(a: Array, b: Array) -> Vector2:
+	return ((b[1] as Vector2) - (a[1] as Vector2)) / maxf(float(b[0]) - float(a[0]), 0.001)
+
+
+static func _speed_at(pts: Array, t: float) -> float:
+	if pts.size() < 2:
+		return 0.0
+	return _vel(pts[-2], pts[-1]).length()
+
+
+static func _face(v: Vector2) -> String:
+	if absf(v.x) >= absf(v.y):
+		return "right" if v.x > 0.0 else "left"
+	return "down" if v.y > 0.0 else "up"
 
 
 func _is_live(id: String) -> bool:
@@ -223,7 +326,7 @@ func _is_live(id: String) -> bool:
 
 
 func _live_pos(id: String) -> Vector2:
-	return _live[id].samples[-1].pos
+	return _live[id].pts[-1][1]
 
 
 func _done(row: Dictionary) -> int:

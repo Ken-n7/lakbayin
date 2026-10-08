@@ -237,17 +237,38 @@ func _init() -> void:
 	P.move("me", {"x": 1.0, "y": 2.0})
 	assert(not P._markers.has("me"), "your own echo is not a second you")
 
-	# Drawn in the past, between two positions: halfway in time is halfway there,
-	# and past the newest it walks on only briefly.
+	# Played back along the path that was walked: between two points halfway
+	# in time is halfway there, and past the newest it walks on only briefly.
 	var PeersScript: GDScript = load("res://scripts/map/Peers.gd")
-	var trail := {"samples": [
-		{"ts": 1.0, "pos": Vector2(0, 0), "vel": Vector2(100, 0), "face": "right", "moving": true},
-		{"ts": 1.2, "pos": Vector2(20, 0), "vel": Vector2(100, 0), "face": "right", "moving": true}]}
-	assert(PeersScript._sample_at(trail, 1.1).pos == Vector2(10, 0), "interpolates between positions")
-	assert(PeersScript._sample_at(trail, 1.3).pos.is_equal_approx(Vector2(30, 0)), "walks on past the newest")
-	# 20 + 100 px/s for PREDICT_S, read off Peers rather than copied here.
-	assert(PeersScript._sample_at(trail, 9.0).pos.is_equal_approx(
-		Vector2(20.0 + 100.0 * PeersScript.PREDICT_S, 0)), "but only for PREDICT_S")
+	var bundle: Array = PeersScript._points({"p": {"t": 5.0, "dt": 0.1, "x": [0, 15, 30], "y": [7, 7, 7]}}, 0.0)
+	assert(bundle.size() == 3 and is_equal_approx(float(bundle[2][0]), 5.2)
+		and bundle[2][1] == Vector2(30, 7), "a bundle is its points, a step apart: %s" % str(bundle))
+	var walk: Array = []
+	for i in 21:
+		walk.append([i * 0.1, Vector2(i * 15.0, 0)])       # 150 px/s for 2s
+	assert(PeersScript._path_at(walk, 0.55).pos.is_equal_approx(Vector2(82.5, 0)), "between two points")
+	assert(PeersScript._path_at(walk, 2.1).pos.is_equal_approx(Vector2(315, 0)), "on along the last step")
+	assert(PeersScript._path_at(walk, 9.0).pos.is_equal_approx(
+		Vector2(300.0 + 150.0 * PeersScript.CARRY_S, 0)), "but only for CARRY_S")
+	# The next second's path arrives late: playback runs out, waits, and goes
+	# on -- never a jump, only ever a step at walking pace (or the catch-up).
+	var got := {"pts": walk.duplicate(), "offset": 0.0, "lag": PeersScript.LAG_START,
+		"settled": 0.0, "dry": false, "face": "down"}
+	var last := Vector2.INF
+	var worst := 0.0
+	var clock := 2.0
+	for frame in 240:                                    # 4s at 60 frames a second
+		clock += 1.0 / 60.0
+		if frame == 150:
+			for i in range(21, 41):
+				got.pts.append([i * 0.1, Vector2(i * 15.0, 0)])
+		var at: Dictionary = PeersScript._play(got, clock, 1.0 / 60.0)
+		if last != Vector2.INF:
+			worst = maxf(worst, (at.pos as Vector2).distance_to(last))
+		last = at.pos
+	assert(worst <= 150.0 * PeersScript.CATCH_UP / 60.0 + 0.5,
+		"playback never jumps: %.1f px in one frame" % worst)
+	assert(float(got.lag) > PeersScript.LAG_START, "running dry buys more buffer: %.2f" % float(got.lag))
 
 	# A refresh updates heroes where they stand rather than rebuilding them --
 	# rebuilding reset every walk cycle on every answer anyone gave.

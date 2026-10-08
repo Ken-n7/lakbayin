@@ -189,34 +189,37 @@ func _sync_session() -> void:
 	_refresh_peers()
 
 
-## Where this hero is, for everybody else's board. Sent a few times a second
-## while walking and every few seconds standing still, so someone who opens
-## the map late still sees who is standing where.
+## Where this hero is, for everybody else's board: the path walked, recorded
+## here every SAMPLE_S and sent as one bundle every BUNDLE_S. The other boards
+## play it back about two seconds behind (Peers) -- every turn as it was walked,
+## nothing guessed. Sending single positions and guessing in between made the
+## heroes jump whenever a real thumb weaved (client, 2026-10-08).
 ##
-## Through the teacher (PosHub): each position goes on this player's own
-## channel (`Realtime.in_topic`), which only the teacher joins, and comes back
-## to everyone inside the teacher's snapshots (`snap_topic`). Sent to the whole
-## class directly, every position reached every phone, and a class of 30 was
-## cut off by Supabase's free tier. Measured (tools/sim/classroom.py --move
-## --channel hub): 30 students at 0.5s, snapshots at 0.25s, 99-100% delivered,
-## nothing cut. If the teacher's screen is gone, no snapshots come and heroes
-## fall back to their towers (Peers.STALE_S).
-## Sent when it changes, not on a clock: a hero walking straight is where the
-## other boards' guess from the last velocity is already right (Peers), so a
-## straight walk needs only a heartbeat, POS_EVERY_S. A turn, a change of pace
-## or a stop -- the velocity off by more than TURN_PX_S -- goes out at once,
-## but no faster than POS_TURN_S, or a weaving thumb is a flood. Standing: a
-## keepalive.
-const POS_EVERY_S := 1.0
-const POS_TURN_S := 0.3
-const POS_IDLE_S := 3.0
-## ~13 degrees at walking speed: a wobbling thumb is not a turn.
-const TURN_PX_S := 35.0
+## Through the teacher (PosHub): each bundle goes on this player's own channel
+## (`Realtime.in_topic`), which only the teacher joins, and comes back to
+## everyone inside the teacher's snapshots (`snap_topic`) -- a class of 30 sent
+## straight to everyone was cut off by Supabase's free tier. If the teacher's
+## screen is gone, no snapshots come and heroes fall back to their towers.
+##
+## Each bundle repeats the last BUNDLE_OVERLAP_S of the one before, so one lost
+## or late bundle leaves no gap. Standing still: a bundle every STILL_EVERY_S,
+## so someone who opens the map late still sees who is standing where.
+## A third of a second, the teacher's snapshot rate (PosHub.SNAP_S): a bundle
+## a second played back ~1.8-2.5s behind, smooth but too late to read as "now"
+## (client, 2026-10-08); half a second ~1.2s. ~0.9s behind at this rate, ~195
+## realtime messages a second for 30 walking and answering, ~275 all walking
+## (tools/sim join_and_walk.py --bundle 0.33).
+const SAMPLE_S := 0.1
+const BUNDLE_S := 0.33
+const BUNDLE_OVERLAP_S := 0.3
+const STILL_EVERY_S := 3.0
 var _my_team := ""
-var _pos_clock := 0.0
-var _pos_idle := 0.0
-var _pos_prev := Vector2.INF     # last frame's position, for the velocity
-var _vel_sent := Vector2.ZERO
+## The path not yet out of reach of the next bundle: [sender time, x, y], one
+## every SAMPLE_S.
+var _path: Array = []
+var _sample_clock := 0.0
+var _bundle_clock := 0.0
+var _moved_since_send := false
 ## The line as Net.connection() last read it: "good", "weak" or "offline".
 ## Read twice a second (_watch_connection), shown under the top bar, and what
 ## holds back positions, new questions and Rescue while it is bad -- the way a
@@ -228,50 +231,47 @@ var _conn_clock := 0.0
 func _share_position(delta: float) -> void:
 	if Game.session_id == "" or player == null:
 		return
-	# Answering a question: nothing to send -- the hero stands at the tower,
-	# and Peers puts a quiet hero there on everyone's board (STALE_S). The
-	# moment it closes, one goes out.
-	# Offline: nothing would arrive, so nothing is queued up to burst out on
-	# the way back. Same as a question: one goes out once the line is back.
+	# Answering a question: nothing to send -- the hero stands at the tower on
+	# everyone's board. Offline: nothing would arrive. Either way the first
+	# bundle after carries the hero on from wherever they are then.
 	if (_overlay != null and is_instance_valid(_overlay)) or _conn == "offline":
-		_pos_idle = POS_IDLE_S
+		_bundle_clock = STILL_EVERY_S
 		return
-	_pos_clock += delta
-	_pos_idle += delta
-	var vel := Vector2.ZERO
-	if _pos_prev != Vector2.INF and delta > 0.0:
-		vel = (player.position - _pos_prev) / delta
-	_pos_prev = player.position
-	# A weak line gets half as much: a turn no sooner than twice the usual
-	# gap, a straight walk every other second.
-	var slow := 2.0 if _conn == "weak" else 1.0
-	var turned := vel.distance_to(_vel_sent) > TURN_PX_S
-	var due := (turned and _pos_clock >= POS_TURN_S * slow) \
-		or (vel != Vector2.ZERO and _pos_clock >= POS_EVERY_S * slow) \
-		or _pos_idle >= POS_IDLE_S
-	if not due:
+	var now := Time.get_ticks_msec() / 1000.0
+	_sample_clock -= delta
+	if _sample_clock <= 0.0:
+		_sample_clock += SAMPLE_S
+		if _sample_clock < 0.0:
+			_sample_clock = SAMPLE_S
+		var x := roundi(player.position.x)
+		var y := roundi(player.position.y)
+		if not _path.is_empty() and (int(_path[-1][1]) != x or int(_path[-1][2]) != y):
+			_moved_since_send = true
+		_path.append([now, x, y])
+	# A weak line gets half as many bundles, each covering twice as long.
+	var every := BUNDLE_S * (2.0 if _conn == "weak" else 1.0)
+	var keep := every + BUNDLE_OVERLAP_S
+	while _path.size() > 1 and now - float(_path[0][0]) > keep:
+		_path.pop_front()
+	_bundle_clock += delta
+	if not ((_moved_since_send and _bundle_clock >= every) or _bundle_clock >= STILL_EVERY_S):
 		return
-	_pos_clock = 0.0
-	_pos_idle = 0.0
-	_vel_sent = vel
-	var spr: AnimatedSprite2D = player.get_node("Spr")
+	if _path.is_empty():
+		return
+	_bundle_clock = 0.0
+	_moved_since_send = false
+	# Compact: the first sample's time and the step, then the xs and ys --
+	# the samples are SAMPLE_S apart, so their times need not be sent.
+	var xs: Array = []
+	var ys: Array = []
+	for q: Array in _path:
+		xs.append(q[1])
+		ys.append(q[2])
 	Net.realtime().send_position(Realtime.in_topic(Game.session_id, Net.user_id), {
 		"sid": Game.session_id,
 		"id": Net.user_id,
-		"name": Net.username,
-		"team": _my_team,
 		"hero": Game.hero_id,
-		# Whole pixels and two decimals of a second: the decimals a float
-		# carries were most of every message, for nothing anyone can see.
-		"x": roundi(player.position.x),
-		"y": roundi(player.position.y),
-		# The sender's own clock, so the other boards can space positions by
-		# when they happened rather than by when the network delivered them.
-		"ts": snappedf(Time.get_ticks_msec() / 1000.0, 0.01),
-		"vx": roundi(vel.x),
-		"vy": roundi(vel.y),
-		"face": str(spr.animation),
-		"moving": vel.length() > 1.0,
+		"p": {"t": snappedf(float(_path[0][0]), 0.01), "dt": SAMPLE_S, "x": xs, "y": ys},
 	})
 
 

@@ -17,13 +17,13 @@ extends Node
 ## If it goes, no snapshots come and the phones' heroes fall back to their
 ## towers (Peers.STALE_S); answers and gems never pass through here.
 
-## Three a second: each phone's positions already come a second apart walking
-## straight (AdventureScreen.POS_EVERY_S), so a fourth bought ~0.1s of lag for
-## 30 more deliveries a second.
+## Three a second: each phone's path comes a bundle every half second
+## (AdventureScreen.BUNDLE_S); a third of a second is the most one waits here.
 const SNAP_S := 1.0 / 3.0
-## What a phone needs of a position: who, where, which way. Its name and team
-## come with the roster (Peers.refresh), the session from the channel.
-const KEEP_KEYS := ["id", "hero", "x", "y", "vx", "vy", "ts", "face", "moving", "sent"]
+## What a phone needs of a message: who, their path (`p`, a bundle), or a lone
+## position from an older sender. Name and team come with the roster
+## (Peers.refresh), the session from the channel.
+const KEEP_KEYS := ["id", "hero", "p", "x", "y", "ts", "sent"]
 
 var _sid := ""
 var _players: Array = []
@@ -36,6 +36,13 @@ var _moved := {}
 var _rows := {}
 const ROW_KEYS := ["profile_id", "team_id", "items_done", "gems", "eliminated"]
 var _clock := 0.0
+## For HubDebug: totals since the hub started, and each player's last position
+## (when it came in, where).
+var pos_in := 0
+var snaps_out := 0
+var heroes_out := 0
+var rows_out := 0
+var last_seen := {}         # profile id -> [ticks_msec, x, y]
 
 
 func _ready() -> void:
@@ -95,6 +102,12 @@ func _on_broadcast(event: String, data: Dictionary) -> void:
 			if data.has(k):
 				slim[k] = data[k]
 		_moved[str(data.get("id", ""))] = slim
+		pos_in += 1
+		var at := Vector2(float(data.get("x", 0)), float(data.get("y", 0)))
+		var p: Variant = data.get("p")
+		if p is Dictionary and not (p.get("x", []) as Array).is_empty():
+			at = Vector2(float(p.x[-1]), float(p.y[-1]))
+		last_seen[str(data.get("id", ""))] = [Time.get_ticks_msec(), int(at.x), int(at.y)]
 
 
 func _process(delta: float) -> void:
@@ -108,6 +121,9 @@ func _process(delta: float) -> void:
 	if not _rows.is_empty():
 		snap["r"] = _rows.values()
 	Net.realtime().send_position(Realtime.snap_topic(_sid), snap, "snap")
+	snaps_out += 1
+	heroes_out += _moved.size()
+	rows_out += _rows.size()
 	_moved = {}
 	_rows = {}
 
