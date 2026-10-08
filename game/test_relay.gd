@@ -53,6 +53,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_codec()
+	_host()
 	relay = RelayServer.new()
 	relay.check = Stub.new()
 	relay.hz = 20
@@ -62,6 +63,22 @@ func _run() -> void:
 	relay.stop()
 	print("test_relay: all assertions passed")
 	quit()
+
+
+## The backup relay (RelayHost): its tunnel's address read out of a real
+## cloudflared log (JSON lines, beside Cloudflare's own links), and cloudflared
+## found where this machine has it.
+func _host() -> void:
+	var log := ('{"level":"info","message":"Requesting new quick Tunnel on trycloudflare.com..."}\n'
+		+ '{"level":"info","message":"+----------------------------+"}\n'
+		+ '{"level":"info","message":"|  https://literary-journalists-slim-deputy.trycloudflare.com  |"}\n'
+		+ '{"level":"info","message":"See https://www.cloudflare.com/website-terms/"}\n')
+	assert(RelayHost.address_in(log) == "wss://literary-journalists-slim-deputy.trycloudflare.com")
+	assert(RelayHost.address_in('{"message":"Requesting new quick Tunnel on trycloudflare.com..."}') == "",
+		"no address before the tunnel has one")
+	var cf := RelayHost.cloudflared()
+	assert(cf == "" or FileAccess.file_exists(cf), "cloudflared found: " + cf)
+	assert(not RelayHost.enabled, "never hosts headless (tests, tools)")
 
 
 func _codec() -> void:

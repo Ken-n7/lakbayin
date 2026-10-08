@@ -134,7 +134,7 @@ func _dial() -> void:
 		return
 	_dialing = true
 	var session := _session
-	var url := await _published()
+	var url := await published()
 	if url == "" or session != _session:
 		_dialing = false
 		if session == _session:
@@ -164,8 +164,9 @@ func _dial() -> void:
 
 
 ## The relay's address from Supabase, "" if none is published or it has not
-## been refreshed lately (the laptop went off without clearing it).
-func _published() -> String:
+## been refreshed lately (the laptop went off without clearing it). Also
+## RelayHost's cue: "" is when the teacher's laptop steps in.
+func published() -> String:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET, "/rest/v1/relay?select=url,updated_at")
 	if got.error != "" or not (got.data is Array) or (got.data as Array).is_empty():
 		return ""

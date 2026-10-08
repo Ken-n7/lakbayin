@@ -718,10 +718,14 @@ func _patch(fields: Dictionary) -> Dictionary:
 ## one snapshot (PosHub) -- from the lobby, where heroes already stand on the
 ## map, until the session ends.
 var _hub: PosHub = null
+var _relay_host: RelayHost = null
 func _feed_hub(state: String) -> void:
 	if state == "ended":
 		if _hub != null:
 			_hub.stop()
+		if _relay_host != null:
+			_relay_host.queue_free()        # lets the relay row go (RelayHost.stop)
+			_relay_host = null
 		Net.relay().leave()
 		return
 	if _hub == null:
@@ -729,9 +733,13 @@ func _feed_hub(state: String) -> void:
 		add_child(_hub)
 	_hub.follow(str(_session.get("id", "")), _lobby.players.keys())
 	# The movement relay too, as the teacher: the map's students, and the
-	# hub's bridge for any phone that cannot reach the relay (PosHub).
+	# hub's bridge for any phone that cannot reach the relay (PosHub). And this
+	# laptop as its backup, should the home relay be down (RelayHost).
 	if str(_session.get("id", "")) != "":
 		Net.relay().join(str(_session.get("id", "")), "teacher")
+		if _relay_host == null and RelayHost.enabled:
+			_relay_host = RelayHost.new()
+			add_child(_relay_host)
 
 
 func _refresh_state() -> void:
