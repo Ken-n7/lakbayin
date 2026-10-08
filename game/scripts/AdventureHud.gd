@@ -15,11 +15,10 @@ extends RefCounted
 
 var adv: Control
 var hud_layer: CanvasLayer   # the board furniture
-var ui_layer: CanvasLayer    # overlays and the dev drawer, over the top of it
+var ui_layer: CanvasLayer    # overlays, over the top of it
 
 var prompt: Label
 var joystick: Node2D = null
-var dev: Control = null      # the cheat drawer, debug builds only
 
 var _gems: Label
 var _time: Label
@@ -139,12 +138,6 @@ func build() -> void:
 	hero_pointer.visible = false
 	hero_pointer.pressed.connect(func() -> void: adv.end_look())
 	hud_layer.add_child(hero_pointer)
-	# The cheat drawer, and only where cheating is free: a release export never
-	# builds the node, so there is nothing in it to reach.
-	if OS.is_debug_build():
-		dev = preload("res://scripts/DevDrawer.gd").new()
-		ui_layer.add_child(dev)
-		dev.setup(adv)
 
 
 # --- The top bar ------------------------------------------------------------
@@ -343,7 +336,9 @@ func _build_pad() -> void:
 	# Kept a thumb's width off the bottom edge: that strip is Android's
 	# swipe-up-home gesture zone, immersive mode or not.
 	joystick = preload("res://scripts/Joystick.gd").new()
-	joystick.ignore = pointer_hit
+	# The arrow back to the hero, and the dev panel: the stick takes touches
+	# before any button, so it has to be told what is not its.
+	joystick.ignore = func(at: Vector2) -> bool: return pointer_hit(at) or DevUi.owns(adv.get_tree(), at)
 	pad.add_child(joystick)
 	# Measured in from the right edge, not from 640: `keep_height` makes the
 	# canvas ~800 wide on a 20:9 phone, and fixed coordinates left GO
@@ -409,10 +404,10 @@ func set_crib(on: bool) -> void:
 		_crib_tw.tween_callback(func() -> void: _hint_bar.visible = false)
 
 
-## The drawer stays out of the way of anything that wants the whole screen.
+## The dev panel (DevPanel, debug builds), shut: a question coming up should
+## not open under it.
 func close_dev() -> void:
-	if dev != null and is_instance_valid(dev):
-		dev.close()
+	adv.get_tree().call_group("dev_panel", "close")
 
 
 # --- Looking around the map -------------------------------------------------
@@ -425,9 +420,11 @@ func set_panning(on: bool) -> void:
 
 
 ## A touch at `pos` (viewport px) that belongs to the HUD, not to the board:
-## GO, the hero pointer, or any HUD control that takes clicks (the top
-## bar's plates, the dev drawer). The board neither pans nor taps from these.
+## GO, the hero pointer, any HUD control that takes clicks (the top bar's
+## plates), or the dev panel. The board neither pans nor taps from these.
 func owns_touch(pos: Vector2) -> bool:
+	if DevUi.owns(adv.get_tree(), pos):
+		return true
 	if pad != null and pad.visible:
 		for b in _pad_buttons:
 			var r := 64.0 * b.scale.x

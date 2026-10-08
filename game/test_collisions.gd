@@ -246,7 +246,7 @@ func _initialize() -> void:
 		assert(not bool(briefed.barricades.list[st].open),
 				"station %d's guard gone on a briefed restart" % (st + 1))
 
-	# --- The dev drawer's Skip Station --------------------------------------
+	# --- The dev panel's Skip Station ----------------------------------------
 	# It is the shortcut the later islands are tested through, so it has to leave
 	# the board in exactly the state playing the questions would: each skip banks
 	# one station and opens what that station's progress opens, and nothing ahead
@@ -255,10 +255,12 @@ func _initialize() -> void:
 	root.add_child(rig)
 	G.begin_adventure(600)
 	rig.setup({})
-	assert(rig.hud.dev != null, "no dev drawer on a debug build")
+	# The Map tab's tools, as the dev panel makes them (loaded, not named: this
+	# runs before the autoloads they use exist).
+	var cheats: RefCounted = load("res://scripts/dev/DevMapTools.gd").new(rig)
 	_assert_islands(rig, G, -1)
 	for st in 3:
-		rig.hud.dev._skip_station()
+		cheats._skip_station()
 		assert(G.items_done == _items_through(G, st),
 				"skipping station %d left %d items done" % [st + 1, G.items_done])
 		assert(bool(G.completed_stations[st]), "station %d was not banked" % (st + 1))
@@ -269,7 +271,7 @@ func _initialize() -> void:
 			"three skips left %d of %d items" % [G.items_done, G.TOTAL_ITEMS])
 	assert(rig._can_enter_gate(), "the Victory Gate stayed shut after three skips")
 	# ...and it is not a way past the end of the board.
-	rig.hud.dev._skip_station()
+	cheats._skip_station()
 	assert(G.items_done == G.TOTAL_ITEMS, "skipping a cleared board ran past the end")
 
 	# The carved rocks (MapCfg.CARVED_ROCKS): all there, carved, and solid --

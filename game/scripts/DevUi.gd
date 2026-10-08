@@ -8,11 +8,15 @@ extends RefCounted
 ## parchment reads as part of it. These want to be obviously not the game, and
 ## to stay readable whatever is behind them.
 
-const BG := Color(0.08, 0.08, 0.10, 0.96)
+const BG := Color(0.08, 0.08, 0.10, 1.0)   # solid: the screen behind showed through
 const FACE := Color(0.20, 0.21, 0.25)
 const FACE_DOWN := Color(0.33, 0.35, 0.40)
 const EDGE := Color(0.55, 0.57, 0.62)
 const FONT := 12
+const FACE_ON := Color(0.24, 0.42, 0.36)
+const ON := " · on"
+## Every dev control that takes touches joins this (DevUi.owns).
+const GROUP := "dev_ui"
 
 
 static func box(width: float) -> PanelContainer:
@@ -55,3 +59,39 @@ static func _face(c: Color) -> StyleBoxFlat:
 	s.set_content_margin_all(3)
 	s.content_margin_left = 6.0
 	return s
+
+## A small heading over a group of buttons.
+static func heading(text: String) -> Label:
+	var l := Label.new()
+	l.text = text.to_upper()
+	l.add_theme_font_size_override("font_size", 9)
+	l.add_theme_color_override("font_color", EDGE)
+	return l
+
+
+## A line of explanation or readout, wrapping in its column.
+static func note(text: String, size := 10) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", Color(0.85, 0.87, 0.9))
+	return l
+
+
+## A switch's state, on its own label: " · on" while on, and a lighter face.
+static func mark(b: Button, on: bool) -> void:
+	b.text = b.text.trim_suffix(ON) + (ON if on else "")
+	for state in ["normal", "hover", "focus"]:
+		b.add_theme_stylebox_override(state, _face(FACE_ON if on else FACE))
+
+
+## Whether a point (viewport px) is on dev UI -- for the map's joystick and
+## board, which would otherwise take the touch first (AdventureHud).
+static func owns(tree: SceneTree, at: Vector2) -> bool:
+	for n in tree.get_nodes_in_group(GROUP):
+		var c := n as Control
+		if c != null and c.is_visible_in_tree() and c.mouse_filter == Control.MOUSE_FILTER_STOP \
+				and c.get_global_rect().has_point(at):
+			return true
+	return false

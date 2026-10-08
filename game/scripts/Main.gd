@@ -41,6 +41,7 @@ const MUSIC := {
 }
 
 var current: Control = null
+var current_name := ""
 ## The background music; Home's Settings sets its volume.
 var music: Music
 ## The moving scene behind the menu screens, kept here rather than in each
@@ -65,79 +66,30 @@ func _ready() -> void:
 	else:
 		open("splash")
 	if OS.is_debug_build():
-		_build_dev_nav()
+		_build_dev_panel()
 
 
-# --- Dev navigator ----------------------------------------------------------
-## Debug builds only: jump to any screen from any screen, because walking the
-## real flow to reach the sixth one gets old. Lives on its own CanvasLayer so
-## `open()` -- which frees `current` -- cannot take it with it.
-##
-## Not a substitute for the suites. It is for looking at a screen, which is the
-## one thing a headless check cannot do.
-func _build_dev_nav() -> void:
+# --- Dev panel -----------------------------------------------------------------
+## Debug builds only: every developer tool behind one DEV tab (DevPanel). On
+## its own CanvasLayer so `open()` -- which frees `current` -- cannot take it
+## with it.
+var dev_panel: Control = null
+
+
+func _build_dev_panel() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 128
 	add_child(layer)
-
-	var box := DevUi.box(184.0)
-	box.position = Vector2(20, 4)
-	box.visible = false
-	layer.add_child(box)
-	# Two columns: fifteen entries in one ran off the bottom of the canvas, and
-	# a row is ~24px however small the height asked for -- the content margins
-	# set the floor, not the request.
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 2)
-	grid.add_theme_constant_override("v_separation", 1)
-	DevUi.column(box).add_child(grid)
-	var col := grid
-
-	for name: String in SCREENS:
-		var b := DevUi.button(name)
-		b.custom_minimum_size = Vector2(88, 19)
-		b.pressed.connect(func() -> void:
-			box.visible = false
-			_dev_open(name))
-		col.add_child(b)
-
-	# The board with no session: for looking at the map, not for playing it.
-	var explore := DevUi.button("explore map")
-	explore.custom_minimum_size = Vector2(88, 19)
-	explore.pressed.connect(func() -> void:
-		box.visible = false
-		explore_map())
-	col.add_child(explore)
-
-	# The team picker, which otherwise needs a live session to reach.
-	var lobby := DevUi.button("lobby")
-	lobby.custom_minimum_size = Vector2(88, 19)
-	lobby.pressed.connect(func() -> void:
-		box.visible = false
-		open("team", {"preview": true}))
-	col.add_child(lobby)
-
-	var out := DevUi.button("sign out")
-	out.custom_minimum_size = Vector2(88, 19)
-	out.pressed.connect(func() -> void:
-		Net.sign_out()
-		box.visible = false
-		open("login"))
-	col.add_child(out)
-
-	# A tab on the edge, not a button in the corner: it has to be reachable on
-	# every screen without landing on anything the screen owns.
-	var tab := DevUi.button("D", 40.0)
-	tab.custom_minimum_size = Vector2(18, 40)
-	tab.position = Vector2(0, 4)
-	tab.pressed.connect(func() -> void: box.visible = not box.visible)
-	layer.add_child(tab)
+	dev_panel = DevPanel.new()
+	dev_panel.set("main", self)
+	layer.add_child(dev_panel)
+	if current != null:
+		dev_panel.on_screen(current_name)
 
 
 ## Dev only: the map with no session, signed in or not -- nothing online,
-## nothing scored, a clock long enough not to end on you. The dev drawer on the
-## map (Teleport, Skip Station, Open Gates, Fast Walk, Show Walls) does the rest.
+## nothing scored, a clock long enough not to end on you. The dev panel's Map
+## tab (Teleport, Skip Station, Open Gates, Fast Walk, Show Walls) does the rest.
 const EXPLORE_S := 7200
 
 
@@ -160,11 +112,14 @@ func open(name: String, data: Dictionary = {}) -> void:
 		current.queue_free()
 	backdrop.set_shown(not name in OWN_SCENE)
 	current = SCREENS[name].new()
+	current_name = name
 	current.set("main", self)
 	add_child(current)
 	# Before setup, so a screen that picks its own music there has the last word.
 	music.play(str(MUSIC.get(name, "")))
 	current.setup(data)
+	if dev_panel != null:
+		dev_panel.on_screen(name)
 
 
 

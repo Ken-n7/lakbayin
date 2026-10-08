@@ -57,6 +57,14 @@ func _ready() -> void:
 			for i in 30:
 				await get_tree().process_frame
 			_audit(name, main.current)
+			await _dev_clear(name, main, [main.current])
+
+		# The map is settled (see SCREENS), but the DEV tab is new on it: only
+		# that is checked there, against the HUD.
+		main.open("adventure")
+		for i in 30:
+			await get_tree().process_frame
+		await _dev_clear("adventure", main, [main.current.hud.hud_layer, main.current.hud.ui_layer])
 
 
 	print("---- LAYOUT %s ---- %d overflowing controls" %
@@ -75,6 +83,39 @@ func _audit(screen: String, root: Control) -> void:
 	for h in hits:
 		print("          " + h)
 	_bad += hits.size()
+
+
+## The dev panel's tab (debug builds) sits on every screen, and the pinned
+## Hub stats on Game Controls: neither may cover anything of the screen's.
+func _dev_clear(screen: String, main: Control, roots: Array) -> void:
+	var panel: Control = main.get("dev_panel")
+	if panel == null:
+		return
+	var mine := [["the DEV tab", (panel.get("_tab") as Control).get_global_rect()]]
+	if screen == "controls":
+		DevPanel.hub_pinned = true
+		panel.call("_place_pin")
+		for i in 10:
+			await get_tree().process_frame
+		var pin: Control = panel.get("_pin")
+		if pin != null:
+			mine.append(["the pinned Hub stats", pin.get_global_rect()])
+		DevPanel.hub_pinned = false
+		panel.call("_place_pin")
+	var leaves: Array[Control] = []
+	for r: Node in roots:
+		_collect(r, leaves)
+	var hits: Array[String] = []
+	for m: Array in mine:
+		for c: Control in leaves:
+			var r := (m[1] as Rect2).intersection(c.get_global_rect())
+			if r.size.x > 1.0 and r.size.y > 1.0:
+				hits.append("%s covers %s %s by %dx%d" % [m[0], c.get_class(), _name_of(c), int(r.size.x), int(r.size.y)])
+	if not hits.is_empty():
+		print("  FAIL  %s (dev panel)" % screen)
+		for h in hits:
+			print("          " + h)
+		_bad += hits.size()
 
 
 ## Two things drawn on top of each other. Everything fitting the canvas is not

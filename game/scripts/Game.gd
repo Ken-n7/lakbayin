@@ -65,7 +65,7 @@ var duration_seconds := 600.0
 ## Adding up frame deltas ran slow wherever frames stall -- a phone in the
 ## background, a window out of focus -- so every board in the room showed a
 ## different clock, and none the teacher's. Anything that sets it (a session
-## row, the dev drawer's +60) moves the deadline with it.
+## row, the dev panel's +1:00) moves the deadline with it.
 var time_left := 0.0:
 	set(v):
 		time_left = v

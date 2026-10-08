@@ -15,7 +15,7 @@ extends Control
 ## `map/MapGrid.gd`. `AdventureHud.gd` owns everything drawn over the top.
 ## Every knob any of them reads is in `config/MapCfg.gd`.
 ##
-## **What the dev drawer, the tools and the headless suites reach for.** This
+## **What the dev panel, the tools and the headless suites reach for.** This
 ## is a deliberate surface, not an accident -- it used to be thirty private
 ## members, which is what made the file unsafe to touch:
 ##
@@ -69,7 +69,7 @@ var _spectate := ""
 var _banner: Label = null
 var _start_hint: Label = null   # "Tap anywhere to start" -- freed once it does
 var _card: Control = null       # the tapped circle's info card
-## Dev knobs the drawer drives: a walk-speed multiplier, and the flag that stops
+## Dev knobs the dev panel's Map tab drives: a walk-speed multiplier, and the flag that stops
 ## `_process()` dragging the camera back to the hero while the board is framed.
 var _speed_mult := 1.0
 ## The hero's Foot box, relative to their feet, from scenes/Hero.tscn -- the

@@ -45,7 +45,7 @@ done
 run "smoke       " res://scripts/tests/smoke_test.tscn
 run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn
-run "drawer      " res://scripts/tests/drawer_test.tscn
+run "devpanel    " res://scripts/tests/dev_panel_test.tscn
 run "rescue      " res://scripts/tests/rescue_test.tscn
 run "alltime     " res://scripts/tests/alltime_test.tscn
 run "keyboard    " res://scripts/tests/keyboard_test.tscn

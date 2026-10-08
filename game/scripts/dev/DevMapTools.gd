@@ -1,118 +1,93 @@
-extends Control
+class_name DevMapTools
+extends RefCounted
 
-## The dev drawer: a tab on the left edge of the Adventure map that pops out a
-## box of cheats. Plain widgets, no pack art and no slide -- it is a test rig,
-## and dressing it as parchment only makes it look like part of the game. It exists so the later islands can be reached without
-## answering every question in front of them, and so the board can be looked at
-## while the game is running rather than only in a screenshot.
+## The dev panel's Map tab (DevPanel): the cheats for the adventure screen
+## it was made for -- reaching the later islands without answering every
+## question, looking at the board while the game runs. Debug builds only.
 ##
-## Debug builds only -- `AdventureScreen` does not even create the node otherwise
-## (`OS.is_debug_build()`), so the `--export-debug` APK keeps it and a release
-## export drops it with nothing to strip by hand.
-##
-## Everything here reaches into the screen it was handed. That is the point: it
-## is a test rig, not a feature, and it can be deleted whole without touching a
-## line of the game.
+## Everything here reaches into that screen. That is the point: it is a test
+## rig, not a feature, and it can be deleted whole without touching the game.
 
-const PANEL_W := 124.0
-## Top edge only -- the box is a container, so it takes whatever height its
-## buttons need: thirteen take 305 of the 360px canvas (drawer_test fails the
-## day they no longer fit).
-const PANEL_Y := 4.0
-const TAB := Vector2(18.0, 40.0)
-const TAB_Y := 150.0
 const FAST_WALK := 3.0
 
-## One row per button: label, and the method it calls. Adding a tool is a line
-## here plus the method. A toggle rewrites its own label with a trailing dot.
-const TOOLS := [
-	["Skip Station", "_skip_station"],
-	["Teleport", "_teleport"],
-	["Aerial", "_aerial"],
-	["Open Gates", "_open_gates"],
-	["Fast Walk", "_fast_walk"],
-	["Freeze", "_freeze"],
-	["+1:00", "_add_minute"],
-	["Show Walls", "_show_walls"],
-	["Hero -", "_hero_smaller"],
-	["Hero +", "_hero_bigger"],
-	["End Run", "_end_run"],
-	["Relay Off", "_relay_off"],
-	["Echo Ghost", "_echo_ghost"],
+## Heading, then one row per button: label, and the method it calls. A toggle
+## shows " · on" while it is on. Adding a tool is a line here plus the method.
+const GROUPS := [
+	["Move", [["Teleport", "_teleport"], ["Aerial", "_aerial"],
+		["Fast Walk", "_fast_walk"], ["Open Gates", "_open_gates"]]],
+	["Progress", [["Skip Station", "_skip_station"], ["+1:00", "_add_minute"],
+		["Freeze", "_freeze"], ["End Run", "_end_run"]]],
+	["Look", [["Show Walls", "_show_walls"], ["Hero -", "_hero_smaller"],
+		["Hero +", "_hero_bigger"]]],
 ]
+## Which tools are switches, and how to read whether each is on.
+const TOGGLES := ["_aerial", "_fast_walk", "_freeze", "_show_walls"]
 
 var _adv: Control
-var _panel: PanelContainer
-var _handle: Button
-var _buttons := {}          # method name -> Button, for the toggles' labels
+var buttons := {}           # method name -> Button (the panel's tests press them)
 var _walls: Node2D = null   # the `_solid` overlay, while it is up
 var _hero_box: Node2D = null   # and the hero's Foot box with it
-var _open := false
 
 
-func setup(adv: Control) -> void:
+func _init(adv: Control) -> void:
 	_adv = adv
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# The drawer is a bare frame; only its handle and its buttons take clicks, so
-	# the rest of the screen still gets taps, drags and the circle-inspect.
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	_panel = DevUi.box(PANEL_W)
-	_panel.position = Vector2(TAB.x, PANEL_Y)
-	_panel.visible = false
-	add_child(_panel)
-	var box := DevUi.column(_panel)
-	for spec: Array in TOOLS:
-		var b := DevUi.button(String(spec[0]))
-		b.pressed.connect(_press.bind(String(spec[1])))
-		box.add_child(b)
-		_buttons[String(spec[1])] = b
-
-	_handle = DevUi.button("D", TAB.y)
-	_handle.custom_minimum_size = TAB
-	_handle.position = Vector2(0.0, TAB_Y)
-	_handle.pressed.connect(toggle)
-	add_child(_handle)
-	_claim_touch()
 
 
-## Show or hide. No tween: waiting 0.18s to reach a cheat is 0.18s of nothing.
-func toggle() -> void:
-	_open = not _open
-	_panel.visible = _open
-	_claim_touch()
+func is_for(screen: Control) -> bool:
+	return screen == _adv
 
 
-func close() -> void:
-	if _open:
-		toggle()
+## The tab's contents, built fresh each time it is shown; toggles read their
+## state back from the screen, so nothing is out of step.
+func build() -> Control:
+	buttons = {}
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	for group: Array in GROUPS:
+		col.add_child(DevUi.heading(String(group[0])))
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 2)
+		grid.add_theme_constant_override("v_separation", 2)
+		col.add_child(grid)
+		for spec: Array in group[1]:
+			var b := DevUi.button(String(spec[0]))
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.pressed.connect(_press.bind(String(spec[1])))
+			grid.add_child(b)
+			buttons[String(spec[1])] = b
+	col.add_child(DevUi.note("Keys on the map: [ and ] size the hero."))
+	for fn: String in TOGGLES:
+		_mark(fn, _is_on(fn))
+	return col
 
 
-## The floating joystick claims the left half of the canvas and marks those
-## touches handled, so on a device it would swallow every tap meant for the
-## drawer. Hand back exactly the strip the drawer is using. Desktop runs have no
-## joystick at all, so this is a no-op there.
-func _claim_touch() -> void:
-	var stick: Node2D = _adv.hud.joystick
-	if stick == null or not is_instance_valid(stick):
-		return
-	var taken := (TAB.x + PANEL_W if _open else TAB.x) + 4.0
-	stick.zone = Rect2(Vector2(taken, 0.0), Vector2(320.0 - taken, 360.0))
+func _is_on(fn: String) -> bool:
+	match fn:
+		"_aerial":
+			return bool(_adv._dev_aerial)
+		"_fast_walk":
+			return float(_adv._speed_mult) > 1.0
+		"_freeze":
+			return Game.clock_paused
+		"_show_walls":
+			return _walls != null and is_instance_valid(_walls)
+	return false
 
 
 ## Every tool goes through here so the wall overlay is repainted after one that
 ## moves a wall, and the HUD after one that moves the run on.
 func _press(fn: String) -> void:
+	if not is_instance_valid(_adv):
+		return
 	call(fn)
 	if _walls != null and is_instance_valid(_walls):
 		_walls.queue_redraw()
 
 
-## A toggle's label carries its own state -- one dot, no second stylebox to skin.
 func _mark(fn: String, on: bool) -> void:
-	var b: Button = _buttons[fn]
-	var base: String = b.text.trim_suffix(" •")
-	b.text = base + (" •" if on else "")
+	if buttons.has(fn) and is_instance_valid(buttons[fn]):
+		DevUi.mark(buttons[fn], on)
 
 
 # --- The tools --------------------------------------------------------------
@@ -179,20 +154,6 @@ func _open_gates() -> void:
 func _fast_walk() -> void:
 	_adv._speed_mult = 1.0 if _adv._speed_mult > 1.0 else FAST_WALK
 	_mark("_fast_walk", _adv._speed_mult > 1.0)
-
-
-## This phone on the hub path, as if the relay could not be reached: the
-## bridge, tried on real phones (PosHub).
-func _relay_off() -> void:
-	Net.relay().set_off(not RelayLink.off)
-	_mark("_relay_off", RelayLink.off)
-
-
-## Your own walk as the relay gives it back, drawn as one more hero: the gap
-## is about the delay a classmate on a line like yours sees.
-func _echo_ghost() -> void:
-	RelayLink.echo = not RelayLink.echo
-	_mark("_echo_ghost", RelayLink.echo)
 
 
 func _freeze() -> void:

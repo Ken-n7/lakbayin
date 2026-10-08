@@ -41,7 +41,7 @@ var _banner: PanelContainer  # the status line's backing, coloured by state
 
 func setup(data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# Dev navigator's "lobby": the team picker mid-pick, made-up teams, no
+	# The dev panel's "lobby preview": the team picker mid-pick, made-up teams, no
 	# server -- for looking at it without a live session.
 	if OS.is_debug_build() and bool(data.get("preview", false)):
 		_lobby.session = {"id": "preview", "code": "AB3K", "state": "lobby"}

@@ -21,7 +21,6 @@ const SHOTS := [
 	{"name": "station1", "at": Vector2(0.70, 0.79), "zoom": 1.0},
 	{"name": "barricade", "at": Vector2(0.665, 0.775), "zoom": 0.75},
 	{"name": "camp_bridge", "at": Vector2(0.86, 0.82), "zoom": 0.75},
-	{"name": "dev_drawer", "at": Vector2(0.70, 0.79), "zoom": 0.75, "drawer": true},
 	{"name": "island2_bridge", "at": Vector2(0.345, 0.48), "zoom": 0.6},
 	{"name": "island2", "at": Vector2(0.27, 0.28), "zoom": 0.5},
 	{"name": "island3", "at": Vector2(0.74, 0.27), "zoom": 0.5},
@@ -70,12 +69,6 @@ func _process(_delta: float) -> bool:
 			z = _screen._aerial_zoom()
 		_screen._cam.zoom = Vector2(z, z)
 		_screen._cam.position = MapGrid.norm(shot.at)
-		# The HUD is off for every other shot; the drawer is the one thing here
-		# that only exists on the UI layer, so it gets it back.
-		_screen.hud.ui_layer.visible = bool(shot.get("drawer", false))
-		if bool(shot.get("drawer", false)) and _screen.hud.dev != null:
-			_screen.hud.dev.toggle()
-			_hold = maxi(_hold, 30)
 		if bool(shot.get("dismiss", false)):
 			for g: Dictionary in _screen.barricades.list:
 				_screen.barricades.open(g)

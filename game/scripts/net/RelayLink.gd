@@ -26,10 +26,10 @@ const OUTDATED_RETRY_S := 300.0  # "update the app": no point asking every secon
 const UNPUBLISHED_RETRY_S := 60.0
 
 ## Debug builds: the hub path only, as if the relay could not be reached --
-## for trying the bridge on real phones (DevDrawer).
+## for trying the bridge on real phones (the dev panel's Network tab).
 static var off := false
 ## Debug builds: this phone's own walk as it comes back from the relay, drawn
-## as one more hero ("Your echo", DevDrawer) -- the gap between you and it is
+## as one more hero ("Your echo", the dev panel's Network tab) -- the gap between you and it is
 ## about what a classmate on a line like this one sees.
 static var echo := false
 const ECHO_KEEP := 200

@@ -44,6 +44,15 @@ const TOPIC := "realtime:numxventure"
 ## the server never answer (Dial) -- same calls, same states.
 var _ws: Variant = WebSocketPeer.new()
 var _dialing := false
+## Every socket message printed to the console: the dev panel's "Log
+## realtime" switch, and `RT_DEBUG=1` for scripts.
+static var log_traffic := false
+
+
+static func logging() -> bool:
+	return log_traffic or OS.get_environment("RT_DEBUG") != ""
+
+
 ## For NetReport: times the socket opened and closed, and when it first
 ## opened (seconds since the app started; -1 not yet).
 var opens := 0
@@ -277,7 +286,7 @@ func _process(delta: float) -> void:
 	var now: int = _ws.get_ready_state()
 	if now != _state:
 		_state = now
-		if OS.get_environment("RT_DEBUG") != "":
+		if logging():
 			print("RT socket state -> ", now, " close code ", _ws.get_close_code(), " ", _ws.get_close_reason())
 		if now == WebSocketPeer.STATE_OPEN:
 			opens += 1
@@ -350,7 +359,7 @@ func _process(delta: float) -> void:
 	while _ws.get_available_packet_count() > 0:
 		_last_heard = Time.get_ticks_msec() / 1000.0
 		var text: String = _ws.get_packet().get_string_from_utf8()
-		if OS.get_environment("RT_DEBUG") != "":
+		if logging():
 			print("RT<< ", text.substr(0, 400))
 		var msg: Variant = JSON.parse_string(text)
 		if msg is Dictionary:
@@ -581,7 +590,7 @@ func where_is(user_id: String, session_id: String) -> String:
 
 func _send(topic: String, event: String, payload: Dictionary) -> void:
 	_ref += 1
-	if OS.get_environment("RT_DEBUG") != "":
+	if logging():
 		print("RT>> ", event, " ", JSON.stringify(payload).substr(0, 300))
 	if debug:
 		_tally(sent, _kind(event, payload), topic, payload, ">>")

@@ -1,14 +1,16 @@
 class_name HubDebug
 extends PanelContainer
 
-## Debug builds only: what the teacher's screen is sending and receiving, live.
-## Game Controls adds it when the game is started with `-- --hub-debug`, or
-## from the dev navigator. Rates are per second over the last second; the log
-## is the newest messages, << in and >> out.
-##
-##   godot --path game -- --hub-debug
+## Debug builds only: what the teacher's screen is sending and receiving, live
+## -- the dev panel's Hub tab, or pinned on Game Controls (DevPanel; `-- --hub-debug`
+## starts it pinned). Rates are per second over the last second; the log is
+## the newest messages, << in and >> out.
 
 var gc: Node                   # the GameControlsScreen it reports on
+## Pinned on screen: the counts only, not the message log.
+var compact := false
+## Inside the dev panel: its own column's width, larger type.
+var inline := false
 var _text: Label
 var _last := {}                # counter -> value a second ago
 var _clock := 0.0
@@ -26,7 +28,9 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text = Label.new()
 	_text.add_theme_font_override("font", SystemFont.new())
-	_text.add_theme_font_size_override("font_size", 7)
+	_text.add_theme_font_size_override("font_size", 9 if inline else 7)
+	if inline:
+		_text.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
 	_text.add_theme_color_override("font_color", Color(0.75, 1.0, 0.8))
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_text)
@@ -84,7 +88,8 @@ func _report() -> String:
 	var relay: RelayLink = Net.get("_relay")
 	if is_instance_valid(relay):
 		lines.append("relay: %s  %s  rtt %dms  %d on it  snapshots in %d/s  bridge %s (%d heroes/s)" % [
-			"UP" if relay.up else "down (%s)" % relay.last_close, relay.host, int(relay.rtt * 1000.0),
+			"UP" if relay.up else "down (%s)" % (relay.last_close if relay.last_close != "" else "connecting"),
+			relay.host, int(relay.rtt * 1000.0),
 			relay.get("_roster").size(), _rate("relay_snaps", relay.snaps_in),
 			"ON" if hub != null and hub.bridging() else "off",
 			_rate("bridged", hub.bridged_out) if hub != null else 0])
@@ -92,6 +97,13 @@ func _report() -> String:
 	var lobby: Variant = gc.get("_lobby")
 	var players: Dictionary = lobby.get("players") if lobby != null else {}
 	var now := Time.get_ticks_msec()
+	if compact:
+		# Pinned over Game Controls: one line, however big the class.
+		var where := {"map": 0, "lobby": 0, "away": 0}
+		for pid: String in players:
+			where["map" if gc.call("_is_ready", pid) else ("lobby" if gc.call("_is_here", pid) else "away")] += 1
+		lines.append("students: %d on the map, %d in the lobby, %d away" % [where.map, where.lobby, where.away])
+		return "\n".join(lines)
 	for pid: String in players:
 		var name: String = str(players[pid].get("username", "?"))
 		var where := "map" if gc.call("_is_ready", pid) else ("lobby" if gc.call("_is_here", pid) else "away")
@@ -100,7 +112,8 @@ func _report() -> String:
 			var s: Array = hub.last_seen[pid]
 			seen = "pos %.1fs ago at (%d,%d)" % [(now - int(s[0])) / 1000.0, int(s[1]), int(s[2])]
 		lines.append("  %-18s %-5s %s" % [name.left(18), where, seen])
-	lines.append("--- last messages (<< in, >> out) ---")
-	for l in rt.log_lines:
-		lines.append(l)
+	if not compact:
+		lines.append("--- last messages (<< in, >> out) ---")
+		for l in rt.log_lines:
+			lines.append(l)
 	return "\n".join(lines)

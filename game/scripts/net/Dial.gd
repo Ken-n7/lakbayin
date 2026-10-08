@@ -25,6 +25,9 @@ static var _picked := {}
 static var _dialing := {}
 ## host -> what the last dial saw: {addrs, pick, ms, resolve_ms}. For NetReport.
 static var last := {}
+## Take the pinned IPv4 path even where nothing is broken: the dev panel's
+## "Force IPv4" switch, and `NUMX_DIAL=v4` for scripts.
+static var force_v4 := false
 
 
 static func address(host: String, port := 443) -> String:
@@ -40,7 +43,7 @@ static func address(host: String, port := 443) -> String:
 	var all := await _resolve(host, tree)
 	var resolved_ms := Time.get_ticks_msec() - t0
 	var pick := ""
-	if OS.get_environment("NUMX_DIAL") == "v4":
+	if force_v4 or OS.get_environment("NUMX_DIAL") == "v4":
 		# Tests: take the IPv4 path on a network where nothing is broken.
 		pick = _first_v4(all)
 	else:
@@ -53,6 +56,11 @@ static func address(host: String, port := 443) -> String:
 
 static func forget(host: String) -> void:
 	_picked.erase(host)
+
+
+## Every host dialed afresh on its next connection (after `force_v4` changes).
+static func forget_all() -> void:
+	_picked.clear()
 
 
 ## "https://name:port/path" -> "name".
