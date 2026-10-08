@@ -39,6 +39,7 @@ PROBE_S=${PROBE_S:-30}
 PROBE_FAILS=${PROBE_FAILS:-3}
 CF_BAD_MAX=${CF_BAD_MAX:-2}
 CF_RETRY_S=${CF_RETRY_S:-600}
+CF_EDGE=${CF_EDGE-mnl}        # the Cloudflare city to join in; empty: any
 ONLINE_URL=${ONLINE_URL:-http://connectivitycheck.gstatic.com/generate_204}
 PORT=47317
 
@@ -96,13 +97,29 @@ address_in() {
 	done
 }
 
-# A Cloudflare tunnel: sets $1_pid and $1_url (empty if none came).
+# A Cloudflare tunnel: sets $1_pid and $1_url (empty if none came). Each
+# tunnel joins Cloudflare in one city, here Manila or Hong Kong (+80 ms a
+# trip, as phones reach Manila): one outside CF_EDGE is redrawn, twice at most.
 cloudflare() {
-	"$CF" tunnel --no-autoupdate --url "http://127.0.0.1:$PORT" > "$LOG/tunnel-$1.log" 2>&1 &
-	local pid=$!
-	local got
-	got=$(address_in "$LOG/tunnel-$1.log" 'https://[a-z0-9-]+\.trycloudflare\.com')
-	[ -z "$got" ] && { kill $pid 2>/dev/null; pid=""; }
+	local pid got at try
+	for try in 1 2 3; do
+		"$CF" tunnel --no-autoupdate --url "http://127.0.0.1:$PORT" > "$LOG/tunnel-$1.log" 2>&1 &
+		pid=$!
+		got=$(address_in "$LOG/tunnel-$1.log" 'https://[a-z0-9-]+\.trycloudflare\.com')
+		if [ -z "$got" ]; then
+			kill $pid 2>/dev/null; pid=""
+			break
+		fi
+		at=$(address_in "$LOG/tunnel-$1.log" 'location=[a-z0-9]+')
+		at=${at#location=}
+		case "$at" in "$CF_EDGE"*) break ;; esac
+		if [ "$try" = 3 ]; then
+			say "cloudflare tunnel joined in ${at:-?}; keeping it"
+			break
+		fi
+		say "cloudflare tunnel joined in ${at:-?}, not $CF_EDGE; another"
+		kill $pid 2>/dev/null; wait $pid 2>/dev/null
+	done
 	printf -v "$1_pid" '%s' "$pid"
 	printf -v "$1_url" '%s' "$got"
 }
