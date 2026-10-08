@@ -29,9 +29,13 @@ func run(s: TowerSymbols, dt: float) -> void:
 		t += step
 
 
+## Where a sign is round its ring. Its own angle, not one read back off its
+## drawn position: that bobs up and down by a few px, which skewed the
+## reading enough to fail "not in lockstep" for ~1 tower in 10 (29 of 300
+## seeds; the seed is the node's instance id, so any new object anywhere in
+## the game could pick a failing one).
 func angle_of(s: TowerSymbols, i: int) -> float:
-	var p: Vector2 = s.place(i)[0]
-	return atan2(p.y / TowerSymbols.RADIUS.y, p.x / TowerSymbols.RADIUS.x)
+	return s._angle_of(i)
 
 
 func _ready() -> void:
