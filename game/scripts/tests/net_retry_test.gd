@@ -114,12 +114,40 @@ func _ready() -> void:
 	check("...and the line reads offline meanwhile", Net.connection() == "offline", Net.connection())
 	rt.close_socket()
 
+	_bridge()
+
 	_server.stop()
 	Net.url = was_url
 	Net.anon_key = was_key
 	Net.access_token = was_token
 	completed = true
 	finish("NETRETRY")
+
+
+## The teacher's bridge (PosHub): relay students go into its snapshots only
+## while some phone is on the hub path -- otherwise not one extra message.
+func _bridge() -> void:
+	var hub := PosHub.new()
+	add_child(hub)
+	hub.set("_sid", "s1")
+	var walker := {"id": "r1", "hero": 2, "p": [[1.0, 1, 1], [1.05, 2, 2], [1.1, 3, 3], [1.2, 4, 4]], "fast": true}
+	hub._on_relay_snap([walker])
+	check("everyone on the relay: nothing bridged", hub.take_snapshot().is_empty())
+	hub._on_broadcast("pos", {"sid": "s1", "id": "h1", "hero": 1, "p": {"t": 5.0, "dt": 0.1, "x": [9], "y": [9]}})
+	check("a phone on the hub path turns the bridge on", hub.bridging())
+	hub._on_relay_snap([walker])
+	var snap: Dictionary = hub.take_snapshot()
+	var heroes: Array = snap.get("p", [])
+	var ids: Array = heroes.map(func(e: Dictionary) -> String: return str(e.id))
+	check("...both paths in one snapshot", ids.has("h1") and ids.has("r1"), str(ids))
+	var r1: Array = heroes.filter(func(e: Dictionary) -> bool: return e.id == "r1")
+	check("...the relay's walk at the hub's own pace", not r1.is_empty()
+		and r1[0].p == [[1.0, 1, 1], [1.1, 3, 3], [1.2, 4, 4]], str(r1))
+	check("...and sent once", hub.take_snapshot().is_empty())
+	hub.set("_hub_path_at", -INF)
+	hub._on_relay_snap([walker])
+	check("the hub-path phone gone: the bridge stops", hub.take_snapshot().is_empty())
+	hub.queue_free()
 
 
 func _wait(s: float) -> void:

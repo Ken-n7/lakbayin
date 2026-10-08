@@ -737,11 +737,16 @@ func _feed_hub(state: String) -> void:
 	if state == "ended":
 		if _hub != null:
 			_hub.stop()
+		Net.relay().leave()
 		return
 	if _hub == null:
 		_hub = PosHub.new()
 		add_child(_hub)
 	_hub.follow(str(_session.get("id", "")), _lobby.players.keys())
+	# The movement relay too, as the teacher: the map's students, and the
+	# hub's bridge for any phone that cannot reach the relay (PosHub).
+	if str(_session.get("id", "")) != "":
+		Net.relay().join(str(_session.get("id", "")), "teacher")
 
 
 func _refresh_state() -> void:

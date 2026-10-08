@@ -36,6 +36,7 @@ const TOOLS := [
 	["Hero -", "_hero_smaller"],
 	["Hero +", "_hero_bigger"],
 	["End Run", "_end_run"],
+	["Relay Off", "_relay_off"],
 ]
 
 var _adv: Control
@@ -176,6 +177,13 @@ func _open_gates() -> void:
 func _fast_walk() -> void:
 	_adv._speed_mult = 1.0 if _adv._speed_mult > 1.0 else FAST_WALK
 	_mark("_fast_walk", _adv._speed_mult > 1.0)
+
+
+## This phone on the hub path, as if the relay could not be reached: the
+## bridge, tried on real phones (PosHub).
+func _relay_off() -> void:
+	Net.relay().set_off(not RelayLink.off)
+	_mark("_relay_off", RelayLink.off)
 
 
 func _freeze() -> void:

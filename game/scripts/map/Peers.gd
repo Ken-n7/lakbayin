@@ -49,6 +49,17 @@ const LAG_MAX := 1.3
 const LAG_GROW := 0.15
 const LAG_SHRINK := 0.05
 const LAG_SETTLE_S := 5.0
+## Through the movement relay (RelayLink: data marked `fast`, a sample every
+## 1/10-1/20s with nothing between it and here but the network) the buffer
+## only has to cover the network's jitter, not a third of a second of
+## waiting. A player's data counts as fast for FAST_HOLD_S after the last
+## fast sample, so a phone that drops back to the hub path changes over once,
+## not on every snapshot. Tuned against the relay load tests (SPECS).
+const FAST_LAG_START := 0.25
+const FAST_LAG_MIN := 0.15
+const FAST_LAG_MAX := 0.8
+const FAST_LAG_GROW := 0.1
+const FAST_HOLD_S := 2.0
 const CATCH_UP := 1.15
 const EASE := 0.88
 const CARRY_S := 0.3
@@ -170,9 +181,18 @@ func move(id: String, data: Dictionary) -> void:
 	while pts.size() > 2 and float(pts[-1][0]) - float(pts[0][0]) > KEEP_S:
 		pts.pop_front()
 	got["pts"] = pts
+	if bool(data.get("fast", false)):
+		got["fast_at"] = now
+	var fast := now - float(got.get("fast_at", -INF)) < FAST_HOLD_S
+	if got.has("lag") and bool(got.get("fast", false)) != fast:
+		# On or off the relay: its own buffer, and the trip learnt afresh --
+		# the other path's fastest is no guide to this one's.
+		got["lag"] = FAST_LAG_START if fast else LAG_START
+		got.erase("offset")
+	got["fast"] = fast
 	got["offset"] = minf(float(got.get("offset", INF)), now - float(incoming[-1][0]))
 	if not got.has("lag"):
-		got["lag"] = LAG_START
+		got["lag"] = FAST_LAG_START if fast else LAG_START
 		got["settled"] = now
 		got["dry"] = false
 		got["face"] = "down"
@@ -245,6 +265,7 @@ func _process(delta: float) -> void:
 ## `lag` behind, and where that puts them on their path.
 static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 	var pts: Array = got.pts
+	var fast := bool(got.get("fast", false))
 	var newest := float(pts[-1][0])
 	var target: float = now - float(got.offset) - float(got.lag)
 	# First sight, or back after a long gap: start where it should be.
@@ -261,12 +282,14 @@ static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 	if next > newest and walking:
 		if not bool(got.dry):
 			got["dry"] = true
-			got["lag"] = minf(float(got.lag) + LAG_GROW, LAG_MAX)
+			got["lag"] = minf(float(got.lag) + (FAST_LAG_GROW if fast else LAG_GROW),
+				FAST_LAG_MAX if fast else LAG_MAX)
 			got["settled"] = now
 	elif next <= newest:
 		got["dry"] = false
-	if now - float(got.settled) > LAG_SETTLE_S and float(got.lag) > LAG_MIN:
-		got["lag"] = maxf(float(got.lag) - LAG_SHRINK, LAG_MIN)
+	var least := FAST_LAG_MIN if fast else LAG_MIN
+	if now - float(got.settled) > LAG_SETTLE_S and float(got.lag) > least:
+		got["lag"] = maxf(float(got.lag) - LAG_SHRINK, least)
 		got["settled"] = now
 	got["play"] = next
 	var at := _path_at(pts, next)

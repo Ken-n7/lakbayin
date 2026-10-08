@@ -97,6 +97,10 @@ func watch(session_id: String) -> void:
 	var rt: Realtime = Net.realtime()
 	if not rt.broadcast.is_connected(_on_broadcast):
 		rt.broadcast.connect(_on_broadcast)
+	# Students on the movement relay come from it (Game Controls joins it as
+	# the teacher); students on the hub path still come as `pos` above.
+	if not Net.relay().snap.is_connected(_on_relay_snap):
+		Net.relay().snap.connect(_on_relay_snap)
 	if not rt.changed.is_connected(_on_row):
 		rt.changed.connect(_on_row)
 	_load()
@@ -135,6 +139,13 @@ func _redraw() -> void:
 func _on_broadcast(event: String, data: Dictionary) -> void:
 	if event == "pos" and str(data.get("sid", "")) == _sid and _sid != "":
 		_peers.move(str(data.get("id", "")), data)
+
+
+func _on_relay_snap(entries: Array) -> void:
+	if _sid == "":
+		return
+	for e: Dictionary in entries:
+		_peers.move(str(e.get("id", "")), e)
 
 
 ## A member's row changed -- an answer, a team move, an elimination. Merged

@@ -36,6 +36,17 @@ var _moved := {}
 var _rows := {}
 const ROW_KEYS := ["profile_id", "team_id", "items_done", "gems", "eliminated"]
 var _clock := 0.0
+## The bridge. Phones that cannot reach the movement relay (a school filter,
+## a dead tunnel) still send here; while any has in the last BRIDGE_S, every
+## snapshot also carries the relay's students -- so those phones see the
+## whole class, and the relay's phones, which hear these snapshots for the
+## progress rows anyway, see them. Nobody on the hub path: nothing bridged,
+## no extra messages. Points kept BRIDGE_STEP_S apart, the hub's own pace.
+const BRIDGE_S := 10.0
+const BRIDGE_STEP_S := 0.1
+var _bridge := {}                # profile id -> {id, hero, p: [[t, x, y], ...]}
+var _hub_path_at := -INF
+var bridged_out := 0
 ## For HubDebug: totals since the hub started, and each player's last position
 ## (when it came in, where).
 var pos_in := 0
@@ -51,6 +62,8 @@ func _ready() -> void:
 		rt.broadcast.connect(_on_broadcast)
 	if not rt.changed.is_connected(_on_row):
 		rt.changed.connect(_on_row)
+	if not Net.relay().snap.is_connected(_on_relay_snap):
+		Net.relay().snap.connect(_on_relay_snap)
 
 
 ## Follow `session_id`'s players: their channels in, the snapshot channel out.
@@ -74,6 +87,25 @@ func stop() -> void:
 	follow("", [])
 	_moved = {}
 	_rows = {}
+	_bridge = {}
+
+
+## Some phone is on the hub path right now.
+func bridging() -> bool:
+	return Time.get_ticks_msec() / 1000.0 - _hub_path_at < BRIDGE_S
+
+
+func _on_relay_snap(entries: Array) -> void:
+	if _sid == "" or not bridging():
+		return
+	for e: Dictionary in entries:
+		var id := str(e.get("id", ""))
+		var got: Dictionary = _bridge.get(id, {"id": id, "hero": e.get("hero", 1), "p": []})
+		var pts: Array = got.p
+		for q: Array in e.get("p", []):
+			if pts.is_empty() or float(q[0]) - float(pts[-1][0]) >= BRIDGE_STEP_S - 0.001:
+				pts.append(q)
+		_bridge[id] = got
 
 
 ## Game Controls watches this session's members: each change, kept for the
@@ -102,6 +134,7 @@ func _on_broadcast(event: String, data: Dictionary) -> void:
 			if data.has(k):
 				slim[k] = data[k]
 		_moved[str(data.get("id", ""))] = slim
+		_hub_path_at = Time.get_ticks_msec() / 1000.0
 		pos_in += 1
 		var at := Vector2(float(data.get("x", 0)), float(data.get("y", 0)))
 		var p: Variant = data.get("p")
@@ -115,17 +148,29 @@ func _process(delta: float) -> void:
 	if _clock > 0.0:
 		return
 	_clock = SNAP_S
-	if _sid == "" or (_moved.is_empty() and _rows.is_empty()):
-		return
-	var snap := {"sid": _sid, "p": _moved.values()}
+	var snap := take_snapshot()
+	if not snap.is_empty():
+		Net.realtime().send_position(Realtime.snap_topic(_sid), snap, "snap")
+
+
+## Everything since the last snapshot, as the next one -- {} if nothing
+## happened -- and the slate wiped for the one after.
+func take_snapshot() -> Dictionary:
+	if not bridging():
+		_bridge = {}
+	if _sid == "" or (_moved.is_empty() and _rows.is_empty() and _bridge.is_empty()):
+		return {}
+	var snap := {"sid": _sid, "p": _moved.values() + _bridge.values()}
 	if not _rows.is_empty():
 		snap["r"] = _rows.values()
-	Net.realtime().send_position(Realtime.snap_topic(_sid), snap, "snap")
 	snaps_out += 1
 	heroes_out += _moved.size()
 	rows_out += _rows.size()
+	bridged_out += _bridge.size()
 	_moved = {}
 	_rows = {}
+	_bridge = {}
+	return snap
 
 
 func _exit_tree() -> void:

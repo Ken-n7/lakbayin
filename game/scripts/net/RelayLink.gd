@@ -1,0 +1,237 @@
+class_name RelayLink
+extends Node
+
+## The movement relay (RelayServer), from a phone or the teacher's screen.
+## Made by Net.relay(); one session at a time.
+##
+## Finds the relay through Supabase's `relay` row (the home laptop publishes
+## its tunnel's address there), says hello with this device's token, then:
+## a phone sends its hero's samples (send_sample) and both hear everyone's
+## in snapshots (`snap`). While it is not `up` -- no relay published, the
+## address stale, the line refused or dropped -- the game uses the teacher's
+## hub over Supabase, as it did before the relay; this keeps trying in the
+## background (full jitter, so a room of phones does not retry in step).
+
+signal snap(entries: Array)      # [{id, hero, p: [[t s, x, y], ...], fast: true}]
+signal up_changed(up: bool)
+
+const STALE_S := 180.0           # published longer ago than this: the relay is gone
+const PING_S := 5.0
+const DROP_S := 12.0             # nothing heard this long (pongs come every PING_S)
+const RETRY_MIN_S := 1.0
+const RETRY_MAX_S := 15.0
+const OUTDATED_RETRY_S := 300.0  # "update the app": no point asking every second
+## No relay running: look again now and then, not every few seconds from
+## every phone in the room.
+const UNPUBLISHED_RETRY_S := 60.0
+
+## Debug builds: the hub path only, as if the relay could not be reached --
+## for trying the bridge on real phones (DevDrawer).
+static var off := false
+
+var up := false
+var rtt := 0.0
+var hz := 0
+var idx := 0
+var host := ""                   # for NetReport / HubDebug
+var last_close := ""             # why the line last went down
+var snaps_in := 0
+
+var _session := ""
+var _role := ""
+var _hero := 1
+var _ws: Variant = null
+var _roster := {}                # idx -> {id, hero}
+var _dialing := false
+var _retry_in := -1.0
+var _attempt := 0
+var _heard := 0.0
+var _ping_clock := 0.0
+
+
+## Debug: the hub path only (`off`), or back to the relay.
+func set_off(on: bool) -> void:
+	off = on
+	if on:
+		_close()
+		last_close = "relay off (debug)"
+	if _session != "":
+		_retry_in = RETRY_MAX_S if on else 0.01
+
+
+## Follow `session_id` as a "player" (sends its samples) or "teacher"
+## (watches). Again with the same arguments: nothing changes.
+func join(session_id: String, role: String, hero := 1) -> void:
+	if session_id == _session and role == _role and hero == _hero:
+		return
+	leave()
+	_session = session_id
+	_role = role
+	_hero = hero
+	_attempt = 0
+	_retry_in = 0.01
+
+
+func leave() -> void:
+	_session = ""
+	_retry_in = -1.0
+	_close()
+
+
+## This hero was at (x, y) at `t` (this device's own clock, seconds).
+func send_sample(t: float, x: int, y: int) -> void:
+	if up and _role == "player":
+		_ws.send(RelayCodec.up(int(t * 1000.0), x, y), WebSocketPeer.WRITE_MODE_BINARY)
+
+
+func _process(delta: float) -> void:
+	if _retry_in > 0.0:
+		_retry_in -= delta
+		if _retry_in <= 0.0:
+			_retry_in = -1.0
+			_dial()
+	if _ws == null:
+		return
+	_ws.poll()
+	var state: int = _ws.get_ready_state()
+	if state == WebSocketPeer.STATE_CLOSED:
+		_down(_ws.get_close_code(), _ws.get_close_reason())
+		return
+	if state != WebSocketPeer.STATE_OPEN:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	while _ws != null and _ws.get_available_packet_count() > 0:
+		var data: PackedByteArray = _ws.get_packet()
+		_heard = now
+		if _ws.was_string_packet():
+			_take_text(RelayCodec.read_text(data.get_string_from_utf8()))
+		else:
+			_take_snap(RelayCodec.read_snap(data))
+	if _ws == null:
+		return
+	if now - _heard > DROP_S:
+		_ws.close(-1)                   # a dead line: down at once, the retry takes over
+		return
+	_ping_clock -= delta
+	if _ping_clock <= 0.0:
+		_ping_clock = PING_S
+		_ws.send_text(RelayCodec.text("ping", {"t": now}))
+
+
+func _dial() -> void:
+	if _session == "" or _dialing or _ws != null:
+		return
+	if off:
+		_retry(RETRY_MAX_S)
+		return
+	_dialing = true
+	var session := _session
+	var url := await _published()
+	if url == "" or session != _session:
+		_dialing = false
+		if session == _session:
+			last_close = "no relay published"
+			_retry(UNPUBLISHED_RETRY_S)
+		return
+	host = Dial.host_of(url)
+	var at := await Dial.address(host)
+	_dialing = false
+	if session != _session:
+		return
+	if at == "":
+		_ws = WebSocketPeer.new()
+		_ws.connect_to_url(url)
+	else:
+		_ws = PinnedSocket.new()
+		_ws.connect_to_url(url, at)
+	_heard = Time.get_ticks_msec() / 1000.0
+	_ping_clock = 0.0
+	# The hello goes as soon as the line opens (_take_text waits for welcome).
+	while _ws != null and _ws.get_ready_state() == WebSocketPeer.STATE_CONNECTING:
+		await get_tree().process_frame
+	if _ws == null or _ws.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	_ws.send_text(RelayCodec.text("hello", {"v": RelayCodec.VERSION, "token": Net.access_token,
+		"session": _session, "role": _role, "hero": _hero}))
+
+
+## The relay's address from Supabase, "" if none is published or it has not
+## been refreshed lately (the laptop went off without clearing it).
+func _published() -> String:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET, "/rest/v1/relay?select=url,updated_at")
+	if got.error != "" or not (got.data is Array) or (got.data as Array).is_empty():
+		return ""
+	var row: Dictionary = got.data[0]
+	var url := str(row.get("url", "")) if row.get("url") != null else ""
+	if not (url.begins_with("wss://") or url.begins_with("ws://")):
+		return ""
+	if Game.now() - Teams._stamp(row.get("updated_at")) > STALE_S:
+		return ""
+	return url
+
+
+func _take_text(m: Array) -> void:
+	match m[0]:
+		"welcome":
+			idx = int(m[1].get("idx", 0))
+			hz = int(m[1].get("hz", 0))
+			_attempt = 0
+			last_close = ""
+			if not up:
+				up = true
+				up_changed.emit(true)
+		"roster":
+			_roster = {}
+			for k: String in m[1]:
+				var who: Variant = m[1][k]
+				if who is Dictionary:
+					_roster[int(k)] = who
+		"pong":
+			rtt = Time.get_ticks_msec() / 1000.0 - float(m[1].get("t", 0.0))
+
+
+func _take_snap(heroes: Dictionary) -> void:
+	if heroes.is_empty():
+		return
+	snaps_in += 1
+	var out: Array = []
+	for i: int in heroes:
+		if i == idx and _role == "player":
+			continue                    # this hero is drawn from this phone
+		var who: Dictionary = _roster.get(i, {})
+		if who.is_empty():
+			continue                    # the roster is on its way
+		var pts: Array = []
+		for q: Array in heroes[i]:
+			pts.append([int(q[0]) / 1000.0, q[1], q[2]])
+		out.append({"id": str(who.get("id", "")), "hero": int(who.get("hero", 1)), "p": pts, "fast": true})
+	if not out.is_empty():
+		snap.emit(out)
+
+
+func _down(code: int, reason: String) -> void:
+	_close()
+	last_close = reason if reason != "" else "closed (%d)" % code
+	if _session == "":
+		return
+	_retry(OUTDATED_RETRY_S if reason == "update the app" else -1.0)
+
+
+func _close() -> void:
+	if _ws != null and _ws.get_ready_state() != WebSocketPeer.STATE_CLOSED:
+		_ws.close(-1)
+	_ws = null
+	_roster = {}
+	idx = 0
+	if up:
+		up = false
+		up_changed.emit(false)
+
+
+## Full jitter: a random wait up to a doubling cap (AWS's backoff advice), so
+## a classroom of phones that lost the relay together comes back apart.
+func _retry(after: float) -> void:
+	if after < 0.0:
+		_attempt += 1
+		after = randf_range(RETRY_MIN_S, minf(RETRY_MAX_S, RETRY_MIN_S * pow(2.0, _attempt)))
+	_retry_in = after

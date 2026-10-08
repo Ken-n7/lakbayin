@@ -270,6 +270,23 @@ func _init() -> void:
 		"playback never jumps: %.1f px in one frame" % worst)
 	assert(float(got.lag) > PeersScript.LAG_START, "running dry buys more buffer: %.2f" % float(got.lag))
 
+	# Through the movement relay: a short buffer of its own. A moment of data
+	# from the hub alone changes nothing; FAST_HOLD_S of it is the hub path,
+	# with its longer buffer -- and back on the relay, the short one again.
+	P.move("r", {"hero": 2, "p": [[1.0, 10, 10]], "fast": true})
+	assert(is_equal_approx(float(P._live["r"].lag), PeersScript.FAST_LAG_START), "relay: the short buffer")
+	P.move("r", {"p": [[1.1, 12, 10]]})
+	assert(bool(P._live["r"].fast), "one hub snapshot is not a change of path")
+	P._live["r"].fast_at -= PeersScript.FAST_HOLD_S + 0.1
+	P.move("r", {"p": [[1.2, 14, 10]]})
+	assert(not bool(P._live["r"].fast) and is_equal_approx(float(P._live["r"].lag), PeersScript.LAG_START),
+		"on the hub path: the long buffer")
+	P.move("r", {"p": [[1.3, 16, 10]], "fast": true})
+	assert(bool(P._live["r"].fast) and is_equal_approx(float(P._live["r"].lag), PeersScript.FAST_LAG_START),
+		"back on the relay")
+	assert(P._live["r"].pts.size() == 4, "every point kept across the change")
+
+
 	# A refresh updates heroes where they stand rather than rebuilding them --
 	# rebuilding reset every walk cycle on every answer anyone gave.
 	var bea_before: Node2D = P._markers["b"]

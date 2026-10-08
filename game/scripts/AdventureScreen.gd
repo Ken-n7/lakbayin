@@ -184,6 +184,12 @@ func _sync_session() -> void:
 	# On the teacher's list as here, on the board -- which is what "ready" is.
 	rt.track({"sid": sid, "where": "map", "name": Net.username})
 	_watch_positions()
+	# The movement relay, when the home laptop runs one (RelayLink): others'
+	# walks ~0.3s behind instead of ~0.9s. Down or absent: the hub as before.
+	var relay := Net.relay()
+	if not relay.snap.is_connected(_on_relay_snap):
+		relay.snap.connect(_on_relay_snap)
+	relay.join(sid, "player", Game.hero_id)
 	if not rt.presence_changed.is_connected(_show_waiting):
 		rt.presence_changed.connect(_show_waiting)
 	_refresh_peers()
@@ -234,7 +240,8 @@ func _share_position(delta: float) -> void:
 	# Answering a question: nothing to send -- the hero stands at the tower on
 	# everyone's board. Offline: nothing would arrive. Either way the first
 	# bundle after carries the hero on from wherever they are then.
-	if (_overlay != null and is_instance_valid(_overlay)) or _conn == "offline":
+	var relay := Net.relay()
+	if (_overlay != null and is_instance_valid(_overlay)) or (_conn == "offline" and not relay.up):
 		_bundle_clock = STILL_EVERY_S
 		return
 	var now := Time.get_ticks_msec() / 1000.0
@@ -253,6 +260,13 @@ func _share_position(delta: float) -> void:
 	var keep := every + BUNDLE_OVERLAP_S
 	while _path.size() > 1 and now - float(_path[0][0]) > keep:
 		_path.pop_front()
+	# On the relay: its samples instead of the hub's bundles. The path above
+	# is still kept, so if the relay goes the first bundle has no gap.
+	if relay.up:
+		_share_relay(delta, now, relay)
+		_bundle_clock = 0.0
+		_moved_since_send = false
+		return
 	_bundle_clock += delta
 	if not ((_moved_since_send and _bundle_clock >= every) or _bundle_clock >= STILL_EVERY_S):
 		return
@@ -273,6 +287,39 @@ func _share_position(delta: float) -> void:
 		"hero": Game.hero_id,
 		"p": {"t": snappedf(float(_path[0][0]), 0.01), "dt": SAMPLE_S, "x": xs, "y": ys},
 	})
+
+
+## The relay's rate (RelayLink.hz): a sample whenever the hero is somewhere
+## new, one more where they stop (so they are seen to stop, not glide on),
+## and every STILL_EVERY_S standing, for anyone who opens the map late.
+var _relay_clock := 0.0
+var _relay_since := 0.0
+var _relay_last := Vector2i(-32768, -32768)
+var _relay_moving := false
+
+
+func _share_relay(delta: float, now: float, relay: RelayLink) -> void:
+	var step := 1.0 / float(maxi(relay.hz, 1))
+	_relay_clock -= delta
+	_relay_since += delta
+	if _relay_clock > 0.0:
+		return
+	_relay_clock = maxf(_relay_clock + step, 0.0)
+	var at := Vector2i(roundi(player.position.x), roundi(player.position.y))
+	var moved := at != _relay_last
+	if moved or _relay_moving or _relay_since >= STILL_EVERY_S:
+		relay.send_sample(now, at.x, at.y)
+		_relay_moving = moved
+		_relay_last = at
+		_relay_since = 0.0
+
+
+## Everyone's newest samples from the relay, straight into the playback.
+func _on_relay_snap(entries: Array) -> void:
+	if _peers == null or not is_instance_valid(_peers):
+		return
+	for e: Dictionary in entries:
+		_peers.move(str(e.get("id", "")), e)
 
 
 ## This player's own channel, where its positions go, and the snapshots of

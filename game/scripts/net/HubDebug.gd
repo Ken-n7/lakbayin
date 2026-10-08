@@ -81,6 +81,13 @@ func _report() -> String:
 			_rate("snaps", hub.snaps_out), _rate("heroes", hub.heroes_out), _rate("rows", hub.rows_out)])
 	else:
 		lines.append("hub: not running (no session yet)")
+	var relay: RelayLink = Net.get("_relay")
+	if is_instance_valid(relay):
+		lines.append("relay: %s  %s  rtt %dms  %d on it  snapshots in %d/s  bridge %s (%d heroes/s)" % [
+			"UP" if relay.up else "down (%s)" % relay.last_close, relay.host, int(relay.rtt * 1000.0),
+			relay.get("_roster").size(), _rate("relay_snaps", relay.snaps_in),
+			"ON" if hub != null and hub.bridging() else "off",
+			_rate("bridged", hub.bridged_out) if hub != null else 0])
 	# Each player: where Game Controls has them, and their last position.
 	var lobby: Variant = gc.get("_lobby")
 	var players: Dictionary = lobby.get("players") if lobby != null else {}

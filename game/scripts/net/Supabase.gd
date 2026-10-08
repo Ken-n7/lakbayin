@@ -36,6 +36,7 @@ var username := ""
 var role := ""
 
 var _realtime: Realtime
+var _relay: RelayLink
 
 
 func _init() -> void:
@@ -179,6 +180,15 @@ func change_password(new_password: String) -> String:
 	return reply.error
 
 
+## The movement relay (RelayLink), made on first use like the socket below.
+func relay() -> RelayLink:
+	if _relay == null or not is_instance_valid(_relay):
+		_relay = RelayLink.new()
+		_relay.name = "RelayLink"
+		add_child(_relay)
+	return _relay
+
+
 ## The realtime socket, made on first use and kept as a child of this node.
 ## Nothing opens one until something asks to watch a table.
 func realtime() -> Realtime:
@@ -212,6 +222,8 @@ func restore_session() -> String:
 func sign_out() -> void:
 	if is_instance_valid(_realtime):
 		_realtime.close_socket()
+	if is_instance_valid(_relay):
+		_relay.leave()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SESSION_PATH))
 	refresh_token = ""
 	access_token = ""

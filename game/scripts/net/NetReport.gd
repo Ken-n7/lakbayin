@@ -55,6 +55,10 @@ func report() -> Dictionary:
 			"rtt_ms": int(float(Net.get("_rest_rtt")) * 1000.0)},
 		"reports": {"sent": _sent, "lost": _lost},
 	}
+	var relay: RelayLink = Net.get("_relay")
+	if is_instance_valid(relay):
+		r["relay"] = {"up": relay.up, "host": relay.host, "rtt_ms": int(relay.rtt * 1000.0),
+			"hz": relay.hz, "snaps": relay.snaps_in, "last_close": relay.last_close}
 	if is_instance_valid(rt):
 		r["rt"] = {"socket": rt.socket_kind(), "state": rt.get_ws_state(), "rtt_ms": int(rt.rtt * 1000.0),
 			"silent_s": snappedf(rt.silent_for(), 0.1), "opens": rt.opens, "closes": rt.closes,

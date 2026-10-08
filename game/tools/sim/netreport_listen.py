@@ -38,7 +38,16 @@ def line(p):
             f"  http ok {h.get('ok')} failed {h.get('failed')} (last {h.get('last_failure')}) rtt {h.get('rtt_ms')}ms"
             f"  rt {rt.get('socket', '-')} state {rt.get('state', '-')} rtt {rt.get('rtt_ms', '-')}ms"
             f" opens {rt.get('opens', '-')} closes {rt.get('closes', '-')} first open {rt.get('first_open_s', '-')}s"
+            f"  relay {_relay(p.get('relay'))}"
             f"  reports lost {p.get('reports', {}).get('lost')}")
+
+
+def _relay(r):
+    if not r:
+        return "-"
+    if r.get("up"):
+        return f"UP {r.get('hz')}/s rtt {r.get('rtt_ms')}ms snaps {r.get('snaps')}"
+    return f"down ({r.get('last_close') or 'connecting'})"
 
 
 def main():
