@@ -33,6 +33,7 @@ run() {                                     # run <name> <godot args...>
 }
 
 run "rules       " --script res://test_rules.gd
+run "dial        " --script res://test_dial.gd
 run "mathtext    " --script res://test_mathtext.gd
 run "auth        " --script res://test_auth.gd
 run "collisions  " --script res://test_collisions.gd

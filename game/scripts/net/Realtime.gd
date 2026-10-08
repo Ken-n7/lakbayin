@@ -40,7 +40,15 @@ const STALL_S := 15.0
 const RECONNECT_S := 2.0
 const TOPIC := "realtime:numxventure"
 
-var _ws := WebSocketPeer.new()
+## A WebSocketPeer, or a PinnedSocket on a network whose first addresses for
+## the server never answer (Dial) -- same calls, same states.
+var _ws: Variant = WebSocketPeer.new()
+var _dialing := false
+## For NetReport: times the socket opened and closed, and when it first
+## opened (seconds since the app started; -1 not yet).
+var opens := 0
+var closes := 0
+var first_open_s := -1.0
 var _state := WebSocketPeer.STATE_CLOSED
 var _ref := 0
 var _since_beat := 0.0
@@ -148,16 +156,27 @@ func open_socket() -> void:
 	# `_process`, so two `watch()` calls in the same frame -- members and
 	# teams, say -- both saw CLOSED and the second connect returned
 	# ERR_ALREADY_IN_USE.
-	var live := _ws.get_ready_state()
-	if live == WebSocketPeer.STATE_OPEN or live == WebSocketPeer.STATE_CONNECTING:
+	var live: int = _ws.get_ready_state()
+	if live == WebSocketPeer.STATE_OPEN or live == WebSocketPeer.STATE_CONNECTING or _dialing:
 		return
 	# Down from the first try, not only after an open line drops: a phone that
 	# never got through was otherwise "silent for 0s", which read as good.
 	if _down_at < 0.0:
 		_down_at = Time.get_ticks_msec() / 1000.0
-	var url := Net.url.replace("https://", "wss://") \
+	var url := Net.url.replace("https://", "wss://").replace("http://", "ws://") \
 		+ "/realtime/v1/websocket?apikey=" + Net.anon_key + "&vsn=1.0.0"
-	var err := _ws.connect_to_url(url)
+	_dialing = true
+	var at := await Dial.address(Dial.host_of(Net.url))
+	_dialing = false
+	if not active():
+		return                  # closed while dialing
+	var err: int
+	if at == "":
+		_ws = WebSocketPeer.new()
+		err = _ws.connect_to_url(url)
+	else:
+		_ws = PinnedSocket.new()
+		err = _ws.connect_to_url(url, at)
 	if err != OK:
 		push_warning("Realtime: connect failed (%d)" % err)
 
@@ -226,6 +245,12 @@ func is_open() -> bool:
 	return _state == WebSocketPeer.STATE_OPEN
 
 
+## "pinned" when on a PinnedSocket (Dial found the usual addresses dead),
+## "godot" on Godot's own WebSocketPeer.
+func socket_kind() -> String:
+	return "pinned" if _ws is PinnedSocket else "godot"
+
+
 ## The socket's own state, not the cached one (tests).
 func get_ws_state() -> int:
 	return _ws.get_ready_state()
@@ -249,12 +274,15 @@ func silent_for() -> float:
 
 func _process(delta: float) -> void:
 	_ws.poll()
-	var now := _ws.get_ready_state()
+	var now: int = _ws.get_ready_state()
 	if now != _state:
 		_state = now
 		if OS.get_environment("RT_DEBUG") != "":
 			print("RT socket state -> ", now, " close code ", _ws.get_close_code(), " ", _ws.get_close_reason())
 		if now == WebSocketPeer.STATE_OPEN:
+			opens += 1
+			if first_open_s < 0.0:
+				first_open_s = Time.get_ticks_msec() / 1000.0
 			_down_at = -1.0
 			_last_heard = Time.get_ticks_msec() / 1000.0
 			_joined = false
@@ -265,6 +293,8 @@ func _process(delta: float) -> void:
 		elif now == WebSocketPeer.STATE_CLOSED:
 			if _down_at < 0.0:
 				_down_at = Time.get_ticks_msec() / 1000.0
+			Dial.forget(Dial.host_of(Net.url))     # the network may have changed: dial afresh
+			closes += 1
 			_joined = false
 			live = false
 			if active():
@@ -319,7 +349,7 @@ func _process(delta: float) -> void:
 
 	while _ws.get_available_packet_count() > 0:
 		_last_heard = Time.get_ticks_msec() / 1000.0
-		var text := _ws.get_packet().get_string_from_utf8()
+		var text: String = _ws.get_packet().get_string_from_utf8()
 		if OS.get_environment("RT_DEBUG") != "":
 			print("RT<< ", text.substr(0, 400))
 		var msg: Variant = JSON.parse_string(text)

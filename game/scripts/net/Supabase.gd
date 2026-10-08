@@ -43,6 +43,20 @@ func _init() -> void:
 	anon_key = _conf("SUPABASE_ANON_KEY", "numxventure/supabase/anon_key")
 
 
+func _ready() -> void:
+	# Debug builds on a phone tell the laptop how their network is treating
+	# them (NetReport, tools/sim/netreport_listen.py).
+	if OS.is_debug_build() and OS.has_feature("mobile"):
+		add_child(NetReport.new())
+
+
+## Broadcast to a channel over HTTP, without joining it (Supabase's REST
+## broadcast). For NetReport, which must get through when the socket cannot.
+func broadcast_rest(topic: String, event: String, payload: Dictionary) -> Dictionary:
+	return await _call(HTTPClient.METHOD_POST, "/realtime/v1/api/broadcast",
+		{"messages": [{"topic": topic, "event": event, "payload": payload}]})
+
+
 ## One `HTTPRequest` per call, not one for the client.
 ##
 ## A single shared node refuses a second request while the first is in flight
@@ -66,6 +80,11 @@ const REQUEST_TIMEOUT_S := 12.0
 ## one got through), and how long the last that did took.
 var _rest_failed_at := -1.0
 var _rest_rtt := 0.0
+## For NetReport: calls that got an answer, calls that never did, and why
+## the last of those failed (HTTPRequest.RESULT_*).
+var http_ok := 0
+var http_failed := 0
+var http_last_failure := -1
 
 
 ## "good", "weak" or "offline" -- what a game's signal bars say. Offline: the
@@ -271,16 +290,26 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 		return {"error": "Supabase is not configured -- see supabase/README.md", "data": null}
 	if not is_inside_tree():
 		return {"error": "Supabase client is not in the scene tree yet", "data": null}
-	var http := _new_http()
 	var headers := [
 		"apikey: " + anon_key,
 		"Authorization: Bearer " + (access_token if access_token else anon_key),
 		"Content-Type: application/json",
 		"Prefer: return=representation" + ("," + prefer if prefer != "" else ""),
 	]
+	# The server's address that answers on this network (Dial): by name as
+	# usual, or straight to the address with the name kept for the
+	# certificate and the Host header.
+	var host := Dial.host_of(url)
+	var at := await Dial.address(host)
+	var http := _new_http()
+	var target := url
+	if at != "":
+		target = url.replace("://" + host, "://" + at)
+		http.set_tls_options(TLSOptions.client(null, host))
+		headers.append("Host: " + host)
 	var payload := "" if body == null else JSON.stringify(body)
 	var sent := Time.get_unix_time_from_system()
-	var err := http.request(url + path, headers, method, payload)
+	var err := http.request(target + path, headers, method, payload)
 	if err != OK:
 		http.queue_free()
 		return {"error": "request failed to start (%d)" % err, "data": null}
@@ -290,6 +319,9 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 	# apart from a refusal, so a scoring call is retried rather than dropped.
 	if int(res[0]) != HTTPRequest.RESULT_SUCCESS:
 		_rest_failed_at = Time.get_ticks_msec() / 1000.0
+		Dial.forget(host)           # a changed network, maybe: dial again next time
+		http_failed += 1
+		http_last_failure = int(res[0])
 		# No line, no address, no secure handshake: nothing was sent. Anything
 		# later -- a timeout, the line dropping mid-call -- may have reached
 		# the server and been done there, the reply lost on the way back.
@@ -298,6 +330,7 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 		return {"error": "No connection", "data": null, "network": true, "maybe_sent": not unsent}
 	_rest_failed_at = -1.0
 	_rest_rtt = Time.get_unix_time_from_system() - sent
+	http_ok += 1
 	_learn_clock(res[2], sent)
 	var code: int = res[1]
 	var text := (res[3] as PackedByteArray).get_string_from_utf8()
