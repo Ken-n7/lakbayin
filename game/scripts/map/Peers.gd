@@ -275,7 +275,11 @@ static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 	var rate := CATCH_UP if off > 0.1 else (EASE if off < -0.1 else 1.0)
 	var next: float = float(got.play) + delta * rate
 	var walking := _speed_at(pts, newest) > STILL_PX_S
-	if next > newest + CARRY_S:
+	# Out of path while walking: carry on CARRY_S, then wait for more. Standing,
+	# the clock keeps running -- they are not moving, so nothing is guessed --
+	# or a relay hero, sent only every few seconds while still, would start
+	# their next walk seconds in the past and take ages to catch up.
+	if walking and next > newest + CARRY_S:
 		next = newest + CARRY_S
 	# Out of path while they were walking: their line is slower than allowed
 	# for. A little more buffer from now on -- once per running dry.

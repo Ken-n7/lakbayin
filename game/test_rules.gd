@@ -286,6 +286,26 @@ func _init() -> void:
 		"back on the relay")
 	assert(P._live["r"].pts.size() == 4, "every point kept across the change")
 
+	# Standing still the relay sends a sample only every few seconds. When the
+	# walk starts again it must play from now, not from where the last sample
+	# left the clock -- that replayed seconds-old ground at 1.15x for ages.
+	var still := {"pts": [], "offset": 0.0, "lag": PeersScript.FAST_LAG_START, "settled": 0.0,
+		"dry": false, "face": "down", "fast": true}
+	for i in 11:
+		still.pts.append([i * 0.05, Vector2(i * 7.5, 0)])          # walking 150 px/s for 0.5s
+	still.pts.append([0.55, Vector2(75, 0)])                        # the stop
+	var tick := 0.6
+	for frame in 150:                                               # 2.5s standing, no data
+		tick += 1.0 / 60.0
+		PeersScript._play(still, tick, 1.0 / 60.0)
+	for i in range(1, 11):                                          # walking again, from now
+		still.pts.append([tick + i * 0.05 - 0.5, Vector2(75 + i * 7.5, 0)])
+	for frame in 30:
+		tick += 1.0 / 60.0
+		PeersScript._play(still, tick, 1.0 / 60.0)
+	var behind := (tick - float(still.offset) - float(still.lag)) - float(still.play)
+	assert(behind < 0.2, "after standing, the walk plays from now: %.2fs behind" % behind)
+
 
 	# A refresh updates heroes where they stand rather than rebuilding them --
 	# rebuilding reset every walk cycle on every answer anyone gave.
