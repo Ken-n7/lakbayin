@@ -5,6 +5,9 @@
 # loses the old address reads the new one on its next retry.
 #
 #   game/tools/relay/run.sh            # Ctrl-C (or the systemd unit) stops it
+#   game/tools/relay/run.sh install    # run at boot as a user service, kept up:
+#       journalctl --user -u numxventure-relay -f      what it is doing
+#       systemctl --user disable --now numxventure-relay   undo
 #
 # Kept running, piece by piece:
 #   - the relay stops: only the relay restarts, same address, nobody moves;
@@ -36,11 +39,34 @@ PROBE_S=${PROBE_S:-30}
 PROBE_FAILS=${PROBE_FAILS:-3}
 CF_BAD_MAX=${CF_BAD_MAX:-2}
 CF_RETRY_S=${CF_RETRY_S:-600}
+ONLINE_URL=${ONLINE_URL:-http://connectivitycheck.gstatic.com/generate_204}
 PORT=47317
+
 [ -f "$ENV_FILE" ] || { echo "no $ENV_FILE -- see the top of $0"; exit 1; }
 command -v "$CF" >/dev/null || { echo "no cloudflared -- install it or set CLOUDFLARED"; exit 1; }
 set -a; . "$ENV_FILE"; set +a
 mkdir -p "$LOG"
+
+# A user service started at boot, before anyone logs in (linger), restarted
+# if it ever stops by itself. PATH as now: at boot there is no login shell
+# to add ~/.local/bin, where godot and cloudflared live.
+if [ "${1:-}" = install ]; then
+	mkdir -p ~/.config/systemd/user
+	cat > ~/.config/systemd/user/numxventure-relay.service <<-EOF
+		[Unit]
+		Description=NumXventure movement relay
+		[Service]
+		ExecStart=$PWD/tools/relay/run.sh
+		Environment="PATH=$PATH"
+		Restart=on-failure
+		RestartSec=30
+		TimeoutStopSec=30
+		[Install]
+		WantedBy=default.target
+	EOF
+	systemctl --user daemon-reload && systemctl --user enable --now numxventure-relay && loginctl enable-linger
+	exit
+fi
 
 tun=""        # the tunnel's process
 url=""        # its public address (https://...)
@@ -102,10 +128,20 @@ answers() {
 		-H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "$1/")" = "101" ]
 }
 
+online() {
+	[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$ONLINE_URL")" = "204" ]
+}
+
 # A tunnel to put the relay behind: Cloudflare unless it has failed
 # CF_BAD_MAX times running, then Pinggy.
 start_tunnel() {
 	tun=""; url=""; via=""
+	# With no internet at all no tunnel can start, and that says nothing
+	# about Cloudflare (a boot before the Wi-Fi is up, a blip at home).
+	if ! online; then
+		say "no internet"
+		return
+	fi
 	if [ "$cf_bad" -lt "$CF_BAD_MAX" ]; then
 		cloudflare main
 		if [ -n "$main_pid" ]; then
