@@ -56,7 +56,7 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 | `board_dump.gd`, `check_guards.gd`, `make_tower_pool.tscn`, `scatter_props.tscn` | the map's build: dump, gate check, tower spots, props |
 | `supabase_check.gd`, `realtime.tscn`, `admin.tscn`, `auth_screens.tscn`, `scores.tscn`, `rescue.tscn`, `done.tscn` | checks against the **live** Supabase project (they create test accounts) |
 | `relay.gd` | the movement relay on its own; `--test-auth` for local load tests |
-| `relay/run.sh` | the home relay behind a Cloudflare tunnel, kept running, address published |
+| `relay/run.sh` | the home relay behind a free tunnel, kept running, address published: Cloudflare, or Pinggy while Cloudflare's tunnels fail (back to Cloudflare once it answers) |
 
 ## Load and network tools (`game/tools/sim/`)
 
