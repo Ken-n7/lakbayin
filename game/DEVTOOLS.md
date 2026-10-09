@@ -13,7 +13,7 @@ on the map, on Game Controls, and on the other screens.
 |---|---|---|
 | **Screens** | everywhere | Open any screen; *explore map* (the board with no session); *lobby preview* (the team picker with made-up teams); *sign out*; this build's version, profile, Supabase host and relay host |
 | **Map** | the adventure map | **Move:** Teleport, Aerial, Fast Walk, Open Gates · **Progress:** Skip Station, +1:00, Freeze, End Run · **Look:** Show Walls, Hero −, Hero +. Switches show "· on" while on. Keys: `[` and `]` size the hero |
-| **Network** | everywhere | Live readout: line status and HTTP time, realtime socket, which server address was used, relay state, rtt, echo and playback buffer, the backup relay on Game Controls, phone reports. Switches below |
+| **Network** | everywhere | Live readout: line status and HTTP time, realtime socket, which server address was used, relay state, rtt, echo and playback buffer, the class's relay on Game Controls, phone reports. Switches below |
 | **Hub** | Game Controls | The teacher's live message counts, players and message log. **Pin on screen** keeps a one-line summary on Game Controls with the panel shut |
 
 Network switches:
