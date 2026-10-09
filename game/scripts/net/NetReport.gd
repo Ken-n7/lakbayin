@@ -61,7 +61,7 @@ func report() -> Dictionary:
 	var relay: RelayLink = Net.get("_relay")
 	if is_instance_valid(relay):
 		r["relay"] = {"up": relay.up, "host": relay.host, "rtt_ms": int(relay.rtt * 1000.0),
-			"hz": relay.hz, "snaps": relay.snaps_in, "last_close": relay.last_close,
+			"hz": relay.hz, "rate": relay.rate, "snaps": relay.snaps_in, "last_close": relay.last_close,
 			"echo_ms": relay.echo_ms(), "lag_ms": DevNetTools._buffer_ms(get_tree())}
 	if is_instance_valid(rt):
 		r["rt"] = {"socket": rt.socket_kind(), "state": rt.get_ws_state(), "rtt_ms": int(rt.rtt * 1000.0),

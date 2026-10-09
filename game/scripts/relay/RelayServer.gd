@@ -21,6 +21,15 @@ const MAX_UP_PER_S := 40
 const MAX_TEXT := 4096
 const MAX_PENDING := 8           # points kept per hero between two ticks
 const WHO_KEEP_S := 600.0        # a token's answer, reused on reconnects
+## A connection that cannot keep up asks for fewer snapshots (RelayLink's
+## `rate`): one every `every` ticks, up to MAX_EVERY, carrying each hero's
+## newest point -- a quarter of the bytes at the least, never an older place.
+const MAX_EVERY := 4
+## The roster goes out whole after joins and leaves, at most this often per
+## session: a class joining at once (or coming back after a restart) is one or
+## two of them, not one per join to every phone -- ~50 KB each, seconds of
+## backlog on a weak line.
+const ROSTER_PER_S := 2
 
 var hz := 10
 var silent_s := 15.0            # nothing heard this long: dropped
@@ -31,10 +40,12 @@ var check: Object = self
 
 var _server := TCPServer.new()
 var _clock := 0.0
+var _ticks := 0
 var _next_key := 0
-## key -> {ws, room, idx, id, role, hero, heard, since, frames, frames_at, authing}
+## key -> {ws, room, idx, id, role, hero, heard, since, frames, frames_at, authing, every}
 var _peers := {}
-## session -> {members: {idx: key}, watchers: {key: true}, pending: {idx: [[t, x, y]]}}
+## session -> {members: {idx: key}, watchers: {key: true}, pending: {idx: [[t, x, y]]},
+##              held: {every: {idx: [newest point]}}}
 var _rooms := {}
 var _who_cache := {}             # "token|session|role" -> [profile id, at]
 var _uuid := RegEx.create_from_string("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -84,7 +95,8 @@ func _process(delta: float) -> void:
 		if ws.accept_stream(_server.take_connection()) == OK:
 			_next_key += 1
 			_peers[_next_key] = {"ws": ws, "room": "", "idx": 0, "id": "", "role": "",
-				"hero": 1, "heard": now, "since": now, "frames": 0, "frames_at": now, "authing": false}
+				"hero": 1, "heard": now, "since": now, "frames": 0, "frames_at": now, "authing": false,
+				"every": 1}
 	var gone: Array = []
 	for k: int in _peers:
 		var peer: Dictionary = _peers[k]
@@ -147,6 +159,8 @@ func _take_text(key: int, raw: String) -> void:
 			_hello(key, m[1])
 		"ping":
 			_send_text(key, "pong", m[1])
+		"rate":
+			_pace(_peers[key], m[1].get("hz", hz))
 
 
 func _hello(key: int, p: Dictionary) -> void:
@@ -181,12 +195,13 @@ func _hello(key: int, p: Dictionary) -> void:
 		return
 	var room: Dictionary = _rooms.get(session, {})
 	if room.is_empty():
-		room = {"members": {}, "watchers": {}, "pending": {}}
+		room = {"members": {}, "watchers": {}, "pending": {}, "held": {}}
 		_rooms[session] = room
 	peer.room = session
 	peer.id = who
 	peer.role = role
 	peer.hero = int(p.get("hero", 1))
+	_pace(peer, p.get("rate", hz))      # a phone starting over on a weak line
 	if role == "teacher":
 		room.watchers[key] = true
 	else:
@@ -211,7 +226,7 @@ func _hello(key: int, p: Dictionary) -> void:
 		room.members[idx] = key
 		peer.idx = idx
 	_send_text(key, "welcome", {"idx": peer.idx, "hz": hz})
-	_roster(session)
+	room.roster_due = true
 
 
 func who(token: String, session: String, role: String) -> String:
@@ -253,10 +268,10 @@ func _leave(key: int) -> void:
 	if room.members.is_empty() and room.watchers.is_empty():
 		_rooms.erase(peer.room)
 	else:
-		_roster(peer.room)
+		room.roster_due = true
 
 
-## Everyone in the session, by index: sent whole on every join and leave.
+## Everyone in the session, by index (ROSTER_PER_S).
 func _roster(session: String) -> void:
 	var room: Dictionary = _rooms[session]
 	var who := {}
@@ -271,20 +286,49 @@ func _roster(session: String) -> void:
 			msgs_out += 1
 
 
-## One snapshot per session that has news, encoded once for all of it.
+## Snapshots a second asked for -> every how many ticks this one gets one.
+func _pace(peer: Dictionary, want: Variant) -> void:
+	peer.every = clampi(ceili(float(hz) / maxi(int(want), 1)), 1, MAX_EVERY)
+
+
+## One snapshot per session that has news, encoded once for all of it -- and
+## once more for each slower pace asked for (MAX_EVERY), on its tick.
 func _tick() -> void:
+	_ticks += 1
 	for session: String in _rooms:
 		var room: Dictionary = _rooms[session]
-		if room.pending.is_empty():
-			continue
-		var frame := RelayCodec.snap(room.pending)
+		if room.get("roster_due", false) and _ticks >= int(room.get("roster_at", 0)):
+			room.roster_due = false
+			room.roster_at = _ticks + maxi(hz / ROSTER_PER_S, 1)
+			_roster(session)
+		var keys := _keys(room)
+		var paces := {}
+		for k in keys:
+			paces[int(_peers[k].every)] = true
+		var frames := {}
+		if not room.pending.is_empty():
+			frames[1] = RelayCodec.snap(room.pending)
+		for every: int in room.held.keys():
+			if not paces.has(every):
+				room.held.erase(every)
+		for every: int in paces:
+			if every == 1:
+				continue
+			var held: Dictionary = room.held.get(every, {})
+			for i: int in room.pending:
+				held[i] = [(room.pending[i] as Array)[-1]]
+			room.held[every] = held
+			if _ticks % every == 0 and not held.is_empty():
+				frames[every] = RelayCodec.snap(held)
+				room.held[every] = {}
 		room.pending = {}
-		for k in _keys(room):
+		for k in keys:
+			var frame: Variant = frames.get(int(_peers[k].every))
 			var ws: WebSocketPeer = _peers[k].ws
-			if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			if frame != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 				ws.send(frame, WebSocketPeer.WRITE_MODE_BINARY)
 				msgs_out += 1
-				bytes_out += frame.size()
+				bytes_out += (frame as PackedByteArray).size()
 
 
 func _keys(room: Dictionary) -> Array:

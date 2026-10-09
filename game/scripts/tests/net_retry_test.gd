@@ -121,6 +121,7 @@ func _ready() -> void:
 
 	_bridge()
 	_line_measures()
+	_weak_line()
 	await _restore()
 
 	_server.stop()
@@ -181,6 +182,70 @@ func _line_measures() -> void:
 	check("...but a run of slow ones shows", float(Net.get("_rest_rtt")) > 1.5, str(Net.get("_rest_rtt")))
 	Net.set("_rest_rtts", was)
 	Net.set("_rest_rtt", 0.0)
+
+
+## A weak line (RelayLink): pongs queued behind snapshots twice running ask
+## the relay for half of them, then a quarter, never fewer; it waits for what
+## was already queued to drain; calm brings them back.
+func _weak_line() -> void:
+	var link := RelayLink.new()
+	var asked: Array = []
+	link.set("_ws", Asks.new(asked))
+	link.hz = 20
+	link.rate = 20
+	var fresh := func() -> void: link.set("_hold_until", 0.0)
+	fresh.call()
+	link._judge_rate(0.1)
+	link._judge_rate(0.9)
+	check("one queued pong: still all 20", link.rate == 20, str(link.rate))
+	link._judge_rate(1.0)
+	check("queued twice running: half", link.rate == 10 and asked.size() == 1 and '"hz":10' in str(asked[0]),
+		"%d %s" % [link.rate, asked])
+	link._judge_rate(2.0)
+	link._judge_rate(2.0)
+	check("...then waits for the queue to drain", link.rate == 10, str(link.rate))
+	fresh.call()
+	link._judge_rate(1.5)
+	link._judge_rate(1.5)
+	check("still queued: a quarter", link.rate == 5, str(link.rate))
+	fresh.call()
+	link._judge_rate(2.0)
+	link._judge_rate(2.0)
+	check("...and never fewer", link.rate == 5 and asked.size() == 2, "%d %s" % [link.rate, asked])
+	fresh.call()
+	link.set("_calm_since", Time.get_ticks_msec() / 1000.0 - RelayLink.RATE_CALM_S - 1.0)
+	link._judge_rate(0.12)
+	check("calm for RATE_CALM_S: twice as many", link.rate == 10 and '"hz":10' in str(asked[-1]), str(asked))
+	link._judge_rate(1.0)
+	link._judge_rate(1.0)
+	check("a try the line cannot carry: back down, and twice the calm before the next",
+		link.rate == 5 and is_equal_approx(float(link.get("_calm_need")), RelayLink.RATE_CALM_S * 2.0),
+		"%d %.0f" % [link.rate, float(link.get("_calm_need"))])
+	link.up = true
+	link._judge_rate(0.1 + RelayLink.FLUSH_S + 0.5)
+	check("far behind: dropped and started over at the least", not link.up
+		and int(link.get("_start_rate")) == 5 and "started over" in link.last_close, link.last_close)
+	link.free()
+	var late := RelayLink.new()                    # behind from its very first pong
+	late.set("_ws", Asks.new([]))
+	late.hz = 20
+	late.rate = 20
+	late.up = true
+	late._judge_rate(10.0)
+	check("a first pong already 10s late: started over at once", not late.up, late.last_close)
+	late.free()
+
+
+class Asks:
+	var out: Array
+	func _init(to: Array) -> void:
+		out = to
+	func send_text(t: String) -> void:
+		out.append(t)
+	func get_ready_state() -> int:
+		return WebSocketPeer.STATE_OPEN
+	func close(_code := 1000, _why := "") -> void:
+		pass
 
 
 ## The teacher's bridge (PosHub): relay students go into its snapshots only

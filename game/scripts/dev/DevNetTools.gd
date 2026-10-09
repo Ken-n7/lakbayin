@@ -93,7 +93,9 @@ static func lines(tree: SceneTree) -> PackedStringArray:
 		out.append("Relay  not joined")
 	elif relay.up:
 		var e := relay.echo_ms()
-		out.append("Relay  UP %d/s · rtt %d ms%s%s" % [relay.hz, int(relay.rtt * 1000.0),
+		out.append("Relay  UP %d/s%s · rtt %d ms%s%s" % [relay.hz,
+			" (weak line: %d/s)" % relay.rate if relay.rate > 0 and relay.rate < relay.hz else "",
+			int(relay.rtt * 1000.0),
 			" · echo %d/%d/%d ms" % e if e.size() == 3 else "",
 			" · buffer %d ms" % _buffer_ms(tree) if _buffer_ms(tree) >= 0 else ""])
 	else:

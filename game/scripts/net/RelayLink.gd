@@ -16,8 +16,29 @@ signal snap(entries: Array)      # [{id, hero, p: [[t s, x, y], ...], fast: true
 signal up_changed(up: bool)
 
 const STALE_S := 180.0           # published longer ago than this: the relay is gone
-const PING_S := 5.0
+const PING_S := 1.0
 const DROP_S := 12.0             # nothing heard this long (pongs come every PING_S)
+## A weak line cannot carry a full class's 20 snapshots a second; they queue
+## on the way and what this phone shows falls further and further behind. A
+## pong waits behind every snapshot sent before it, so its round trip over the
+## best seen on this connection (at most RTT_CAP: a line queued from its very
+## first pong has no clean one to learn from) is that queue. RATE_DOWN_S of it
+## twice running asks the relay for half the snapshots (down to a quarter,
+## MAX_EVERY), then RATE_HOLD_S lets what was queued drain before judging
+## again; RATE_CALM_S under RATE_UP_S asks for twice as many -- and each such
+## try the line could not carry (down again within RATE_TRY_S) doubles the calm
+## needed before the next, up to RATE_CALM_MAX_S.
+const RATE_DOWN_S := 0.5
+const RATE_UP_S := 0.15
+const RATE_CALM_S := 10.0
+const RATE_CALM_MAX_S := 160.0
+const RATE_HOLD_S := 3.0
+const RATE_TRY_S := 30.0
+const RTT_CAP := 0.5
+## FLUSH_S behind, what is queued is old news, and asking for fewer leaves it
+## to drain for minutes on a slow line: a new connection drops it at once,
+## asking for the least rate from its hello, and steps up again once calm.
+const FLUSH_S := 2.0
 const RETRY_MIN_S := 1.0
 const RETRY_MAX_S := 15.0
 const OUTDATED_RETRY_S := 300.0  # "update the app": no point asking every second
@@ -40,6 +61,7 @@ var echo_trips: Array[float] = []
 var up := false
 var rtt := 0.0
 var hz := 0
+var rate := 0                    # snapshots a second asked for: hz, or fewer on a weak line
 var idx := 0
 var host := ""                   # for NetReport / HubDebug
 var last_close := ""             # why the line last went down
@@ -55,6 +77,13 @@ var _retry_in := -1.0
 var _attempt := 0
 var _heard := 0.0
 var _ping_clock := 0.0
+var _best_rtt := INF
+var _over := 0
+var _calm_since := 0.0
+var _hold_until := 0.0
+var _raised_at := -INF
+var _calm_need := RATE_CALM_S
+var _start_rate := 0             # the rate the next hello asks for (0: the relay's own)
 
 
 ## Debug: the hub path only (`off`), or back to the relay.
@@ -77,6 +106,7 @@ func join(session_id: String, role: String, hero := 1) -> void:
 	_role = role
 	_hero = hero
 	_attempt = 0
+	_start_rate = 0
 	_retry_in = 0.01
 
 
@@ -159,8 +189,11 @@ func _dial() -> void:
 		await get_tree().process_frame
 	if _ws == null or _ws.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	_ws.send_text(RelayCodec.text("hello", {"v": RelayCodec.VERSION, "token": Net.access_token,
-		"session": _session, "role": _role, "hero": _hero}))
+	var hello := {"v": RelayCodec.VERSION, "token": Net.access_token,
+		"session": _session, "role": _role, "hero": _hero}
+	if _start_rate > 0:
+		hello["rate"] = _start_rate
+	_ws.send_text(RelayCodec.text("hello", hello))
 
 
 ## The relay's address from Supabase, "" if none is published or it has not
@@ -184,6 +217,15 @@ func _take_text(m: Array) -> void:
 		"welcome":
 			idx = int(m[1].get("idx", 0))
 			hz = int(m[1].get("hz", 0))
+			rate = mini(_start_rate, hz) if _start_rate > 0 else hz
+			_start_rate = 0
+			_best_rtt = INF
+			_over = 0
+			_calm_since = Time.get_ticks_msec() / 1000.0
+			_hold_until = 0.0
+			_raised_at = -INF
+			if _start_rate <= 0:
+				_calm_need = RATE_CALM_S
 			_attempt = 0
 			last_close = ""
 			if not up:
@@ -197,6 +239,60 @@ func _take_text(m: Array) -> void:
 					_roster[int(k)] = who
 		"pong":
 			rtt = Time.get_ticks_msec() / 1000.0 - float(m[1].get("t", 0.0))
+			_judge_rate(rtt)
+
+
+## Fewer snapshots while they queue up on the way here, more once it clears.
+func _judge_rate(trip: float) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	_best_rtt = minf(_best_rtt, trip)
+	var queued := trip - minf(_best_rtt, RTT_CAP)
+	if queued > RATE_UP_S:
+		_calm_since = now
+	if queued > FLUSH_S and _ws != null:
+		_slower(now)
+		_start_rate = least_rate(hz)
+		_close()
+		last_close = "line too slow: started over at %d/s" % _start_rate
+		_retry(0.2)
+		return
+	if now < _hold_until:
+		return
+	_over = _over + 1 if queued > RATE_DOWN_S else 0
+	var want := next_rate(rate, hz, _over, now - _calm_since, _calm_need)
+	if want != rate and _ws != null:
+		if want < rate:
+			_slower(now)
+			_hold_until = now + RATE_HOLD_S
+		else:
+			_raised_at = now
+		rate = want
+		_over = 0
+		_calm_since = now
+		_ws.send_text(RelayCodec.text("rate", {"hz": rate}))
+
+
+## Going down again soon after going up: the line could not carry it, so the
+## next try waits twice as long.
+func _slower(now: float) -> void:
+	if now - _raised_at < RATE_TRY_S:
+		_calm_need = minf(_calm_need * 2.0, RATE_CALM_MAX_S)
+	_raised_at = -INF
+
+
+static func least_rate(hz: int) -> int:
+	return maxi(ceili(float(hz) / RelayServer.MAX_EVERY), 1)
+
+
+## The snapshots a second to ask for: half after `over` queued pongs in a
+## row (2), down to a quarter of `hz`; twice as many after `calm_need` calm.
+static func next_rate(rate: int, hz: int, over: int, calm_s: float, calm_need := RATE_CALM_S) -> int:
+	var least := least_rate(hz)
+	if over >= 2 and rate > least:
+		return maxi(rate / 2, least)
+	if calm_s >= calm_need and rate < hz:
+		return mini(rate * 2, hz)
+	return rate
 
 
 func _take_snap(heroes: Dictionary) -> void:

@@ -8,6 +8,7 @@ extends SceneTree
 const PORT := 47392
 const S1 := "11111111-1111-4111-8111-111111111111"
 const S2 := "22222222-2222-4222-8222-222222222222"
+const S3 := "33333333-3333-4333-8333-333333333333"
 
 var relay: RelayServer
 
@@ -178,6 +179,51 @@ func _server() -> void:
 	relay.silent_s = 15.0
 	await _settle([t, c])
 	print("server: leave and silence")
+
+	# A weak line asks for fewer snapshots (RelayLink's rate): a quarter of
+	# them, each with every hero's newest point; the others still get all.
+	var walker := await _join("ok:hal", S3, "player")
+	var quick := await _join("ok:fay", S3, "player")
+	var slow := await _join("ok:gus", S3, "player")
+	var hal: int = walker.last("welcome").idx
+	slow.ws.send_text(RelayCodec.text("rate", {"hz": 5}))
+	await _settle([walker, quick, slow])
+	quick.snaps.clear()
+	slow.snaps.clear()
+	for i in 24:                                     # a sample a tick for 1.2s
+		walker.ws.send(RelayCodec.up(2000 + i * 50, i, 0), WebSocketPeer.WRITE_MODE_BINARY)
+		walker.pump()
+		await create_timer(0.05).timeout
+	await _settle([walker, quick, slow])
+	quick.pump()
+	slow.pump()
+	assert(_points(quick, hal).size() == 24, "full rate: every point (%d)" % _points(quick, hal).size())
+	var slow_snaps := slow.snaps.filter(func(s: Dictionary) -> bool: return s.has(hal))
+	assert(slow_snaps.size() >= 5 and slow_snaps.size() <= 8, "a quarter of the snapshots: %d" % slow_snaps.size())
+	assert(slow_snaps.all(func(s: Dictionary) -> bool: return (s[hal] as Array).size() == 1), "one point each")
+	assert(_points(slow, hal)[-1] == [2000 + 23 * 50, 23, 0], "the newest is never held back")
+	slow.ws.send_text(RelayCodec.text("rate", {"hz": 20}))
+	await _settle([walker, quick, slow])
+	slow.snaps.clear()
+	for i in 6:
+		walker.ws.send(RelayCodec.up(4000 + i * 50, i, 9), WebSocketPeer.WRITE_MODE_BINARY)
+		walker.pump()
+		await create_timer(0.05).timeout
+	await _settle([walker, quick, slow])
+	assert(_points(slow, hal).size() == 6, "asked back up: every point again")
+	var fresh := _connect()                          # starting over: the rate in its hello
+	assert(await _until(func() -> bool: return fresh.ws.get_ready_state() == WebSocketPeer.STATE_OPEN, [fresh]))
+	fresh.ws.send_text(RelayCodec.text("hello", {"v": RelayCodec.VERSION, "token": "ok:ida",
+		"session": S3, "role": "player", "hero": 1, "rate": 5}))
+	assert(await _until(func() -> bool: return not fresh.last("welcome").is_empty(), [fresh]))
+	for i in 12:
+		walker.ws.send(RelayCodec.up(6000 + i * 50, i, 7), WebSocketPeer.WRITE_MODE_BINARY)
+		walker.pump()
+		await create_timer(0.05).timeout
+	await _settle([walker, quick, slow, fresh])
+	var fresh_got := fresh.snaps.filter(func(s: Dictionary) -> bool: return s.has(hal))
+	assert(fresh_got.size() >= 2 and fresh_got.size() <= 4, "hello's rate: a quarter (%d)" % fresh_got.size())
+	print("server: fewer snapshots for a weak line")
 
 
 ## Every point of hero `idx` across all the snapshots `p` has heard.
