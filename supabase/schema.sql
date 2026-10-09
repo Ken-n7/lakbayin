@@ -740,6 +740,60 @@ returns void language sql as $$
    where id = 1 and owner = p_owner
 $$;
 
+-- 7c. Relay tickets ----------------------------------------------------------
+-- A phone used to say hello to the relay with its sign-in token, and the relay
+-- checked it with Supabase. Whoever ran a relay -- and any admin can publish
+-- one, or host the backup -- then held every phone's token for an hour. Now
+-- the phone asks for a ticket here, "this player may join this session", and
+-- the relay redeems it with its own login. A ticket opens nothing but the
+-- relay, so a relay that keeps one has nothing to use it on.
+create table if not exists public.relay_tickets (
+  ticket     uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles on delete cascade,
+  session_id uuid not null references public.sessions on delete cascade,
+  role       text not null check (role in ('player', 'teacher')),
+  made_at    timestamptz not null default now()
+);
+alter table public.relay_tickets enable row level security;   -- no policies: the two functions only
+
+-- A ticket for a member of the session (player) or its own teacher.
+create or replace function public.relay_ticket(p_session uuid, p_role text) returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare
+  t uuid;
+begin
+  if p_role = 'player' then
+    if not exists (select 1 from public.members
+                   where session_id = p_session and profile_id = auth.uid()) then
+      raise exception 'you are not in this adventure';
+    end if;
+  elsif p_role = 'teacher' then
+    if not public.owns_session(p_session) then
+      raise exception 'not your session';
+    end if;
+  else
+    raise exception 'no such role';
+  end if;
+  delete from public.relay_tickets where made_at < now() - interval '1 day';
+  insert into public.relay_tickets (profile_id, session_id, role)
+  values (auth.uid(), p_session, p_role)
+  returning ticket into t;
+  return t;
+end $$;
+
+-- Whose ticket, if it is for that session and role and under an hour old;
+-- null otherwise. Relays sign in as admins (relayserver, or the teacher's
+-- Game Controls), so only an admin may ask.
+create or replace function public.relay_redeem(p_ticket uuid, p_session uuid, p_role text) returns uuid
+language sql stable security definer set search_path = '' as $$
+  select profile_id from public.relay_tickets
+   where public.is_admin() and ticket = p_ticket and session_id = p_session
+     and role = p_role and made_at > now() - interval '1 hour'
+$$;
+
+grant execute on function public.relay_ticket(uuid, text) to authenticated;
+grant execute on function public.relay_redeem(uuid, uuid, text) to authenticated;
+
 -- 8. Reset (commented out on purpose) ---------------------------------------
 -- Uncomment, run, then run this file again for a clean slate. Deletes every
 -- row. Accounts live in auth.users and survive -- delete those in the

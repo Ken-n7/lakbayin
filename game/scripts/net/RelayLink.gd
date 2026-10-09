@@ -45,6 +45,9 @@ const OUTDATED_RETRY_S := 300.0  # "update the app": no point asking every secon
 ## No relay running: look again now and then, not every few seconds from
 ## every phone in the room.
 const UNPUBLISHED_RETRY_S := 60.0
+## A relay ticket is kept this long, well inside the hour the server honours
+## it, so quick reconnects do not each ask for one.
+const TICKET_KEEP_S := 1800.0
 
 ## Debug builds: the hub path only, as if the relay could not be reached --
 ## for trying the bridge on real phones (the dev panel's Network tab).
@@ -73,6 +76,9 @@ var _hero := 1
 var _ws: Variant = null
 var _roster := {}                # idx -> {id, hero}
 var _dialing := false
+var _ticket := ""                # relay_ticket's answer, for `_ticket_of`
+var _ticket_of := ""             # "session|role" it was given for
+var _ticket_at := -INF
 var _retry_in := -1.0
 var _attempt := 0
 var _heard := 0.0
@@ -171,6 +177,14 @@ func _dial() -> void:
 			last_close = "no relay published"
 			_retry(UNPUBLISHED_RETRY_S)
 		return
+	var ticket := await _ticket_for(session)
+	if session != _session:
+		_dialing = false
+		return
+	if ticket == "":
+		_dialing = false
+		_retry(-1.0)
+		return
 	host = Dial.host_of(url)
 	var at := await Dial.address(host)
 	_dialing = false
@@ -189,11 +203,28 @@ func _dial() -> void:
 		await get_tree().process_frame
 	if _ws == null or _ws.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	var hello := {"v": RelayCodec.VERSION, "token": Net.access_token,
+	var hello := {"v": RelayCodec.VERSION, "ticket": ticket,
 		"session": _session, "role": _role, "hero": _hero}
 	if _start_rate > 0:
 		hello["rate"] = _start_rate
 	_ws.send_text(RelayCodec.text("hello", hello))
+
+
+## A ticket to join `session` on the relay (schema 7c), "" if Supabase will
+## not give one. The hello carries this instead of the sign-in token, so the
+## relay -- whoever runs it -- never holds anything that opens Supabase.
+func _ticket_for(session: String) -> String:
+	var now := Time.get_ticks_msec() / 1000.0
+	if _ticket != "" and _ticket_of == session + "|" + _role and now - _ticket_at < TICKET_KEEP_S:
+		return _ticket
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/relay_ticket",
+		{"p_session": session, "p_role": _role})
+	_ticket = str(got.data) if got.error == "" and got.data is String else ""
+	_ticket_of = session + "|" + _role
+	_ticket_at = now
+	if _ticket == "":
+		last_close = "no relay ticket: " + (got.error if got.error != "" else "no answer")
+	return _ticket
 
 
 ## The relay's address from Supabase, "" if none is published or it has not
@@ -336,6 +367,8 @@ func echo_ms() -> Array:
 
 func _down(code: int, reason: String) -> void:
 	_close()
+	if code == RelayCodec.DENIED:
+		_ticket = ""                    # the next try asks for a fresh one
 	last_close = reason if reason != "" else "closed (%d)" % code
 	if _session == "":
 		return

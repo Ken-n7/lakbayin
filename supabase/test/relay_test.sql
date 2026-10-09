@@ -97,6 +97,65 @@ begin
     got || ' ' || pg_temp.row());
 end $$;
 
+-- Tickets (schema.sql 7c): the phone's hello carries one instead of its
+-- sign-in token. `who` runs `query`; its first value as text, or 'error: ...'.
+create or replace function pg_temp.val(who uuid, query text)
+returns text language plpgsql as $$
+declare
+  v text;
+begin
+  perform set_config('request.jwt.claim.sub', who::text, true);
+  perform set_config('role', 'authenticated', true);
+  execute query into v;
+  perform set_config('role', 'postgres', true);
+  return coalesce(v, '');
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return 'error: ' || sqlerrm;
+end $$;
+
+insert into public.sessions (id, admin_id) values
+  ('55555555-5555-5555-5555-555555555555', '00000000-0000-0000-0000-0000000000b0'),
+  ('66666666-6666-6666-6666-666666666666', '00000000-0000-0000-0000-0000000000a0');
+insert into public.members (session_id, profile_id) values
+  ('55555555-5555-5555-5555-555555555555', '00000000-0000-0000-0000-0000000000c0');
+
+do $$
+declare
+  home    uuid := '00000000-0000-0000-0000-0000000000a0';
+  teacher uuid := '00000000-0000-0000-0000-0000000000b0';
+  kid     uuid := '00000000-0000-0000-0000-0000000000c0';
+  s       uuid := '55555555-5555-5555-5555-555555555555';
+  other   uuid := '66666666-6666-6666-6666-666666666666';
+  t       text;
+  got     text;
+  ask     constant text := 'select public.relay_ticket(%L, %L)';
+  redeem  constant text := 'select public.relay_redeem(%L, %L, %L)';
+begin
+  t := pg_temp.val(kid, format(ask, s, 'player'));
+  perform pg_temp.check(t ~ '^[0-9a-f-]{36}$', 'a player in the session gets a ticket', t);
+  got := pg_temp.val(kid, format(ask, other, 'player'));
+  perform pg_temp.check(got like 'error:%not in this adventure', '...not for a session they are not in', got);
+  got := pg_temp.val(kid, format(ask, s, 'teacher'));
+  perform pg_temp.check(got like 'error:%not your session', 'a student gets no teacher ticket', got);
+  got := pg_temp.val(home, format(ask, s, 'teacher'));
+  perform pg_temp.check(got like 'error:%not your session', '...nor another teacher, for this session', got);
+  got := pg_temp.val(teacher, format(ask, s, 'teacher'));
+  perform pg_temp.check(got ~ '^[0-9a-f-]{36}$', 'the session''s teacher gets one', got);
+
+  got := pg_temp.val(home, format(redeem, t, s, 'player'));
+  perform pg_temp.check(got = kid::text, 'a relay redeems it: whose it is', got);
+  got := pg_temp.val(home, format(redeem, t, other, 'player')) || pg_temp.val(home, format(redeem, t, s, 'teacher'));
+  perform pg_temp.check(got = '', '...only for its own session and role', got);
+  got := pg_temp.val(kid, format(redeem, t, s, 'player'));
+  perform pg_temp.check(got = '', 'a student cannot redeem one', got);
+  got := pg_temp.val(kid, 'select count(*) from public.relay_tickets');
+  perform pg_temp.check(got = '0' or got like 'error:%', 'nobody reads the tickets directly', got);
+  update public.relay_tickets set made_at = now() - interval '61 minutes' where ticket = t::uuid;
+  got := pg_temp.val(home, format(redeem, t, s, 'player'));
+  perform pg_temp.check(got = '', 'an hour-old ticket opens nothing', got);
+end $$;
+
 select case when ok then 'ok  ' else 'FAIL' end || '  ' || name
        || case when not ok and detail <> '' then '   <' || detail || '>' else '' end
   from results order by n;

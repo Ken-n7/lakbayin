@@ -14,8 +14,12 @@ var relay: RelayServer
 
 
 class Stub:
-	## "ok:<id>" is <id>; a teacher token "teach:<id>" only as a teacher.
+	const TIA := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"   # a ticket Supabase gave "tia"
+	## "ok:<id>" is <id>; a teacher token "teach:<id>" only as a teacher; TIA
+	## is tia's ticket.
 	func who(token: String, _session: String, role: String) -> String:
+		if token == TIA and role == "player":
+			return "tia"
 		if token.begins_with("ok:") and role == "player":
 			return token.trim_prefix("ok:")
 		if token.begins_with("teach:") and role == "teacher":
@@ -148,6 +152,16 @@ func _server() -> void:
 	relay.hello_s = 10.0
 	print("server: denials")
 
+	# A ticket in place of the sign-in token: let in as whoever it was given to.
+	var tia := await _join(Stub.TIA, S1, "player", "ticket")
+	assert(not tia.last("welcome").is_empty(), "a ticket gets in: " + tia.why())
+	var stray := await _join("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", S1, "player", "ticket")
+	assert(stray.why() == "not in this session", "a ticket Supabase did not give is refused")
+	tia.ws.close()
+	stray.ws.close()
+	await _settle([tia, stray])
+	print("server: tickets")
+
 	# The teacher watches: gets everything, sends nothing that counts.
 	var t := await _join("teach:tess", S1, "teacher")
 	assert(t.last("welcome").get("idx") == 0)
@@ -259,10 +273,11 @@ func _connect() -> Phone:
 	return p
 
 
-func _join(token: String, session: String, role: String) -> Phone:
+## `field`: "ticket" as the app says hello, "token" as apps before tickets did.
+func _join(token: String, session: String, role: String, field := "token") -> Phone:
 	var p := _connect()
 	assert(await _until(func() -> bool: return p.ws.get_ready_state() == WebSocketPeer.STATE_OPEN, [p]))
-	p.ws.send_text(RelayCodec.text("hello", {"v": RelayCodec.VERSION, "token": token,
+	p.ws.send_text(RelayCodec.text("hello", {"v": RelayCodec.VERSION, field: token,
 		"session": session, "role": role, "hero": 3}))
 	await _until(func() -> bool: return not p.last("welcome").is_empty() or p.why() != "", [p])
 	return p

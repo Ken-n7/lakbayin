@@ -11,10 +11,11 @@ extends Node
 ## nothing -- the LAN spike carried 40 phones at 10 snapshots a second on
 ## 8.5% of a core -- and others can be shown ~0.3-0.5s behind.
 ##
-## Speaks RelayCodec. A connection says hello with its Supabase token; it is
-## let in only as a member of that session (player) or its teacher (observer,
-## sends nothing), checked against Supabase with the student's own token
-## (`who`). Listens on 127.0.0.1 only: cloudflared connects locally.
+## Speaks RelayCodec. A connection says hello with a ticket from Supabase
+## (`relay_ticket`), never its sign-in token; it is let in only as a member of
+## that session (player) or its teacher (observer, sends nothing), as Supabase
+## says when the relay redeems the ticket (`who`). Listens on 127.0.0.1 only:
+## cloudflared connects locally.
 
 const PORT := 47317
 const MAX_UP_PER_S := 40
@@ -172,7 +173,9 @@ func _hello(key: int, p: Dictionary) -> void:
 		return
 	var session := str(p.get("session", ""))
 	var role := str(p.get("role", ""))
-	var token := str(p.get("token", ""))
+	# A ticket (relay_ticket, schema 7c); an app from before tickets sends its
+	# sign-in token instead, still let in until every phone has been updated.
+	var token := str(p.get("ticket", p.get("token", "")))
 	if not _uuid.search(session) or not role in ["player", "teacher"] \
 			or token == "" or token.length() > 4096 or " " in token:
 		_deny(key, "bad hello")
@@ -229,9 +232,17 @@ func _hello(key: int, p: Dictionary) -> void:
 	room.roster_due = true
 
 
+## Who `token` is, if they may join `session` as `role`; "" if not. A ticket
+## is redeemed with this relay's own login (an admin: relayserver, or the
+## teacher's Game Controls); an old app's sign-in token is checked as itself.
 func who(token: String, session: String, role: String) -> String:
 	# Looked up, not named: tools and tests load this before the autoloads.
 	var net: Node = get_node("/root/Net")
+	if _uuid.search(token):
+		var got: Dictionary = await net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/relay_redeem",
+			{"p_ticket": token, "p_session": session, "p_role": role})
+		var id := str(got.data) if got.error == "" and got.data != null else ""
+		return id if _uuid.search(id) else ""
 	var me: Dictionary = await net.rest_as(token, HTTPClient.METHOD_GET, "/auth/v1/user")
 	if me.error != "" or not (me.data is Dictionary):
 		return ""
