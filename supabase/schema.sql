@@ -200,6 +200,12 @@ create table if not exists public.questions (
 alter table public.questions add column if not exists
   created_at timestamptz not null default now();
 
+-- Each teacher their own bank (client, 2026-10-09): a question belongs to
+-- whoever wrote it, and a class plays its own teacher's. Rows from before this
+-- have no owner until they are given one (supabase/README.md, step 6).
+alter table public.questions add column if not exists
+  owner uuid references public.profiles on delete cascade default auth.uid();
+
 -- 4b. Scoring, server side ---------------------------------------------------
 -- The client may not write its own score (SPECS §10 Phase 4). Every gem change
 -- goes through one of these, which run as the owner and therefore past RLS.
@@ -507,7 +513,7 @@ create trigger members_team_rules before insert or update on public.members
 create or replace function public.shuffle_teams(p_session uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 begin
-  if not public.is_admin() then
+  if not public.owns_session(p_session) then
     raise exception 'only the teacher can shuffle teams';
   end if;
   if not exists (select 1 from public.sessions
@@ -597,13 +603,27 @@ drop policy if exists join_team      on public.members;
 drop policy if exists own_member     on public.members;
 drop policy if exists admin_members  on public.members;
 
+-- One teacher per session, and teachers never reach into each other's (client,
+-- 2026-10-09, SPECS §11 Q12): a teacher reads and changes only the sessions
+-- they made, their teams and their players, and their own question bank.
+-- Players still read every session -- a class finds its own by the code before
+-- joining -- and every finished game, for the all-time board.
+create or replace function public.owns_session(p_session uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select public.is_admin() and exists (select 1 from public.sessions
+                                        where id = p_session and admin_id = auth.uid())
+$$;
+
 -- Everyone signed in can read; the leaderboard is the whole point.
 create policy read_profiles  on public.profiles  for select to authenticated using (true);
-create policy read_sessions  on public.sessions  for select to authenticated using (true);
-create policy read_teams     on public.teams     for select to authenticated using (true);
-create policy read_members   on public.members   for select to authenticated using (true);
+create policy read_sessions  on public.sessions  for select to authenticated
+  using (not public.is_admin() or admin_id = auth.uid());
+create policy read_teams     on public.teams     for select to authenticated
+  using (not public.is_admin() or public.owns_session(session_id));
+create policy read_members   on public.members   for select to authenticated
+  using (not public.is_admin() or public.owns_session(session_id));
 create policy read_questions on public.questions for select to authenticated
-  using (active or public.is_admin());
+  using ((active and not public.is_admin()) or owner = auth.uid());
 
 -- A player owns their hero and display name, never their own role -- the
 -- subquery pins `role` to whatever it already is, so a PATCH cannot promote.
@@ -612,13 +632,15 @@ create policy own_profile on public.profiles for update to authenticated
   with check (id = auth.uid()
               and role = (select role from public.profiles where id = auth.uid()));
 
--- The teacher owns the clock, the teams and the bank.
+-- The teacher owns the clock, the teams and the bank -- their own.
 create policy admin_sessions  on public.sessions  for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
+  using (public.is_admin() and admin_id = auth.uid())
+  with check (public.is_admin() and admin_id = auth.uid());
 create policy admin_teams     on public.teams     for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
+  using (public.owns_session(session_id)) with check (public.owns_session(session_id));
 create policy admin_questions on public.questions for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
+  using (public.is_admin() and owner = auth.uid())
+  with check (public.is_admin() and owner = auth.uid());
 
 -- Joining a team is the player's own act.
 create policy join_team on public.members for insert to authenticated
@@ -632,7 +654,7 @@ create policy own_member on public.members for update to authenticated
 
 -- The teacher's Move: another player's team, and nothing else of their row.
 create policy admin_members on public.members for update to authenticated
-  using (public.is_admin()) with check (public.is_admin());
+  using (public.owns_session(session_id)) with check (public.owns_session(session_id));
 
 revoke update on public.members from authenticated;
 grant update (team_id) on public.members to authenticated;

@@ -19,10 +19,14 @@ const PATH := "/rest/v1/questions"
 ## Exponents typed with a caret come back raised (`TEXT_FIELDS`), so a row
 ## saved as `2^3` -- before the form raised them, or straight into the table --
 ## reads 2³ everywhere the bank is shown: the list, Feedback, and the quiz.
-static func fetch(station := 0) -> Dictionary:
+## `owner` narrows it to one teacher's bank -- a player reads every
+## teacher's active questions, so the phone asks for its session's teacher's.
+static func fetch(station := 0, owner := "") -> Dictionary:
 	var q := PATH + "?select=*&order=station,created_at,id"
 	if station > 0:
 		q = PATH + "?select=*&station=eq.%d&order=created_at,id" % station
+	if owner != "":
+		q += "&owner=eq." + owner
 	var r: Dictionary = await Net.rest(HTTPClient.METHOD_GET, q)
 	var rows: Array = r.data if r.data is Array else []
 	for row in rows:
@@ -136,12 +140,14 @@ static var bank := {}
 
 
 ## Pull the bank once per adventure rather than per item: forty round trips on
-## a classroom connection is forty chances to stall mid-question.
-static func load_bank() -> String:
+## a classroom connection is forty chances to stall mid-question. `owner` is
+## the session's teacher, whose bank the class plays (each teacher has their
+## own); "" with no session (explore): whatever this account can read.
+static func load_bank(owner := "") -> String:
 	bank = {}
 	if not Net.configured() or not Net.signed_in():
 		return ""
-	var got: Dictionary = await fetch()
+	var got: Dictionary = await fetch(0, owner)
 	if got.error != "":
 		return got.error
 	for row: Dictionary in got.rows:

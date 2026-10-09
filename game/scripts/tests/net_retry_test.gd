@@ -30,6 +30,9 @@ var drop_next_reply := false
 var auth := false
 var profile_down := false
 var token_refused := false
+## The question bank: every request line is kept, and two questions answer.
+var bank := false
+var asked: Array[String] = []
 
 
 func _ready() -> void:
@@ -123,6 +126,8 @@ func _ready() -> void:
 	_line_measures()
 	_weak_line()
 	await _restore()
+	await _bank()
+	_lobby_bell()
 
 	_server.stop()
 	Net.url = was_url
@@ -168,6 +173,44 @@ func _restore() -> void:
 	Net.role = ""
 	Net.username = ""
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(Net.SESSION_PATH))
+
+
+## A class plays its own teacher's questions: a player may read every
+## teacher's active ones, so the phone has to ask for its session's teacher's.
+func _bank() -> void:
+	Net.url = "http://127.0.0.1:%d" % PORT
+	Net.access_token = "at"
+	bank = true
+	asked.clear()
+	var err: String = await QuestionStore.load_bank("teacher-a")
+	var ask: String = asked[0] if not asked.is_empty() else ""
+	check("the bank asked for is the session teacher's", err == "" and ask.contains("/rest/v1/questions")
+		and ask.contains("owner=eq.teacher-a"), "%s / %s" % [err, ask])
+	check("...and its questions are the class's", (QuestionStore.bank.get(0, []) as Array).size() == 2,
+		str(QuestionStore.bank))
+	bank = false
+	QuestionStore.bank = {}
+	Net.access_token = ""
+
+
+## A lobby's broadcasts are only a doorbell. Anyone signed in can broadcast on
+## the shared channel, from any class: a fake "ended" or a fake team must
+## change nothing, only ask for a reload.
+func _lobby_bell() -> void:
+	var lobby := Lobby.new()
+	lobby.session = {"id": "s1", "state": "lobby"}
+	lobby.teams = [{"id": "t1", "name": "Red"}]
+	var fake := {"sid": "s1", "table": "sessions", "type": "UPDATE", "record": {"id": "s1", "state": "ended"}}
+	check("a lobby broadcast asks for a reload", lobby.hear(Lobby.EVENT, fake) == "reload")
+	check("...and its record is not taken", lobby.session.state == "lobby", str(lobby.session))
+	var spy := {"sid": "s1", "table": "teams", "type": "INSERT",
+		"record": {"id": "t9", "session_id": "s1", "name": "Spy"}}
+	check("...one more within the second rings nothing",
+		lobby.hear(Lobby.EVENT, spy) == "" and lobby.teams.size() == 1, str(lobby.teams))
+	check("...another session's is not ours", lobby.hear(Lobby.EVENT, {"sid": "other"}) == "")
+	check("the database's change feed is still applied",
+		lobby.apply("sessions", "UPDATE", {"id": "s1", "state": "running"}) == "changed"
+		and lobby.session.state == "running", str(lobby.session))
 
 
 ## One slow call is not a weak line: the typical one is what counts.
@@ -318,6 +361,11 @@ func _process(_delta: float) -> void:
 					_peers.erase(p)
 					continue
 				body = '[{"username":"stu","role":"admin"}]'
+		if bank:
+			asked.append(text.substr(0, text.find("\r\n")))
+			body = JSON.stringify([{"station": 1, "prompt": "1+1", "answer": "2", "active": true},
+				{"station": 1, "prompt": "2+2", "answer": "4", "active": true}])
+			status = "200 OK"
 		if stateful:
 			var first_line: String = text.substr(0, text.find("\r\n"))
 			if first_line.begins_with("POST") and first_line.contains("apply_answer"):

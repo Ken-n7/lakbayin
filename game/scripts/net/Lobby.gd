@@ -7,25 +7,29 @@ extends RefCounted
 ## Both the student's team picker and the teacher's Teams tab show this. Each
 ## used to answer every event with two or three requests in a row -- ~250ms
 ## apiece -- so a team added on one screen took well over a second to appear
-## on another. Now a change is applied from the message itself, and the only
-## fetch is `load()`: once on open, and again for the rare row it cannot
-## place (a newcomer whose username the message does not carry).
+## on another. Now a change from the database's feed is applied from the
+## message itself, and the only fetch is `load()`: once on open, on a
+## broadcast's doorbell, and for the rare row it cannot place (a newcomer
+## whose username the message does not carry).
 ##
-## Two roads bring the same change, and `apply()` takes both, in either order:
+## Two roads bring a change:
 ##   - a **Broadcast** (`tell()`) from whoever made it, sent the moment they
-##     act -- ~0.1-0.2s, the fast road;
+##     act -- ~0.1-0.2s, the fast road. Broadcasts are unauthenticated (anyone
+##     signed in, in any class, can send one), so it is only a doorbell:
+##     `hear()` says "reload" and the rows are read from the database;
 ##   - the database's own change feed -- 0.4-1s, but it cannot be missed by a
-##     phone that was connected, so it is the backstop.
-## Broadcasts are unauthenticated, so they only ever change what a lobby SHOWS;
-## every rule is the server's, and the map never acts on one.
+##     phone that was connected; `apply()` takes it as it comes.
+## Every rule is the server's, and the map never acts on a broadcast.
 
 const EVENT := "row"
+const RING_S := 1.0              # reloads a broadcast may cause, at most one this often
 
 var session := {}
 ## [{id, name}], sorted by name -- the order Game Controls lists them in.
 var teams: Array = []
 ## profile_id -> {username, team_id}; team_id "" means not on a team yet.
 var players := {}
+var _rang_at := -INF
 
 
 ## Everything in one request: the session, its teams, its members and their
@@ -129,13 +133,20 @@ static func tell(session_id: String, table: String, type: String, record: Dictio
 		{"sid": session_id, "table": table, "type": type, "record": record})
 
 
-## A lobby-row broadcast for this session, as `apply()` takes it; "" if not.
+## A lobby-row broadcast for this session: "reload", at most once a second,
+## or "". Anyone signed in can broadcast on the shared channel, so what one
+## carries is never taken as true -- a fake "ended" or team would otherwise
+## show in another teacher's class. It only says "look again": the database
+## answers, and its own change feed (`apply`) brings anything a skipped bell
+## would have.
 func hear(event: String, data: Dictionary) -> String:
 	if event != EVENT or str(data.get("sid", "")) != str(session.get("id", "")):
 		return ""
-	var record: Variant = data.get("record")
-	return apply(str(data.get("table", "")), str(data.get("type", "")),
-		record if record is Dictionary else {})
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _rang_at < RING_S:
+		return ""
+	_rang_at = now
+	return "reload"
 
 
 ## Who is on a team, [{profile_id, username}]; "" for those on none.

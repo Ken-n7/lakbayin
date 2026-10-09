@@ -114,6 +114,7 @@ const HERO_SCALE_RANGE := Vector2(0.5, 3.0)
 ## which is what an offline dev run and the headless suites use.
 func _sync_session() -> void:
 	if _explore or not (Net.configured() and Net.signed_in()):
+		_load_bank("")
 		return
 	# Signed in means online: whatever happens next, the board waits for the
 	# teacher. Falling back to tap-to-start here let a student play a whole
@@ -131,6 +132,9 @@ func _sync_session() -> void:
 			main.open("team")
 		return
 	var sid: String = str(session.get("id", ""))
+	# The session's teacher's questions, fetched once, while the board builds
+	# and the aerial view holds -- long before the hero can reach a circle.
+	_load_bank(str(session.get("admin_id", "")))
 
 	# In this session? Then pick up where the server says, which is a fresh
 	# 50 gems on circle 1 for a first join and the real progress for a rejoin.
@@ -735,8 +739,8 @@ func _apply_session_state() -> void:
 ## The admin's questions for this run. A failure is reported, not swallowed:
 ## a silent fall back to the generator is exactly the substitution SPECS §10
 ## Phase 3 forbids, and the teacher would never know it happened.
-func _load_bank() -> void:
-	var err: String = await QuestionStore.load_bank()
+func _load_bank(owner: String) -> void:
+	var err: String = await QuestionStore.load_bank(owner)
 	if err != "" and is_instance_valid(hud):
 		hud.flash("Could not load the question bank — " + err)
 
@@ -761,9 +765,6 @@ func setup(data: Dictionary) -> void:
 	add_child(_sky)
 	hud = AdventureHud.new(self)
 	hud.build()
-	# Fetched once, while the board builds and the aerial view holds -- long
-	# before the hero can reach a circle, so the wait costs nobody anything.
-	_load_bank()
 	_sync_session()
 	if not Game.adventure_active:
 		Game.begin_adventure()

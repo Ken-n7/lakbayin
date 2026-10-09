@@ -90,6 +90,15 @@ account made before that UI exists. SQL Editor:
 
     update public.profiles set role = 'admin' where username = '<you>';
 
+## 6. Give the old questions a teacher
+
+Each teacher has their own bank (`questions.owner`, 2026-10-09). Questions
+written before that have no owner, so no teacher sees them and no class plays
+them until they get one. Once, in the SQL Editor, after the schema:
+
+    update public.questions set owner = (select id from public.profiles where username = '<teacher>')
+     where owner is null;
+
 ## What is in the schema
 
 | Table | Holds |
@@ -98,7 +107,7 @@ account made before that UI exists. SQL Editor:
 | `sessions` | one live adventure: duration, state, and the **shared clock** (`ends_at` running, `remaining_s` paused) |
 | `teams` | team name per session — the name **is** the join code, unique within the session |
 | `members` | a player in a team: gems, correct count, items done, eliminated, finished |
-| `questions` | the admin's bank; `QuestionGen` still tops up any station short of active items |
+| `questions` | each teacher's own bank (`owner`); a class plays its teacher's active questions |
 | `team_scores` | view: gems summed per team, which is the leaderboard |
 
 `sessions` and `members` are in the realtime publication, so one pause and the
@@ -106,8 +115,8 @@ live leaderboard reach every phone without polling.
 
 ## Known gap
 
-Scores are still client-written (`own_member` policy). SPECS §10 Phase 4 says
-gem arithmetic is validated server-side; that means a `security definer` RPC —
-`apply_answer`, `spend_hint`, `skip_item` — doing the sums in Postgres, after
-which that policy narrows to `finished` and `hero`. Marked in `schema.sql`.
-Fine for a proctored classroom pilot, not fine for a graded run.
+The gem sums are done in Postgres (`apply_answer`, `spend_hint`, `skip_item`,
+`finish_station`), but whether an answer was right is the phone's word: the
+phone checks it, and every student can read the active questions' answers.
+Capped at one answer per circle, so a student can lie about being right, not
+answer more often. Fine for a proctored class, not for a graded test.
