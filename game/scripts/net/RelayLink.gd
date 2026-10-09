@@ -205,7 +205,8 @@ func published() -> String:
 		return ""
 	var row: Dictionary = got.data[0]
 	var url := str(row.get("url", "")) if row.get("url") != null else ""
-	if not (url.begins_with("wss://") or url.begins_with("ws://")):
+	# The hello carries this phone's sign-in token: never over plain ws://.
+	if not url.begins_with("wss://"):
 		return ""
 	if Game.now() - Teams._stamp(row.get("updated_at")) > STALE_S:
 		return ""
