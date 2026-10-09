@@ -85,8 +85,11 @@ func _start(cf: String) -> String:
 		return err
 	end_leftover()
 	DirAccess.remove_absolute(_log)
-	_tunnel = OS.create_process(cf, ["tunnel", "--no-autoupdate", "--logfile", _log,
-		"--url", "http://127.0.0.1:%d" % PORT])
+	# http2, not the default QUIC: QUIC rides UDP, which mobile networks
+	# throttle -- on the client's Smart line the relay got ~0.1 Mbps of a
+	# 5.75 Mbps upload (2026-10-09).
+	_tunnel = OS.create_process(cf, ["tunnel", "--no-autoupdate", "--protocol", "http2",
+		"--logfile", _log, "--url", "http://127.0.0.1:%d" % PORT])
 	if _tunnel <= 0:
 		return "cloudflared would not start"
 	var f := FileAccess.open(PID_FILE, FileAccess.WRITE)
