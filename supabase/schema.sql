@@ -223,15 +223,20 @@ begin
                  where id = p_session and state = 'running') then
     raise exception 'the adventure is not running';
   end if;
+  -- One answer per circle, 14 in all (Game.TOTAL_ITEMS): the phone says
+  -- whether it was right, so without the cap one player could ask for +10
+  -- as often as they liked.
   update public.members
      set gems       = gems + case when p_correct then 10 else -5 end,
          correct    = correct + case when p_correct then 1 else 0 end,
          items_done = items_done + 1,
          updated_at = now()
-   where session_id = p_session and profile_id = auth.uid()
+   where session_id = p_session and profile_id = auth.uid() and items_done < 14
   returning * into row;
   if row is null then
-    raise exception 'you are not in this adventure';
+    raise exception '%', case when exists (select 1 from public.members
+        where session_id = p_session and profile_id = auth.uid())
+      then 'every circle is already answered' else 'you are not in this adventure' end;
   end if;
   return row;
 end $$;
@@ -266,7 +271,7 @@ begin
   update public.members
      set gems = gems - 15, items_done = items_done + 1,
          updated_at = now()
-   where session_id = p_session and profile_id = auth.uid()
+   where session_id = p_session and profile_id = auth.uid() and items_done < 14
   returning * into row;
   return row;
 end $$;
@@ -631,6 +636,11 @@ create policy admin_members on public.members for update to authenticated
 
 revoke update on public.members from authenticated;
 grant update (team_id) on public.members to authenticated;
+-- Joining writes who joined which team, nothing else: the column grant above
+-- holds updates only, and a join that set its own gems or `finished` would
+-- otherwise go straight in. Gems start at the column default.
+revoke insert on public.members from authenticated;
+grant insert (session_id, team_id, profile_id) on public.members to authenticated;
 
 -- 7. Realtime ---------------------------------------------------------------
 -- Why Supabase and not plain REST: the pause and the live leaderboard arrive
