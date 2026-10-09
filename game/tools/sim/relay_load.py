@@ -17,11 +17,18 @@ A real class instead, through the published relay and its real sign-in check:
 signs in the reusable roster (simclass000...), puts it in the session's teams,
 and says hello with each student's own token. Sign-ins are limited per IP
 (about 30 per 5 minutes): past that it waits.
+
+A weak line: --slow N --kbps K gives the first N phones K kbit/s down, and
+--adapt has them ask the relay for fewer snapshots the way the app does
+(RelayLink: a pong queued RATE_DOWN_S over the best twice running halves the
+rate, down to a quarter; copied here, not imported). Reports how far behind
+each slow phone's own walk comes back, early and late in the run.
 """
 import argparse
 import json
 import math
 import random
+import socket
 import statistics
 import struct
 import threading
@@ -37,8 +44,12 @@ def now_ms():
 
 
 class Phone(threading.Thread):
-    def __init__(self, i, url, seconds, hz, go, token=None, session=SESSION):
+    def __init__(self, i, url, seconds, hz, go, token=None, session=SESSION, kbps=0, adapt=False):
         super().__init__(daemon=True)
+        self.kbps, self.adapt = kbps, adapt
+        self.trips = []          # (seconds into the run, own sample's trip)
+        self.rates = []          # (seconds into the run, snapshots a second asked for)
+        self.started = 0.0
         self.i, self.url, self.seconds, self.every, self.go = i, url, seconds, 1.0 / hz, go
         self.token, self.session = token or f"test:phone{i}", session
         self.hello_at = 0.0
@@ -69,6 +80,7 @@ class Phone(threading.Thread):
                 at += 8
                 if idx == self.idx:
                     self.lag.append(((now - t) & 0xFFFFFFFF) / 1000.0)
+                    self.trips.append((time.time() - self.started, self.lag[-1]))
                 else:
                     self.heard[idx] = self.heard.get(idx, 0) + 1
 
@@ -76,11 +88,17 @@ class Phone(threading.Thread):
         """Takes a message if one is waiting; False once the relay has closed."""
         try:
             op, data = ws.recv_data()
+            if self.kbps:                               # a line this slow, roughly
+                time.sleep(len(data) * 8 / (self.kbps * 1000.0))
         except websocket.WebSocketTimeoutException:
             return True
         except Exception as e:
             self.trouble.append(f"recv: {e}")
             return False
+        if op == websocket.ABNF.OPCODE_TEXT and self.adapt:
+            m = json.loads(data.decode())
+            if m.get("e") == "pong":
+                self._judge(time.monotonic() - float(m["p"]["t"]), ws)
         if op == websocket.ABNF.OPCODE_CLOSE:          # a refusal says why in the close
             code = struct.unpack("!H", data[:2])[0] if len(data) >= 2 else 0
             self.trouble.append(f"closed {code} {data[2:].decode(errors='replace')}")
@@ -88,26 +106,86 @@ class Phone(threading.Thread):
         self._take(data.decode() if op == websocket.ABNF.OPCODE_TEXT else data)
         return True
 
-    def run(self):
+    def _judge(self, trip, ws):
+        """RelayLink._judge_rate / next_rate, in Python."""
+        now = time.monotonic()
+        self.best = min(self.best, trip)
+        queued = trip - min(self.best, 0.5)               # RTT_CAP
+        if queued > 0.15:                                 # RATE_UP_S
+            self.calm_since = now
+        least = max(-(-self.hz // 4), 1)
+        if queued > 2.0:                                  # FLUSH_S: start over at the least
+            self._slower(now)
+            self.flush = least
+            return
+        if now < self.hold_until:
+            return
+        self.over = self.over + 1 if queued > 0.5 else 0  # RATE_DOWN_S
+        want = self.rate
+        if self.over >= 2 and self.rate > least:
+            want = max(self.rate // 2, least)
+        elif now - self.calm_since >= self.calm_need and self.rate < self.hz:
+            want = min(self.rate * 2, self.hz)
+        if want != self.rate:
+            if want < self.rate:
+                self._slower(now)
+                self.hold_until = now + 3.0               # RATE_HOLD_S
+            else:
+                self.raised_at = now
+            self.rate, self.over, self.calm_since = want, 0, now
+            self.rates.append((time.time() - self.started, want))
+            ws.send(json.dumps({"e": "rate", "p": {"hz": want}}))
+
+    def _slower(self, now):
+        if now - self.raised_at < 30.0:                   # RATE_TRY_S
+            self.calm_need = min(self.calm_need * 2, 160.0)
+        self.raised_at = float("-inf")
+
+    def _open(self, rate=0):
+        """Connected and welcomed (asking for `rate` snapshots a second), or None."""
         try:
-            ws = websocket.create_connection(self.url, timeout=15)
+            opts = ((socket.SOL_SOCKET, socket.SO_RCVBUF, 4096),) if self.kbps else ()
+            ws = websocket.create_connection(self.url, timeout=15, sockopt=opts)
         except Exception as e:
             self.trouble.append(f"connect: {e}")
-            return
+            return None
         self.hello_at = time.time()
-        ws.send(json.dumps({"e": "hello", "p": {"v": 1, "token": self.token,
-                                                "session": self.session, "role": "player", "hero": 1}}))
+        hello = {"v": 1, "token": self.token, "session": self.session, "role": "player", "hero": 1}
+        if rate:
+            hello["rate"] = rate
+        ws.send(json.dumps({"e": "hello", "p": hello}))
         ws.settimeout(0.005)
+        self.idx = 0
         while not self.idx and time.time() - self.hello_at < 30:
             if not self._read(ws):
-                return
+                return None
+        now = time.monotonic()
+        self.rate, self.over, self.calm_since = rate or self.hz, 0, now
+        self.best, self.flush, self.hold_until, self.raised_at = float("inf"), 0, 0.0, float("-inf")
+        if not rate:
+            self.calm_need = 10.0                         # RATE_CALM_S, from a fresh join
+        return ws
+
+    def run(self):
+        self.hz = round(1.0 / self.every)
+        ws = self._open()
+        if ws is None:
+            return
         self.go.wait()
+        self.started = time.time()
         end = time.time() + self.seconds
         nxt = time.time() + random.uniform(0, self.every)
         heading = random.uniform(0, 2 * math.pi)
         x, y = random.uniform(500, 2500), random.uniform(400, 1300)
         last_ping = time.time()
         while time.time() < end:
+            if getattr(self, "flush", 0):
+                self.rates.append((time.time() - self.started, f"started over at {self.flush}"))
+                ws.close()
+                ws = self._open(self.flush)
+                if ws is None:
+                    break
+                continue
             t = time.time()
             if t >= nxt and self.idx:
                 heading += random.uniform(-0.4, 0.4)       # a thumb that weaves
@@ -120,9 +198,9 @@ class Phone(threading.Thread):
                     self.trouble.append(f"send: {e}")
                     break
                 nxt += self.every
-            if t - last_ping > 5:
+            if t - last_ping > (1 if self.adapt else 5):
                 last_ping = t
-                ws.send(json.dumps({"e": "ping", "p": {"t": t}}))
+                ws.send(json.dumps({"e": "ping", "p": {"t": time.monotonic()}}))
             if not self._read(ws):
                 break
         time.sleep(0.5)                  # the last snapshots
@@ -176,6 +254,9 @@ def main():
     ap.add_argument("--url", help="default: this laptop's relay, or the published one with --code")
     ap.add_argument("--code", help="a live session: real accounts instead of test tokens")
     ap.add_argument("--first", type=int, default=0, help="first simclass index to use")
+    ap.add_argument("--slow", type=int, default=0, help="this many phones on a weak line")
+    ap.add_argument("--kbps", type=float, default=24, help="the weak line's speed down")
+    ap.add_argument("--adapt", action="store_true", help="slow phones ask for fewer snapshots, as the app does")
     ap.add_argument("--phones", type=int, default=40)
     ap.add_argument("--seconds", type=int, default=60)
     ap.add_argument("--hz", type=float, default=10)
@@ -183,7 +264,8 @@ def main():
     sid, tokens = real_class(a) if a.code else (SESSION, [None] * a.phones)
     a.url = a.url or "ws://127.0.0.1:47317"
     go = threading.Event()
-    phones = [Phone(i, a.url, a.seconds, a.hz, go, tokens[i], sid) for i in range(a.phones)]
+    phones = [Phone(i, a.url, a.seconds, a.hz, go, tokens[i], sid,
+                    a.kbps if i < a.slow else 0, a.adapt and i < a.slow) for i in range(a.phones)]
     for p in phones:
         p.start()
     waited = time.time()
@@ -210,6 +292,13 @@ def main():
         print(f"   own trip: median {statistics.median(lag) * 1000:.0f}ms  p95 {lag[int(len(lag) * .95) - 1] * 1000:.0f}ms"
               f"  max {lag[-1] * 1000:.0f}ms")
     print(f"   down per phone: {statistics.mean(p.bytes for p in phones) / a.seconds / 1024:.1f} KB/s (payload)")
+    for p in phones[:a.slow]:
+        early = [d for (at, d) in p.trips if at < a.seconds / 3]
+        late = [d for (at, d) in p.trips if at >= a.seconds * 2 / 3]
+        if early and late:
+            print(f"   slow phone {p.i} ({a.kbps:g} kbit/s{', adapting' if p.adapt else ''}): own walk back "
+                  f"{statistics.median(early):.2f}s early, {statistics.median(late):.2f}s late, worst {max(d for _, d in p.trips):.2f}s;"
+                  f" down {p.bytes / a.seconds / 1024:.1f} KB/s; asked {p.rates or 'nothing'}")
     bad = [t for p in phones for t in p.trouble]
     print(f"   trouble: {len(bad)}" + (f"  e.g. {bad[0]}" if bad else ""))
 
