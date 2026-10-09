@@ -9,14 +9,15 @@ Each phone says hello (a test:<id> token -- the relay must run with
 the snapshots: how much of everyone else's walk arrives, and how long its own
 samples take to come back (the full trip a classmate sees, on its own clock).
 
-A real class instead, through the published relay and its real sign-in check:
+A real class instead, through the class's own relay and its real check:
 
     SUPABASE_URL=... SUPABASE_ANON_KEY=... \\
       python3 tools/sim/relay_load.py --code K7QM --phones 40 --hz 20
 
-signs in the reusable roster (simclass000...), puts it in the session's teams,
-and says hello with each student's own token. Sign-ins are limited per IP
-(about 30 per 5 minutes): past that it waits.
+signs in the reusable roster (simclass000..., signed up again if gone), puts it
+in the session's teams, and says hello with a relay ticket each, as the app
+does -- on the class's relay (its teacher's Game Controls), else the shared
+one. Sign-ins are limited per IP (about 30 per 5 minutes): past that it waits.
 
 A weak line: --slow N --kbps K gives the first N phones K kbit/s down, and
 --adapt has them ask the relay for fewer snapshots the way the app does
@@ -60,6 +61,7 @@ class Phone(threading.Thread):
         self.lag = []
         self.bytes = 0
         self.trouble = []
+        self.retries = 0          # connects refused and tried again
 
     def _take(self, data):
         self.bytes += len(data)
@@ -143,14 +145,24 @@ class Phone(threading.Thread):
 
     def _open(self, rate=0):
         """Connected and welcomed (asking for `rate` snapshots a second), or None."""
-        try:
-            opts = ((socket.SOL_SOCKET, socket.SO_RCVBUF, 4096),) if self.kbps else ()
-            ws = websocket.create_connection(self.url, timeout=15, sockopt=opts)
-        except Exception as e:
-            self.trouble.append(f"connect: {e}")
-            return None
+        # Refused, tried again after a random wait as the app does (RelayLink._retry,
+        # full jitter 1s..15s): a Windows relay turns away all but 8 connections
+        # arriving at once (Godot's listen backlog), Cloudflare saying 502.
+        opts = ((socket.SOL_SOCKET, socket.SO_RCVBUF, 4096),) if self.kbps else ()
+        for attempt in range(6):
+            try:
+                ws = websocket.create_connection(self.url, timeout=15, sockopt=opts)
+                break
+            except Exception as e:
+                if attempt == 5:
+                    self.trouble.append(f"connect: {e}")
+                    return None
+                self.retries += 1
+                time.sleep(random.uniform(1.0, min(15.0, 2.0 ** (attempt + 1))))
         self.hello_at = time.time()
-        hello = {"v": 1, "token": self.token, "session": self.session, "role": "player", "hero": 1}
+        # A ticket (a uuid) as the app sends; test:<id> tokens for --test-auth.
+        key = "token" if self.token.startswith("test:") else "ticket"
+        hello = {"v": 1, key: self.token, "session": self.session, "role": "player", "hero": 1}
         if rate:
             hello["rate"] = rate
         ws.send(json.dumps({"e": "hello", "p": hello}))
@@ -223,7 +235,12 @@ def real_class(a):
         name = f"simclass{a.first + i:03d}"
         while True:
             try:
-                api.sign_in(f"{name}@numxventure-test.dev", "letmein123")
+                try:
+                    api.sign_in(f"{name}@numxventure-test.dev", "letmein123")
+                except ApiError as e:
+                    if "429" in str(e):
+                        raise
+                    api.sign_up(f"{name}@numxventure-test.dev", name, "letmein123", "player")
                 break
             except ApiError as e:
                 if "429" not in str(e):
@@ -238,15 +255,25 @@ def real_class(a):
             teams = api.get(f"teams?select=id&session_id=eq.{sid}&order=name")
             if not teams:
                 raise SystemExit("the session has no teams yet")
-            a.url = a.url or api.get("relay?select=url")[0]["url"]
         try:
             api.post("members", {"session_id": sid, "team_id": teams[i % len(teams)]["id"],
                                  "profile_id": api.user})
         except ApiError as e:
             if "duplicate" not in str(e):
                 print(f"   {name} not in the session: {e}")
-        tokens.append(api.token)
+        if not a.url:                                 # a member may read the class's relay
+            own = api.get(f"session_relays?select=url,updated_at&session_id=eq.{sid}")
+            fresh = bool(own) and time.time() - _stamp(own[0]["updated_at"]) < 90
+            a.url = own[0]["url"] if fresh else api.get("relay?select=url")[0]["url"]
+            print(f"   relay: {a.url} ({'the class relay' if fresh else 'the shared one'})")
+        tokens.append(api.rpc("relay_ticket", {"p_session": sid, "p_role": "player"}))
     return sid, tokens
+
+
+def _stamp(iso):
+    """A PostgREST timestamp as Unix seconds."""
+    from datetime import datetime
+    return datetime.fromisoformat(iso).timestamp()
 
 
 def main():
@@ -269,7 +296,7 @@ def main():
     for p in phones:
         p.start()
     waited = time.time()
-    while time.time() - waited < 30 and not all(p.idx or p.trouble for p in phones):
+    while time.time() - waited < 60 and not all(p.idx or p.trouble for p in phones):
         time.sleep(0.1)
     go.set()
     for p in phones:
@@ -300,6 +327,7 @@ def main():
                   f"{statistics.median(early):.2f}s early, {statistics.median(late):.2f}s late, worst {max(d for _, d in p.trips):.2f}s;"
                   f" down {p.bytes / a.seconds / 1024:.1f} KB/s; asked {p.rates or 'nothing'}")
     bad = [t for p in phones for t in p.trouble]
+    print(f"   connects tried again: {sum(p.retries for p in phones)}")
     print(f"   trouble: {len(bad)}" + (f"  e.g. {bad[0]}" if bad else ""))
 
 
