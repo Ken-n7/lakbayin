@@ -100,10 +100,13 @@ address_in() {
 # A Cloudflare tunnel: sets $1_pid and $1_url (empty if none came). Each
 # tunnel joins Cloudflare in one city, here Manila or Hong Kong (+80 ms a
 # trip, as phones reach Manila): one outside CF_EDGE is redrawn, twice at most.
+# http2 by default, not QUIC: QUIC rides UDP, which mobile networks throttle
+# (a teacher's laptop on Smart data got ~0.1 Mbps of 5.75, 2026-10-09).
 cloudflare() {
 	local pid got at try
 	for try in 1 2 3; do
-		"$CF" tunnel --no-autoupdate --url "http://127.0.0.1:$PORT" > "$LOG/tunnel-$1.log" 2>&1 &
+		"$CF" tunnel --no-autoupdate --protocol "${CF_PROTOCOL-http2}" --url "http://127.0.0.1:$PORT" \
+			> "$LOG/tunnel-$1.log" 2>&1 &
 		pid=$!
 		got=$(address_in "$LOG/tunnel-$1.log" 'https://[a-z0-9-]+\.trycloudflare\.com')
 		if [ -z "$got" ]; then
