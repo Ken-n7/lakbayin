@@ -156,6 +156,44 @@ begin
   perform pg_temp.check(got = '', 'an hour-old ticket opens nothing', got);
 end $$;
 
+-- A relay per class (schema.sql 7d): its teacher's Game Controls hosts it.
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000000d0', 'stranger@t.dev', '{"username":"stranger"}');
+
+do $$
+declare
+  home     uuid := '00000000-0000-0000-0000-0000000000a0';
+  teacher  uuid := '00000000-0000-0000-0000-0000000000b0';
+  kid      uuid := '00000000-0000-0000-0000-0000000000c0';
+  stranger uuid := '00000000-0000-0000-0000-0000000000d0';
+  s        uuid := '55555555-5555-5555-5555-555555555555';
+  host     constant text := 'select public.host_relay(%L, %L, 20)';
+  read     constant text := 'select string_agg(url, '','') from public.session_relays where session_id = %L';
+  got      text;
+begin
+  got := pg_temp.val(teacher, format(host, s, 'wss://class'));
+  perform pg_temp.check(got = '' and pg_temp.val(teacher, format(read, s)) = 'wss://class',
+    'a teacher hosts their own class''s relay', got);
+  got := pg_temp.val(home, format(host, s, 'wss://evil')) || ' / ' || pg_temp.val(kid, format(host, s, 'wss://evil'));
+  perform pg_temp.check(got like 'error:% / error:%' and pg_temp.val(teacher, format(read, s)) = 'wss://class',
+    'another teacher or a student cannot point it anywhere', got);
+  got := pg_temp.val(teacher, format(host, s, 'ws://plain'));
+  perform pg_temp.check(got like 'error:%', 'only wss://', got);
+  got := pg_temp.val(kid, format(read, s));
+  perform pg_temp.check(got = 'wss://class', 'its players read it', got);
+  got := pg_temp.val(stranger, format(read, s)) || '|' || pg_temp.val(home, format(read, s));
+  perform pg_temp.check(got = '|', 'nobody outside the class does', got);
+  update public.session_relays set updated_at = now() - interval '1 hour';
+  got := pg_temp.val(teacher, format(host, s, 'wss://class2'));
+  perform pg_temp.check(got = '' and (select updated_at > now() - interval '10 seconds' and url = 'wss://class2'
+    from public.session_relays where session_id = s), 'a refresh is stamped by the server', got);
+  got := pg_temp.val(home, format('select public.unhost_relay(%L)', s));
+  perform pg_temp.check(pg_temp.val(teacher, format(read, s)) = 'wss://class2',
+    'another teacher cannot take it down', got);
+  got := pg_temp.val(teacher, format('select public.unhost_relay(%L)', s));
+  perform pg_temp.check(pg_temp.val(teacher, format(read, s)) = '', 'its teacher lets it go', got);
+end $$;
+
 select case when ok then 'ok  ' else 'FAIL' end || '  ' || name
        || case when not ok and detail <> '' then '   <' || detail || '>' else '' end
   from results order by n;

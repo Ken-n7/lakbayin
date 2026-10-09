@@ -102,7 +102,7 @@ static func lines(tree: SceneTree) -> PackedStringArray:
 		out.append("Relay  down: %s" % (relay.last_close if relay.last_close != "" else "connecting"))
 	var host: Node = tree.get_first_node_in_group("relay_host")
 	if host != null:
-		out.append("Backup relay  %s%s" % [host.get("state"),
+		out.append("Class relay  %s%s" % [host.get("state"),
 			" at " + Dial.host_of(str(host.get("url"))) if str(host.get("url")) != "" else ""])
 	var rep: Node = _reporter(tree)
 	out.append("Reports  %s" % ("phones only (debug builds)" if rep == null

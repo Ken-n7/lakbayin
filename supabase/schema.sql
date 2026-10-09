@@ -794,6 +794,48 @@ $$;
 grant execute on function public.relay_ticket(uuid, text) to authenticated;
 grant execute on function public.relay_redeem(uuid, uuid, text) to authenticated;
 
+-- 7d. A relay per class -------------------------------------------------------
+-- The teacher's Game Controls hosts the relay for its own class (client,
+-- 2026-10-09): the home laptop cannot be counted on to be on, the teacher's is
+-- there whenever a class is. Its address goes here, for that session only,
+-- refreshed every 30s. A class with none, or a stale one, uses the shared row
+-- above (the home relay, when it is on) and failing that the hub. Only the
+-- session's own teacher can set it, so nobody points another class anywhere.
+create table if not exists public.session_relays (
+  session_id uuid primary key references public.sessions on delete cascade,
+  url        text not null check (url ~ '^wss://'),
+  hz         int  not null default 20,
+  updated_at timestamptz not null default now()
+);
+alter table public.session_relays enable row level security;
+
+drop policy if exists read_session_relay on public.session_relays;
+drop policy if exists own_session_relay  on public.session_relays;
+-- Its teacher and its own players read it; nobody else needs to.
+create policy read_session_relay on public.session_relays for select to authenticated
+  using (public.owns_session(session_id)
+         or exists (select 1 from public.members m
+                     where m.session_id = session_relays.session_id and m.profile_id = auth.uid()));
+create policy own_session_relay on public.session_relays for all to authenticated
+  using (public.owns_session(session_id)) with check (public.owns_session(session_id));
+
+-- Security invoker, as the relay row's: the policies above decide. The time is
+-- the server's, which is what the phones judge staleness by.
+create or replace function public.host_relay(p_session uuid, p_url text, p_hz int)
+returns void language sql as $$
+  insert into public.session_relays (session_id, url, hz, updated_at)
+  values (p_session, p_url, p_hz, now())
+  on conflict (session_id) do update set url = excluded.url, hz = excluded.hz, updated_at = now()
+$$;
+
+create or replace function public.unhost_relay(p_session uuid)
+returns void language sql as $$
+  delete from public.session_relays where session_id = p_session
+$$;
+
+grant execute on function public.host_relay(uuid, text, int) to authenticated;
+grant execute on function public.unhost_relay(uuid) to authenticated;
+
 -- 8. Reset (commented out on purpose) ---------------------------------------
 -- Uncomment, run, then run this file again for a clean slate. Deletes every
 -- row. Accounts live in auth.users and survive -- delete those in the

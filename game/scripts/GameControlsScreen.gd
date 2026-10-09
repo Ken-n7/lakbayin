@@ -724,7 +724,7 @@ func _feed_hub(state: String) -> void:
 		if _hub != null:
 			_hub.stop()
 		if _relay_host != null:
-			_relay_host.queue_free()        # lets the relay row go (RelayHost.stop)
+			_relay_host.queue_free()        # lets the class's relay go (RelayHost.stop)
 			_relay_host = null
 		Net.relay().leave()
 		return
@@ -734,11 +734,16 @@ func _feed_hub(state: String) -> void:
 	_hub.follow(str(_session.get("id", "")), _lobby.players.keys())
 	# The movement relay too, as the teacher: the map's students, and the
 	# hub's bridge for any phone that cannot reach the relay (PosHub). And this
-	# laptop as its backup, should the home relay be down (RelayHost).
-	if str(_session.get("id", "")) != "":
-		Net.relay().join(str(_session.get("id", "")), "teacher")
+	# laptop hosts the class's own relay (RelayHost).
+	var sid := str(_session.get("id", ""))
+	if sid != "":
+		Net.relay().join(sid, "teacher")
+		if _relay_host != null and _relay_host.session_id != sid:
+			_relay_host.queue_free()
+			_relay_host = null
 		if _relay_host == null and RelayHost.enabled:
 			_relay_host = RelayHost.new()
+			_relay_host.session_id = sid
 			add_child(_relay_host)
 
 

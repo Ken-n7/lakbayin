@@ -1,18 +1,18 @@
 class_name RelayHost
 extends Node
 
-## The teacher's laptop as the home relay's backup (SPECS §10, Movement).
-## While Game Controls has a session, this looks at Supabase's `relay` row
-## every CHECK_S. When no relay holds it -- the home laptop off, or its
-## internet down for 3 minutes -- it starts one here, a RelayServer and a
-## Cloudflare quick tunnel to it, and takes the row (claim_relay, schema 7b),
-## so the phones' next retry finds it. It keeps the row while the session
-## lasts and lets it go after. A relay still refreshing the row is never
-## replaced, so a class is never split between two.
+## The teacher's laptop hosts its own class's relay (SPECS §10, Movement;
+## client, 2026-10-09: the home laptop cannot be counted on, the teacher's is
+## there whenever a class is). While Game Controls has a session this runs a
+## RelayServer and a Cloudflare quick tunnel to it, and puts the address on
+## that session (host_relay, schema 7d), refreshed every CHECK_S, so that
+## class's phones come here. Should it fail -- no cloudflared, a crash, the
+## internet down -- the address goes stale and the class falls back to the
+## home relay if it is on, else to the hub. The session over, it lets go.
 ##
 ## Needs cloudflared: beside the game (cloudflared.exe on Windows) or on the
 ## PATH (winget install --id Cloudflare.cloudflared). Without it this stays
-## idle, and phones move through the hub as they would anyway.
+## idle, and the class moves on the home relay or the hub.
 
 const CHECK_S := 30.0
 const HZ := 20
@@ -25,7 +25,7 @@ static var enabled := OS.has_feature("pc") and DisplayServer.get_name() != "head
 
 var state := "standby"         # standby | starting | serving | no cloudflared -- the dev panel shows it
 var url := ""                  # wss://, while serving
-var relay_owner := "game-controls:" + OS.get_unique_id().left(8)
+var session_id := ""           # the class this hosts, set by Game Controls
 var _relay: RelayServer = null
 var _tunnel := 0               # cloudflared's process id
 var _log := ProjectSettings.globalize_path("user://cloudflared.log")
@@ -48,16 +48,17 @@ func _process(_delta: float) -> void:
 
 
 func _check() -> void:
+	if session_id == "":
+		return
 	if state == "serving":
 		if not OS.is_process_running(_tunnel):
-			print("backup relay: the tunnel stopped")
-			_stop()                     # the row goes stale; a later check starts afresh
-		elif await _net().claim_relay(relay_owner, url, HZ) == "held":
-			print("backup relay: another relay has the row")
-			_stop()                     # ours went stale meanwhile; never two at once
+			print("class relay: the tunnel stopped")
+			_stop()                     # its address goes stale; the next check starts afresh
+			return
+		var stale: String = await _net().host_relay(session_id, url, HZ)
+		if stale != "":
+			print("class relay: address not refreshed (%s)" % stale)   # tried again next check
 		return
-	if await _net().relay().published() != "":
-		return                          # the home relay (or another) is up
 	var cf := cloudflared()
 	if cf == "":
 		state = "no cloudflared"
@@ -65,13 +66,13 @@ func _check() -> void:
 	state = "starting"
 	var err := await _start(cf)
 	if err == "":
-		err = await _net().claim_relay(relay_owner, url, HZ)
+		err = await _net().host_relay(session_id, url, HZ)
 	if err != "":
-		print("backup relay: not started (%s)" % err)
+		print("class relay: not started (%s)" % err)
 		_stop()
 		return
 	state = "serving"
-	print("backup relay: serving at ", url)
+	print("class relay: serving at ", url)
 
 
 ## A relay on PORT and a tunnel to it: "" once the tunnel is up, or why not.
@@ -154,11 +155,11 @@ func _stop() -> void:
 		state = "standby"
 
 
-## The session is over, or Game Controls is going: the row goes back for the
-## home relay to take at once, and the tunnel and relay stop.
+## The session is over, or Game Controls is going: the class's address goes,
+## and the tunnel and relay stop.
 func stop() -> void:
-	if state == "serving":
-		_net().release_relay(relay_owner)        # not awaited: it finishes on its own
+	if state == "serving" and session_id != "":
+		_net().unhost_relay(session_id)          # not awaited: it finishes on its own
 	_stop()
 
 

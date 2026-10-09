@@ -128,6 +128,7 @@ func _ready() -> void:
 	await _restore()
 	await _bank()
 	_lobby_bell()
+	_relay_pick()
 
 	_server.stop()
 	Net.url = was_url
@@ -211,6 +212,24 @@ func _lobby_bell() -> void:
 	check("the database's change feed is still applied",
 		lobby.apply("sessions", "UPDATE", {"id": "s1", "state": "running"}) == "changed"
 		and lobby.session.state == "running", str(lobby.session))
+
+
+## Which relay a class uses (RelayLink.published): an address counts only if it
+## is wss:// and fresh -- a class relay refreshed within 90s.
+func _relay_pick() -> void:
+	var at := func(ago: float) -> String:
+		return Time.get_datetime_string_from_unix_time(int(Game.now() - ago)) + "Z"
+	var reply := func(url: String, ago: float) -> Dictionary:
+		return {"error": "", "data": [{"url": url, "updated_at": at.call(ago)}]}
+	var stale := RelayLink.CLASS_STALE_S
+	check("a class relay refreshed 20s ago is used",
+		RelayLink.fresh_url(reply.call("wss://class", 20.0), stale) == "wss://class")
+	check("...not one 2 minutes old: its laptop is gone",
+		RelayLink.fresh_url(reply.call("wss://class", 120.0), stale) == "")
+	check("...nor plain ws://, nor none, nor a failed read",
+		RelayLink.fresh_url(reply.call("ws://class", 1.0), stale) == ""
+		and RelayLink.fresh_url({"error": "", "data": []}, stale) == ""
+		and RelayLink.fresh_url({"error": "offline", "data": null}, stale) == "")
 
 
 ## One slow call is not a weak line: the typical one is what counts.

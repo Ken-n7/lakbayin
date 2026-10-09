@@ -45,6 +45,10 @@ const OUTDATED_RETRY_S := 300.0  # "update the app": no point asking every secon
 ## No relay running: look again now and then, not every few seconds from
 ## every phone in the room.
 const UNPUBLISHED_RETRY_S := 60.0
+## A class's own relay (RelayHost) refreshes its address every 30s; not in 90s
+## and its laptop is gone. Phones look again this often while connected.
+const CLASS_STALE_S := 90.0
+const RECHECK_S := 60.0
 ## A relay ticket is kept this long, well inside the hour the server honours
 ## it, so quick reconnects do not each ask for one.
 const TICKET_KEEP_S := 1800.0
@@ -79,6 +83,8 @@ var _dialing := false
 var _ticket := ""                # relay_ticket's answer, for `_ticket_of`
 var _ticket_of := ""             # "session|role" it was given for
 var _ticket_at := -INF
+var _recheck_at := INF
+var _rechecking := false
 var _retry_in := -1.0
 var _attempt := 0
 var _heard := 0.0
@@ -160,6 +166,8 @@ func _process(delta: float) -> void:
 	if _ping_clock <= 0.0:
 		_ping_clock = PING_S
 		_ws.send_text(RelayCodec.text("ping", {"t": now}))
+	if up and not _rechecking and now >= _recheck_at:
+		_recheck()
 
 
 func _dial() -> void:
@@ -227,21 +235,48 @@ func _ticket_for(session: String) -> String:
 	return _ticket
 
 
-## The relay's address from Supabase, "" if none is published or it has not
-## been refreshed lately (the laptop went off without clearing it). Also
-## RelayHost's cue: "" is when the teacher's laptop steps in.
+## The relay this class should use: its own, which its teacher's Game
+## Controls hosts (schema 7d), else the shared one -- the home relay -- else ""
+## (the hub carries the class). One not refreshed lately is gone: the laptop
+## went off without clearing it.
 func published() -> String:
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET, "/rest/v1/relay?select=url,updated_at")
-	if got.error != "" or not (got.data is Array) or (got.data as Array).is_empty():
+	if _session != "":
+		var own: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+			"/rest/v1/session_relays?select=url,updated_at&session_id=eq." + _session)
+		var url := fresh_url(own, CLASS_STALE_S)
+		if url != "":
+			return url
+	return fresh_url(await Net.rest(HTTPClient.METHOD_GET, "/rest/v1/relay?select=url,updated_at"), STALE_S)
+
+
+## The url in a `published()` reply, if it is wss:// and refreshed within
+## `stale_s`; "" otherwise.
+static func fresh_url(got: Dictionary, stale_s: float) -> String:
+	if got.get("error", "") != "" or not (got.get("data") is Array) or (got.data as Array).is_empty():
 		return ""
 	var row: Dictionary = got.data[0]
 	var url := str(row.get("url", "")) if row.get("url") != null else ""
-	# The hello carries this phone's sign-in token: never over plain ws://.
+	# A ticket in the hello still names this phone: never over plain ws://.
 	if not url.begins_with("wss://"):
 		return ""
-	if Game.now() - Teams._stamp(row.get("updated_at")) > STALE_S:
+	if Game.now() - Teams._stamp(row.get("updated_at")) > stale_s:
 		return ""
 	return url
+
+
+## Still on the relay the class should use? A class relay that came up after
+## this phone joined, or one that took the home relay's place, moves it over
+## -- a class is never left split between two relays. Nothing published at
+## all: it stays where it is, which still works.
+func _recheck() -> void:
+	_rechecking = true
+	var url := await published()
+	_rechecking = false
+	_recheck_at = Time.get_ticks_msec() / 1000.0 + RECHECK_S
+	if url != "" and up and Dial.host_of(url) != host:
+		_close()
+		last_close = "moved to the class's relay"
+		_retry(0.2)
 
 
 func _take_text(m: Array) -> void:
@@ -260,6 +295,7 @@ func _take_text(m: Array) -> void:
 				_calm_need = RATE_CALM_S
 			_attempt = 0
 			last_close = ""
+			_recheck_at = Time.get_ticks_msec() / 1000.0 + RECHECK_S
 			if not up:
 				up = true
 				up_changed.emit(true)

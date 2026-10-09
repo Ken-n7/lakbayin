@@ -226,6 +226,20 @@ func release_relay(owner: String) -> String:
 	return str(got.error)
 
 
+## This class's own relay (schema 7d), set or refreshed by its teacher's Game
+## Controls. "" or the error.
+func host_relay(session_id: String, url: String, hz: int) -> String:
+	var got: Dictionary = await rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/host_relay",
+		{"p_session": session_id, "p_url": url, "p_hz": hz})
+	return str(got.error)
+
+
+func unhost_relay(session_id: String) -> String:
+	var got: Dictionary = await rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/unhost_relay",
+		{"p_session": session_id})
+	return str(got.error)
+
+
 ## The realtime socket, made on first use and kept as a child of this node.
 ## Nothing opens one until something asks to watch a table.
 func realtime() -> Realtime:
