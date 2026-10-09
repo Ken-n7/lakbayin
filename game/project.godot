@@ -19,7 +19,7 @@ config/description="A gamified learning adventure for numerical expressions: int
 config/version="0.1.0"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
-config/icon="res://icon.svg"
+config/icon="res://icons/main_192x192.png"
 ; The back button goes to the screen (Main._notification) instead of killing
 ; a run in progress; the map swallows it.
 config/quit_on_go_back=false

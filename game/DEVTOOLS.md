@@ -51,6 +51,7 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 |---|---|
 | `run_tests.sh` | every test suite, one exit code |
 | `device.sh` | build, install, run and screenshot on a USB phone (`build`, `install`, `run`, `shot`, `release`) |
+| `windows.sh` | the teacher's Windows zip: game + cloudflared (pinned, checksum-checked) beside it, game icon in the exe; `--debug` with the dev panel |
 | `layout.tscn` | does every screen fit 640×360 and 800×360, and does the DEV tab cover nothing |
 | `ui_shot.tscn`, `map_shot.gd`, `tower_shot.gd` | screenshots of screens, the map, the towers |
 | `board_dump.gd`, `check_guards.gd`, `make_tower_pool.tscn`, `scatter_props.tscn` | the map's build: dump, gate check, tower spots, props |
@@ -65,6 +66,6 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 | `classroom.py` | a whole class played against the live backend |
 | `join_and_walk.py` | fill a real session with walking students (`--bundle S` for path bundles) |
 | `movers.py` | phones walking on Realtime, with delivery and lag figures |
-| `relay_load.py` | simulated phones against the relay (needs `relay.gd --test-auth`); `--code` for real accounts in a live session, through the published relay; `--slow N --kbps K [--adapt]` puts N phones on a weak line, asking for fewer snapshots as the app does |
+| `relay_load.py` | simulated phones against the relay (needs `relay.gd --test-auth`); `--code` for real accounts in a live session, on the class's own relay with tickets (roster re-made if gone, connects retried like the app); `--slow N --kbps K [--adapt]` puts N phones on a weak line, asking for fewer snapshots as the app does |
 | `netreport_listen.py` | print and save the network reports test phones send |
 | `leaderboard_live.py`, `rescue_live.py`, `ratelimit.py` | live checks of boards, Rescue, and the auth rate limit |
