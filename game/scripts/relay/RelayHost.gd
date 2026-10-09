@@ -18,6 +18,7 @@ const CHECK_S := 30.0
 const HZ := 20
 const PORT := RelayServer.PORT + 1      # not the home relay's: tests run both on one machine
 const TUNNEL_WAIT_S := 30
+const PID_FILE := "user://cloudflared.pid"     # the tunnel's process, while it runs
 
 ## Off where nobody should host: phones, and headless runs (tests, tools).
 static var enabled := OS.has_feature("pc") and DisplayServer.get_name() != "headless"
@@ -81,11 +82,15 @@ func _start(cf: String) -> String:
 	var err := _relay.start(PORT)
 	if err != "":
 		return err
+	end_leftover()
 	DirAccess.remove_absolute(_log)
 	_tunnel = OS.create_process(cf, ["tunnel", "--no-autoupdate", "--logfile", _log,
 		"--url", "http://127.0.0.1:%d" % PORT])
 	if _tunnel <= 0:
 		return "cloudflared would not start"
+	var f := FileAccess.open(PID_FILE, FileAccess.WRITE)
+	if f != null:
+		f.store_string(str(_tunnel))
 	for i in TUNNEL_WAIT_S:
 		await get_tree().create_timer(1.0).timeout
 		var text := FileAccess.get_file_as_string(_log)
@@ -99,6 +104,25 @@ func _start(cf: String) -> String:
 static func address_in(text: String) -> String:
 	var m := RegEx.create_from_string("https://([a-z0-9-]+\\.trycloudflare\\.com)").search(text)
 	return "wss://" + m.get_string(1) if m != null else ""
+
+
+## The tunnel a Game Controls left running when it crashed or was ended
+## from the task manager: nothing else stops it. Only a cloudflared: after a
+## restart of the computer the number can be another program's.
+static func end_leftover(pid_file := PID_FILE) -> void:
+	var pid := FileAccess.get_file_as_string(pid_file).to_int()
+	if pid > 0 and is_cloudflared(pid):
+		OS.kill(pid)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(pid_file))
+
+
+static func is_cloudflared(pid: int) -> bool:
+	var out := []
+	if OS.has_feature("windows"):
+		OS.execute("tasklist", ["/FI", "PID eq %d" % pid, "/NH"], out)
+	else:
+		OS.execute("ps", ["-p", str(pid), "-o", "comm="], out)
+	return "cloudflared" in "".join(PackedStringArray(out)).to_lower()
 
 
 ## cloudflared beside the game, on the PATH, or where winget puts it; "".
@@ -120,6 +144,7 @@ func _stop() -> void:
 	if _tunnel > 0:
 		OS.kill(_tunnel)
 		_tunnel = 0
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(PID_FILE))
 	if _relay != null:
 		_relay.stop()
 		_relay.queue_free()

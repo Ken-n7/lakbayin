@@ -80,6 +80,25 @@ func _host() -> void:
 	var cf := RelayHost.cloudflared()
 	assert(cf == "" or FileAccess.file_exists(cf), "cloudflared found: " + cf)
 	assert(not RelayHost.enabled, "never hosts headless (tests, tools)")
+	# A tunnel left by a crashed Game Controls ends on the next start; any
+	# other program behind the saved number is left alone.
+	var dir := "user://test_leftover"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	var fake := ProjectSettings.globalize_path(dir + "/cloudflared")
+	FileAccess.open(fake, FileAccess.WRITE).store_string("#!/bin/sh\nsleep 30\n")
+	FileAccess.set_unix_permissions(fake, 0x1ED)
+	var pid_file := dir + "/cloudflared.pid"
+	var leftover := OS.create_process(fake, [])
+	var other := OS.create_process("sleep", ["30"])
+	OS.delay_msec(300)                # both started, under their own names
+	assert(RelayHost.is_cloudflared(leftover) and not RelayHost.is_cloudflared(other))
+	for pid: int in [leftover, other]:
+		FileAccess.open(pid_file, FileAccess.WRITE).store_string(str(pid))
+		RelayHost.end_leftover(pid_file)
+		assert(not FileAccess.file_exists(pid_file))
+	assert(not OS.is_process_running(leftover), "the leftover tunnel ended")
+	assert(OS.is_process_running(other), "another program behind the number is left alone")
+	OS.kill(other)
 
 
 func _codec() -> void:
