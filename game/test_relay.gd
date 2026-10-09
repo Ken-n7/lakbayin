@@ -213,6 +213,40 @@ func _server() -> void:
 	await _settle([t, c])
 	print("server: leave and silence")
 
+	# Half-open connections: one that never finishes opening is dropped after
+	# hello_s, and past max_peers nobody else gets in at all.
+	var before := relay.peer_count()
+	relay.hello_s = 0.3
+	var raw := StreamPeerTCP.new()
+	raw.connect_to_host("127.0.0.1", PORT)
+	var counted := func() -> bool:
+		raw.poll()
+		return relay.peer_count() == before + 1
+	assert(await _until(counted, []), "a bare connection is counted")
+	var dropped := func() -> bool:
+		raw.poll()
+		return relay.peer_count() == before
+	assert(await _until(dropped, []), "...and dropped, never having opened")
+	relay.hello_s = 10.0
+	relay.max_peers = before + 1
+	var raws: Array[StreamPeerTCP] = []
+	for i in 3:
+		var r := StreamPeerTCP.new()
+		r.connect_to_host("127.0.0.1", PORT)
+		raws.append(r)
+	for i in 30:
+		for r in raws:
+			r.poll()
+		await process_frame
+	assert(relay.peer_count() == before + 1, "past max_peers nobody else gets in (%d)" % relay.peer_count())
+	relay.max_peers = 500
+	relay.hello_s = 0.3
+	for r in raws:
+		r.disconnect_from_host()
+	assert(await _until(dropped, []), "the rest go")
+	relay.hello_s = 10.0
+	print("server: half-open connections, and the cap")
+
 	# A weak line asks for fewer snapshots (RelayLink's rate): a quarter of
 	# them, each with every hero's newest point; the others still get all.
 	var walker := await _join("ok:hal", S3, "player")

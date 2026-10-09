@@ -35,6 +35,12 @@ const ROSTER_PER_S := 2
 var hz := 10
 var silent_s := 15.0            # nothing heard this long: dropped
 var hello_s := 10.0             # to say who you are, after connecting
+## Connections at once, the rest refused at the door. Each holds ~0.25 MB
+## from the moment it opens, before it has said who it is (measured), so a
+## flood of empty connections must not be able to eat the laptop's memory:
+## 500 is ~130 MB at most. A class of 40, reconnecting while its old lines time
+## out, is ~80; the home relay may carry several classes.
+var max_peers := 500
 ## Who a hello's token belongs to, if they may join: (token, session, role)
 ## -> profile id or "". Supabase by default; tests put a stub here.
 var check: Object = self
@@ -90,10 +96,14 @@ func room_count() -> int:
 func _process(delta: float) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	while _server.is_connection_available():
+		var conn := _server.take_connection()
+		if _peers.size() >= max_peers:
+			conn.disconnect_from_host()
+			continue
 		var ws := WebSocketPeer.new()
 		ws.inbound_buffer_size = 1 << 16
 		ws.outbound_buffer_size = 1 << 20
-		if ws.accept_stream(_server.take_connection()) == OK:
+		if ws.accept_stream(conn) == OK:
 			_next_key += 1
 			_peers[_next_key] = {"ws": ws, "room": "", "idx": 0, "id": "", "role": "",
 				"hero": 1, "heard": now, "since": now, "frames": 0, "frames_at": now, "authing": false,
@@ -108,6 +118,10 @@ func _process(delta: float) -> void:
 			gone.append(k)
 			continue
 		if state != WebSocketPeer.STATE_OPEN:
+			# Still opening after hello_s: a connection that never finishes its
+			# handshake would hold its place and buffers for ever.
+			if state == WebSocketPeer.STATE_CONNECTING and now - float(peer.since) > hello_s:
+				gone.append(k)
 			continue
 		while ws.get_available_packet_count() > 0:
 			var data := ws.get_packet()

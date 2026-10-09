@@ -65,6 +65,7 @@ func _run() -> void:
 	var last := [0, 0, 0]
 	var t := 0
 	var held := "-"
+	var was_busy := false
 	while true:
 		if url != "" and t % PUBLISH_S == 0:
 			var got: String = await root.get_node("Net").claim_relay(relay_owner, url, relay.hz)
@@ -75,9 +76,14 @@ func _run() -> void:
 					else "publish failed (again in %ds): %s" % [PUBLISH_S, got])
 		await create_timer(5.0).timeout
 		t += 5
-		print("t=%4d  peers %3d  rooms %2d  in %5.0f/s  out %6.0f/s  %6.1f KB/s out  denied %d" % [t,
-			relay.peer_count(), relay.room_count(), (relay.msgs_in - last[0]) / 5.0,
-			(relay.msgs_out - last[1]) / 5.0, (relay.bytes_out - last[2]) / 5120.0, relay.denied])
+		# Every 5s while anyone is on it (and once after); idle, every 10
+		# minutes -- an idle relay logged 17,000 lines a day.
+		var busy: bool = relay.peer_count() > 0 or relay.msgs_in != int(last[0])
+		if busy or was_busy or t % 600 == 0:
+			print("t=%4d  peers %3d  rooms %2d  in %5.0f/s  out %6.0f/s  %6.1f KB/s out  denied %d" % [t,
+				relay.peer_count(), relay.room_count(), (relay.msgs_in - last[0]) / 5.0,
+				(relay.msgs_out - last[1]) / 5.0, (relay.bytes_out - last[2]) / 5120.0, relay.denied])
+		was_busy = busy
 		last = [relay.msgs_in, relay.msgs_out, relay.bytes_out]
 
 

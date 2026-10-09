@@ -35,6 +35,9 @@ run() {                                     # run <name> <godot args...>
 run "rules       " --script res://test_rules.gd
 run "dial        " --script res://test_dial.gd
 run "relay       " --script res://test_relay.gd
+# The home relay's own script runs nowhere in the suites: a parse error there
+# took the live relay down once (2026-10-09). This at least loads it.
+run "relay tool  " --check-only --script res://tools/relay.gd
 run "mathtext    " --script res://test_mathtext.gd
 run "auth        " --script res://test_auth.gd
 run "collisions  " --script res://test_collisions.gd
