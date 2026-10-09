@@ -212,13 +212,17 @@ func _hello(key: int, p: Dictionary) -> void:
 		return
 	var room: Dictionary = _rooms.get(session, {})
 	if room.is_empty():
-		room = {"members": {}, "watchers": {}, "pending": {}, "held": {}}
+		room = {"members": {}, "watchers": {}, "pending": {}, "held": {}, "flushes": []}
 		_rooms[session] = room
 	peer.room = session
 	peer.id = who
 	peer.role = role
 	peer.hero = int(p.get("hero", 1))
 	_pace(peer, p.get("rate", hz))      # a phone starting over on a weak line
+	if p.has("rate"):
+		# Only a phone that fell 2s behind even slowed down says hello with a
+		# rate (RelayLink, its flush): what `struggling` counts.
+		room.flushes.append([Time.get_ticks_msec() / 1000.0, who])
 	if role == "teacher":
 		room.watchers[key] = true
 	else:
@@ -271,6 +275,26 @@ func who(token: String, session: String, role: String) -> String:
 		rows = await net.rest_as(token, HTTPClient.METHOD_GET,
 			"/rest/v1/sessions?select=id&id=eq.%s&admin_id=eq.%s" % [session, uid])
 	return uid if rows.error == "" and rows.data is Array and not (rows.data as Array).is_empty() else ""
+
+
+## The share of `session`'s players who had to start over within `window_s`:
+## behind by 2s even at their slowest rate, the relay not keeping up for them.
+## RelayHost steps down when most of a class is (`should_step_down`).
+func struggling(session: String, window_s := 60.0) -> float:
+	var room: Dictionary = _rooms.get(session, {})
+	if room.is_empty() or room.members.is_empty():
+		return 0.0
+	var since := Time.get_ticks_msec() / 1000.0 - window_s
+	room.flushes = (room.flushes as Array).filter(func(f: Array) -> bool: return f[0] >= since)
+	var who := {}
+	for f: Array in room.flushes:
+		who[f[1]] = true
+	return minf(float(who.size()) / room.members.size(), 1.0)
+
+
+## Players in `session` now.
+func members_in(session: String) -> int:
+	return (_rooms.get(session, {}).get("members", {}) as Dictionary).size()
 
 
 ## Refused: said in the close itself (code 4003, the reason as its text) --

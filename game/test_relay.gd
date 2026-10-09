@@ -9,6 +9,7 @@ const PORT := 47392
 const S1 := "11111111-1111-4111-8111-111111111111"
 const S2 := "22222222-2222-4222-8222-222222222222"
 const S3 := "33333333-3333-4333-8333-333333333333"
+const S4 := "44444444-4444-4444-8444-444444444444"
 
 var relay: RelayServer
 
@@ -84,6 +85,11 @@ func _host() -> void:
 	var cf := RelayHost.cloudflared()
 	assert(cf == "" or FileAccess.file_exists(cf), "cloudflared found: " + cf)
 	assert(not RelayHost.enabled, "never hosts headless (tests, tools)")
+	# Step down: half the class struggling, at least 3 players, two checks running.
+	assert(RelayHost.should_step_down(0.6, 10, 2))
+	assert(not RelayHost.should_step_down(0.6, 10, 1), "one bad check is not enough")
+	assert(not RelayHost.should_step_down(1.0, 2, 5), "two phones never decide for a class")
+	assert(not RelayHost.should_step_down(0.3, 40, 9), "a few weak phones: keep hosting")
 	# A tunnel left by a crashed Game Controls ends on the next start; any
 	# other program behind the saved number is left alone.
 	var dir := "user://test_leftover"
@@ -246,6 +252,28 @@ func _server() -> void:
 	assert(await _until(dropped, []), "the rest go")
 	relay.hello_s = 10.0
 	print("server: half-open connections, and the cap")
+
+	# Phones that had to start over (a hello with a rate): what RelayHost's
+	# step-down reads. Each counts once, as a share of the class.
+	var class4: Array = []
+	for n in ["una", "vic", "wes"]:
+		class4.append(await _join("ok:" + n, S4, "player"))
+	assert(relay.struggling(S4) == 0.0 and relay.members_in(S4) == 3, "nobody struggling yet")
+	for n in ["una", "una", "vic"]:
+		var again := _connect()
+		assert(await _until(func() -> bool: return again.ws.get_ready_state() == WebSocketPeer.STATE_OPEN, [again]))
+		again.ws.send_text(RelayCodec.text("hello", {"v": RelayCodec.VERSION, "token": "ok:" + n,
+			"session": S4, "role": "player", "hero": 1, "rate": 5}))
+		assert(await _until(func() -> bool: return not again.last("welcome").is_empty(), [again]))
+		class4.append(again)
+	assert(is_equal_approx(relay.struggling(S4), 2.0 / 3.0), "two of three: %f" % relay.struggling(S4))
+	assert(relay.struggling("no-such-class") == 0.0)
+	await create_timer(0.2).timeout
+	assert(relay.struggling(S4, 0.1) == 0.0, "older than the window: gone")
+	for p: Phone in class4:
+		p.ws.close()
+	await _settle(class4)
+	print("server: who had to start over")
 
 	# A weak line asks for fewer snapshots (RelayLink's rate): a quarter of
 	# them, each with every hero's newest point; the others still get all.

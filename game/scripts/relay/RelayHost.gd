@@ -19,11 +19,18 @@ const HZ := 20
 const PORT := RelayServer.PORT + 1      # not the home relay's: tests run both on one machine
 const TUNNEL_WAIT_S := 30
 const PID_FILE := "user://cloudflared.pid"     # the tunnel's process, while it runs
+## Step down when it can't keep up: half the class had to start over (behind
+## 2s even at their slowest rate) within a minute, on two health checks
+## running. The class moves to the home relay or the hub; a relay alive but
+## too slow would otherwise hold it -- seen live on a throttled mobile line.
+const HEALTH_S := 10.0
+const STEP_DOWN_SHARE := 0.5
+const STEP_DOWN_MIN := 3                       # players: one weak phone never decides
 
 ## Off where nobody should host: phones, and headless runs (tests, tools).
 static var enabled := OS.has_feature("pc") and DisplayServer.get_name() != "headless"
 
-var state := "standby"         # standby | starting | serving | no cloudflared -- the dev panel shows it
+var state := "standby"         # standby | starting | serving | no cloudflared | stepped down -- the dev panel shows it
 var url := ""                  # wss://, while serving
 var session_id := ""           # the class this hosts, set by Game Controls
 var _relay: RelayServer = null
@@ -31,6 +38,8 @@ var _tunnel := 0               # cloudflared's process id
 var _log := ProjectSettings.globalize_path("user://cloudflared.log")
 var _next := 0.0
 var _busy := false
+var _health_at := 0.0
+var _bad := 0                  # health checks running that found the class struggling
 
 
 func _ready() -> void:
@@ -39,6 +48,9 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
+	if state == "serving" and now >= _health_at:
+		_health_at = now + HEALTH_S
+		_health()
 	if not enabled or _busy or now < _next:
 		return
 	_next = now + CHECK_S
@@ -48,7 +60,7 @@ func _process(_delta: float) -> void:
 
 
 func _check() -> void:
-	if session_id == "":
+	if session_id == "" or state == "stepped down":
 		return
 	if state == "serving":
 		if not OS.is_process_running(_tunnel):
@@ -73,6 +85,23 @@ func _check() -> void:
 		return
 	state = "serving"
 	print("class relay: serving at ", url)
+
+
+func _health() -> void:
+	if _relay == null:
+		return
+	var share := _relay.struggling(session_id)
+	var members := _relay.members_in(session_id)
+	_bad = _bad + 1 if share >= STEP_DOWN_SHARE else 0
+	if should_step_down(share, members, _bad):
+		print("class relay: stepped down -- %d of %d phones could not keep up" % [
+			roundi(share * members), members])
+		stop()
+		state = "stepped down"          # not again this session: the next one tries afresh
+
+
+static func should_step_down(share: float, members: int, streak: int) -> bool:
+	return share >= STEP_DOWN_SHARE and members >= STEP_DOWN_MIN and streak >= 2
 
 
 ## A relay on PORT and a tunnel to it: "" once the tunnel is up, or why not.
@@ -154,6 +183,7 @@ func _stop() -> void:
 		_relay.queue_free()
 		_relay = null
 	url = ""
+	_bad = 0
 	if state != "no cloudflared":
 		state = "standby"
 
