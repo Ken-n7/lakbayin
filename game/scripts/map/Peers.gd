@@ -159,6 +159,10 @@ func refresh(rows: Array, anchors: Array, gate: Vector2, me: String) -> void:
 			tag.text = str(row.get("username", tag.text))
 			tag.add_theme_color_override("font_color", colour_of(team))
 			tint_arrow(marker.get_node("Arrow"), colour_of(team))
+		# A row that says which hero (a done player's own, on the map they
+		# watch from): no position of theirs will come to say it.
+		if row.has("hero"):
+			_dress(marker, int(row.hero))
 		# Out of the adventure: still shown, because a teacher and a team-mate
 		# both want to know where somebody stopped.
 		marker.modulate.a = 0.45 if bool(row.get("eliminated", false)) else 1.0

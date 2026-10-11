@@ -40,9 +40,6 @@ var _touches := {}               # index -> position, for the pinch
 var _glide: Tween
 var _zoom_in: TextureButton
 var _zoom_out: TextureButton
-## A player watching after they are done sees their own hero too, where they
-## stopped; the Quest Keeper is no member, so it makes no odds for them.
-var include_me := false
 ## Which towers the board stands (Terrain.tower_seed): set before it is
 ## added, or taken from the session `watch()` is given -- so the Quest
 ## Keeper's map has the towers the class has.
@@ -106,6 +103,17 @@ func watch(session_id: String) -> void:
 	_load()
 
 
+## A done player's board hands over the heroes it already feeds
+## (`AdventureScreen._begin_spectating`) and goes on feeding them; `watch()` is
+## not called. A phone hears the class in the teacher's snapshots, which this
+## map does not listen for: with heroes of its own, everyone stood at a tower
+## and never moved (client, 2026-10-12).
+func take_peers(peers: Peers) -> void:
+	_peers.queue_free()
+	_peers = peers
+	peers.reparent(world, false)
+
+
 ## Nothing animates while Game Controls has the map put away.
 func set_shown(on: bool) -> void:
 	visible = on
@@ -132,8 +140,7 @@ func _load() -> void:
 
 
 func _redraw() -> void:
-	_peers.refresh(_rows.values(), world.peer_anchors(), world.gate_at(),
-		"" if include_me else Net.user_id)
+	_peers.refresh(_rows.values(), world.peer_anchors(), world.gate_at(), Net.user_id)
 
 
 func _on_broadcast(event: String, data: Dictionary) -> void:

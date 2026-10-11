@@ -66,6 +66,7 @@ var _sky: SkyClouds = null        # the clouds the start swoop dives through
 ## "" while playing; "finished" or "eliminated" once this player is done but
 ## the session is not -- they watch, flying the map, until everyone is done.
 var _spectate := ""
+var _watch: MapWatch = null        # the map a done player flies over
 var _banner: Label = null
 var _start_hint: Label = null   # "Tap anywhere to start" -- freed once it does
 var _card: Control = null       # the tapped circle's info card
@@ -637,6 +638,9 @@ func _refresh_peers() -> void:
 	if _peers == null or not is_instance_valid(_peers):
 		_peers = Peers.new()
 		world.add_child(_peers)
+		# Back after a restart already done: watching began before this read.
+		if _watch != null and is_instance_valid(_watch):
+			_watch.take_peers(_peers)
 		var teams: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
 			"/rest/v1/teams?select=id&session_id=eq." + Game.session_id + "&order=name")
 		if not is_instance_valid(_peers):
@@ -669,7 +673,15 @@ func _draw_peers() -> void:
 	if _peers == null or not is_instance_valid(_peers) or _circles.is_empty():
 		return
 	var board := world as MapWorld
-	_peers.refresh(_peer_rows.values(), board.peer_anchors(), board.gate_at(), Net.user_id)
+	var me := Net.user_id
+	# Done and watching: this player's own hero too, where they stopped. Their
+	# own row is not kept up here while they play, so Game fills it in.
+	if _spectate != "":
+		if _peer_rows.has(me):
+			(_peer_rows[me] as Dictionary).merge({"items_done": Game.items_done,
+				"eliminated": Game.eliminated, "hero": Game.hero_id}, true)
+		me = ""
+	_peers.refresh(_peer_rows.values(), board.peer_anchors(), board.gate_at(), me)
 	_show_waiting()      # the roster is the other half of "N of M ready"
 
 
@@ -1571,12 +1583,15 @@ func _begin_spectating(why: String, finish_s := -1) -> void:
 	layer.layer = 1
 	add_child(layer)
 	move_child(layer, 0)
-	var watch := MapWatch.new()
-	watch.include_me = true
-	watch.tower_seed = (world as MapWorld).tower_seed   # this run's towers
-	layer.add_child(watch)
-	watch.watch(Game.session_id)
+	_watch = MapWatch.new()
+	_watch.tower_seed = (world as MapWorld).tower_seed   # this run's towers
+	layer.add_child(_watch)
+	# The heroes go over to it as they are, and this screen goes on feeding
+	# them -- snapshots, the relay, the read when neither comes.
+	if _peers != null and is_instance_valid(_peers):
+		_watch.take_peers(_peers)
 	world.visible = false          # MapWatch draws its own board
+	_draw_peers()
 	_show_banner(finish_s)
 
 

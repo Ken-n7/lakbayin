@@ -381,6 +381,43 @@ func _map_and_news() -> void:
 	check("...and the question screen shows them",
 			(q.get("_gems_row") as Label).text == str(gems_before + 15), (q.get("_gems_row") as Label).text)
 	adv.close_overlay()
+
+	# Done and watching (client, 2026-10-12: on a finished player's map
+	# everyone stood at one tower): the heroes the board was feeding go over
+	# to the map shown, and the teacher's snapshots still move them.
+	var peers := Peers.new()
+	adv.world.add_child(peers)
+	adv._peers = peers
+	adv._peer_rows = {"ben-id": {"profile_id": "ben-id", "username": "ben", "team_id": "",
+		"items_done": 2, "gems": 6, "eliminated": false},
+		"me-id": {"profile_id": "me-id", "username": "me", "team_id": "",
+		"items_done": 0, "gems": 6, "eliminated": false}}
+	Net.user_id = "me-id"
+	var hero_was: int = Game.hero_id
+	Game.hero_id = 5
+	adv._draw_peers()
+	check("playing: this player is not among the heroes", not peers._markers.has("me-id"))
+	adv._begin_spectating("finished")
+	await frames(2)
+	var ben: Node2D = peers._markers["ben-id"]
+	var mine: Node2D = peers._markers.get("me-id")
+	check("watching: their own hero too, as they picked it", mine != null
+			and int(mine.get_meta("hero")) == 5 and mine.is_visible_in_tree())
+	Net.user_id = ""
+	Game.hero_id = hero_was
+	check("watching: the heroes are on the map shown", adv._watch != null
+			and peers.get_parent() == adv._watch.world and ben.is_visible_in_tree()
+			and not adv.world.visible)
+	var anchors: Array = adv.world.peer_anchors()
+	var there: Vector2 = anchors[2] + Vector2(400, 0)
+	adv._on_broadcast("snap", {"sid": SID,
+		"p": [{"id": "ben-id", "hero": 3, "p": {"t": 5.0, "dt": 0.1, "x": [there.x, there.x], "y": [there.y, there.y]}}],
+		"r": [{"profile_id": "ben-id", "items_done": 3}]})
+	await frames(3)
+	check("...a snapshot walks them where they are", ben.position.distance_to(there) < 2.0,
+			str(ben.position))
+	check("...and brings their progress", (ben.get_meta("fallback") as Vector2).distance_to(anchors[3]) < 1.0,
+			str(ben.get_meta("fallback")))
 	Game.session_id = ""
 	await frames(2)
 
