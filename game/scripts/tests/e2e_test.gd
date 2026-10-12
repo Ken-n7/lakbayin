@@ -514,17 +514,17 @@ func _run() -> void:
 	_click(_screen(), "Learn")
 	await _wait(3)
 	var learn := _screen()
-	# In the stations' order (client's posters, 2026-10-01): each lesson is
-	# where a player stuck at that station looks.
+	# The client's posters (2026-10-01), exponents before the order of
+	# operations (client, 2026-10-12) -- not the stations' own order.
 	var lessons := [
 		["Basic Operations", "operation"],
+		["Exponential Notation", "exponent"],
 		# The mockup's Learn copy says GEMDAS, not PEMDAS, and so do we now.
 		["Order of Operations", "gemdas"],
-		["Exponential Notation", "exponent"],
 	]
 	for i in lessons.size():
 		var l: Array = lessons[i]
-		check("Station %d teaches %s" % [i + 1, l[0]],
+		check("Lesson %d teaches %s" % [i + 1, l[0]],
 			_find_button(learn, "%d · %s" % [i + 1, l[0]]) != null)
 		_click(learn, l[0])
 		await _wait(1)
