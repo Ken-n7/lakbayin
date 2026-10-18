@@ -37,6 +37,8 @@ var _cards: GridContainer
 var _status: Label
 var _steps: Label            # "1 Pick a team -> 2 Ready!", the current one lit
 var _banner: PanelContainer  # the status line's backing, coloured by state
+var _reloading := false
+var _reload_again := false
 
 
 func setup(data: Dictionary) -> void:
@@ -425,6 +427,8 @@ func _pick(team_id: String) -> void:
 func _watch() -> void:
 	var sid: String = str(_session.get("id", ""))
 	var rt: Realtime = Net.realtime()
+	if not rt.subscribed.is_connected(_reload_lobby):
+		rt.subscribed.connect(_reload_lobby)
 	if not rt.changed.is_connected(_on_row):
 		rt.changed.connect(_on_row)
 	if not rt.broadcast.is_connected(_on_hint):
@@ -436,6 +440,28 @@ func _watch() -> void:
 	rt.watch("members", "session_id=eq." + sid)
 
 
+func _reload_lobby() -> void:
+	if _reloading:
+		_reload_again = true
+		return
+	_reloading = true
+	while true:
+		_reload_again = false
+		var sid := str(_session.get("id", ""))
+		if sid == "":
+			break
+		var err := await _lobby.load(sid)
+		if not is_instance_valid(self):
+			return
+		if err == "" and sid == str(_session.get("id", "")):
+			_draw_lobby()
+		elif err != "":
+			_say(err, Pal.WRONG)
+		if not _reload_again:
+			break
+	_reloading = false
+
+
 func _on_row(table: String, type: String, record: Dictionary) -> void:
 	if not is_instance_valid(self):
 		return
@@ -443,9 +469,7 @@ func _on_row(table: String, type: String, record: Dictionary) -> void:
 		"changed":
 			_draw_lobby()
 		"reload":
-			await _lobby.load(str(_session.get("id", "")))
-			if is_instance_valid(self):
-				_draw_lobby()
+			_reload_lobby()
 
 
 ## The fast road: the same changes, announced by whoever made them.
@@ -456,9 +480,7 @@ func _on_hint(event: String, data: Dictionary) -> void:
 		"changed":
 			_draw_lobby()
 		"reload":
-			await _lobby.load(str(_session.get("id", "")))
-			if is_instance_valid(self):
-				_draw_lobby()
+			_reload_lobby()
 
 
 func _to_map() -> void:

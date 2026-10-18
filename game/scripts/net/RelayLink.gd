@@ -82,6 +82,7 @@ var _roster := {}                # idx -> {id, hero}
 var _dialing := false
 var _ticket := ""                # relay_ticket's answer, for `_ticket_of`
 var _ticket_of := ""             # "session|role" it was given for
+var _ticket_user := ""           # the account that requested it
 var _ticket_at := -INF
 var _recheck_at := INF
 var _rechecking := false
@@ -125,6 +126,9 @@ func join(session_id: String, role: String, hero := 1) -> void:
 func leave() -> void:
 	_session = ""
 	_retry_in = -1.0
+	_ticket = ""
+	_ticket_of = ""
+	_ticket_user = ""
 	_close()
 
 
@@ -223,12 +227,18 @@ func _dial() -> void:
 ## relay -- whoever runs it -- never holds anything that opens Supabase.
 func _ticket_for(session: String) -> String:
 	var now := Time.get_ticks_msec() / 1000.0
-	if _ticket != "" and _ticket_of == session + "|" + _role and now - _ticket_at < TICKET_KEEP_S:
+	if _ticket != "" and _ticket_user == Net.user_id \
+			and _ticket_of == session + "|" + _role and now - _ticket_at < TICKET_KEEP_S:
 		return _ticket
+	var user := Net.user_id
+	var role := _role
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/relay_ticket",
-		{"p_session": session, "p_role": _role})
+		{"p_session": session, "p_role": role})
+	if user != Net.user_id or session != _session or role != _role:
+		return ""
 	_ticket = str(got.data) if got.error == "" and got.data is String else ""
-	_ticket_of = session + "|" + _role
+	_ticket_of = session + "|" + role
+	_ticket_user = user
 	_ticket_at = now
 	if _ticket == "":
 		last_close = "no relay ticket: " + (got.error if got.error != "" else "no answer")

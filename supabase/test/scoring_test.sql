@@ -58,15 +58,15 @@ begin
     got := pg_temp.as_player(ana, 'select public.apply_answer(' || s || ', true)');
   end loop;
   select * into m from public.members where profile_id = ana;
-  perform pg_temp.check(got = '' and m.items_done = 14 and m.gems = 190, 'all 14 answers count',
+  perform pg_temp.check(got = '' and m.items_done = 14 and m.gems = 220, 'all 14 answers and three atomic station bonuses count',
     got || ' items ' || m.items_done || ' gems ' || m.gems);
   got := pg_temp.as_player(ana, 'select public.apply_answer(' || s || ', true)');
   select * into m from public.members where profile_id = ana;
-  perform pg_temp.check(got = 'every circle is already answered' and m.items_done = 14 and m.gems = 190,
+  perform pg_temp.check(got = 'every circle is already answered' and m.items_done = 14 and m.gems = 220,
     'a 15th answer is refused', got || ' items ' || m.items_done || ' gems ' || m.gems);
   got := pg_temp.as_player(ana, 'select public.skip_item(' || s || ')');
   select * into m from public.members where profile_id = ana;
-  perform pg_temp.check(m.items_done = 14 and m.gems = 190, 'nor can a skip go past the last circle',
+  perform pg_temp.check(m.items_done = 14 and m.gems = 220, 'nor can a skip go past the last circle',
     'items ' || m.items_done || ' gems ' || m.gems);
   got := pg_temp.as_player(ben, 'select public.apply_answer(' || s || ', true)');
   perform pg_temp.check(got = 'you are not in this adventure', 'an outsider is told so', got);

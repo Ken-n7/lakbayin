@@ -137,21 +137,44 @@ static func seed(station: int) -> Dictionary:
 ## when there is no backend, which is how an offline dev run and the headless
 ## suites still get questions at all.
 static var bank := {}
+static var authored_only := false
 
 
 ## Pull the bank once per adventure rather than per item: forty round trips on
 ## a classroom connection is forty chances to stall mid-question. `owner` is
 ## the session's teacher, whose bank the class plays (each teacher has their
 ## own); "" with no session (explore): whatever this account can read.
-static func load_bank(owner := "") -> String:
+static func load_bank(owner := "", require_complete := false) -> String:
 	bank = {}
+	authored_only = require_complete or owner != ""
 	if not Net.configured() or not Net.signed_in():
 		return ""
 	var got: Dictionary = await fetch(0, owner)
 	if got.error != "":
 		return got.error
-	for row: Dictionary in got.rows:
+	_take_bank(got.rows)
+	return bank_error() if require_complete else ""
+
+
+## Running sessions carry their immutable Start snapshot, including on rejoin.
+static func use_session(session: Dictionary) -> String:
+	authored_only = true
+	bank = {}
+	var rows: Variant = session.get("question_bank")
+	if not (rows is Array):
+		return "Waiting for the adventure's questions"
+	_take_bank(rows)
+	return bank_error()
+
+
+static func _take_bank(rows: Array) -> void:
+	for entry: Variant in rows:
+		if not (entry is Dictionary):
+			continue
+		var row: Dictionary = entry
 		if not row.get("active", false):
+			continue
+		if str(row.get("prompt", "")).strip_edges() == "" or str(row.get("answer", "")).strip_edges() == "":
 			continue
 		var idx: int = int(row.get("station", 0)) - 1
 		if idx < 0 or idx >= Game.ITEMS_PER_STATION.size():
@@ -159,6 +182,12 @@ static func load_bank(owner := "") -> String:
 		if not bank.has(idx):
 			bank[idx] = []
 		bank[idx].append(row)
+
+
+static func bank_error() -> String:
+	for s in Game.ITEMS_PER_STATION.size():
+		if (bank.get(s, []) as Array).size() < int(Game.ITEMS_PER_STATION[s]):
+			return "Waiting for Station %d's questions" % (s + 1)
 	return ""
 
 
@@ -184,6 +213,8 @@ static func item_for(station_index: int, item_index: int) -> Dictionary:
 			"rule": MathText.superscripts(str(q.get("feedback", ""))
 				if str(q.get("feedback", "")) != "" else str(q.get("hint", ""))),
 		}
+	if authored_only:
+		return {}
 	var gen: Dictionary = QuestionGen.item_for_station(station_index, item_index)
 	gen["answer"] = str(gen.get("answer", ""))
 	return gen

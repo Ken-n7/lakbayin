@@ -56,6 +56,8 @@ var _lobby := Lobby.new()
 ## The session whose roster the socket is following, "" for none. Tracked by id
 ## because a new session (Start after an ended run) needs watching afresh.
 var _watching := ""
+var _roster_loading := false
+var _roster_again := false
 
 
 ## The map view (`MapWatch`) and the slim bar that stands in for the panel
@@ -522,6 +524,8 @@ func _watch_roster() -> void:
 		return
 	_watching = sid
 	var rt: Realtime = Net.realtime()
+	if not rt.subscribed.is_connected(_load_teams):
+		rt.subscribed.connect(_load_teams)
 	if not rt.changed.is_connected(_on_roster_row):
 		rt.changed.connect(_on_roster_row)
 	# The fast road: students' own picks and joins, announced as they happen.
@@ -857,13 +861,28 @@ func _process(delta: float) -> void:
 func _load_teams() -> void:
 	if _session.is_empty():
 		return
-	var err := await _lobby.load(str(_session.get("id", "")))
-	if not is_instance_valid(self):
+	if _roster_loading:
+		_roster_again = true
 		return
-	if err != "":
-		_say(err, Pal.WRONG)
-	_draw_teams()
-	_refresh_state()
+	_roster_loading = true
+	while true:
+		_roster_again = false
+		var sid := str(_session.get("id", ""))
+		var err := await _lobby.load(sid)
+		if not is_instance_valid(self):
+			return
+		if sid != str(_session.get("id", "")):
+			_roster_again = true
+		elif err != "":
+			_say(err, Pal.WRONG)
+		else:
+			_on_own_session("DELETE" if _lobby.session.is_empty() else "UPDATE",
+				{"id": sid} if _lobby.session.is_empty() else _lobby.session)
+			_draw_teams()
+			_refresh_state()
+		if not _roster_again or _session.is_empty():
+			break
+	_roster_loading = false
 
 
 ## The Teams tab, drawn from `_lobby` -- never waits on the network.
@@ -1307,7 +1326,7 @@ func _on_own_session(type: String, record: Dictionary) -> void:
 		var was := str(_session.get("state", ""))
 		_session["state"] = "ended"
 		_refresh_state()
-		if sid == _ending_id:
+		if sid == _ending_id or was == "ended":
 			return
 		# A game in play that ended without End: the server's doing, when the
 		# last player was through the Gate or out (`end_when_all_done`).

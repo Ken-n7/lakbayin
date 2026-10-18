@@ -80,6 +80,11 @@ var hero_box := Rect2()
 ## (map/Terrain.gd). A ramp is where it changes.
 var hero_level := 0
 var _current_circle := -1            # the circle to answer now, -1 none
+var _session_row := {}
+var _bank_ready := true
+var _bank_loading := false
+var _resyncing := false
+var _member_revision := -1
 var _last_state := ""                # the session state last applied, for its sounds
 var _last_gems := -1
 var _dev_aerial := false
@@ -121,6 +126,7 @@ func _sync_session() -> void:
 	# teacher. Falling back to tap-to-start here let a student play a whole
 	# run that no server ever scored.
 	_wait_for_admin = true
+	_bank_ready = false
 	# The session this phone joined by its code -- never "the newest one
 	# anywhere", which is how a leftover test session once caught a class.
 	var session: Dictionary = await Teams.session(Game.joined_session)
@@ -133,9 +139,7 @@ func _sync_session() -> void:
 			main.open("team")
 		return
 	var sid: String = str(session.get("id", ""))
-	# The session's teacher's questions, fetched once, while the board builds
-	# and the aerial view holds -- long before the hero can reach a circle.
-	_load_bank(str(session.get("admin_id", "")))
+	_session_row = session.duplicate()
 
 	# In this session? Then pick up where the server says, which is a fresh
 	# 50 gems on circle 1 for a first join and the real progress for a rejoin.
@@ -152,6 +156,7 @@ func _sync_session() -> void:
 			main.open("team")
 		return
 	Game.restore_from(mine)
+	_member_revision = int(mine.get("revision", -1))
 	Scores.know(mine)        # what a lost reply is checked against (Scores)
 	_my_team = str(mine.get("team_id", ""))
 	Game.apply_session(session)
@@ -180,6 +185,8 @@ func _sync_session() -> void:
 		rt.subscribed.connect(_resync)
 	if not rt.broadcast.is_connected(_on_broadcast):
 		rt.broadcast.connect(_on_broadcast)
+	if not rt.position.is_connected(_on_position):
+		rt.position.connect(_on_position)
 	rt.watch("sessions", "id=eq." + sid)
 	# This player's own row: gems the server settled, a team move, being
 	# removed. Everyone else's progress comes in the teacher's snapshots
@@ -187,7 +194,7 @@ func _sync_session() -> void:
 	# devices -- with a read every PEERS_FALLBACK_S when none arrive.
 	rt.watch("members", "profile_id=eq." + Net.user_id)
 	# On the teacher's list as here, on the board -- which is what "ready" is.
-	rt.track({"sid": sid, "where": "map", "name": Net.username})
+	rt.track({"sid": sid, "where": "lobby", "name": Net.username})
 	_watch_positions()
 	# The movement relay, when the home laptop runs one (RelayLink): others'
 	# walks ~0.3s behind instead of ~0.9s. Down or absent: the hub as before.
@@ -198,6 +205,7 @@ func _sync_session() -> void:
 	if not rt.presence_changed.is_connected(_show_waiting):
 		rt.presence_changed.connect(_show_waiting)
 	_refresh_peers()
+	await _load_bank(str(session.get("admin_id", "")))
 
 
 ## Where this hero is, for everybody else's board: the path walked, recorded
@@ -352,9 +360,11 @@ func _watch_connection(delta: float) -> void:
 ## would only wait. Weak with the last answer still unsaved: one more would
 ## stack behind it. Answers already given are never lost (Scores retries).
 func _connection_block() -> String:
+	if _wait_for_admin and not _bank_ready:
+		return "Waiting for your Quest Keeper's questions"
 	if _conn == "offline":
 		return "Reconnecting — your answers are saved, wait a moment"
-	if _conn == "weak" and Scores.pending() > 0:
+	if Game.session_id != "" and Scores.pending() > 0:
 		return "Saving your last answer — one moment"
 	return ""
 
@@ -406,7 +416,10 @@ func _take_rows(rows: Array) -> void:
 func _on_broadcast(event: String, data: Dictionary) -> void:
 	if event == "rescue":
 		_on_rescue_news(data)
-		return
+
+
+## Delivered only from a successfully joined private movement channel.
+func _on_position(event: String, data: Dictionary) -> void:
 	if event != "snap" or str(data.get("sid", "")) != Game.session_id \
 			or not is_instance_valid(self):
 		return
@@ -482,56 +495,110 @@ func _hold_offline(why: String) -> void:
 
 
 func _resync() -> void:
-	if Game.session_id == "" or not is_instance_valid(self):
+	var sid := Game.session_id
+	if sid == "" or _resyncing or not is_instance_valid(self):
 		return
+	_resyncing = true
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		Teams.SESSIONS + "?select=*&id=eq." + Game.session_id)
-	if not is_instance_valid(self) or got.error != "":
+		Teams.SESSIONS + "?select=*&id=eq." + sid)
+	if not is_instance_valid(self):
+		return
+	_resyncing = false
+	if sid != Game.session_id or got.error != "":
 		return
 	var rows: Array = got.data if got.data is Array else []
 	if rows.is_empty():
 		_leave_ended()
 		return
+	_session_row = rows[0].duplicate()
 	Game.apply_session(rows[0])
 	_apply_session_state()
+	if _ending:
+		return
+	var mine := await Teams.membership(sid)
+	if not is_instance_valid(self) or sid != Game.session_id or mine.has("error"):
+		return
+	if mine.is_empty():
+		_leave_removed()
+		return
+	_take_team(mine)
+	_take_server_row(mine)
 	_refresh_peers()
 
 
-## Forward a scoring event to the function that owns it, then take the
-## server's number back. Usually identical; when it is not, this is where a
-## phone that got out of step comes back into line.
+## The item/station identity accompanies the stable event ID, so work queued
+## after a refused answer cannot resolve a different circle on the server.
 func _on_scored(kind: String, flag: bool) -> void:
-	if Game.session_id != "":
-		Scores.submit(kind, flag, Game.session_id, _on_score_reply)
+	if Game.session_id != "" and kind != "station":
+		var item := Game.items_done - (1 if kind in ["answer", "skip"] else 0)
+		Scores.submit(kind, flag, Game.session_id, _on_score_reply, item, Game.current_station)
 
 
 func _on_score_reply(reply: Dictionary) -> void:
+	if str(reply.get("session_id", Game.session_id)) != Game.session_id:
+		return
 	if reply.error != "":
+		# The visible result was optimistic. Close it without awarding a station
+		# or accepting Continue, then restore every progress field from the row.
+		if is_instance_valid(_overlay):
+			_overlay.queue_free()
+			_overlay = null
+			hud.set_pad(true)
+		_take_server_row(reply.get("row", {}))
 		Sfx.play("error")
-		hud.flash("Not scored: " + reply.error)
+		hud.flash("Not scored: " + str(reply.error))
+		_resync()
 	else:
 		_take_server_row(reply.row)
-		# The Gate's reply carries the time the server stamped.
-		if _spectate == "finished" and reply.row.get("finish_s") != null:
-			_show_banner(int(reply.row.finish_s))
+		if str(reply.get("kind", "")) == "finish" and bool(reply.row.get("finished", false)):
+			_begin_spectating("finished", int(reply.row.get("finish_s", -1)))
 
 
-## The server's copy of this player's row -- from a scoring reply or from the
-## socket. Gems follow it.
+## Apply full authoritative progress once queued optimistic work has settled.
 func _take_server_row(row: Dictionary) -> void:
+	row = Scores.latest(row)
+	var revision := int(row.get("revision", -1))
+	if revision >= 0 and revision < _member_revision:
+		return
 	Scores.know(row)
-	# Only with nothing still on its way: an older reply taken over a newer
-	# local sum would briefly undo it.
 	if row.is_empty() or Scores.pending() > 0:
 		return
-	var server_gems: int = int(row.get("gems", Game.gems))
-	if server_gems == Game.gems:
-		return
-	Game.gems = server_gems
-	Game.eliminated = bool(row.get("eliminated", Game.eliminated))
-	Game.gems_changed.emit(Game.gems)
+	_member_revision = revision
+	var briefed := Game.towers_entered.duplicate()
+	Game.restore_from(row)
+	for i in briefed.size():
+		Game.towers_entered[i] = Game.towers_entered[i] or briefed[i]
+	var finished := bool(row.get("finished", false))
+	if not Game.eliminated and not finished and _spectate != "":
+		_resume_playing()
+	if stations != null:
+		hud.refresh()
+		_refresh_circles()
+		barricades.refresh()
 	if Game.eliminated and _overlay == null:
 		_begin_spectating("eliminated")
+	elif finished:
+		var stamp: Variant = row.get("finish_s")
+		_begin_spectating("finished", int(stamp) if stamp != null else -1)
+		if _spectate == "finished":
+			_show_banner(int(stamp) if stamp != null else -1)
+
+
+## An optimistic elimination can be refused by a pause racing the answer.
+func _resume_playing() -> void:
+	_spectate = ""
+	if is_instance_valid(_watch):
+		if is_instance_valid(_peers):
+			_peers.reparent(world, false)
+		_watch.get_parent().queue_free()
+		_watch = null
+	if is_instance_valid(_banner):
+		_banner.get_parent().queue_free()
+		_banner = null
+	if world != null:
+		world.visible = true
+	hud.set_pad(true)
+	hud._refresh_rescue()
 
 
 ## Everything the socket says. Filters narrow what the server sends, but not
@@ -574,6 +641,7 @@ func _on_session_row(table: String, type: String, record: Dictionary) -> void:
 		# The teacher tearing the session down counts as ending it.
 		_leave_ended()
 		return
+	_session_row = record.duplicate()
 	Game.apply_session(record)
 	_apply_session_state()
 
@@ -719,6 +787,10 @@ func _show_waiting() -> void:
 
 ## One place deciding what the session's state means on the board.
 func _apply_session_state() -> void:
+	if _wait_for_admin and Game.session_state in ["running", "paused"]:
+		_bank_ready = QuestionStore.use_session(_session_row) == ""
+		if not _bank_ready and not _bank_loading:
+			_load_bank(str(_session_row.get("admin_id", "")))
 	# A sound for a change of state, not for learning it on arrival.
 	var was := _last_state
 	_last_state = Game.session_state
@@ -729,6 +801,9 @@ func _apply_session_state() -> void:
 			"ended": Sfx.play("ended")
 	match Game.session_state:
 		"running":
+			if _wait_for_admin and not _bank_ready:
+				_hold_offline("Waiting for your Quest Keeper's questions")
+				return
 			hud.paused = false
 			if _frozen:
 				_swoop()
@@ -752,9 +827,40 @@ func _apply_session_state() -> void:
 ## a silent fall back to the generator is exactly the substitution SPECS §10
 ## Phase 3 forbids, and the teacher would never know it happened.
 func _load_bank(owner: String) -> void:
-	var err: String = await QuestionStore.load_bank(owner)
-	if err != "" and is_instance_valid(hud):
-		hud.flash("Could not load the question bank — " + err)
+	if _bank_loading:
+		return
+	_bank_loading = true
+	while true:
+		var err := ""
+		if not _wait_for_admin:
+			err = await QuestionStore.load_bank(owner)
+		elif Game.session_state == "lobby":
+			err = await QuestionStore.load_bank(owner, true)
+		else:
+			err = QuestionStore.use_session(_session_row)
+		if not is_instance_valid(self):
+			return
+		# Start may have arrived while the lobby fetch was in flight. Its frozen
+		# bank always replaces that fetch, even when both are complete.
+		if _wait_for_admin and Game.session_state in ["running", "paused"]:
+			err = QuestionStore.use_session(_session_row)
+		if err == "":
+			_bank_ready = true
+			_bank_loading = false
+			if _wait_for_admin:
+				Net.realtime().track({"sid": Game.session_id, "where": "map", "name": Net.username})
+				_apply_session_state()
+			return
+		_bank_ready = false
+		_hold_offline(err + " — retrying…")
+		if not _wait_for_admin or _ending:
+			_bank_loading = false
+			return
+		await get_tree().create_timer(2.0).timeout
+		if not is_instance_valid(self) or _ending:
+			return
+		if Game.session_state != "lobby":
+			await _resync()
 
 
 ## Dev only: walk the board with no session -- nothing online, nothing
@@ -1471,7 +1577,7 @@ func _act_on(target: Dictionary) -> void:
 		Sfx.play("blocked")
 		hud.flash(why + "!")
 		return
-	if kind == "circle" and _connection_block() != "":
+	if kind in ["circle", "gate"] and _connection_block() != "":
 		Sfx.play("blocked")
 		hud.flash(_connection_block())
 		return
@@ -1488,7 +1594,7 @@ func _act_on(target: Dictionary) -> void:
 			# wait for everyone (client). Alone there is nobody to wait for.
 			if Game.session_id != "":
 				Game.mark_finished()
-				_begin_spectating("finished")
+				hud.flash("Saving your finish…")
 			else:
 				Game.end_adventure()
 

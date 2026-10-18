@@ -211,7 +211,9 @@ func _confirm() -> void:
 		_say(err.left(1).to_upper() + err.substr(1) + ("" if err.ends_with(".") else "."), Pal.WRONG)
 		_refresh_preview()
 		return
-	Game.give_rescue(v)
+	var settled: Dictionary = Scores.latest(reply.get("row", {}))
+	Scores.know(settled)
+	Game.give_rescue(v, settled)
 	Sfx.play("rescue")
 	notify.call({"sid": Game.session_id, "to": str(_mate.get("profile_id", "")),
 			"from": Net.username, "amount": v})

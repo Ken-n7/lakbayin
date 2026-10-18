@@ -206,6 +206,29 @@ alter table public.questions add column if not exists
 alter table public.questions add column if not exists
   owner uuid references public.profiles on delete cascade default auth.uid();
 
+-- Freeze the authored bank at Start; a returning phone gets the same questions.
+alter table public.sessions add column if not exists question_bank jsonb;
+create or replace function public.snapshot_questions() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.state = 'running' and old.state = 'lobby' then
+    select coalesce(jsonb_agg(to_jsonb(q) order by q.station, q.created_at, q.id), '[]'::jsonb)
+      into new.question_bank
+      from public.questions q where q.owner = new.admin_id and q.active;
+  end if;
+  return new;
+end $$;
+drop trigger if exists sessions_snapshot_questions on public.sessions;
+create trigger sessions_snapshot_questions before update on public.sessions
+  for each row execute function public.snapshot_questions();
+
+-- Existing running/paused sessions predate snapshots. Freeze their current
+-- authored bank once so updated phones can still rejoin them after upgrade.
+update public.sessions s set question_bank = (
+  select coalesce(jsonb_agg(to_jsonb(q) order by q.station, q.created_at, q.id), '[]'::jsonb)
+    from public.questions q where q.owner = s.admin_id and q.active)
+ where s.question_bank is null and s.state in ('running', 'paused');
+
 -- 4b. Scoring, server side ---------------------------------------------------
 -- The client may not write its own score (SPECS §10 Phase 4). Every gem change
 -- goes through one of these, which run as the owner and therefore past RLS.
@@ -219,67 +242,132 @@ alter table public.questions add column if not exists
 alter table public.members add column if not exists
   updated_at timestamptz not null default now();
 
+-- Session first, then member rows: every scoring RPC uses this order. It
+-- serializes final-player checks with other scores and the teacher's pause/end.
+create schema if not exists numxventure_private;
+revoke all on schema numxventure_private from public, anon, authenticated;
+create or replace function numxventure_private.lock_session(p_session uuid)
+returns public.sessions language plpgsql security definer set search_path = '' as $$
+declare s public.sessions;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select * into s from public.sessions where id = p_session for no key update;
+  if s is null then raise exception 'the adventure no longer exists'; end if;
+  return s;
+end $$;
+create or replace function numxventure_private.running_session(p_session uuid)
+returns public.sessions language plpgsql security definer set search_path = '' as $$
+declare s public.sessions;
+begin
+  s := numxventure_private.lock_session(p_session);
+  if s.state <> 'running' or s.ends_at is null or s.ends_at <= clock_timestamp()
+     or s.created_at <= clock_timestamp() - interval '3 hours' then
+    raise exception 'the adventure is not running';
+  end if;
+  return s;
+end $$;
+
+alter table public.members add column if not exists wrong int not null default 0;
+alter table public.members add column if not exists skipped int not null default 0;
+alter table public.members add column if not exists hints_used int not null default 0;
+alter table public.members add column if not exists station_flawed boolean not null default false;
+alter table public.members add column if not exists station_used_hint boolean not null default false;
+alter table public.members add column if not exists item_used_hint boolean not null default false;
+alter table public.members add column if not exists perfect_stations boolean[] not null default array[false,false,false];
+alter table public.members add column if not exists stations_done int not null default 0;
+
+-- Replies and change-feed events can arrive in different orders. A device
+-- must never restore an older row over a later answer or rescue.
+alter table public.members add column if not exists revision bigint not null default 0;
+create or replace function public.bump_member_revision() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.revision := old.revision + 1;
+  return new;
+end $$;
+drop trigger if exists members_revision on public.members;
+create trigger members_revision before update on public.members
+  for each row execute function public.bump_member_revision();
+
+-- Finalize the boundary in the SAME transaction as its answer/skip. A phone
+-- can die before Continue without leaving a station's completion unsaved.
+create or replace function numxventure_private.complete_station(p_session uuid)
+returns public.members language plpgsql security definer set search_path = '' as $$
+declare m public.members; n int;
+begin
+  select * into m from public.members where session_id = p_session and profile_id = auth.uid();
+  n := case m.items_done when 8 then 1 when 11 then 2 when 14 then 3 else 0 end;
+  if n > m.stations_done then
+    update public.members
+       set gems = gems + case when not station_flawed and not station_used_hint then 10 else 0 end,
+           perfect_stations[n] = not station_flawed and not station_used_hint,
+           stations_done = n, station_flawed = false, station_used_hint = false,
+           item_used_hint = false, updated_at = now()
+     where session_id = p_session and profile_id = auth.uid() returning * into m;
+  end if;
+  return m;
+end $$;
+
+-- Recover boundaries from older clients. Their gems are already historical;
+-- do not invent an unknown perfect bonus while repairing the completion flag.
+update public.members set stations_done = case when items_done >= 14 then 3
+    when items_done >= 11 then 2 when items_done >= 8 then 1 else 0 end
+ where stations_done < case when items_done >= 14 then 3
+    when items_done >= 11 then 2 when items_done >= 8 then 1 else 0 end;
+
 create or replace function public.apply_answer(p_session uuid, p_correct boolean)
 returns public.members
 language plpgsql security definer set search_path = '' as $$
-declare
-  row public.members;
+declare row public.members;
 begin
-  if not exists (select 1 from public.sessions
-                 where id = p_session and state = 'running') then
-    raise exception 'the adventure is not running';
-  end if;
-  -- One answer per circle, 14 in all (Game.TOTAL_ITEMS): the phone says
-  -- whether it was right, so without the cap one player could ask for +10
-  -- as often as they liked.
+  perform numxventure_private.running_session(p_session);
   update public.members
-     set gems       = gems + case when p_correct then 10 else -5 end,
-         correct    = correct + case when p_correct then 1 else 0 end,
-         items_done = items_done + 1,
-         updated_at = now()
+     set gems = gems + case when p_correct then 10 else -5 end,
+         correct = correct + case when p_correct then 1 else 0 end,
+         wrong = wrong + case when p_correct then 0 else 1 end,
+         station_flawed = station_flawed or not p_correct,
+         item_used_hint = false, items_done = items_done + 1, updated_at = now()
    where session_id = p_session and profile_id = auth.uid() and items_done < 14
+     and not eliminated and not finished
   returning * into row;
   if row is null then
     raise exception '%', case when exists (select 1 from public.members
         where session_id = p_session and profile_id = auth.uid())
       then 'every circle is already answered' else 'you are not in this adventure' end;
   end if;
-  return row;
+  return numxventure_private.complete_station(p_session);
 end $$;
 
 create or replace function public.spend_hint(p_session uuid)
 returns public.members
 language plpgsql security definer set search_path = '' as $$
-declare
-  row public.members;
+declare row public.members;
 begin
-  if not exists (select 1 from public.sessions
-                 where id = p_session and state = 'running') then
-    raise exception 'the adventure is not running';
-  end if;
+  perform numxventure_private.running_session(p_session);
   update public.members
-     set gems = gems - 5, updated_at = now()
-   where session_id = p_session and profile_id = auth.uid()
+     set gems = gems - 5, hints_used = hints_used + 1, item_used_hint = true,
+         station_used_hint = true, updated_at = now()
+   where session_id = p_session and profile_id = auth.uid() and items_done < 14
+     and not item_used_hint and not eliminated and not finished
   returning * into row;
+  if row is null then raise exception 'that hint is not available'; end if;
   return row;
 end $$;
 
 create or replace function public.skip_item(p_session uuid)
 returns public.members
 language plpgsql security definer set search_path = '' as $$
-declare
-  row public.members;
+declare row public.members;
 begin
-  if not exists (select 1 from public.sessions
-                 where id = p_session and state = 'running') then
-    raise exception 'the adventure is not running';
-  end if;
+  perform numxventure_private.running_session(p_session);
   update public.members
-     set gems = gems - 15, items_done = items_done + 1,
-         updated_at = now()
+     set gems = gems - 15, items_done = items_done + 1, skipped = skipped + 1,
+         station_flawed = true, item_used_hint = false, updated_at = now()
    where session_id = p_session and profile_id = auth.uid() and items_done < 14
+     and not eliminated and not finished
   returning * into row;
-  return row;
+  if row is null then raise exception 'that circle is not available'; end if;
+  return numxventure_private.complete_station(p_session);
 end $$;
 
 -- Gems no longer clamp at zero, so a player can reach it and be eliminated
@@ -292,31 +380,20 @@ end $$;
 -- Q2 is still open on whether an eliminated player should stop entirely. If
 -- the client says stop, it is this flag the map would read.
 
--- Once per station, and only once its circles are done. Without the counter a
--- client could call this with p_perfect = true as often as it liked, +10 each
--- time. `stations_done` indexes the cumulative item counts (8/3/3 ->
--- 8, 11, 14; `Game.ITEMS_PER_STATION`), so station n pays out only when
--- items_done has reached its last circle. Not gated on `running`: the bonus
--- is earned by the answers, which already were.
-alter table public.members add column if not exists
-  stations_done int not null default 0;
+-- Older clients still send a separate station call. Completion and its bonus
+-- now belong to the final answer/skip transaction above; this call only reads.
 
 create or replace function public.finish_station(p_session uuid, p_perfect boolean)
 returns public.members
 language plpgsql security definer set search_path = '' as $$
-declare
-  row public.members;
+declare row public.members;
 begin
-  update public.members
-     set gems = gems + case when p_perfect then 10 else 0 end,
-         stations_done = stations_done + 1,
-         updated_at = now()
-   where session_id = p_session and profile_id = auth.uid()
-     and items_done >= (array[8, 11, 14])[stations_done + 1]
-  returning * into row;
-  if row is null then
-    raise exception 'that station is not finished';
-  end if;
+  -- Compatibility for older clients: the last answer already paid the bonus.
+  -- A supplied perfect flag can never award another one.
+  perform numxventure_private.lock_session(p_session);
+  select * into row from public.members
+   where session_id = p_session and profile_id = auth.uid() and stations_done > 0;
+  if row is null then raise exception 'that station is not finished'; end if;
   return row;
 end $$;
 
@@ -363,10 +440,7 @@ declare
   giver public.members;
   taker public.members;
 begin
-  if not exists (select 1 from public.sessions
-                 where id = p_session and state = 'running') then
-    raise exception 'the adventure is not running';
-  end if;
+  perform numxventure_private.running_session(p_session);
   perform 1 from public.members
    where session_id = p_session and profile_id in (auth.uid(), p_to)
    order by profile_id
@@ -428,16 +502,13 @@ declare
   s   public.sessions;
   row public.members;
 begin
-  select * into s from public.sessions where id = p_session;
-  if s is null or s.state <> 'running' then
-    raise exception 'the adventure is not running';
-  end if;
+  s := numxventure_private.running_session(p_session);
   update public.members
      set finished = true,
          finish_s = coalesce(finish_s, greatest(0, s.duration_s
                       - greatest(0, ceil(extract(epoch from (s.ends_at - now())))::int))),
          updated_at = now()
-   where session_id = p_session and profile_id = auth.uid() and stations_done >= 3
+   where session_id = p_session and profile_id = auth.uid() and stations_done >= 3 and not eliminated
   returning * into row;
   if row is null then
     raise exception 'the adventure is not finished';
@@ -454,7 +525,7 @@ grant execute on function public.finish_run(uuid) to authenticated;
 create or replace function public.end_when_all_done() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
-  if (new.finished or new.eliminated)
+  if ((new.finished and not old.finished) or (new.eliminated and not old.eliminated))
      and not exists (select 1 from public.members
                      where session_id = new.session_id
                        and not finished and not eliminated) then
@@ -475,6 +546,53 @@ grant execute on function public.spend_hint(uuid) to authenticated;
 grant execute on function public.skip_item(uuid) to authenticated;
 grant execute on function public.finish_station(uuid, boolean) to authenticated;
 
+-- A request ID is retained for the session's lifetime. Replaying a request
+-- after a lost reply returns the current row, even after End, without charging
+-- again. The ledger is outside the API schema and is never client-writable.
+create table if not exists numxventure_private.score_events (
+  session_id uuid not null references public.sessions on delete cascade,
+  profile_id uuid not null references public.profiles on delete cascade,
+  event_id uuid not null,
+  payload jsonb not null,
+  primary key (session_id, profile_id, event_id)
+);
+alter table numxventure_private.score_events enable row level security;
+create or replace function public.score_event(p_session uuid, p_event uuid,
+  p_kind text, p_flag boolean, p_item int, p_station int)
+returns public.members language plpgsql security definer set search_path = '' as $$
+declare m public.members; saved jsonb;
+  payload jsonb := jsonb_build_object('kind', p_kind, 'flag', p_flag, 'item', p_item, 'station', p_station);
+begin
+  perform numxventure_private.lock_session(p_session);
+  select * into m from public.members where session_id = p_session and profile_id = auth.uid();
+  if m is null then raise exception 'you are not in this adventure'; end if;
+  if p_event is null then raise exception 'a score needs a request ID'; end if;
+  select e.payload into saved from numxventure_private.score_events e
+   where e.session_id = p_session and e.profile_id = auth.uid() and e.event_id = p_event;
+  if found then
+    if saved <> payload then raise exception 'that request ID was already used'; end if;
+    return m;
+  end if;
+  if p_kind in ('answer', 'skip', 'hint') and (p_item is null or p_item <> m.items_done) then
+    raise exception 'that circle is no longer current';
+  end if;
+  case p_kind
+    when 'answer' then m := public.apply_answer(p_session, p_flag);
+    when 'skip' then m := public.skip_item(p_session);
+    when 'hint' then m := public.spend_hint(p_session);
+    when 'station' then
+      if p_station is null or p_station < 0 or p_station >= m.stations_done then
+        raise exception 'that station is not finished';
+      end if;
+    when 'finish' then m := public.finish_run(p_session);
+    else raise exception 'unknown score';
+  end case;
+  insert into numxventure_private.score_events values (p_session, auth.uid(), p_event, payload);
+  return m;
+end $$;
+revoke all on function public.score_event(uuid, uuid, text, boolean, int, int) from public, anon;
+grant execute on function public.score_event(uuid, uuid, text, boolean, int, int) to authenticated;
+
 -- 4c. Picking a team ---------------------------------------------------------
 -- Students pick their own team in the lobby and may switch until the teacher
 -- presses Start; from then on teams are locked, or a player could carry their
@@ -483,22 +601,28 @@ grant execute on function public.finish_station(uuid, boolean) to authenticated;
 -- The same rule binds the teacher's Move and Shuffle.
 create or replace function public.team_rules() returns trigger
 language plpgsql security definer set search_path = '' as $$
+declare s public.sessions; closed boolean;
 begin
+  select * into s from public.sessions where id = new.session_id;
+  closed := s.state = 'ended' or s.created_at <= clock_timestamp() - interval '3 hours'
+    or (s.state = 'running' and s.ends_at <= clock_timestamp());
   if new.team_id is not null and not exists (
        select 1 from public.teams where id = new.team_id and session_id = new.session_id) then
     raise exception 'that team is not in this adventure';
   end if;
-  -- Nobody new once it has started, the way a match that has begun takes no
-  -- one from the queue. A rejoin is an existing row, never an insert.
-  if tg_op = 'INSERT' and exists (select 1 from public.sessions
-                                  where id = new.session_id and state <> 'lobby') then
+  if tg_op = 'INSERT' and s.state <> 'lobby' then
     raise exception 'the adventure has already started';
   end if;
   if tg_op = 'UPDATE' and new.team_id is distinct from old.team_id
-     and old.team_id is not null and new.team_id is not null
-     and exists (select 1 from public.sessions
-                 where id = new.session_id and state <> 'lobby') then
-    raise exception 'teams are locked once the adventure starts';
+     and (s.state <> 'lobby' or closed) then
+    -- Only an actual deleted team may clear its old membership. A student
+    -- cannot clear their own team to unlock a second choice (or old results).
+    if new.team_id is null and not exists (select 1 from public.teams where id = old.team_id) then
+      return new;
+    end if;
+    if old.team_id is not null or new.team_id is null or closed then
+      raise exception 'teams are locked once the adventure starts';
+    end if;
   end if;
   return new;
 end $$;
@@ -835,6 +959,39 @@ $$;
 
 grant execute on function public.host_relay(uuid, text, int) to authenticated;
 grant execute on function public.unhost_relay(uuid) to authenticated;
+
+-- Movement broadcasts use private channels. A player's input topic belongs
+-- to that player; only the session's teacher may publish its snapshots.
+create or replace function public.can_use_movement(p_topic text, p_send boolean)
+returns boolean language plpgsql stable security definer set search_path = '' as $$
+declare parts text[]; sid uuid; teacher boolean; member boolean;
+begin
+  if auth.uid() is null then return false; end if;
+  parts := string_to_array(regexp_replace(p_topic, '^realtime:', ''), ':');
+  if parts[1] <> 'numxventure' or parts[2] not in ('in', 'snap')
+     or coalesce(parts[3], '') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+     or array_length(parts, 1) <> (case when parts[2] = 'in' then 4 else 3 end) then
+    return false;
+  end if;
+  sid := parts[3]::uuid;
+  teacher := public.owns_session(sid);
+  member := exists (select 1 from public.members where session_id = sid and profile_id = auth.uid());
+  if parts[2] = 'snap' then
+    return teacher or (not p_send and member);
+  end if;
+  return (not p_send and teacher) or (member and parts[4] = auth.uid()::text);
+end $$;
+revoke all on function public.can_use_movement(text, boolean) from public, anon;
+grant execute on function public.can_use_movement(text, boolean) to authenticated;
+
+-- Supabase owns realtime.messages and already enables RLS. Only policies
+-- belong here; ALTER TABLE would fail on hosted Supabase.
+drop policy if exists movement_receive on realtime.messages;
+drop policy if exists movement_send on realtime.messages;
+create policy movement_receive on realtime.messages for select to authenticated
+  using (extension = 'broadcast' and public.can_use_movement((select realtime.topic()), false));
+create policy movement_send on realtime.messages for insert to authenticated
+  with check (extension = 'broadcast' and public.can_use_movement((select realtime.topic()), true));
 
 -- 8. Reset (commented out on purpose) ---------------------------------------
 -- Uncomment, run, then run this file again for a clean slate. Deletes every

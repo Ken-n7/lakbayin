@@ -27,3 +27,14 @@ grant usage on schema public to anon, authenticated;
 alter default privileges in schema public grant all on tables to anon, authenticated;
 alter default privileges in schema public grant all on functions to anon, authenticated;
 alter default privileges in schema public grant all on sequences to anon, authenticated;
+
+-- Realtime's authorization probe, without running the WebSocket service.
+create schema if not exists realtime;
+create table if not exists realtime.messages (topic text, extension text, payload jsonb);
+alter table realtime.messages enable row level security;
+create or replace function realtime.topic() returns text language sql stable as $$
+  select current_setting('realtime.topic', true)
+$$;
+grant usage on schema realtime to authenticated;
+grant select, insert on realtime.messages to authenticated;
+grant execute on function realtime.topic() to authenticated;

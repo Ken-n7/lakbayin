@@ -15,6 +15,7 @@ var _server := TCPServer.new()
 var _peers: Array[StreamPeerTCP] = []
 var _bufs := {}
 var hits := 0
+var score_posts := 0
 ## What the stub answers: 200 with a member row, or 400 as a refusal.
 var refuse := false
 ## Stateful: a real row, which apply_answer moves on and GET members reads.
@@ -23,6 +24,8 @@ var items_done := 0
 var gems := 50
 var applied := 0
 var answer_posts := 0
+var _events := {}
+var _score_ids: Array[String] = []
 ## Apply the next answer, then hang up without replying.
 var drop_next_reply := false
 ## Signing back in (_restore): a token for the refresh, a profile for the
@@ -75,7 +78,7 @@ func _ready() -> void:
 		await _wait(0.25)
 		if Scores.pending() == 0:
 			break
-	check("a refusal comes back at once, not retried", said.size() == 1 and hits == 2
+	check("a refusal reads progress without retrying the score", said.size() == 1 and score_posts == 2 and hits == 3
 		and str(said[0].get("error", "")) != "", "callbacks %d, hits %d" % [said.size(), hits])
 
 	# --- Done there, the reply lost: never asked twice -----------------------
@@ -97,7 +100,7 @@ func _ready() -> void:
 			break
 	check("reply lost: the answer is counted once", applied == 1 and items_done == 2,
 		"applied %d times, items_done %d" % [applied, items_done])
-	check("...it is not sent again", answer_posts == 1, "%d answer requests" % answer_posts)
+	check("...the retry keeps the same request ID", answer_posts == 2 and _score_ids[0] == _score_ids[1], str(_score_ids))
 	check("...and the board gets the server's row", lost.size() == 1
 		and int((lost[0].get("row", {}) as Dictionary).get("items_done", 0)) == 2, str(lost))
 	stateful = false
@@ -365,9 +368,12 @@ func _process(_delta: float) -> void:
 		if text.length() < head_end + 4 + length:
 			continue
 		hits += 1
-		var body := '{"message":"the adventure is not running"}' if refuse \
+		if text.begins_with("POST") and text.contains("/rpc/score_event"):
+			score_posts += 1
+		var refused_score := refuse and text.begins_with("POST")
+		var body := '{"message":"the adventure is not running"}' if refused_score \
 			else '[{"gems":60,"items_done":1}]'
-		var status := "400 Bad Request" if refuse else "200 OK"
+		var status := "400 Bad Request" if refused_score else "200 OK"
 		if auth:
 			var line: String = text.substr(0, text.find("\r\n"))
 			if line.contains("/auth/v1/token"):
@@ -387,14 +393,27 @@ func _process(_delta: float) -> void:
 			status = "200 OK"
 		if stateful:
 			var first_line: String = text.substr(0, text.find("\r\n"))
-			if first_line.begins_with("POST") and first_line.contains("apply_answer"):
+			if first_line.begins_with("POST") and first_line.contains("score_event"):
 				answer_posts += 1
-				applied += 1
-				items_done += 1
-				gems += 10
+				var args: Dictionary = JSON.parse_string(text.substr(head_end + 4))
+				var event := str(args.get("p_event", ""))
+				_score_ids.append(event)
+				if not _events.has(event):
+					_events[event] = true
+					if drop_next_reply:
+						# Commit AFTER the lost response. A verification GET would
+						# still see the old row; only a stable request ID is safe.
+						get_tree().create_timer(0.4).timeout.connect(func() -> void:
+							applied += 1
+							items_done += 1
+							gems += 10)
+					else:
+						applied += 1
+						items_done += 1
+						gems += 10
 				if drop_next_reply:
 					drop_next_reply = false
-					p.disconnect_from_host()      # done here, the reply never sent
+					p.disconnect_from_host()
 					_peers.erase(p)
 					continue
 			body = JSON.stringify([{"items_done": items_done, "gems": gems, "stations_done": 0}])

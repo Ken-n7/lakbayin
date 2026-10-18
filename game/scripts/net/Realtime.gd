@@ -18,6 +18,8 @@ signal opened
 ## A Broadcast message from another client on the topic -- not a database
 ## change. `event` is the sender's name for it ("pos"), `payload` its data.
 signal broadcast(event: String, payload: Dictionary)
+## Movement accepted on a joined private channel, with its topic verified.
+signal position(event: String, payload: Dictionary)
 ## Somebody arrived on or left the topic. `online` has the current picture.
 signal presence_changed
 ## The join being accepted is NOT the same as the stream being live: Phoenix
@@ -112,6 +114,7 @@ var _tracked := {}
 ## teacher sends everyone one snapshot of all of them. Broadcast only -- no
 ## presence, no table changes.
 var _pos_topics := {}
+var _pos_live := {}
 
 
 ## Where one player's positions go: only they and the teacher are on it.
@@ -134,6 +137,7 @@ func watch_positions(topics: Array) -> void:
 			if _state == WebSocketPeer.STATE_OPEN:
 				_send(t, "phx_leave", {})
 			_pos_topics.erase(t)
+			_pos_live.erase(t)
 	for t: String in topics:
 		if not _pos_topics.has(t):
 			_pos_topics[t] = ""
@@ -144,9 +148,10 @@ func _join_pos(topic: String) -> void:
 	if _state != WebSocketPeer.STATE_OPEN:
 		return               # joined when the socket opens (_process)
 	_pos_topics[topic] = str(_ref + 1)
+	_pos_live.erase(topic)
 	_send(topic, "phx_join", {
 		"config": {"broadcast": {"self": false}, "presence": {"enabled": false},
-			"postgres_changes": []},
+			"postgres_changes": [], "private": true},
 		"access_token": Net.access_token,
 	})
 
@@ -155,7 +160,7 @@ func _join_pos(topic: String) -> void:
 ## channels. Dropped while it is not up, like any broadcast: the next one is a
 ## moment away.
 func send_position(topic: String, payload: Dictionary, event := "pos") -> void:
-	if _state != WebSocketPeer.STATE_OPEN or str(_pos_topics.get(topic, "")) == "":
+	if _state != WebSocketPeer.STATE_OPEN or not _pos_live.has(topic):
 		return
 	_send(topic, "broadcast", {"type": "broadcast", "event": event, "payload": payload})
 
@@ -239,6 +244,7 @@ func _send_track() -> void:
 func close_socket() -> void:
 	_wanted.clear()
 	_pos_topics = {}
+	_pos_live = {}
 	_tracked = {}
 	_presence = {}
 	_leaving = {}
@@ -306,6 +312,7 @@ func _process(delta: float) -> void:
 			closes += 1
 			_joined = false
 			live = false
+			_pos_live.clear()
 			if active():
 				_retry_in = RECONNECT_S
 			# Our own connection dropped. Everyone goes into the same grace a
@@ -414,9 +421,15 @@ func _handle(msg: Dictionary) -> void:
 			changed.emit(str(d.get("table", "")), kind, row if row is Dictionary else {})
 		"broadcast":
 			var b: Variant = msg.get("payload")
-			if b is Dictionary and (b as Dictionary).get("payload") is Dictionary:
-				broadcast.emit(str((b as Dictionary).get("event", "")),
-					(b as Dictionary).get("payload"))
+			if b is Dictionary and b.get("payload") is Dictionary:
+				var event := str(b.get("event", ""))
+				var data: Dictionary = b.payload
+				var topic := str(msg.get("topic", ""))
+				if event in ["pos", "snap"]:
+					if _pos_live.has(topic) and valid_position(topic, event, data):
+						position.emit(event, data)
+				elif topic == TOPIC:
+					broadcast.emit(event, data)
 		"system":
 			var sys: Variant = msg.get("payload")
 			if sys is Dictionary and str((sys as Dictionary).get("status", "")) == "ok" \
@@ -427,6 +440,12 @@ func _handle(msg: Dictionary) -> void:
 			if _beat_ref != "" and str(msg.get("ref", "")) == _beat_ref:
 				rtt = Time.get_ticks_msec() / 1000.0 - _beat_sent
 			var reply: Variant = msg.get("payload")
+			var topic := str(msg.get("topic", ""))
+			if _pos_topics.has(topic) and str(msg.get("ref", "")) == str(_pos_topics[topic]):
+				if reply is Dictionary and str(reply.get("status", "")) == "ok":
+					_pos_live[topic] = true
+				else:
+					_retry_position(topic)
 			if reply is Dictionary and str((reply as Dictionary).get("status", "")) == "error":
 				push_warning("Realtime: join refused -- %s" % str(reply))
 			elif str(msg.get("ref", "")) == _join_ref:
@@ -476,10 +495,75 @@ func _handle(msg: Dictionary) -> void:
 			# A position channel dropped the same way: join it again.
 			var pt := str(msg.get("topic", ""))
 			if _pos_topics.has(pt) and str(msg.get("ref", "")) == str(_pos_topics[pt]):
-				_pos_topics[pt] = ""
-				get_tree().create_timer(RECONNECT_S).timeout.connect(func() -> void:
-					if _pos_topics.has(pt) and str(_pos_topics[pt]) == "":
-						_join_pos(pt))
+				_retry_position(pt)
+
+
+func _retry_position(topic: String) -> void:
+	_pos_topics[topic] = ""
+	_pos_live.erase(topic)
+	var tree := Engine.get_main_loop() as SceneTree
+	tree.create_timer(RECONNECT_S).timeout.connect(func() -> void:
+		if _pos_topics.has(topic) and str(_pos_topics[topic]) == "":
+			_join_pos(topic))
+
+
+## RLS authenticates the publisher; bind the payload to that topic and
+## validate its bounded shape before giving it to map code.
+static func valid_position(topic: String, event: String, data: Dictionary) -> bool:
+	var sid := str(data.get("sid", ""))
+	if sid == "":
+		return false
+	if event == "pos":
+		var id := str(data.get("id", ""))
+		return id != "" and topic == in_topic(sid, id) and _valid_path(data)
+	if event != "snap" or topic != snap_topic(sid):
+		return false
+	var paths: Variant = data.get("p", [])
+	var rows: Variant = data.get("r", [])
+	if not (paths is Array) or not (rows is Array) or paths.size() > 255 or rows.size() > 255:
+		return false
+	for p: Variant in paths:
+		if not (p is Dictionary) or str(p.get("id", "")) == "" or not _valid_path(p):
+			return false
+	for row: Variant in rows:
+		if not (row is Dictionary) or str(row.get("profile_id", "")) == "":
+			return false
+		for key in ["items_done", "gems"]:
+			if row.has(key) and not _number(row[key]):
+				return false
+		for key in ["gone", "eliminated"]:
+			if row.has(key) and not (row[key] is bool):
+				return false
+	return true
+
+
+static func _number(v: Variant) -> bool:
+	return (v is int or v is float) and is_finite(float(v))
+
+
+static func _valid_path(data: Dictionary) -> bool:
+	if data.has("hero") and not _number(data.hero):
+		return false
+	var p: Variant = data.get("p")
+	if p is Dictionary:
+		var xs: Variant = p.get("x")
+		var ys: Variant = p.get("y")
+		if not (xs is Array) or not (ys is Array) or xs.is_empty() or xs.size() != ys.size() or xs.size() > 128:
+			return false
+		if not _number(p.get("t")) or not _number(p.get("dt")) or float(p.dt) <= 0.0:
+			return false
+		for i in xs.size():
+			if not _number(xs[i]) or not _number(ys[i]):
+				return false
+		return true
+	if p is Array:
+		if p.is_empty() or p.size() > 128:
+			return false
+		for q: Variant in p:
+			if not (q is Array) or q.size() < 3 or not _number(q[0]) or not _number(q[1]) or not _number(q[2]):
+				return false
+		return true
+	return _number(data.get("x")) and _number(data.get("y"))
 
 
 ## --- Debug counters (HubDebug) ---------------------------------------------

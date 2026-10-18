@@ -410,7 +410,7 @@ func _map_and_news() -> void:
 			and not adv.world.visible)
 	var anchors: Array = adv.world.peer_anchors()
 	var there: Vector2 = anchors[2] + Vector2(400, 0)
-	adv._on_broadcast("snap", {"sid": SID,
+	adv._on_position("snap", {"sid": SID,
 		"p": [{"id": "ben-id", "hero": 3, "p": {"t": 5.0, "dt": 0.1, "x": [there.x, there.x], "y": [there.y, there.y]}}],
 		"r": [{"profile_id": "ben-id", "items_done": 3}]})
 	await frames(3)

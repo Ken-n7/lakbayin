@@ -150,7 +150,7 @@ begin
   exception when others then err := sqlerrm;
   end;
   perform set_config('role', 'postgres', true);
-  perform pg_temp.check(err like '%not in this adventure%', 'a caller with no account is refused', err);
+  perform pg_temp.check(err = 'sign in first', 'a caller with no account is refused', err);
   perform set_config('role', 'anon', true);
   begin
     perform public.rescue(s, ana, 5);
@@ -160,7 +160,7 @@ begin
   perform set_config('role', 'postgres', true);
   -- Functions are callable by every API role here, as all of this schema's are;
   -- an anonymous caller has no auth.uid(), so it is refused all the same.
-  perform pg_temp.check(err like '%permission denied%' or err like '%not in this adventure%',
+  perform pg_temp.check(err like '%permission denied%' or err = 'sign in first',
     'an anonymous caller moves nothing', err);
 end $$;
 

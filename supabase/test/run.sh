@@ -75,6 +75,16 @@ echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
 echo "$out" | grep -q -- "---- RELAY SQL PASS" || fail=1
 echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
 
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+out=$(q -t -A -f supabase/test/multiplayer_test.sql 2>&1)
+echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
+echo "$out" | grep -q -- "---- MULTIPLAYER SQL PASS" || fail=1
+echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
+
+# Leave a clean schema for the relay race's fixed fixture IDs.
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
 # Two relays taking the free row at the same moment, from two connections:
 # exactly one gets it -- a class is never split between two relays.
 q -c "insert into auth.users (id, email, raw_user_meta_data) values
@@ -126,6 +136,48 @@ else
 	fi
 fi
 rm -f /tmp/nx_race_a.$$ /tmp/nx_race_b.$$
+
+# Finishing players and score retries serialize on the session before touching
+# members. Hold transactions open to force the second connection to overlap.
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+q -f supabase/test/race_setup.sql >/dev/null 2>&1
+q -c "update public.members set items_done=14,stations_done=3,gems=220;" >/dev/null
+finish_race() {
+	psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" -c "begin;
+		select set_config('request.jwt.claim.sub', '$1', true);
+		set local role authenticated;
+		select finished from public.finish_run('33333333-3333-3333-3333-333333333333');
+		select pg_sleep(1); commit;" > "$2" 2>&1
+}
+finish_race "$A" /tmp/nx_finish_a.$$ & finish_race "$B" /tmp/nx_finish_b.$$ & wait
+state=$(q -t -A -c "select state from public.sessions where id='33333333-3333-3333-3333-333333333333'")
+if [[ $state == ended ]] && ! grep -qi 'error' /tmp/nx_finish_a.$$ /tmp/nx_finish_b.$$; then
+	echo "ok    simultaneous final players end the session"
+else
+	echo "FAIL  simultaneous final players left state=$state"; cat /tmp/nx_finish_a.$$ /tmp/nx_finish_b.$$; fail=1
+fi
+rm -f /tmp/nx_finish_a.$$ /tmp/nx_finish_b.$$
+
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+q -f supabase/test/race_setup.sql >/dev/null 2>&1
+retry_race() {
+	psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" -c "begin;
+		select set_config('request.jwt.claim.sub', '$A', true);
+		set local role authenticated;
+		select gems from public.score_event('33333333-3333-3333-3333-333333333333',
+		 '99999999-9999-9999-9999-999999999999','answer',true,0,0);
+		select pg_sleep(1); commit;" > "$1" 2>&1
+}
+retry_race /tmp/nx_retry_a.$$ & retry_race /tmp/nx_retry_b.$$ & wait
+row=$(q -t -A -c "select items_done||','||gems from public.members where profile_id='$A'")
+if [[ $row == 1,60 ]] && ! grep -qi 'error' /tmp/nx_retry_a.$$ /tmp/nx_retry_b.$$; then
+	echo "ok    concurrent retries award one answer once"
+else
+	echo "FAIL  concurrent retries left row=$row"; cat /tmp/nx_retry_a.$$ /tmp/nx_retry_b.$$; fail=1
+fi
+rm -f /tmp/nx_retry_a.$$ /tmp/nx_retry_b.$$
 
 psql -X -q -c "drop database if exists $DB;" >/dev/null
 [[ $fail -eq 0 ]] && echo "server rules green" || echo "SERVER RULES FAILED"

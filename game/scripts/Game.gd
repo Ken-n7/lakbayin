@@ -221,7 +221,7 @@ signal scored(kind: String, flag: bool)
 
 
 func _process(_delta: float) -> void:
-	if adventure_active and not clock_paused and time_left > 0.0:
+	if adventure_active and not clock_paused:
 		time_left = maxf(0.0, _deadline - now())
 		time_changed.emit(int(ceilf(time_left)))
 		if time_left <= 0.0:
@@ -273,7 +273,7 @@ static func seed_of(session: String) -> int:
 ## outside `running`, so a phone that took one locally anyway would walk on
 ## ahead of its own row and the team total would never see it.
 func can_score() -> bool:
-	return session_state == "" or session_state == "running"
+	return session_state == "" or (session_state == "running" and time_left > 0.0)
 
 
 ## Back into a run already under way -- a phone that died, an app restarted,
@@ -284,15 +284,23 @@ func restore_from(row: Dictionary) -> void:
 	gems = int(row.get("gems", START_GEMS))
 	correct = int(row.get("correct", 0))
 	items_done = clampi(int(row.get("items_done", 0)), 0, TOTAL_ITEMS)
-	wrong = maxi(items_done - correct, 0)   # wrong and skipped are not kept apart
+	wrong = int(row.get("wrong", maxi(items_done - correct, 0)))
+	skipped = int(row.get("skipped", 0))
+	hints_used = int(row.get("hints_used", 0))
+	station_flawed = bool(row.get("station_flawed", false))
+	station_used_hint = bool(row.get("station_used_hint", false))
+	item_used_hint = bool(row.get("item_used_hint", false))
 	eliminated = bool(row.get("eliminated", false))
 	rescue_sent = row.get("rescued_at") != null
 	current_station = station_of_item(items_done)
 	var end := 0
+	var finished_stations := int(row.get("stations_done", -1))
+	var perfect: Array = row.get("perfect_stations", [false, false, false])
 	for s in ITEMS_PER_STATION.size():
 		var start := end
 		end += ITEMS_PER_STATION[s]
-		completed_stations[s] = items_done >= end
+		completed_stations[s] = s < finished_stations if finished_stations >= 0 else items_done >= end
+		perfect_stations[s] = bool(perfect[s]) if s < perfect.size() else false
 		# Past its first circle means its briefing was read.
 		towers_entered[s] = items_done > start
 	gems_changed.emit(gems)
@@ -406,9 +414,15 @@ func rescue_max() -> int:
 
 ## A rescue the server has taken: the gems leave this player's purse now, and
 ## their one chance is spent.
-func give_rescue(amount: int) -> void:
+func give_rescue(amount: int, settled: Dictionary = {}) -> void:
 	rescue_sent = true
-	_apply(-amount)
+	if settled.has("gems"):
+		# The change feed may have delivered this debit before its HTTP reply.
+		gems = int(settled.gems)
+		eliminated = bool(settled.get("eliminated", eliminated))
+		gems_changed.emit(gems)
+	else:
+		_apply(-amount)
 
 
 ## One hint per item, -5 gems each (design doc: "Use of Hint: -5 gems").
@@ -457,6 +471,10 @@ func mark_finished() -> void:
 
 ## Call after finishing a station's last item.
 func finish_station(station_index: int) -> int:
+	# Online, the final answer commits the completion and bonus atomically.
+	# Its reply may arrive before the player presses Continue on the result.
+	if completed_stations[station_index]:
+		return GEM_PERFECT_BONUS if perfect_stations[station_index] else 0
 	var bonus := 0
 	if not station_flawed and not station_used_hint:
 		bonus = GEM_PERFECT_BONUS

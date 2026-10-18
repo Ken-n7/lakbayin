@@ -92,8 +92,8 @@ func watch(session_id: String) -> void:
 			_build_world()
 	_rows = {}
 	var rt: Realtime = Net.realtime()
-	if not rt.broadcast.is_connected(_on_broadcast):
-		rt.broadcast.connect(_on_broadcast)
+	if not rt.position.is_connected(_on_broadcast):
+		rt.position.connect(_on_broadcast)
 	# Students on the movement relay come from it (Game Controls joins it as
 	# the teacher); students on the hub path still come as `pos` above.
 	if not Net.relay().snap.is_connected(_on_relay_snap):

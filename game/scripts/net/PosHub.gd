@@ -58,8 +58,8 @@ var last_seen := {}         # profile id -> [ticks_msec, x, y]
 
 func _ready() -> void:
 	var rt: Realtime = Net.realtime()
-	if not rt.broadcast.is_connected(_on_broadcast):
-		rt.broadcast.connect(_on_broadcast)
+	if not rt.position.is_connected(_on_broadcast):
+		rt.position.connect(_on_broadcast)
 	if not rt.changed.is_connected(_on_row):
 		rt.changed.connect(_on_row)
 	if not Net.relay().snap.is_connected(_on_relay_snap):

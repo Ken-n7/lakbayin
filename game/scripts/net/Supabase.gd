@@ -279,6 +279,9 @@ func restore_session() -> String:
 
 
 func sign_out() -> void:
+	# Loaded at runtime: Scores names Net, so a compile-time dependency here
+	# would break the standalone script suites that load Supabase directly.
+	load("res://scripts/net/Scores.gd").reset()
 	if is_instance_valid(_realtime):
 		_realtime.close_socket()
 	if is_instance_valid(_relay):
@@ -400,7 +403,7 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 	var err := http.request(target + path, headers, method, payload)
 	if err != OK:
 		http.queue_free()
-		return {"error": "request failed to start (%d)" % err, "data": null}
+		return {"error": NO_CONNECTION, "data": null, "network": true, "maybe_sent": false}
 	var res: Array = await http.request_completed
 	http.queue_free()
 	# Never reached the server -- no connection, or the timeout above. Said
@@ -431,6 +434,8 @@ func _call(method: int, path: String, body: Variant, retry := true, prefer := ""
 	if code == 401 and retry and refresh_token != "" and not path.begins_with("/auth/v1/token"):
 		var renewed: Dictionary = await _call(HTTPClient.METHOD_POST,
 			"/auth/v1/token?grant_type=refresh_token", {"refresh_token": refresh_token}, false)
+		if bool(renewed.get("network", false)):
+			return renewed
 		if renewed.error == "" and renewed.data is Dictionary:
 			access_token = (renewed.data as Dictionary).get("access_token", access_token)
 			refresh_token = (renewed.data as Dictionary).get("refresh_token", refresh_token)

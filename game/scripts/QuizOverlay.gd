@@ -241,19 +241,25 @@ func _layout() -> void:
 
 func _next_question() -> void:
 	phase = Phase.QUESTION
-	Game.begin_item()
+	if Game.session_id == "":
+		Game.begin_item()
 	var total: int = Game.ITEMS_PER_STATION[station_index]
 	item_index = Game.item_in_station(Game.items_done)
 	current = QuestionStore.item_for(station_index, item_index)
+	if current.is_empty():
+		phase = Phase.INTRO
+		_mission_text.text = "Waiting for your Quest Keeper's questions. Return to the map and try again."
+		_layout()
+		return
 	answer = current.answer
 	_q_index.text = "Question %d of %d" % [item_index + 1, total]
 	_q_prompt.remove_theme_font_override("font")
 	_q_prompt.text = current.prompt
 	_ask.text = current.prompt
 	_layout()
-	_hint_text.text = ""
+	_hint_text.text = "Hint: " + str(current.hint) if Game.item_used_hint else ""
 	_input.text = ""
-	_btn_hint.disabled = false
+	_btn_hint.disabled = Game.item_used_hint
 
 
 func _submit() -> void:
@@ -278,6 +284,11 @@ func _submit() -> void:
 ## refuse the score, so the answer is held here rather than counted on this
 ## phone alone and lost from the team's total.
 func _may_score() -> bool:
+	if adventure != null and Game.session_id != "":
+		var why: String = adventure._connection_block()
+		if why != "":
+			_flash_trouble(why)
+			return false
 	if Game.can_score():
 		return true
 	_flash_trouble("Paused by your Quest Keeper — wait for Resume")
