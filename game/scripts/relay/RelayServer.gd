@@ -63,6 +63,16 @@ var msgs_out := 0
 var bytes_out := 0
 var denied := 0
 
+## A path to append activity records to -- one JSON object a line, on a join,
+## a leave and a refusal. "" (the default) writes nothing: tests, the tools and
+## the teacher's Game Controls (RelayHost) are left alone. Kept local on
+## purpose: the log never touches Supabase, so recording who used the relay
+## costs it nothing. tools/relay/run.sh sets it; tools/relay/activity.sh reads it.
+var activity_path := ""
+## Names the relay in the records ("home:<id>"), so a file that collected more
+## than one relay's lines stays readable. Set by tools/relay.gd.
+var activity_tag := ""
+
 
 func _ready() -> void:
 	set_process(false)
@@ -78,7 +88,11 @@ func start(port := PORT, bind := "127.0.0.1") -> String:
 
 func stop() -> void:
 	for k in _peers:
-		(_peers[k].ws as WebSocketPeer).close()
+		var peer: Dictionary = _peers[k]
+		if peer.id != "" and peer.why == "":
+			peer.why = "stopped"
+			_activity("leave", peer)
+		(peer.ws as WebSocketPeer).close()
 	_peers.clear()
 	_rooms.clear()
 	_server.stop()
@@ -107,7 +121,8 @@ func _process(delta: float) -> void:
 			_next_key += 1
 			_peers[_next_key] = {"ws": ws, "room": "", "idx": 0, "id": "", "role": "",
 				"hero": 1, "heard": now, "since": now, "frames": 0, "frames_at": now, "authing": false,
-				"every": 1}
+				"every": 1, "joined": Time.get_unix_time_from_system(),
+				"msgs_in": 0, "msgs_out": 0, "bytes_out": 0, "why": "", "session": ""}
 	var gone: Array = []
 	for k: int in _peers:
 		var peer: Dictionary = _peers[k]
@@ -115,26 +130,32 @@ func _process(delta: float) -> void:
 		ws.poll()
 		var state := ws.get_ready_state()
 		if state == WebSocketPeer.STATE_CLOSED:
+			if peer.why == "":
+				peer.why = "closed"
 			gone.append(k)
 			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			# Still opening after hello_s: a connection that never finishes its
 			# handshake would hold its place and buffers for ever.
 			if state == WebSocketPeer.STATE_CONNECTING and now - float(peer.since) > hello_s:
+				peer.why = "no hello"
 				gone.append(k)
 			continue
 		while ws.get_available_packet_count() > 0:
 			var data := ws.get_packet()
 			peer.heard = now
 			msgs_in += 1
+			peer.msgs_in = int(peer.msgs_in) + 1
 			if ws.was_string_packet():
 				if data.size() <= MAX_TEXT:
 					_take_text(k, data.get_string_from_utf8())
 			else:
 				_take_up(peer, data, now)
 		if now - float(peer.heard) > silent_s:
+			peer.why = "silent"
 			ws.close(4000, "silent")
 		elif peer.room == "" and not peer.authing and now - float(peer.since) > hello_s:
+			peer.why = "no hello"
 			ws.close(4002, "no hello")
 	for k in gone:
 		_leave(k)
@@ -182,6 +203,7 @@ func _hello(key: int, p: Dictionary) -> void:
 	var peer: Dictionary = _peers[key]
 	if peer.room != "" or peer.authing:
 		return
+	peer.session = str(p.get("session", ""))   # a refused hello still names the class it tried
 	if int(p.get("v", 0)) != RelayCodec.VERSION:
 		_deny(key, "update the app")
 		return
@@ -234,6 +256,7 @@ func _hello(key: int, p: Dictionary) -> void:
 			if _peers.has(other) and _peers[other].id == who:
 				idx = i
 				_peers[other].room = ""
+				_peers[other].why = "replaced"
 				(_peers[other].ws as WebSocketPeer).close(4001, "replaced")
 				break
 		if idx == 0:
@@ -248,6 +271,7 @@ func _hello(key: int, p: Dictionary) -> void:
 		peer.idx = idx
 	_send_text(key, "welcome", {"idx": peer.idx, "hz": hz})
 	room.roster_due = true
+	_activity("join", peer)
 
 
 ## Who `token` is, if they may join `session` as `role`; "" if not. A ticket
@@ -301,11 +325,18 @@ func members_in(session: String) -> int:
 ## a message sent just before a close is dropped with it.
 func _deny(key: int, why: String) -> void:
 	denied += 1
+	_peers[key].why = why
+	_activity("deny", _peers[key])
 	(_peers[key].ws as WebSocketPeer).close(RelayCodec.DENIED, why)
 
 
 func _leave(key: int) -> void:
 	var peer: Dictionary = _peers[key]
+	# Only a connection that got in (a successful hello) has a leave worth
+	# recording; a bare tap that never said hello, or a refused one (already
+	# logged as a deny), is noise.
+	if peer.id != "":
+		_activity("leave", peer)
 	_peers.erase(key)
 	var room: Dictionary = _rooms.get(peer.room, {})
 	if room.is_empty():
@@ -333,6 +364,8 @@ func _roster(session: String) -> void:
 		if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			ws.send_text(text)
 			msgs_out += 1
+			_peers[k].msgs_out = int(_peers[k].msgs_out) + 1
+			_peers[k].bytes_out = int(_peers[k].bytes_out) + text.length()
 
 
 ## Snapshots a second asked for -> every how many ticks this one gets one.
@@ -378,6 +411,8 @@ func _tick() -> void:
 				ws.send(frame, WebSocketPeer.WRITE_MODE_BINARY)
 				msgs_out += 1
 				bytes_out += (frame as PackedByteArray).size()
+				_peers[k].msgs_out = int(_peers[k].msgs_out) + 1
+				_peers[k].bytes_out = int(_peers[k].bytes_out) + (frame as PackedByteArray).size()
 
 
 func _keys(room: Dictionary) -> Array:
@@ -387,5 +422,44 @@ func _keys(room: Dictionary) -> Array:
 func _send_text(key: int, event: String, payload: Dictionary) -> void:
 	var ws: WebSocketPeer = _peers[key].ws
 	if ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		ws.send_text(RelayCodec.text(event, payload))
+		var text := RelayCodec.text(event, payload)
+		ws.send_text(text)
 		msgs_out += 1
+		_peers[key].msgs_out = int(_peers[key].msgs_out) + 1
+		_peers[key].bytes_out = int(_peers[key].bytes_out) + text.length()
+
+
+## One activity record, as a JSON object on its own line, appended to
+## `activity_path` (nothing at all when it is ""). Joins, leaves and refusals
+## only -- the few events worth keeping -- so this never costs the relay's
+## ticks anything. The clock is UTC; a profile id is the person (tools/relay/
+## activity.sh turns it into a username, offline and cached).
+func _activity(event: String, peer: Dictionary) -> void:
+	if activity_path == "":
+		return
+	var rec := {
+		"ts": Time.get_datetime_string_from_system(true) + "Z",
+		"unix": int(Time.get_unix_time_from_system()),
+		"event": event,
+		"relay": activity_tag,
+		"session": peer.session,
+		"profile": peer.id,
+		"role": peer.role,
+		"hero": peer.hero,
+		"idx": peer.idx,
+		"every": peer.every,
+		"why": peer.why,
+	}
+	if event == "leave":
+		rec["dur_s"] = snappedf(Time.get_ticks_msec() / 1000.0 - float(peer.since), 0.1)
+		rec["msgs_in"] = peer.msgs_in
+		rec["msgs_out"] = peer.msgs_out
+		rec["bytes_out"] = peer.bytes_out
+	var f := FileAccess.open(activity_path, FileAccess.READ_WRITE)
+	if f == null:
+		f = FileAccess.open(activity_path, FileAccess.WRITE)
+	if f == null:
+		return                          # an unwritable path is not worth crashing over
+	f.seek_end()
+	f.store_line(JSON.stringify(rec))
+	f.close()

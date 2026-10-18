@@ -180,7 +180,8 @@ start_tunnel() {
 }
 
 start_relay() {
-	godot --headless --path . --script res://tools/relay.gd -- --hz "$HZ" --url "${url/https:/wss:}" >> "$LOG/relay.log" 2>&1 &
+	godot --headless --path . --script res://tools/relay.gd -- --hz "$HZ" --url "${url/https:/wss:}" \
+		--activity "$LOG/activity.jsonl" >> "$LOG/relay.log" 2>&1 &
 	relay=$!
 }
 

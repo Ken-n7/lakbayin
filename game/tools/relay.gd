@@ -15,6 +15,11 @@ extends SceneTree
 ## and quits (tools/relay/run.sh, when it stops). Both sign in as the admin in
 ## NUMX_RELAY_EMAIL / NUMX_RELAY_PASSWORD -- ~/.config/numxventure/relay.env,
 ## never the repo.
+##
+## --activity PATH appends who used the relay -- a JSON object a line on each
+## join, leave and refusal (RelayServer._activity). Local only, at no cost to
+## Supabase; tools/relay/activity.sh reads it. run.sh points it at
+## $LOG/activity.jsonl.
 
 const PUBLISH_S := 60
 ## This relay, to the row: one per machine.
@@ -47,6 +52,8 @@ func _run() -> void:
 		return
 	var relay := RelayServer.new()
 	relay.hz = int(_arg(args, "--hz", "10"))
+	relay.activity_path = _arg(args, "--activity", "")
+	relay.activity_tag = relay_owner
 	var bind := _arg(args, "--bind", "127.0.0.1")
 	if args.has("--test-auth"):
 		if bind != "127.0.0.1":

@@ -57,18 +57,59 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 
+const ACTIVITY := "user://test_activity.jsonl"
+
+
 func _run() -> void:
 	_codec()
 	_host()
 	relay = RelayServer.new()
 	relay.check = Stub.new()
 	relay.hz = 20
+	relay.activity_tag = "test"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ACTIVITY))
+	relay.activity_path = ACTIVITY
 	root.add_child(relay)
 	assert(relay.start(PORT) == "")
 	await _server()
+	_activity()
 	relay.stop()
 	print("test_relay: all assertions passed")
 	quit()
+
+
+## The JSON lines the relay wrote: who joined as what, when, and how much -- the
+## file tools/relay/activity.sh reads. Nothing but the events, and nothing at
+## all when activity_path is "" (every other run of the relay).
+func _activity() -> void:
+	var records: Array = []
+	for line in FileAccess.get_file_as_string(ACTIVITY).split("\n", false):
+		records.append(JSON.parse_string(line))
+	assert(records.size() > 0, "the relay recorded its activity")
+
+	var alice := records.filter(func(r: Dictionary) -> bool:
+		return r.event == "join" and r.profile == "alice" and r.role == "player")
+	assert(not alice.is_empty(), "a join names the person, class and role")
+	assert(alice[0].session == S1 and alice[0].relay == "test")
+
+	var teach := records.filter(func(r: Dictionary) -> bool:
+		return r.event == "join" and r.profile == "tess" and r.role == "teacher")
+	assert(not teach.is_empty(), "the teacher's join is recorded too")
+
+	var leavers := records.filter(func(r: Dictionary) -> bool:
+		return r.event == "leave" and r.profile == "alice")
+	assert(not leavers.is_empty(), "a leave closes the record")
+	assert(leavers.any(func(r: Dictionary) -> bool:
+		return float(r.dur_s) >= 0.0 and int(r.msgs_in) >= 2 and int(r.bytes_out) > 0),
+		"a leave carries the time and the traffic")
+	assert(leavers.any(func(r: Dictionary) -> bool: return r.why == "replaced"),
+		"a reconnect names why the old line went")
+
+	var denies := records.filter(func(r: Dictionary) -> bool: return r.event == "deny")
+	assert(not denies.is_empty(), "a refusal is recorded")
+	assert(denies.any(func(r: Dictionary) -> bool: return r.why == "not in this session"),
+		"and says why")
+	print("server: activity log -- joins, leaves and denials")
 
 
 ## The backup relay (RelayHost): its tunnel's address read out of a real
