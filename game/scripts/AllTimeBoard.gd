@@ -230,10 +230,18 @@ func _open_team(rank: int, r: Dictionary) -> void:
 	box.add_theme_constant_override("separation", 4)
 	var sub := Art.label(_game_line(r), Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(sub)
+	# Scrolled: a team past the planned five or six ran off the panel and
+	# took the score line with it (client, 2026-10-12, a team of 20).
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	DragScroll.attach(scroll)
+	box.add_child(scroll)
 	var list := VBoxContainer.new()
 	list.name = "Players"
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 3)
-	box.add_child(list)
+	scroll.add_child(list)
 	var wait := Art.label("Loading…", Pal.BODY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	list.add_child(wait)
 	var got: Dictionary = await fetch_team.call(str(r.get("team_id", "")))

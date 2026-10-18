@@ -239,6 +239,34 @@ func _team_panel() -> void:
 	b.call("go_back")
 	check("← again goes Home", _opened == ["home"], str(_opened))
 
+	# A team far past the planned five (client, 2026-10-12: 20 players ran off
+	# the panel and would not scroll): the list scrolls, the score stays in.
+	var few: Array = _team.rows
+	var many: Array = []
+	for i in 20:
+		many.append({"profile_id": "p%d" % i, "username": "sim%03d" % i, "gems": 50, "correct": 0,
+			"items_done": 0, "finish_s": -1, "eliminated": false})
+	_team.rows = many
+	(teams(b)[1] as Button).pressed.emit()
+	await frames(4)
+	panel = node(b, "TeamPanel")
+	players = node(panel, "Players")
+	var sc := players.get_parent() as ScrollContainer
+	var score := node(panel, "Score") as Control
+	check("20 players: the list scrolls", sc != null and players.get_child_count() == 21
+		and players.size.y > sc.size.y + 1.0, "%s in %s" % [players.size.y, sc.size.y if sc != null else -1.0])
+	check("...inside the panel, the score line still in it", sc != null
+		and panel.get_global_rect().encloses(sc.get_global_rect())
+		and get_viewport().get_visible_rect().encloses(score.get_global_rect()) and score.get_global_rect().position.y
+		>= sc.get_global_rect().end.y - 1.0, str(score.get_global_rect()))
+	sc.scroll_vertical = 100000
+	await frames(2)
+	check("...down to the last player", sc.scroll_vertical > 0 and sc.get_global_rect().intersects(
+		(players.get_child(20) as Control).get_global_rect()))
+	_team.rows = few
+	b.call("go_back")
+	await frames(2)
+
 	# A total that doesn't match the players (someone's row went missing):
 	# the plain score, not a sum that doesn't add up.
 	(teams(b)[3] as Button).pressed.emit()
