@@ -51,6 +51,11 @@ run "touch       " res://scripts/tests/touch_test.tscn
 run "devpanel    " res://scripts/tests/dev_panel_test.tscn
 run "rescue      " res://scripts/tests/rescue_test.tscn
 run "alltime     " res://scripts/tests/alltime_test.tscn
+if out=$(timeout "$LIMIT" python3 tools/test_rankings.py 2>&1); then
+	echo "ok    rankings     $(echo "$out" | grep -E '^---- ' | tail -1)"
+else
+	echo "FAIL  rankings"; echo "$out"; fail=1
+fi
 run "keyboard    " res://scripts/tests/keyboard_test.tscn
 run "backdrop    " res://scripts/tests/backdrop_test.tscn
 run "tower       " res://scripts/tests/tower_test.tscn

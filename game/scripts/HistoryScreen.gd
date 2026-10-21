@@ -2,8 +2,8 @@ extends Control
 
 ## The Quest Keeper's History (client): every session they hosted that was
 ## actually played, newest first -- when, how it ended, how many played, and
-## the top team and top player (by gems, for now). Tapping one opens its full
-## results on the Leaderboard screen. The live board is on Game Controls.
+## the top team and top player, ranked as on the Leaderboard. Tapping one opens
+## its full results on the Leaderboard screen. The live board is on Game Controls.
 ##
 ## "Played" is started (it has a deadline) with somebody in it, and over. How
 ## it ended:
@@ -40,7 +40,8 @@ func _load() -> void:
 		return
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET, SESSIONS
 		+ "?select=id,created_at,ends_at,ended_at,state,remaining_s,"
-		+ "members(gems,eliminated,items_done,finished,profiles(username))"
+		+ "members(profile_id,gems,eliminated,items_done,finished,finish_s,profiles(username))"
+		+ "&members.order=" + Board.PLAYER_ORDER
 		+ "&admin_id=eq." + Net.user_id + "&order=created_at.desc&limit=%d" % LIMIT)
 	if not is_instance_valid(_list):
 		return
@@ -75,10 +76,9 @@ func _load() -> void:
 ## beside, the whole card a button into its results.
 func _card(s: Dictionary, team: Dictionary) -> Control:
 	var members: Array = s.get("members", [])
-	var best := {}
-	for m: Dictionary in members:
-		if best.is_empty() or Teams.final_gems(m) > Teams.final_gems(best):
-			best = m
+	# The fetch ranks every session's members by Board.PLAYER_ORDER. Personal
+	# gems choose the top player; team penalties belong to the top team.
+	var best: Dictionary = members[0] if not members.is_empty() else {}
 	var ended := _how_it_ended(s, members)
 
 	var card := Button.new()
@@ -119,7 +119,7 @@ func _card(s: Dictionary, team: Dictionary) -> Control:
 	star.add_child(_text("Top player", Pal.SMALL, Pal.INK_MUTED))
 	var who: Variant = best.get("profiles")
 	star.add_child(_text("%s · %d" % [(who as Dictionary).get("username", "?") if who is Dictionary
-		else "?", Teams.final_gems(best)], Pal.LABEL, Pal.INK))
+		else "?", int(best.get("gems", 0))], Pal.LABEL, Pal.INK))
 
 	var more := _text("→", Pal.H2, Pal.WOOD)
 	more.size_flags_horizontal = Control.SIZE_SHRINK_END
