@@ -61,6 +61,7 @@ run "backdrop    " res://scripts/tests/backdrop_test.tscn
 run "tower       " res://scripts/tests/tower_test.tscn
 run "netretry    " res://scripts/tests/net_retry_test.tscn
 run "multiplayer " res://scripts/tests/multiplayer_test.tscn
+run "removal     " res://scripts/tests/removal_test.tscn
 run "layout      " res://tools/layout.tscn
 
 # The two windowed tools need a GL context, so CI will skip them -- but they

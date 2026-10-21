@@ -726,6 +726,7 @@ drop policy if exists admin_questions on public.questions;
 drop policy if exists join_team      on public.members;
 drop policy if exists own_member     on public.members;
 drop policy if exists admin_members  on public.members;
+drop policy if exists admin_remove_lobby_member on public.members;
 
 -- One teacher per session, and teachers never reach into each other's (client,
 -- 2026-10-09, SPECS §11 Q12): a teacher reads and changes only the sessions
@@ -780,6 +781,17 @@ create policy own_member on public.members for update to authenticated
 create policy admin_members on public.members for update to authenticated
   using (public.owns_session(session_id)) with check (public.owns_session(session_id));
 
+-- The teacher may remove a player only while teams are still being formed.
+-- Once Start changes the session state, this policy filters every DELETE out,
+-- even if an old confirmation dialog is still open on the teacher's screen.
+-- Lock the session until the DELETE commits. Start updates that same row:
+-- whichever request arrives second waits and rechecks the committed state.
+create policy admin_remove_lobby_member on public.members for delete to authenticated
+  using (public.owns_session(session_id)
+         and exists (select 1 from public.sessions s
+                      where s.id = members.session_id and s.state = 'lobby'
+                      for update of s));
+
 revoke update on public.members from authenticated;
 grant update (team_id) on public.members to authenticated;
 -- Joining writes who joined which team, nothing else: the column grant above
@@ -787,6 +799,10 @@ grant update (team_id) on public.members to authenticated;
 -- otherwise go straight in. Gems start at the column default.
 revoke insert on public.members from authenticated;
 grant insert (session_id, team_id, profile_id) on public.members to authenticated;
+-- DELETE is row-limited by `admin_remove_lobby_member`: players and other
+-- teachers receive no matching row, and the session owner loses it at Start.
+revoke delete on public.members from anon, authenticated;
+grant delete on public.members to authenticated;
 
 -- 7. Realtime ---------------------------------------------------------------
 -- Why Supabase and not plain REST: the pause and the live leaderboard arrive

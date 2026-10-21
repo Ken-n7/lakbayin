@@ -134,7 +134,10 @@ func _on_broadcast(event: String, data: Dictionary) -> void:
 			if data.has(k):
 				slim[k] = data[k]
 		_moved[str(data.get("id", ""))] = slim
-		_hub_path_at = Time.get_ticks_msec() / 1000.0
+		# A relay phone mirroring for a disconnected teacher is not itself a
+		# fallback listener. Otherwise its mirror keeps the bridge on forever.
+		if not bool(data.get("relay", false)):
+			_hub_path_at = Time.get_ticks_msec() / 1000.0
 		pos_in += 1
 		var at := Vector2(float(data.get("x", 0)), float(data.get("y", 0)))
 		var p: Variant = data.get("p")
@@ -161,6 +164,10 @@ func take_snapshot() -> Dictionary:
 	if _sid == "" or (_moved.is_empty() and _rows.is_empty() and _bridge.is_empty()):
 		return {}
 	var snap := {"sid": _sid, "p": _moved.values() + _bridge.values()}
+	# The teacher may reach Supabase while its relay connection cannot. Ask
+	# relay phones to supply their bundles directly until that link returns;
+	# otherwise fallback phones see only each other, frozen at old stations.
+	snap["bridge"] = bridging() and not Net.relay().up
 	if not _rows.is_empty():
 		snap["r"] = _rows.values()
 	snaps_out += 1

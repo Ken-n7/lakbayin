@@ -29,6 +29,7 @@ const CARD_W := 188.0
 const CHIP_H := 26.0
 const SESSIONS := "/rest/v1/sessions"
 const TEAMS := "/rest/v1/teams"
+const MEMBERS := "/rest/v1/members"
 
 var main: Control
 
@@ -1045,8 +1046,8 @@ func _add_team() -> void:
 	_say("Team added — tap its name to rename it.", Pal.INK_MUTED)
 
 
-## A player's name, which opens "Move to ..." for every other team. Before
-## Start only -- after it the teams are locked, and the server says so too.
+## A player's name, which opens "Move to ..." for every other team and Remove.
+## Before Start only -- after it the menu is locked, and the server says so too.
 ## ✓ ready (on the map), ● in the lobby, ○ not connected: a mark and a colour,
 ## never the colour alone.
 func _player_chip(who: Dictionary, on_team: String, teams: Array) -> Control:
@@ -1065,17 +1066,86 @@ func _player_chip(who: Dictionary, on_team: String, teams: Array) -> Control:
 	chip.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	chip.custom_minimum_size = Vector2(0, CHIP_H)
 	chip.disabled = str(_session.get("state", "")) != "lobby"
-	chip.tooltip_text = "Move to another team" if not chip.disabled else "Teams are locked"
+	chip.tooltip_text = "Move or remove player" if not chip.disabled else "Players are locked"
 	var menu := chip.get_popup()
 	_paper_popup(menu)
-	var ids: Array = []
+	if chip.disabled:
+		return chip
+	var moves := {}
+	var action_id := 0
 	for t: Dictionary in teams:
 		if str(t.get("id", "")) == on_team:
 			continue
-		menu.add_item("Move to " + str(t.get("name", "")), ids.size())
-		ids.append(str(t.get("id", "")))
-	menu.id_pressed.connect(func(i: int) -> void: _move(pid, ids[i]))
+		menu.add_item("Move to " + str(t.get("name", "")), action_id)
+		moves[action_id] = str(t.get("id", ""))
+		action_id += 1
+	if not moves.is_empty():
+		menu.add_separator()
+	# Keep this distinct from both move IDs and the separator's automatic ID.
+	var remove_id := 1000
+	menu.add_item("Remove player…", remove_id)
+	menu.id_pressed.connect(func(i: int) -> void:
+		if i == remove_id:
+			_confirm_remove_player(pid, str(who.get("username", "?")))
+		elif moves.has(i):
+			_move(pid, str(moves[i])))
 	return chip
+
+
+## Removing somebody discards this session's progress, so it always asks. The
+## player can type the code and join again while the lobby is still open.
+func _confirm_remove_player(profile_id: String, username: String) -> void:
+	if str(_session.get("state", "")) != "lobby":
+		_say("The game has started. Players can no longer be removed.", Pal.WRONG)
+		return
+	var dim := Ui.dim(self)
+	var ask := Ui.screen_panel(dim, Vector2(380, 180), "Remove this player?")
+	var warn := Art.label(("Remove %s from this lobby? Their progress in this session is discarded. "
+			% username) + "They can join again with the code until the game starts.",
+			Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warn.custom_minimum_size = Vector2(340, 0)
+	ask.add_child(warn)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	var yes := Ui.button("Remove", 140, Ui.H, Ui.RED)
+	var no := Ui.button("Keep player", 140, Ui.H, Ui.SMALL)
+	yes.pressed.connect(func() -> void:
+		dim.queue_free()
+		_remove_player(profile_id, username))
+	no.pressed.connect(func() -> void: dim.queue_free())
+	row.add_child(yes)
+	row.add_child(no)
+	ask.add_child(row)
+
+
+## The write goes first: Start may be pressed while the confirmation is open,
+## and the server is the final guard. An empty DELETE means its lobby-only RLS
+## policy refused the now-running session (or the row was already gone).
+func _remove_player(profile_id: String, username: String) -> void:
+	if str(_session.get("state", "")) != "lobby":
+		_say("The game has started. Players can no longer be removed.", Pal.WRONG)
+		return
+	var sid := str(_session.get("id", ""))
+	var done: Dictionary = await Net.rest(HTTPClient.METHOD_DELETE,
+		MEMBERS + "?session_id=eq." + sid + "&profile_id=eq." + profile_id)
+	if not is_instance_valid(self):
+		return
+	if done.error != "":
+		_say(done.error, Pal.WRONG)
+		_load_teams()
+		return
+	var removed: bool = done.data is Array and not (done.data as Array).is_empty()
+	if not removed:
+		_say("Player was not removed. The game may already have started.", Pal.WRONG)
+		_load_teams()
+		return
+	var record := {"session_id": sid, "profile_id": profile_id}
+	_lobby.apply("members", "DELETE", record)
+	_draw_teams()
+	_tell("members", "DELETE", record)
+	_say("%s was removed from the lobby." % username, Pal.CORRECT)
 
 
 ## Moved on screen at once; read back only if the server says no.

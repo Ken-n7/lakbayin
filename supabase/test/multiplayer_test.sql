@@ -30,6 +30,31 @@ insert into public.teams(id,session_id,name) values
 ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','33333333-3333-3333-3333-333333333333','Red'),
 ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2','33333333-3333-3333-3333-333333333333','Blue');
 update public.members set team_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1' where session_id='33333333-3333-3333-3333-333333333333';
+
+-- Removing a player is the teacher's lobby tool, never a player's way to
+-- erase their own score and never something another teacher can do.
+do $$
+declare a uuid := '00000000-0000-0000-0000-00000000000b';
+  b uuid := '00000000-0000-0000-0000-00000000000c';
+  t uuid := '00000000-0000-0000-0000-00000000000a';
+  other uuid := '00000000-0000-0000-0000-00000000000d';
+  s uuid := '66666666-6666-6666-6666-666666666666'; err text;
+begin
+  err := pg_temp.as_player(a,format('delete from public.members where session_id=%L and profile_id=%L',s,a));
+  perform pg_temp.check(err='' and exists(select 1 from public.members where session_id=s and profile_id=a),
+    'a player cannot remove themself from the lobby',err);
+  err := pg_temp.as_player(other,format('delete from public.members where session_id=%L and profile_id=%L',s,b));
+  perform pg_temp.check(err='' and exists(select 1 from public.members where session_id=s and profile_id=b),
+    'another teacher cannot remove this class''s player',err);
+  err := pg_temp.as_player(t,format('delete from public.members where session_id=%L and profile_id=%L',s,b));
+  perform pg_temp.check(err='' and not exists(select 1 from public.members where session_id=s and profile_id=b),
+    'the session teacher can remove a player before Start',err);
+  update public.sessions set state='running',ends_at=now()+interval '10 minutes' where id=s;
+  err := pg_temp.as_player(t,format('delete from public.members where session_id=%L and profile_id=%L',s,a));
+  perform pg_temp.check(err='' and exists(select 1 from public.members where session_id=s and profile_id=a),
+    'the session teacher cannot remove a player after Start',err);
+end $$;
+
 update public.sessions set state='running',ends_at=now()+interval '10 minutes';
 
 do $$

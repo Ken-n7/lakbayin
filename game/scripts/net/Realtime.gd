@@ -448,6 +448,10 @@ func _handle(msg: Dictionary) -> void:
 					_retry_position(topic)
 			if reply is Dictionary and str((reply as Dictionary).get("status", "")) == "error":
 				push_warning("Realtime: join refused -- %s" % str(reply))
+				if topic == TOPIC and str(msg.get("ref", "")) == _join_ref:
+					_joined = false
+					live = false
+					_rejoin_in = RECONNECT_S
 			elif str(msg.get("ref", "")) == _join_ref:
 				# Joined (or rejoined): presence starts empty on a new
 				# channel, so say who we are again.
@@ -487,15 +491,24 @@ func _handle(msg: Dictionary) -> void:
 		"phx_error", "phx_close":
 			# The server dropped the channel (an expired token, a restart)
 			# while the socket stayed up. Join again rather than go quiet.
-			if str(msg.get("topic", "")) == TOPIC and str(msg.get("ref", "")) == _join_ref \
+			if str(msg.get("topic", "")) == TOPIC and _closes_join(msg, _join_ref) \
 					and not _wanted.is_empty():
 				_joined = false
 				live = false
 				_rejoin_in = RECONNECT_S
 			# A position channel dropped the same way: join it again.
 			var pt := str(msg.get("topic", ""))
-			if _pos_topics.has(pt) and str(msg.get("ref", "")) == str(_pos_topics[pt]):
+			if _pos_topics.has(pt) and _closes_join(msg, str(_pos_topics[pt])):
 				_retry_position(pt)
+
+
+## Unsolicited channel errors identify the channel with join_ref; ref is
+## the individual request and can be null. Ignore an old join's late close.
+static func _closes_join(msg: Dictionary, current: String) -> bool:
+	var ref: Variant = msg.get("join_ref")
+	if ref == null:
+		ref = msg.get("ref")
+	return current != "" and ref != null and str(ref) == current
 
 
 func _retry_position(topic: String) -> void:
@@ -678,9 +691,16 @@ func _send(topic: String, event: String, payload: Dictionary) -> void:
 		print("RT>> ", event, " ", JSON.stringify(payload).substr(0, 300))
 	if debug:
 		_tally(sent, _kind(event, payload), topic, payload, ">>")
-	_ws.send_text(JSON.stringify({
+	var msg := {
 		"topic": topic,
 		"event": event,
 		"payload": payload,
 		"ref": str(_ref),
-	}))
+	}
+	# Phoenix must be able to identify which incarnation of a channel closed.
+	# Heartbeats are socket-level and have no join reference.
+	if topic == TOPIC:
+		msg["join_ref"] = _join_ref
+	elif _pos_topics.has(topic):
+		msg["join_ref"] = _pos_topics[topic]
+	_ws.send_text(JSON.stringify(msg))

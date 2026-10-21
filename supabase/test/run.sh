@@ -179,6 +179,71 @@ else
 fi
 rm -f /tmp/nx_retry_a.$$ /tmp/nx_retry_b.$$
 
+# Removal and Start must serialize even if the removal request's snapshot
+# still sees a lobby. Observe actual server locks before releasing either race.
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+q -f supabase/test/race_setup.sql >/dev/null 2>&1
+REMOVAL_SESSION=33333333-3333-3333-3333-333333333333
+REMOVAL_TEACHER=00000000-0000-0000-0000-00000000000a
+q -c "update public.sessions set state='lobby',ends_at=null where id='$REMOVAL_SESSION';" >/dev/null
+removal_start() {
+	PGAPPNAME=nx_removal_start psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" -c "begin;
+		set local statement_timeout='8s';
+		select set_config('request.jwt.claim.sub', '$REMOVAL_TEACHER', true);
+		set local role authenticated;
+		update public.sessions set state='running',ends_at=now()+interval '10 minutes'
+		 where id='$REMOVAL_SESSION';
+		select pg_sleep($1); commit;" > /tmp/nx_removal_start.$$ 2>&1
+}
+removal_delete() {
+	PGAPPNAME=nx_removal_delete psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" -c "begin;
+		set local statement_timeout='8s';
+		select set_config('request.jwt.claim.sub', '$REMOVAL_TEACHER', true);
+		set local role authenticated;
+		delete from public.members where session_id='$REMOVAL_SESSION' and profile_id='$A';
+		select pg_sleep($1); commit;" > /tmp/nx_removal_delete.$$ 2>&1
+}
+wait_for_sql() {
+	local attempt
+	for attempt in {1..50}; do
+		[[ $(q -t -A -c "$1") == t ]] && return 0
+		sleep 0.05
+	done
+	return 1
+}
+removal_start 2 & removal_first=$!
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_removal_start' and wait_event='PgSleep')" || fail=1
+removal_delete 0 & removal_second=$!
+blocked=0
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_removal_delete' and cardinality(pg_blocking_pids(pid))>0)" && blocked=1
+wait "$removal_first" || fail=1
+wait "$removal_second" || fail=1
+kept=$(q -t -A -c "select count(*) from public.members where session_id='$REMOVAL_SESSION' and profile_id='$A'")
+if [[ $blocked == 1 && $kept == 1 ]] && ! grep -qi error /tmp/nx_removal_start.$$ /tmp/nx_removal_delete.$$; then
+	echo "ok    Start wins: a concurrent stale-lobby removal waits and keeps the player"
+else
+	echo "FAIL  Start/removal race: blocked=$blocked kept=$kept"; fail=1
+	cat /tmp/nx_removal_start.$$ /tmp/nx_removal_delete.$$
+fi
+q -c "update public.sessions set state='lobby',ends_at=null where id='$REMOVAL_SESSION';" >/dev/null
+removal_delete 2 & removal_first=$!
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_removal_delete' and wait_event='PgSleep')" || fail=1
+removal_start 0 & removal_second=$!
+blocked=0
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_removal_start' and cardinality(pg_blocking_pids(pid))>0)" && blocked=1
+wait "$removal_first" || fail=1
+wait "$removal_second" || fail=1
+kept=$(q -t -A -c "select count(*) from public.members where session_id='$REMOVAL_SESSION' and profile_id='$A'")
+state=$(q -t -A -c "select state from public.sessions where id='$REMOVAL_SESSION'")
+if [[ $blocked == 1 && $kept == 0 && $state == running ]] && ! grep -qi error /tmp/nx_removal_start.$$ /tmp/nx_removal_delete.$$; then
+	echo "ok    Remove wins: Start waits until the lobby removal has committed"
+else
+	echo "FAIL  removal/Start race: blocked=$blocked kept=$kept state=$state"; fail=1
+	cat /tmp/nx_removal_start.$$ /tmp/nx_removal_delete.$$
+fi
+rm -f /tmp/nx_removal_start.$$ /tmp/nx_removal_delete.$$
+
 psql -X -q -c "drop database if exists $DB;" >/dev/null
 [[ $fail -eq 0 ]] && echo "server rules green" || echo "SERVER RULES FAILED"
 exit $fail

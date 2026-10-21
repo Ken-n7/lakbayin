@@ -219,6 +219,8 @@ func _sync_session() -> void:
 ## everyone inside the teacher's snapshots (`snap_topic`) -- a class of 30 sent
 ## straight to everyone was cut off by Supabase's free tier. If the teacher's
 ## screen is gone, no snapshots come and heroes fall back to their towers.
+## If only the teacher's relay is down, its snapshots request temporary
+## mirrors from relay phones so hub phones still receive the whole class.
 ##
 ## Each bundle repeats the last BUNDLE_OVERLAP_S of the one before, so one lost
 ## or late bundle leaves no gap. Standing still: a bundle every STILL_EVERY_S,
@@ -239,9 +241,12 @@ var _path: Array = []
 var _sample_clock := 0.0
 var _bundle_clock := 0.0
 var _moved_since_send := false
+## A fallback listener needs relay players' paths while the teacher cannot
+## bridge from the relay. Renewed by the teacher's authenticated snapshots.
+var _mirror_until := -INF
 ## The line as Net.connection() last read it: "good", "weak" or "offline".
 ## Read twice a second (_watch_connection), shown under the top bar, and what
-## holds back positions, new questions and Rescue while it is bad -- the way a
+## holds back new questions and Rescue while it is bad -- the way a
 ## game greys its buttons rather than let a bad connection pile actions up.
 var _conn := "good"
 var _conn_clock := 0.0
@@ -250,13 +255,11 @@ var _conn_clock := 0.0
 func _share_position(delta: float) -> void:
 	if Game.session_id == "" or player == null:
 		return
-	# Answering a question: nothing to send -- the hero stands at the tower on
-	# everyone's board. Offline: nothing would arrive. Either way the first
-	# bundle after carries the hero on from wherever they are then.
+	# Keep the idle heartbeat during questions too: it keeps fallback listeners
+	# bridged, and a late spectator sees the actual tower, not a progress anchor.
+	# A failed scoring request does not mean this position channel is down:
+	# send_position itself drops samples when its own channel is unavailable.
 	var relay := Net.relay()
-	if (_overlay != null and is_instance_valid(_overlay)) or (_conn == "offline" and not relay.up):
-		_bundle_clock = STILL_EVERY_S
-		return
 	var now := Time.get_ticks_msec() / 1000.0
 	_sample_clock -= delta
 	if _sample_clock <= 0.0:
@@ -273,13 +276,14 @@ func _share_position(delta: float) -> void:
 	var keep := every + BUNDLE_OVERLAP_S
 	while _path.size() > 1 and now - float(_path[0][0]) > keep:
 		_path.pop_front()
-	# On the relay: its samples instead of the hub's bundles. The path above
-	# is still kept, so if the relay goes the first bundle has no gap.
+	# On the relay: its samples, plus hub bundles only while the teacher
+	# needs them to bridge fallback listeners. Keep the path ready either way.
 	if relay.up:
 		_share_relay(delta, now, relay)
-		_bundle_clock = 0.0
-		_moved_since_send = false
-		return
+		if now >= _mirror_until:
+			_bundle_clock = 0.0
+			_moved_since_send = false
+			return
 	_bundle_clock += delta
 	if not ((_moved_since_send and _bundle_clock >= every) or _bundle_clock >= STILL_EVERY_S):
 		return
@@ -298,6 +302,7 @@ func _share_position(delta: float) -> void:
 		"sid": Game.session_id,
 		"id": Net.user_id,
 		"hero": Game.hero_id,
+		"relay": relay.up,
 		"p": {"t": snappedf(float(_path[0][0]), 0.01), "dt": SAMPLE_S, "x": xs, "y": ys},
 	})
 
@@ -423,6 +428,10 @@ func _on_position(event: String, data: Dictionary) -> void:
 	if event != "snap" or str(data.get("sid", "")) != Game.session_id \
 			or not is_instance_valid(self):
 		return
+	if bool(data.get("bridge", false)):
+		_mirror_until = Time.get_ticks_msec() / 1000.0 + PosHub.BRIDGE_S
+	else:
+		_mirror_until = -INF
 	if _peers == null or not is_instance_valid(_peers):
 		_refresh_peers()
 		return
@@ -668,18 +677,23 @@ func _take_team(row: Dictionary) -> void:
 		main.open("team")
 
 
-## This player's membership is gone -- only a deleted session takes it now,
-## since removing a team leaves its players in with no team. Not scored:
-## there is nothing left on the server to score against.
+## This player's membership is gone. Forget the code before returning to the
+## join screen, or its remembered-session shortcut would join them again.
 func _leave_removed() -> void:
+	Game.abandon_adventure()
+	Game.joined_code = ""
+	Game.joined_session = ""
+	Game.save_profile()
+	Net.realtime().untrack()
+	# A removed team may already be sending this player back to the picker.
+	# Even then, its pending transition must not retain an automatic rejoin.
 	if _ending:
 		return
 	_ending = true
-	Game.abandon_adventure()
 	hud.flash("You are no longer in this adventure")
 	await get_tree().create_timer(1.6).timeout
 	if is_instance_valid(self):
-		main.open("team")
+		main.open("team", {"removed": true})
 
 
 ## Where everybody else has got to. `items_done` is the position and it is

@@ -39,6 +39,8 @@ var _steps: Label            # "1 Pick a team -> 2 Ready!", the current one lit
 var _banner: PanelContainer  # the status line's backing, coloured by state
 var _reloading := false
 var _reload_again := false
+var _joining := false
+var _join_version := 0
 
 
 func setup(data: Dictionary) -> void:
@@ -58,6 +60,9 @@ func setup(data: Dictionary) -> void:
 		_build_offline()
 		return
 	_build_code()
+	if bool(data.get("removed", false)):
+		_say("You were removed from that session.", Pal.WRONG)
+		return
 	# Joined a session before: try it quietly. Still going -> straight back to
 	# the lobby. Over -> forgotten, and the student sees an empty field, not a
 	# warning about a code they never typed.
@@ -156,15 +161,21 @@ func _build_code() -> void:
 ## `quiet`: the code came from memory, not from the student, so a failure
 ## just clears the field instead of warning about it.
 func _enter(quiet := false) -> void:
+	if _joining:
+		return
 	if _code.text.strip_edges().is_empty():
 		_say("Enter the code.", Pal.WRONG)
 		return
 	_go.disabled = true
 	_go.text = "Joining..."
+	_joining = true
+	_join_version += 1
+	var version := _join_version
 	var got: Dictionary = await Teams.enter(_code.text)
-	if not is_instance_valid(self):
+	if not is_instance_valid(self) or version != _join_version:
 		return
 	if got.error != "":
+		_joining = false
 		_go.disabled = false
 		_go.text = "Join"
 		if quiet:
@@ -177,14 +188,21 @@ func _enter(quiet := false) -> void:
 		Game.save_profile()
 		return
 	_session = got.session
+	_lobby = Lobby.new()
+	_lobby.session = _session.duplicate()
+	var lobby := _lobby
 	Game.joined_session = str(_session.get("id", ""))
 	Game.joined_code = str(_session.get("code", ""))
 	Game.save_profile()
 	# Listening before the first read, so nothing that happens in between is
 	# missed; anything that lands early is folded in once the read is back.
 	_watch()
-	var err := await _lobby.load(Game.joined_session)
-	if not is_instance_valid(self):
+	var err := await lobby.load(Game.joined_session)
+	if not is_instance_valid(self) or version != _join_version or lobby != _lobby:
+		return
+	_joining = false
+	if err == "" and not lobby.session.is_empty() and not lobby.players.has(Net.user_id):
+		_kicked()
 		return
 	_build_lobby()
 	if err == "" and not quiet:
@@ -402,6 +420,7 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 ## Shown picked at once; the server's answer only matters if it says no, and
 ## then the lobby is read back to undo the guess.
 func _pick(team_id: String) -> void:
+	var lobby := _lobby
 	_say("", Pal.INK)
 	var was := _lobby.team_of(Net.user_id)
 	if _lobby.players.has(Net.user_id):
@@ -411,14 +430,14 @@ func _pick(team_id: String) -> void:
 	Lobby.tell(sid, "members", "UPDATE", {"session_id": sid,
 		"profile_id": Net.user_id, "team_id": team_id, "username": Net.username})
 	var err: String = await Teams.pick(sid, team_id)
-	if not is_instance_valid(self) or err == "":
+	if not is_instance_valid(self) or lobby != _lobby or err == "":
 		return
 	_say(err, Pal.WRONG)
 	Lobby.tell(sid, "members", "RELOAD", {})
 	if _lobby.players.has(Net.user_id):
 		_lobby.players[Net.user_id].team_id = was
-	await _lobby.load(str(_session.get("id", "")))
-	if is_instance_valid(self):
+	await lobby.load(sid)
+	if is_instance_valid(self) and lobby == _lobby:
 		_draw_lobby()
 
 
@@ -445,15 +464,20 @@ func _reload_lobby() -> void:
 		_reload_again = true
 		return
 	_reloading = true
+	var lobby := _lobby
 	while true:
 		_reload_again = false
 		var sid := str(_session.get("id", ""))
 		if sid == "":
 			break
-		var err := await _lobby.load(sid)
-		if not is_instance_valid(self):
+		var err := await lobby.load(sid)
+		if not is_instance_valid(self) or lobby != _lobby:
 			return
-		if err == "" and sid == str(_session.get("id", "")):
+		if err == "" and sid == str(_session.get("id", "")) \
+				and not lobby.session.is_empty() and not lobby.players.has(Net.user_id):
+			_kicked()
+			return
+		elif err == "" and sid == str(_session.get("id", "")):
 			_draw_lobby()
 		elif err != "":
 			_say(err, Pal.WRONG)
@@ -463,7 +487,12 @@ func _reload_lobby() -> void:
 
 
 func _on_row(table: String, type: String, record: Dictionary) -> void:
-	if not is_instance_valid(self):
+	if not is_instance_valid(self) or _session.is_empty():
+		return
+	if table == "members" and type == "DELETE" \
+			and str(record.get("profile_id", "")) == Net.user_id \
+			and str(record.get("session_id", "")) == str(_session.get("id", "")):
+		_kicked()
 		return
 	match _lobby.apply(table, type, record):
 		"changed":
@@ -474,7 +503,7 @@ func _on_row(table: String, type: String, record: Dictionary) -> void:
 
 ## The fast road: the same changes, announced by whoever made them.
 func _on_hint(event: String, data: Dictionary) -> void:
-	if not is_instance_valid(self):
+	if not is_instance_valid(self) or _session.is_empty():
 		return
 	match _lobby.hear(event, data):
 		"changed":
@@ -489,6 +518,27 @@ func _to_map() -> void:
 	Game.save_profile()
 	Game.begin_adventure(int(Game.duration_seconds))
 	main.open("adventure")
+
+
+## The teacher removed this membership while the session was still a lobby.
+## Forget the remembered code and put the player back where they can enter a
+## code. The server allows a fresh join until Start; after it, entry is locked.
+func _kicked() -> void:
+	Net.realtime().untrack()
+	_join_version += 1
+	_joining = false
+	_reloading = false
+	_reload_again = false
+	Game.joined_code = ""
+	Game.joined_session = ""
+	Game.save_profile()
+	_session = {}
+	# A load already in flight may still finish. Give this screen a new model
+	# so that response cannot repopulate it or overwrite a later deliberate join.
+	_lobby = Lobby.new()
+	_mine = ""
+	_build_code()
+	_say("You were removed from that session.", Pal.WRONG)
 
 
 ## Out of this session for good on this phone: the membership stays on the
