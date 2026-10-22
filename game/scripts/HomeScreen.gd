@@ -13,7 +13,6 @@ const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
 const CASTLE := "res://assets/buildings/Black_Castle.png"
 ## A tower on the island's right, like the board's, with maths circling it.
 const TOWER := "res://assets/buildings/Black_Tower.png"
-const CARVED := "res://assets/terrain/decorations/math/%s.png"
 const TREE := "res://assets/terrain/decorations/Tree1.png"
 
 const INSET := 16      # safe-area gutter, ~5% of the 360px canvas height
@@ -73,7 +72,6 @@ func _entries() -> Array:
 	return [
 		["Join Quest" if has_profile else "Start Adventure", "", Ui.RED, {}, "play"],
 		["Leaderboard", "board", Ui.SMALL, {}, "trophy"],
-		["Learn", "learn", Ui.SMALL, {}, "book"],
 		["Settings", _open_settings, Ui.SMALL, {}, "gear"],
 		["Quit", _confirm_quit, Ui.SMALL, {}, "exit"],
 	]
@@ -195,9 +193,9 @@ func _build_props() -> void:
 	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Rock2.png"), _at(9.8, 4.8), 1.4)
 	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Rock4.png"), _at(16.6, 6.6), 1.4)
 	_build_tower(_at(17.2, 8.3))
-	# The carved rocks of the menus and the board, a few here too.
+	# The menus' and the board's extra rocks, a few here too.
 	for c in [["blue_b", 10.4, 9.4, 1.2], ["yellow_a", 7.9, 7.3, 1.15], ["red_c", 15.2, 9.6, 1.1]]:
-		var r := Art.sprite(_world, Art.tex(CARVED % c[0]), _at(c[1], c[2]), c[3])
+		var r := Art.sprite(_world, Art.tex(MapCfg.plain_rock(c[0])), _at(c[1], c[2]), c[3])
 		r.name = c[0]
 	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Stump 1.png"), _at(11.6, 8.3), 0.4)
 
@@ -437,8 +435,41 @@ func _open_settings() -> void:
 	# Back to whichever home this is: the player's, or the teacher's dashboard.
 	var back := "admin" if Net.role == "admin" else "home"
 	hero.pressed.connect(func() -> void: main.open("hero", {"then": back}))
-	var out := _account_button(box, "Log Out", "exit", Ui.SMALL_RED)
+	# Credits shares Log Out's row, so the panel keeps its height.
+	var credits := _account_button(box, "Credits", "book", Ui.SMALL)
+	credits.custom_minimum_size.x = 137
+	credits.pressed.connect(_open_credits)
+	var out := Ui.button("Log Out", 137, Ui.H, Ui.SMALL_RED)
+	out.icon = Art.tex(ICONS % "exit")
+	out.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	out.add_theme_constant_override("h_separation", 6)
+	credits.get_parent().add_child(out)
 	out.pressed.connect(_confirm_logout)
+
+
+## Who made what. The music and the characters' licences require their credit
+## in the game; the rest is credited because it is fair.
+const CREDITS := [
+	["Art", "Tiny Swords by Pixel Frog\nCharacters: Super Retro World by Gif (@gif_not_jif), Noiracide (@Noiracide) and Romi (@DessRomaric)"],
+	["Music", "Original music by Marllon Silva (xDeviruchi)"],
+	["Sound effects", "Original sounds made for this game\nRetro 512 by Juhani Junkala (CC0)\nInterface Sounds by Kenney (CC0)"],
+	["Fonts", "Patrick Hand by Patrick Wagesreiter (OFL)\nMedievalSharp by wmk69 (OFL)\nDejaVu Sans by the DejaVu fonts team"],
+	["AI disclosure", "Programming assisted by Claude (Anthropic). No AI-generated art, music or voices."],
+]
+
+
+func _open_credits() -> void:
+	var d := Ui.dim(_dialog)
+	var box := Ui.back_panel(d, Vector2(312, 0), "Credits", func() -> void: d.queue_free())
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 6)
+	Ui.scroll(box, 230).add_child(list)
+	for c: Array in CREDITS:
+		Ui.section(list, c[0])
+		var l := Art.label(c[1], Pal.SMALL, Pal.INK)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(272, 0)
+		list.add_child(l)
 
 
 ## An Account row: a full-width button, its icon at the left like the menu's.

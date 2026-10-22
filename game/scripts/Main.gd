@@ -16,7 +16,6 @@ const SCREENS := {
 	"controls": preload("res://scripts/GameControlsScreen.gd"),
 	"feedback": preload("res://scripts/FeedbackScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),
-	"learn": preload("res://scripts/LearnScreen.gd"),
 	"board": preload("res://scripts/LeaderboardScreen.gd"),
 	"history": preload("res://scripts/HistoryScreen.gd"),
 	"summary": preload("res://scripts/SummaryScreen.gd"),
@@ -30,7 +29,7 @@ const SCREENS := {
 ## to The Journey once the adventure starts.
 const MUSIC := {
 	"login": "town", "register": "town", "reset": "town", "home": "town",
-	"team": "town", "board": "town", "learn": "town",
+	"team": "town", "board": "town",
 	"hero": "shop",
 	"summary": "victory",
 	"adventure": "battle",

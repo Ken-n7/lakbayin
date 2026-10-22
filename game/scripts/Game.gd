@@ -19,6 +19,14 @@ const GEM_WRONG := -5
 const GEM_HINT := -5
 const GEM_SKIP := -15
 const GEM_PERFECT_BONUS := 10
+## Level Up rules. The combo: each correct answer in a row with no hint is
+## worth GEM_STREAK_STEP more than the last, up to STREAK_CAP steps (10..20).
+## A miss, a skip or a hint resets it. Restated on the server (apply_answer).
+const GEM_STREAK_STEP := 2
+const STREAK_CAP := 5
+## The race to the Victory Gate: first, second, third through, then everyone
+## after. Paid by the server (finish_run), which alone knows the order.
+const GEM_RACE := [20, 15, 10, 5]
 const GEM_TEAM_FINISH_PENALTY := -25
 ## Charged to the team the first time a member reaches zero gems.
 const GEM_ELIMINATED := -50
@@ -58,6 +66,9 @@ var correct := 0
 var wrong := 0
 var skipped := 0
 var hints_used := 0
+var streak := 0
+## What the last correct answer was worth, combo included, for the result card.
+var last_gain := GEM_CORRECT
 
 var adventure_active := false
 var duration_seconds := 600.0
@@ -287,6 +298,7 @@ func restore_from(row: Dictionary) -> void:
 	wrong = int(row.get("wrong", maxi(items_done - correct, 0)))
 	skipped = int(row.get("skipped", 0))
 	hints_used = int(row.get("hints_used", 0))
+	streak = int(row.get("streak", 0))
 	station_flawed = bool(row.get("station_flawed", false))
 	station_used_hint = bool(row.get("station_used_hint", false))
 	item_used_hint = bool(row.get("item_used_hint", false))
@@ -374,6 +386,7 @@ func _gems_reset() -> void:
 	wrong = 0
 	skipped = 0
 	hints_used = 0
+	streak = 0
 	station_flawed = false
 	station_used_hint = false
 	item_used_hint = false
@@ -432,6 +445,7 @@ func spend_hint() -> bool:
 	item_used_hint = true
 	station_used_hint = true
 	hints_used += 1
+	streak = 0
 	_apply(GEM_HINT)
 	scored.emit("hint", false)
 	return true
@@ -445,6 +459,7 @@ func mark_wrong() -> void:
 	wrong += 1
 	items_done += 1
 	station_flawed = true
+	streak = 0
 	_apply(GEM_WRONG)
 	scored.emit("answer", false)
 
@@ -452,7 +467,9 @@ func mark_wrong() -> void:
 func mark_correct() -> void:
 	correct += 1
 	items_done += 1
-	_apply(GEM_CORRECT)
+	last_gain = GEM_CORRECT if item_used_hint else GEM_CORRECT + GEM_STREAK_STEP * mini(streak, STREAK_CAP)
+	streak = 0 if item_used_hint else streak + 1
+	_apply(last_gain)
 	scored.emit("answer", true)
 
 
@@ -460,6 +477,7 @@ func mark_skipped() -> void:
 	skipped += 1
 	items_done += 1
 	station_flawed = true
+	streak = 0
 	_apply(GEM_SKIP)
 	scored.emit("skip", false)
 

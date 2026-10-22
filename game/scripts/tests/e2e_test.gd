@@ -198,7 +198,7 @@ func _run() -> void:
 	await _wait(3)
 	check("splash routes to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("start button present", _find_button(_screen(), "Start Adventure") != null)
-	check("learn button present", _find_button(_screen(), "Learn") != null)
+	check("no Learn button", _find_button(_screen(), "Learn") == null)
 	check("board button present", _find_button(_screen(), "Leaderboard") != null)
 
 	print("== 2. hero select ==")
@@ -336,12 +336,6 @@ func _run() -> void:
 	_click(_screen(), "Back")
 	await _wait(3)
 	check("back to home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	_click(_screen(), "Learn")
-	await _wait(3)
-	check("learn shown", _script_of(_screen(), "res://scripts/LearnScreen.gd"))
-	_click(_screen(), "Back")
-	await _wait(3)
-	check("back to title again", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("main backref wired", true)
 
 	print("== 7. continue quest + pause menu ==")
@@ -484,7 +478,7 @@ func _run() -> void:
 			check("station %d does not end the run" % (s + 1), Game.adventure_active)
 	check("all stations complete", (Game.completed_stations as Array) == [true, true, true])
 	check("all circles resolved", Game.items_done == Game.TOTAL_ITEMS, str(Game.items_done))
-	check("perfect gems 220 (14 correct + 3 perfect bonuses)", Game.gems == 220, str(Game.gems))
+	check("perfect gems 330 (14 correct with the combo + 3 perfect bonuses)", Game.gems == 330, str(Game.gems))
 	check("board cleared but the run is still live", Game.adventure_active)
 
 	# The Victory Gate is the end of the player flow (SPECS Q6): it scores the run.
@@ -503,36 +497,12 @@ func _run() -> void:
 	check("summary after full run", _script_of(sum, "res://scripts/SummaryScreen.gd"))
 	var res10: Dictionary = Game.last_run
 	check("finished_all", res10.get("finished_all", false))
-	check("no penalty (220)", int(res10.get("gems", 0)) == 220, str(res10.get("gems")))
+	check("no penalty (330)", int(res10.get("gems", 0)) == 330, str(res10.get("gems")))
 	check("14 correct", int(res10.get("correct", 0)) == 14, str(res10.get("correct")))
 	check("0 wrong/skip/hint", int(res10.get("wrong", 0)) == 0 and int(res10.get("skipped", 0)) == 0 and int(res10.get("hints", 0)) == 0)
 	_click(sum, "Home")
 	await _wait(3)
 	check("title after full run", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-
-	print("== 11. learn tabs ==")
-	_click(_screen(), "Learn")
-	await _wait(3)
-	var learn := _screen()
-	# The client's posters (2026-10-01), exponents before the order of
-	# operations (client, 2026-10-12) -- not the stations' own order.
-	var lessons := [
-		["Basic Operations", "operation"],
-		["Exponential Notation", "exponent"],
-		# The mockup's Learn copy says GEMDAS, not PEMDAS, and so do we now.
-		["Order of Operations", "gemdas"],
-	]
-	for i in lessons.size():
-		var l: Array = lessons[i]
-		check("Lesson %d teaches %s" % [i + 1, l[0]],
-			_find_button(learn, "%d · %s" % [i + 1, l[0]]) != null)
-		_click(learn, l[0])
-		await _wait(1)
-		var content_label: Label = learn.get("_content")
-		check("%s lesson shown" % l[0], content_label != null and String(content_label.text).to_lower().contains(l[1]))
-	_click(learn, "Back")
-	await _wait(3)
-	check("learn back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 
 	print("== 12a. join codes ==")
 	check("codes are cleaned as typed", Teams.clean_code(" k7-qm ") == "K7QM", Teams.clean_code(" k7-qm "))

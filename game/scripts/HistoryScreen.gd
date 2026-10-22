@@ -59,7 +59,7 @@ func _load() -> void:
 	# Every played session's best team in one read, best first.
 	var ids := PackedStringArray(played.map(func(s: Dictionary) -> String: return str(s.id)))
 	var scores: Dictionary = await Net.rest(HTTPClient.METHOD_GET, SCORES
-		+ "?select=session_id,name,gems&session_id=in.(" + ",".join(ids) + ")&order=gems.desc")
+		+ "?select=session_id,name,gems&session_id=in.(" + ",".join(ids) + ")&order=gems.desc,first_finish.asc.nullslast")
 	if not is_instance_valid(_list):
 		return
 	var top_team := {}

@@ -140,6 +140,7 @@ func _sync_session() -> void:
 		return
 	var sid: String = str(session.get("id", ""))
 	_session_row = session.duplicate()
+	_matchmade = bool(session.get("matchmade", false))
 
 	# In this session? Then pick up where the server says, which is a fresh
 	# 50 gems on circle 1 for a first join and the real progress for a rejoin.
@@ -192,7 +193,9 @@ func _sync_session() -> void:
 	# removed. Everyone else's progress comes in the teacher's snapshots
 	# (PosHub) -- watched for the whole session, every answer reached all 31
 	# devices -- with a read every PEERS_FALLBACK_S when none arrive.
-	rt.watch("members", "profile_id=eq." + Net.user_id)
+	# A match has no teacher's snapshots: its few players' rows come straight
+	# from the change feed, the way a class's did before the hub.
+	rt.watch("members", ("session_id=eq." + sid) if _matchmade else ("profile_id=eq." + Net.user_id))
 	# On the teacher's list as here, on the board -- which is what "ready" is.
 	rt.track({"sid": sid, "where": "lobby", "name": Net.username})
 	_watch_positions()
@@ -232,6 +235,12 @@ func _sync_session() -> void:
 ## (tools/sim join_and_walk.py --bundle 0.33).
 const SAMPLE_S := 0.1
 const BUNDLE_S := 0.33
+## A match with the relay down: each phone sends its own bundle straight to
+## everyone on the snapshot channel (no teacher to gather them). ponytail:
+## players x players deliveries -- a second apart keeps 3 v 3 near 30 a
+## second on Supabase's free tier; run the relay for anything bigger.
+const DIRECT_BUNDLE_S := 1.0
+var _matchmade := false
 const BUNDLE_OVERLAP_S := 0.3
 const STILL_EVERY_S := 3.0
 var _my_team := ""
@@ -272,7 +281,7 @@ func _share_position(delta: float) -> void:
 			_moved_since_send = true
 		_path.append([now, x, y])
 	# A weak line gets half as many bundles, each covering twice as long.
-	var every := BUNDLE_S * (2.0 if _conn == "weak" else 1.0)
+	var every := (DIRECT_BUNDLE_S if _matchmade else BUNDLE_S) * (2.0 if _conn == "weak" else 1.0)
 	var keep := every + BUNDLE_OVERLAP_S
 	while _path.size() > 1 and now - float(_path[0][0]) > keep:
 		_path.pop_front()
@@ -298,12 +307,20 @@ func _share_position(delta: float) -> void:
 	for q: Array in _path:
 		xs.append(q[1])
 		ys.append(q[2])
+	var bundle := {"t": snappedf(float(_path[0][0]), 0.01), "dt": SAMPLE_S, "x": xs, "y": ys}
+	if _matchmade:
+		# A snapshot of one, in PosHub's shape, so every phone plays it as one.
+		Net.realtime().send_position(Realtime.snap_topic(Game.session_id), {
+			"sid": Game.session_id,
+			"p": [{"id": Net.user_id, "hero": Game.hero_id, "p": bundle}],
+		}, "snap")
+		return
 	Net.realtime().send_position(Realtime.in_topic(Game.session_id, Net.user_id), {
 		"sid": Game.session_id,
 		"id": Net.user_id,
 		"hero": Game.hero_id,
 		"relay": relay.up,
-		"p": {"t": snappedf(float(_path[0][0]), 0.01), "dt": SAMPLE_S, "x": xs, "y": ys},
+		"p": bundle,
 	})
 
 
@@ -830,7 +847,7 @@ func _apply_session_state() -> void:
 			hud.set_prompt("Paused by your Quest Keeper")
 		"ended":
 			hud.paused = true
-			hud.set_prompt("Your Quest Keeper ended the adventure")
+			hud.set_prompt("The match is over" if _matchmade else "Your Quest Keeper ended the adventure")
 			_leave_ended()
 		_:
 			hud.paused = true

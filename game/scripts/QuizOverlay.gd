@@ -315,7 +315,8 @@ func _show_result(correct: bool) -> void:
 	if correct:
 		_result_title.text = "CORRECT!  You got it!"
 		_result_title.add_theme_color_override("font_color", Pal.CORRECT)
-		_delta_label.text = "+%d gems" % Game.GEM_CORRECT
+		_delta_label.text = "+%d gems" % Game.last_gain \
+				+ ("  ·  Combo ×%d" % Game.streak if Game.streak >= 2 else "")
 		_delta_label.add_theme_color_override("font_color", Pal.AMBER)
 		_result_rule.text = "You applied the correct rule!"
 		_show_answer("Answer:  %s" % str(answer), Pal.CORRECT)

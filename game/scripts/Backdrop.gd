@@ -28,11 +28,10 @@ const TREES := ["res://assets/terrain/decorations/Tree1.png",
 const PAN_S := 70.0
 const WASH := 0.38                 # the dark wash over the scene
 ## Maths in the scene (client, 2026-09-27), two ways to compare: signs rising
-## out of the sea (`MathMotes`), and maths carved into the pack's own rocks on
-## each island in its station's signs (`tools/make_carvings.py`).
+## out of the sea (`MathMotes`), and rocks on each island -- carved with maths
+## once, plain pack rocks since the Level Up fork (`MapCfg.plain_rock`).
 const SHOW_MOTES := true
 const SHOW_CARVINGS := true
-const CARVED := "res://assets/terrain/decorations/math/"
 ## [piece, cell x, cell y, scale]: the pack's rocks, around the pack's rocks'
 ## own 1.2. A different set on each island, and not in the same spots -- three
 ## on Blue, two on Yellow, four on Red.
@@ -152,7 +151,7 @@ func _build_islands() -> void:
 		t.frame = i % 6          # out of step, or the whole wood sways as one
 	if SHOW_CARVINGS:
 		for c: Array in CARVINGS:
-			var spr := Art.sprite(_world, Art.tex(CARVED + c[0] + ".png"), _at(c[1], c[2]), c[3])
+			var spr := Art.sprite(_world, Art.tex(MapCfg.plain_rock(c[0])), _at(c[1], c[2]), c[3])
 			spr.name = c[0]
 	for r in [["Rock2", 13.6, 6.0], ["Rock4", 27.4, 7.2], ["Rock1", 41.0, 7.6]]:
 		Art.sprite(_world, Art.tex("res://assets/terrain/decorations/%s.png" % r[0]),

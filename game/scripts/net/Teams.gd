@@ -62,7 +62,8 @@ static func find(code: String) -> Dictionary:
 	if want.length() != 4:
 		return {"error": "The code is 4 letters and numbers.", "session": {}}
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		SESSIONS + "?select=*&code=eq." + want.uri_encode() + "&order=created_at.desc&limit=5")
+		SESSIONS + "?select=*&matchmade=is.false&code=eq." + want.uri_encode()
+		+ "&order=created_at.desc&limit=5")
 	if got.error != "":
 		return {"error": got.error, "session": {}}
 	var rows: Array = got.data if got.data is Array else []
@@ -197,6 +198,31 @@ static func enter(code: String) -> Dictionary:
 		Lobby.tell(sid, "members", "INSERT", {"session_id": sid,
 			"profile_id": Net.user_id, "team_id": null, "username": Net.username})
 	return found
+
+
+## Find Match: the server's place in a match -- the oldest open lobby, a new
+## one, or the match this player is already in (`find_match`, schema 4d). It
+## picks the team too. {error, session}.
+static func find_match() -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/find_match", {})
+	if got.error != "":
+		return {"error": got.error, "session": {}}
+	return {"error": "", "session": got.data if got.data is Dictionary else {}}
+
+
+## A lobby phone's check-in: keeps its place and starts the match when it is
+## due. The session as it now stands, `{}` on a failure (the next one retries).
+static func poll_match(session_id: String) -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/poll_match",
+		{"p_session": session_id})
+	return got.data if got.error == "" and got.data is Dictionary else {}
+
+
+## Out of a match's queue; after Start the server keeps the row.
+static func leave_match(session_id: String) -> String:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/leave_match",
+		{"p_session": session_id})
+	return got.error
 
 
 ## Onto a team, or across to another before Start. "" or what went wrong --

@@ -274,7 +274,7 @@ func _initialize() -> void:
 	cheats._skip_station()
 	assert(G.items_done == G.TOTAL_ITEMS, "skipping a cleared board ran past the end")
 
-	# The carved rocks (MapCfg.CARVED_ROCKS): all there, carved, and solid --
+	# The extra rocks (MapCfg.CARVED_ROCKS): all there, plain, and solid --
 	# the middle of each one's box is a wall, as a pack rock's is.
 	var carved: Node = (screen.world as Node).get("carved")
 	assert(carved != null and carved.get_child_count() == MapCfg.CARVED_ROCKS.size(),
@@ -282,7 +282,7 @@ func _initialize() -> void:
 	for c: Array in MapCfg.CARVED_ROCKS:
 		var rock := carved.get_node(String(c[0])) as Node2D
 		var tex := (rock.get_node("Sprite") as Sprite2D).texture
-		assert(tex.resource_path == MapCfg.CARVED_ROCK % c[0], "%s is not carved" % c[0])
+		assert(not tex.resource_path.contains("/math/"), "%s is still carved" % c[0])
 		var solid := false
 		for r: Rect2 in screen.grid.solid:
 			if r.has_point(c[2] + Vector2(0, -35)):

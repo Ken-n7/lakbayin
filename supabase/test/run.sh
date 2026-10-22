@@ -82,6 +82,13 @@ echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
 echo "$out" | grep -q -- "---- MULTIPLAYER SQL PASS" || fail=1
 echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
 
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+out=$(q -t -A -f supabase/test/matchmaking_test.sql 2>&1)
+echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
+echo "$out" | grep -q -- "---- MATCHMAKING SQL PASS" || fail=1
+echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
+
 # Leave a clean schema for the relay race's fixed fixture IDs.
 fresh
 q -f supabase/schema.sql >/dev/null 2>&1

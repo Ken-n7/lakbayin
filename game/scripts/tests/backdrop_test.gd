@@ -71,12 +71,12 @@ func _ready() -> void:
 	check("the same composition every launch", str(again.get("_motes")) == str(ms))
 	again.queue_free()
 
-	# Carved into the pack's rocks, a different set on each island.
+	# The pack's plain rocks, a different set on each island.
 	var carved := Backdrop.CARVINGS.map(func(c: Array) -> String: return c[0])
 	var found := carved.filter(func(c: String) -> bool:
 		var spr := main.backdrop.find_child(c, true, false) as Sprite2D
-		return spr != null and spr.texture != null)
-	check("every carved rock is in the scene", found.size() == carved.size() or not Backdrop.SHOW_CARVINGS,
+		return spr != null and spr.texture != null and not spr.texture.resource_path.contains("/math/"))
+	check("every rock is in the scene, plain", found.size() == carved.size() or not Backdrop.SHOW_CARVINGS,
 		str(found))
 
 	main.open("home")
@@ -84,7 +84,7 @@ func _ready() -> void:
 	check("hidden with the backdrop where a screen has its own scene", not motes.is_visible_in_tree())
 
 	# Home's own island: the black castle, a tower with maths going round it,
-	# and carved rocks.
+	# and plain rocks.
 	var home: Control = main.current
 	var castle_black := home.find_children("*", "Sprite2D", true, false).any(
 		func(sp: Sprite2D) -> bool:
@@ -104,7 +104,7 @@ func _ready() -> void:
 	check("with maths circling it, a little of every station", signs.size() == 1 and every, str(mix))
 	var home_rocks := ["blue_b", "yellow_a", "red_c"].filter(func(n: String) -> bool:
 		var r := home.find_child(n, true, false) as Sprite2D
-		return r != null and r.texture.resource_path.contains("/math/"))
-	check("and carved rocks", home_rocks.size() == 3, str(home_rocks))
+		return r != null and r.texture.resource_path == MapCfg.plain_rock(n))
+	check("and plain rocks", home_rocks.size() == 3, str(home_rocks))
 	completed = true
 	finish("BACKDROP")

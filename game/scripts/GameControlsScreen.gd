@@ -442,7 +442,7 @@ func _open_fresh() -> void:
 func _live_session() -> Dictionary:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
 		SESSIONS + "?select=*&admin_id=eq." + Net.user_id
-		+ "&state=neq.ended&order=created_at.desc&limit=5")
+		+ "&matchmade=is.false&state=neq.ended&order=created_at.desc&limit=5")
 	if got.error != "":
 		_say(got.error, Pal.WRONG)
 		return {}
@@ -463,7 +463,8 @@ func _new_session() -> void:
 		_ending_id = str(_session.get("id", ""))
 		_tell("sessions", "UPDATE", {"id": _session.get("id", ""), "state": "ended"})
 	await Net.rest(HTTPClient.METHOD_PATCH,
-		SESSIONS + "?admin_id=eq." + Net.user_id + "&state=neq.ended", {"state": "ended"})
+		SESSIONS + "?admin_id=eq." + Net.user_id + "&matchmade=is.false&state=neq.ended",
+		{"state": "ended"})
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, SESSIONS,
 		{"admin_id": Net.user_id, "duration_s": _seconds()})
 	if not is_instance_valid(self):

@@ -15,11 +15,12 @@ const MEMBERS := "/rest/v1/members"
 const PLAYER_ORDER := "gems.desc,finish_s.asc.nullslast,profile_id.asc"
 
 
-## [{name, gems, members}], best first.
+## [{name, gems, members}], best first; equal gems go to the team whose first
+## player finished sooner (`first_finish`).
 static func teams(session_id: String) -> Array:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
 		SCORES + "?select=name,gems,members&session_id=eq." + session_id
-		+ "&order=gems.desc")
+		+ "&order=gems.desc,first_finish.asc.nullslast")
 	return got.data if got.error == "" and got.data is Array else []
 
 

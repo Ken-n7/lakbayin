@@ -65,11 +65,22 @@ func _t_scoring() -> void:
 	Game.mark_correct()
 	check("correct +10", Game.gems == Game.START_GEMS + 10, str(Game.gems))
 	Game.mark_correct()
+	check("a second correct in a row is a combo, +12", Game.gems == Game.START_GEMS + 10 + 12
+		and Game.last_gain == 12 and Game.streak == 2, str(Game.gems))
 	Game.mark_wrong()
-	check("wrong -5", Game.gems == Game.START_GEMS + 10 + 10 - 5, str(Game.gems))
+	check("wrong -5", Game.gems == Game.START_GEMS + 10 + 12 - 5, str(Game.gems))
+	check("a miss breaks the combo", Game.streak == 0, str(Game.streak))
 	var spent := Game.spend_hint()
 	check("hint spent once", spent and Game.hints_used == 1, str(Game.hints_used))
-	check("hint -5", Game.gems == Game.START_GEMS + 10 + 10 - 5 - 5, str(Game.gems))
+	check("hint -5", Game.gems == Game.START_GEMS + 10 + 12 - 5 - 5, str(Game.gems))
+	Game.mark_correct()
+	check("a hinted answer is the base +10 and starts no combo", Game.last_gain == 10 and Game.streak == 0,
+		"%d %d" % [Game.last_gain, Game.streak])
+	Game.begin_item()
+	for i in 7:
+		Game.mark_correct()
+	check("the combo stops growing at +20", Game.last_gain == 20, str(Game.last_gain))
+	Game.begin_adventure(300)
 
 
 func _t_perfect_bonus() -> void:

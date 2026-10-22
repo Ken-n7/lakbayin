@@ -41,6 +41,12 @@ var _reloading := false
 var _reload_again := false
 var _joining := false
 var _join_version := 0
+var _find_btn: Button
+## A match's lobby: its check-in clock, and whether the map is already opening.
+var _poll_clock := 0.0
+var _polling := false
+var _poll_count := 0
+var _entering := false
 
 
 func setup(data: Dictionary) -> void:
@@ -69,6 +75,8 @@ func setup(data: Dictionary) -> void:
 	if Game.joined_code != "":
 		_code.text = Game.joined_code
 		_enter(true)
+	elif Game.joined_session != "":
+		_rejoin_match()
 
 
 ## The code form keeps Home's town songs; the lobby is the battle songs, on
@@ -123,7 +131,11 @@ func _build_code() -> void:
 	# beside it -- this is the third form a student meets, and it should look
 	# like the other two.
 	var box := Ui.auth_layout(self, "Join Adventure", 300)
-	box.add_child(Art.label("Type the code your Quest Keeper shows.",
+	# No teacher needed: the server finds the match and picks the teams.
+	_find_btn = Ui.button("Find Match", 260, Ui.H, Ui.RED)
+	_find_btn.pressed.connect(_find)
+	Ui.centre_row(box, _find_btn)
+	box.add_child(Art.label("or type the code your Quest Keeper shows",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	# The code as a code: four big spaced letters, the way it is read off the
 	# board, not a line of small text in a form field.
@@ -150,7 +162,7 @@ func _build_code() -> void:
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_msg.custom_minimum_size = Vector2(260, 0)
 	box.add_child(_msg)
-	_go = Ui.button("Join", 260, Ui.H, Ui.RED)
+	_go = Ui.button("Join", 260, Ui.H, Ui.BLUE)
 	_go.pressed.connect(_enter)
 	Ui.centre_row(box, _go)
 	var back := Ui.link("Back")
@@ -187,12 +199,56 @@ func _enter(quiet := false) -> void:
 		Game.joined_session = ""
 		Game.save_profile()
 		return
-	_session = got.session
+	await _open_lobby(got.session, quiet, version)
+
+
+## Find Match: the server picks the match and the team (Teams.find_match).
+func _find() -> void:
+	if _joining:
+		return
+	_say("", Pal.INK)
+	_find_btn.disabled = true
+	_find_btn.text = "Finding a match..."
+	_joining = true
+	_join_version += 1
+	var version := _join_version
+	var got: Dictionary = await Teams.find_match()
+	if not is_instance_valid(self) or version != _join_version:
+		return
+	if got.error != "":
+		_joining = false
+		_find_btn.disabled = false
+		_find_btn.text = "Find Match"
+		_say(got.error, Pal.WRONG)
+		return
+	await _open_lobby(got.session, false, version)
+
+
+## Back to a match this phone was in, if it is still going -- never a new one
+## found on the player's behalf without a tap.
+func _rejoin_match() -> void:
+	_joining = true
+	_join_version += 1
+	var version := _join_version
+	var session: Dictionary = await Teams.session(Game.joined_session)
+	if not is_instance_valid(self) or version != _join_version:
+		return
+	if session.is_empty() or Teams.expired(session) or not bool(session.get("matchmade", false)):
+		_joining = false
+		Game.joined_session = ""
+		Game.save_profile()
+		return
+	await _open_lobby(session, true, version)
+
+
+func _open_lobby(session: Dictionary, quiet: bool, version: int) -> void:
+	_session = session
 	_lobby = Lobby.new()
 	_lobby.session = _session.duplicate()
 	var lobby := _lobby
 	Game.joined_session = str(_session.get("id", ""))
-	Game.joined_code = str(_session.get("code", ""))
+	# A match is found again by its id; only a teacher's session by its code.
+	Game.joined_code = "" if _matchmade() else str(_session.get("code", ""))
 	Game.save_profile()
 	# Listening before the first read, so nothing that happens in between is
 	# missed; anything that lands early is folded in once the read is back.
@@ -215,13 +271,14 @@ func _enter(quiet := false) -> void:
 func _build_lobby() -> void:
 	_background()
 	_music("battle")
-	var box := Ui.screen_panel(self, LOBBY, "Pick Your Team")
+	var box := Ui.screen_panel(self, LOBBY, "Your Match" if _matchmade() else "Pick Your Team")
 	box.add_theme_constant_override("separation", 6)
 	# Two steps, and which one you are on: a Grade 8 student should not have
 	# to work out that entering the map is what "ready" means. The code rides
 	# the same line -- a line of its own pushed Ready off a 360px screen.
 	var head := HBoxContainer.new()
-	var code := Art.label("Code %s" % str(_lobby.session.get("code", Game.joined_code)), Pal.SMALL, Pal.INK_MUTED)
+	var code := Art.label("" if _matchmade() else "Code %s" % str(_lobby.session.get("code", Game.joined_code)),
+			Pal.SMALL, Pal.INK_MUTED)
 	code.custom_minimum_size = Vector2(110, 0)
 	head.add_child(code)
 	_steps = Art.label("", Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
@@ -270,6 +327,8 @@ func _build_lobby() -> void:
 	row.add_child(leave)
 	_go = Ui.button("Ready — Enter Map", 230, Ui.H, Ui.RED)
 	_go.pressed.connect(_to_map)
+	# A match opens the map by itself when it starts.
+	_go.visible = not _matchmade()
 	row.add_child(_go)
 	box.add_child(row)
 	_draw_lobby()
@@ -285,15 +344,17 @@ func _draw_lobby() -> void:
 		Game.joined_code = ""
 		Game.joined_session = ""
 		Game.save_profile()
+		var was_match := _matchmade()
 		_build_code()
-		_say("That adventure has ended. Enter the new code.", Pal.WRONG)
+		_say("That match has ended." if was_match else "That adventure has ended. Enter the new code.",
+				Pal.WRONG)
 		return
 	_session = _lobby.session
 	_mine = _lobby.team_of(Net.user_id)
 	for c in _cards.get_children():
 		_cards.remove_child(c)
 		c.queue_free()
-	var locked := str(_session.get("state", "")) != "lobby"
+	var locked := str(_session.get("state", "")) != "lobby" or _matchmade()
 	# Two, three in a row; four as two by two; five and six as rows of three.
 	var n := _lobby.teams.size()
 	_cards.columns = maxi(1, 2 if n == 4 else mini(n, 3))
@@ -312,7 +373,13 @@ func _draw_lobby() -> void:
 
 	var team_name := _lobby.name_of(_mine)
 	var tone := Pal.INK
-	if _mine == "":
+	if _matchmade():
+		_steps.text = "Matchmaking"
+		_status.text = _match_status()
+		if str(_session.get("state", "")) == "running" and _mine != "" and not _entering:
+			_entering = true
+			_to_map.call_deferred()
+	elif _mine == "":
 		_status.text = "Tap a team to join it."
 		_steps.text = "▶ 1  Pick a team      2  Ready!"
 	elif locked:
@@ -408,7 +475,8 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(fill)
 	# What tapping does, on the box itself.
-	var foot := Art.label("YOU" if mine else "Locked" if locked else "Tap to join", Pal.SMALL,
+	var foot := Art.label("YOU" if mine else "Rivals" if _matchmade() else "Locked" if locked else "Tap to join",
+			Pal.SMALL,
 			Pal.WRONG if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(foot)
@@ -532,13 +600,16 @@ func _kicked() -> void:
 	Game.joined_code = ""
 	Game.joined_session = ""
 	Game.save_profile()
+	var was_match := _matchmade()
 	_session = {}
 	# A load already in flight may still finish. Give this screen a new model
 	# so that response cannot repopulate it or overwrite a later deliberate join.
 	_lobby = Lobby.new()
 	_mine = ""
 	_build_code()
-	_say("You were removed from that session.", Pal.WRONG)
+	# A match drops a phone that stopped checking in (poll_match).
+	_say("You lost your place in the match — tap Find Match again." if was_match
+			else "You were removed from that session.", Pal.WRONG)
 
 
 ## Out of this session for good on this phone: the membership stays on the
@@ -546,10 +617,56 @@ func _kicked() -> void:
 ## code is forgotten so Start Adventure asks for one again.
 func _leave() -> void:
 	Net.realtime().untrack()
+	# Out of a match's queue too, or the match waits for this player.
+	if _matchmade() and str(_session.get("state", "")) == "lobby":
+		Teams.leave_match(str(_session.get("id", "")))
 	Game.joined_code = ""
 	Game.joined_session = ""
 	Game.save_profile()
 	main.open("home")
+
+
+# --- A match ----------------------------------------------------------------
+func _matchmade() -> bool:
+	return bool(_session.get("matchmade", false))
+
+
+## What the lobby is waiting for, from the session row and the teams.
+func _match_status() -> String:
+	var counts: Array = _lobby.teams.map(func(t: Dictionary) -> int: return _lobby.members_of(t.id).size())
+	var n: int = counts.reduce(func(a: int, b: int) -> int: return a + b, 0)
+	if str(_session.get("state", "")) != "lobby":
+		return "The match has started — go!"
+	if n < 2:
+		return "Waiting for another player to join..."
+	if counts.max() != counts.min():
+		return "Waiting for one more player to even the teams..."
+	var starts := Time.get_unix_time_from_datetime_string(str(_session.get("starts_at", "")))
+	var left := ceili(float(starts) - Game.now())
+	return "Match starts in %d s" % left if left > 0 else "Starting..."
+
+
+## Once a second the countdown is redrawn; every other second this phone
+## checks in, which keeps its place and lets the server start a match that is
+## due -- there is no teacher to press Start.
+func _process(delta: float) -> void:
+	if not _matchmade() or str(_session.get("state", "")) != "lobby" or not is_instance_valid(_status):
+		return
+	_poll_clock -= delta
+	if _poll_clock > 0.0:
+		return
+	_poll_clock = 1.0
+	_status.text = _match_status()
+	_poll_count += 1
+	if _polling or _poll_count % 2 == 1:
+		return
+	_polling = true
+	var lobby := _lobby
+	var row: Dictionary = await Teams.poll_match(str(_session.get("id", "")))
+	_polling = false
+	if is_instance_valid(self) and lobby == _lobby and not row.is_empty():
+		_lobby.session.merge(row, true)
+		_draw_lobby()
 
 
 # --- Shared -----------------------------------------------------------------

@@ -119,10 +119,10 @@ begin
     err := pg_temp.as_player(a,format('select public.score_event(%L,%L,''answer'',true,%s,0)',s,gen_random_uuid(),i));
   end loop;
   select * into m from public.members where session_id=s and profile_id=a;
-  perform pg_temp.check(err='' and m.items_done=8 and m.stations_done=1 and m.gems=140 and m.perfect_stations[1],
+  perform pg_temp.check(err='' and m.items_done=8 and m.stations_done=1 and m.gems=190 and m.perfect_stations[1],
     'the final answer atomically commits its station and bonus',err);
   err := pg_temp.as_player(a,format('select public.finish_station(%L,true)',s));
-  perform pg_temp.check(err='' and (select gems=140 from public.members where session_id=s and profile_id=a),
+  perform pg_temp.check(err='' and (select gems=190 from public.members where session_id=s and profile_id=a),
     'an older client completion call cannot award a second bonus',err);
   err := pg_temp.as_player(a,format('select public.score_event(%L,%L,''hint'',false,8,1)',s,gen_random_uuid()));
   err := pg_temp.as_player(a,format('select public.score_event(%L,%L,''hint'',false,8,1)',s,gen_random_uuid()));
@@ -133,11 +133,16 @@ begin
     err := pg_temp.as_player(a,format('select public.score_event(%L,%L,''answer'',true,%s,1)',s,gen_random_uuid(),i));
   end loop;
   select * into m from public.members where session_id=s and profile_id=a;
-  perform pg_temp.check(m.stations_done=3 and m.gems=205 and not m.perfect_stations[2] and m.perfect_stations[3],
+  perform pg_temp.check(m.stations_done=3 and m.gems=275 and not m.perfect_stations[2] and m.perfect_stations[3],
     'restored station state produces the correct later bonuses');
   err := pg_temp.as_player(a,format('select public.finish_run(%L)',s));
   perform pg_temp.check(err='' and (select finished from public.members where session_id=s and profile_id=a),
     'a boundary restart can finish without any UI completion call',err);
+  perform pg_temp.check((select gems=295 from public.members where session_id=s and profile_id=a),
+    'the first player through the Gate gets +20');
+  err := pg_temp.as_player(a,format('select public.finish_run(%L)',s));
+  perform pg_temp.check((select gems=295 from public.members where session_id=s and profile_id=a),
+    'finishing again pays no second race bonus',err);
   perform pg_temp.check((select jsonb_array_length(question_bank)=14 from public.sessions where id=s),
     'Start freezes the complete authored bank');
   update public.questions set prompt='Changed after Start',active=false;

@@ -275,6 +275,9 @@ alter table public.members add column if not exists station_used_hint boolean no
 alter table public.members add column if not exists item_used_hint boolean not null default false;
 alter table public.members add column if not exists perfect_stations boolean[] not null default array[false,false,false];
 alter table public.members add column if not exists stations_done int not null default 0;
+-- Correct answers in a row with no hint (Level Up rules): each one is worth
+-- 2 more than the last, from 10 up to 20. A miss, a skip or a hint resets it.
+alter table public.members add column if not exists streak int not null default 0;
 
 -- Replies and change-feed events can arrive in different orders. A device
 -- must never restore an older row over a later answer or rescue.
@@ -322,7 +325,10 @@ declare row public.members;
 begin
   perform numxventure_private.running_session(p_session);
   update public.members
-     set gems = gems + case when p_correct then 10 else -5 end,
+     set gems = gems + case when not p_correct then -5
+                            when item_used_hint then 10
+                            else 10 + 2 * least(streak, 5) end,
+         streak = case when p_correct and not item_used_hint then streak + 1 else 0 end,
          correct = correct + case when p_correct then 1 else 0 end,
          wrong = wrong + case when p_correct then 0 else 1 end,
          station_flawed = station_flawed or not p_correct,
@@ -345,7 +351,7 @@ declare row public.members;
 begin
   perform numxventure_private.running_session(p_session);
   update public.members
-     set gems = gems - 5, hints_used = hints_used + 1, item_used_hint = true,
+     set gems = gems - 5, streak = 0, hints_used = hints_used + 1, item_used_hint = true,
          station_used_hint = true, updated_at = now()
    where session_id = p_session and profile_id = auth.uid() and items_done < 14
      and not item_used_hint and not eliminated and not finished
@@ -361,7 +367,7 @@ declare row public.members;
 begin
   perform numxventure_private.running_session(p_session);
   update public.members
-     set gems = gems - 15, items_done = items_done + 1, skipped = skipped + 1,
+     set gems = gems - 15, streak = 0, items_done = items_done + 1, skipped = skipped + 1,
          station_flawed = true, item_used_hint = false, updated_at = now()
    where session_id = p_session and profile_id = auth.uid() and items_done < 14
      and not eliminated and not finished
@@ -503,8 +509,14 @@ declare
   row public.members;
 begin
   s := numxventure_private.running_session(p_session);
+  -- The race to the Gate (Level Up rules): first through +20, second +15,
+  -- third +10, everyone after +5 -- once. The session lock above puts finishers
+  -- in order, so two at the same moment cannot both be first.
   update public.members
-     set finished = true,
+     set gems = gems + case when finished then 0 else
+           case (select count(*) from public.members f where f.session_id = p_session and f.finished)
+             when 0 then 20 when 1 then 15 when 2 then 10 else 5 end end,
+         finished = true,
          finish_s = coalesce(finish_s, greatest(0, s.duration_s
                       - greatest(0, ceil(extract(epoch from (s.ends_at - now())))::int))),
          updated_at = now()
@@ -658,6 +670,147 @@ end $$;
 
 grant execute on function public.shuffle_teams(uuid) to authenticated;
 
+-- 4d. Match finder (Level Up fork) ------------------------------------------
+-- No teacher: a player presses Find Match and the server puts them in the
+-- oldest open lobby, or opens one with two teams. Joiners are dealt onto the
+-- smaller team and cannot switch. A full lobby starts at once; otherwise the
+-- countdown starts when a second player arrives and the match starts when it
+-- runs out and the teams are even. The clock is the session's as before, and
+-- a match ends by itself: everyone done (`end_when_all_done`) or time up.
+--
+-- Nothing runs on the server by itself: lobby phones check in every few
+-- seconds (`poll_match`), and that check-in is what starts a match that is
+-- due and drops whoever stopped checking in -- a closed app, a dead phone.
+alter table public.sessions add column if not exists matchmade boolean not null default false;
+alter table public.sessions add column if not exists starts_at timestamptz;
+
+-- The knobs, one row, set in the dashboard. `house` is the admin account
+-- whose question bank every match plays (and who appears as each match's
+-- admin_id); matchmaking refuses to run until it is set. Keep it an account
+-- of its own: a teacher's New Session ends every session they own.
+create table if not exists public.match_config (
+  id         int primary key default 1 check (id = 1),
+  house      uuid references public.profiles on delete set null,
+  team_size  int not null default 3 check (team_size between 1 and 5),
+  lobby_s    int not null default 30 check (lobby_s between 5 and 600),
+  duration_s int not null default 600 check (duration_s between 60 and 7200)
+);
+insert into public.match_config (id) values (1) on conflict (id) do nothing;
+alter table public.match_config enable row level security;
+drop policy if exists read_match_config on public.match_config;
+create policy read_match_config on public.match_config for select to authenticated using (true);
+
+create or replace function public.is_matchmade(p_session uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select matchmade from public.sessions where id = p_session), false)
+$$;
+
+-- A phone that has not checked in for this long has left the lobby.
+create or replace function numxventure_private.start_if_due(p_session uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions; c public.match_config; n int; gap int;
+begin
+  select * into s from public.sessions where id = p_session for update;
+  if s is null or not s.matchmade or s.state <> 'lobby' then return; end if;
+  select * into c from public.match_config where id = 1;
+  delete from public.members
+   where session_id = p_session and updated_at < now() - interval '15 seconds';
+  select coalesce(sum(k), 0), coalesce(max(k) - min(k), 0) into n, gap
+    from (select count(m.profile_id) as k from public.teams t
+            left join public.members m on m.team_id = t.id
+           where t.session_id = p_session group by t.id) per_team;
+  if n < 2 then
+    -- Back to one: the countdown starts again with the next arrival.
+    update public.sessions set starts_at = null where id = p_session and starts_at is not null;
+    return;
+  end if;
+  if s.starts_at is null then
+    update public.sessions set starts_at = now() + make_interval(secs => c.lobby_s)
+     where id = p_session returning * into s;
+  end if;
+  if gap = 0 and (n >= 2 * c.team_size or s.starts_at <= now()) then
+    update public.sessions
+       set state = 'running', ends_at = now() + make_interval(secs => s.duration_s)
+     where id = p_session;
+  end if;
+end $$;
+
+create or replace function public.find_match() returns public.sessions
+language plpgsql security definer set search_path = '' as $$
+declare c public.match_config; s public.sessions; t uuid;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select * into c from public.match_config where id = 1;
+  if c.house is null then raise exception 'matchmaking is not set up yet'; end if;
+  -- ponytail: one matchmaker at a time across the project, so two phones never
+  -- open two half-empty lobbies. Per-lobby locks if a crowd ever queues at once.
+  perform pg_advisory_xact_lock(hashtext('numxventure.find_match'));
+  -- Already in a match still going (the app reopened, a second tap): that one.
+  select s2.* into s from public.sessions s2
+    join public.members m on m.session_id = s2.id and m.profile_id = auth.uid()
+   where s2.matchmade and not m.finished and not m.eliminated
+     and s2.created_at > now() - interval '3 hours'
+     and (s2.state = 'lobby' or (s2.state = 'running' and s2.ends_at > now()))
+   order by s2.created_at desc limit 1;
+  if s.id is not null then return s; end if;
+
+  select s2.* into s from public.sessions s2
+   where s2.matchmade and s2.state = 'lobby' and s2.created_at > now() - interval '30 minutes'
+     and (select count(*) from public.members m where m.session_id = s2.id) < 2 * c.team_size
+   order by s2.created_at limit 1
+   for update;
+  if s.id is null then
+    insert into public.sessions (admin_id, matchmade, duration_s)
+    values (c.house, true, c.duration_s) returning * into s;
+    insert into public.teams (session_id, name) values (s.id, 'Blue'), (s.id, 'Red');
+  end if;
+  select t2.id into t from public.teams t2
+    left join public.members m on m.team_id = t2.id
+   where t2.session_id = s.id
+   group by t2.id order by count(m.profile_id), random() limit 1;
+  insert into public.members (session_id, team_id, profile_id) values (s.id, t, auth.uid());
+  perform numxventure_private.start_if_due(s.id);
+  select * into s from public.sessions where id = s.id;
+  return s;
+end $$;
+
+-- A lobby phone's check-in, every few seconds: keeps its place (a write at
+-- most every 5s, so a lobby is not a stream of row changes), and starts the
+-- match if it is due. Session lock first, as every scoring call takes it.
+create or replace function public.poll_match(p_session uuid) returns public.sessions
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  perform 1 from public.sessions where id = p_session for update;
+  update public.members set updated_at = now()
+   where session_id = p_session and profile_id = auth.uid()
+     and updated_at < now() - interval '5 seconds';
+  perform numxventure_private.start_if_due(p_session);
+  select * into s from public.sessions where id = p_session;
+  return s;
+end $$;
+
+-- Out of the queue before the match starts. After Start the row stays: the
+-- result counts, as a teacher's class does.
+create or replace function public.leave_match(p_session uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  perform 1 from public.sessions where id = p_session for update;
+  delete from public.members m using public.sessions s
+   where m.session_id = p_session and m.profile_id = auth.uid()
+     and s.id = p_session and s.matchmade and s.state = 'lobby';
+  perform numxventure_private.start_if_due(p_session);
+end $$;
+
+revoke all on function public.find_match() from public, anon;
+revoke all on function public.poll_match(uuid) from public, anon;
+revoke all on function public.leave_match(uuid) from public, anon;
+grant execute on function public.find_match() to authenticated;
+grant execute on function public.poll_match(uuid) to authenticated;
+grant execute on function public.leave_match(uuid) to authenticated;
+
 -- 5. Leaderboard ------------------------------------------------------------
 -- The team's total is its members' gems less the two team penalties (SPECS
 -- §4), which live here rather than in anybody's gems: -50 for each member who
@@ -672,7 +825,9 @@ create or replace view public.team_scores with (security_invoker = on) as
                       or (s.state = 'running' and s.ends_at <= now())
                  then 25 * count(*) filter (where m.items_done < 14)
                  else 0 end)::int      as gems,
-         count(m.profile_id)::int      as members
+         count(m.profile_id)::int      as members,
+         -- The tiebreak: equal gems, the team whose first player finished sooner.
+         min(m.finish_s)::int          as first_finish
   from public.teams t
   join public.sessions s on s.id = t.session_id
   left join public.members m on m.team_id = t.id
@@ -767,15 +922,17 @@ create policy admin_questions on public.questions for all to authenticated
   using (public.is_admin() and owner = auth.uid())
   with check (public.is_admin() and owner = auth.uid());
 
--- Joining a team is the player's own act.
+-- Joining a team is the player's own act -- except in a match, where
+-- `find_match` deals the teams and a direct insert or switch would unbalance them.
 create policy join_team on public.members for insert to authenticated
-  with check (profile_id = auth.uid());
+  with check (profile_id = auth.uid() and not public.is_matchmade(session_id));
 
 -- A player owns their own row, but NOT its score: RLS cannot restrict columns,
 -- so the column privileges do it. Everything to do with gems is writable only
 -- by the `security definer` functions above, which run as the owner.
 create policy own_member on public.members for update to authenticated
-  using (profile_id = auth.uid()) with check (profile_id = auth.uid());
+  using (profile_id = auth.uid())
+  with check (profile_id = auth.uid() and not public.is_matchmade(session_id));
 
 -- The teacher's Move: another player's team, and nothing else of their row.
 create policy admin_members on public.members for update to authenticated
@@ -993,7 +1150,9 @@ begin
   teacher := public.owns_session(sid);
   member := exists (select 1 from public.members where session_id = sid and profile_id = auth.uid());
   if parts[2] = 'snap' then
-    return teacher or (not p_send and member);
+    -- A match has no teacher to gather positions: each member publishes its
+    -- own on the snapshot channel instead (AdventureScreen, the direct path).
+    return teacher or (member and (not p_send or public.is_matchmade(sid)));
   end if;
   return (not p_send and teacher) or (member and parts[4] = auth.uid()::text);
 end $$;
