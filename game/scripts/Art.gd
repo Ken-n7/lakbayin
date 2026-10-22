@@ -23,6 +23,10 @@ const MIN_FONT := 14
 const TEXT_FONT := "res://assets/fonts/PatrickHand-Regular.ttf"
 const TITLE_FONT := "res://assets/fonts/MedievalSharp.ttf"
 const SYMBOL_FONT := "res://assets/fonts/DejaVuSans.ttf"
+## Baybayin (the Unicode Tagalog block): the keypad, the answers, the glyphs
+## round the monks and over the menus -- set on those only (`baybayin()`). As a
+## fallback of the text face it made every line in the game 1px taller.
+const BAYBAYIN_FONT := "res://assets/fonts/NotoSansTagalog-Regular.ttf"
 
 static var _tex_cache: Dictionary = {}
 static var _frames_cache: Dictionary = {}
@@ -49,6 +53,17 @@ static func apply_font_fallback() -> void:
 			f.fallbacks = [sym]
 		if f != null and not _faces.has(f):
 			_faces.append(f)
+
+
+## The Baybayin face, falling back to the text face for anything Latin in the
+## same string.
+static func baybayin() -> Font:
+	var f := load(BAYBAYIN_FONT) as FontFile
+	if f.fallbacks.is_empty():
+		f.fallbacks = [load(TEXT_FONT)]
+	if not _faces.has(f):
+		_faces.append(f)
+	return f
 
 
 ## Sets `c` in the display face: titles, banners and logos, never a question,

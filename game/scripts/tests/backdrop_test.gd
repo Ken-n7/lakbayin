@@ -18,7 +18,7 @@ func _ready() -> void:
 	main.open("login")
 	await frames(10)
 	var motes := main.backdrop.find_child("MathMotes", true, false) as MathMotes
-	check("the menus' scene has math drifting over it", motes != null)
+	check("the menus' scene has Baybayin drifting over it", motes != null)
 	if motes == null:
 		completed = true
 		finish("BACKDROP")
@@ -96,12 +96,11 @@ func _ready() -> void:
 	var tower := home.find_child("Tower", true, false) as Sprite2D
 	check("Home has a tower", tower != null and tower.texture.resource_path.ends_with("Black_Tower.png"))
 	var signs := home.find_children("*", "TowerSymbols", true, false)
-	# Each station's own signs in the mix: an operation, a bracket, a power.
+	# Baybayin since Lakbayin: every sign starts with a glyph of the script.
 	var mix: Array = (signs[0] as TowerSymbols).signs if signs.size() == 1 else []
-	var every := range(TowerSymbols.SIGNS.size()).all(func(st: int) -> bool:
-		return mix.any(func(m: String) -> bool:
-			return (TowerSymbols.SIGNS[st] as Array).any(func(x: String) -> bool: return m.contains(x))))
-	check("with maths circling it, a little of every station", signs.size() == 1 and every, str(mix))
+	var every := not mix.is_empty() and mix.all(func(m: String) -> bool:
+		return m.unicode_at(0) >= 0x1700 and m.unicode_at(0) <= 0x171F)
+	check("with Baybayin circling it", signs.size() == 1 and every, str(mix))
 	var home_rocks := ["blue_b", "yellow_a", "red_c"].filter(func(n: String) -> bool:
 		var r := home.find_child(n, true, false) as Sprite2D
 		return r != null and r.texture.resource_path == MapCfg.plain_rock(n))

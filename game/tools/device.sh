@@ -17,8 +17,8 @@ set -u
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")/.." || exit 1          # the `game` directory
 ADB="${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb"
-APK="../build/NumXventure.apk"
-PKG="com.numxventure.game"
+APK="../build/Lakbayin.apk"
+PKG="com.lakbayin.game"
 SHOTS="../build/shots"
 
 need_device() {
@@ -43,7 +43,7 @@ release)
 	GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$KS" \
 	GODOT_ANDROID_KEYSTORE_RELEASE_USER="$(grep ^alias= "$PASSFILE" | cut -d= -f2)" \
 	GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$(grep ^password= "$PASSFILE" | cut -d= -f2)" \
-	godot --headless --path . --export-release "Android" "../build/NumXventure-release.apk" | tail -1
+	godot --headless --path . --export-release "Android" "../build/Lakbayin-release.apk" | tail -1
 	;;
 install)
 	"$SELF" build && need_device && "$ADB" install -r "$APK" | tail -1

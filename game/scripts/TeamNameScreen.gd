@@ -46,6 +46,9 @@ var _find_btn: Button
 var _poll_clock := 0.0
 var _polling := false
 var _poll_count := 0
+## The last check-in's queue status (Teams.poll_match), and when it came.
+var _queue := {}
+var _queue_at := 0.0
 var _entering := false
 
 
@@ -243,6 +246,7 @@ func _rejoin_match() -> void:
 
 func _open_lobby(session: Dictionary, quiet: bool, version: int) -> void:
 	_session = session
+	_queue = {}
 	_lobby = Lobby.new()
 	_lobby.session = _session.duplicate()
 	var lobby := _lobby
@@ -608,7 +612,7 @@ func _kicked() -> void:
 	_mine = ""
 	_build_code()
 	# A match drops a phone that stopped checking in (poll_match).
-	_say("You lost your place in the match — tap Find Match again." if was_match
+	_say("No match found — tap Find Match to search again." if was_match
 			else "You were removed from that session.", Pal.WRONG)
 
 
@@ -631,19 +635,17 @@ func _matchmade() -> bool:
 	return bool(_session.get("matchmade", false))
 
 
-## What the lobby is waiting for, from the session row and the teams.
+## What the lobby is waiting for: players still needed, and how long this
+## player has left before the search gives up -- both from the last check-in.
 func _match_status() -> String:
-	var counts: Array = _lobby.teams.map(func(t: Dictionary) -> int: return _lobby.members_of(t.id).size())
-	var n: int = counts.reduce(func(a: int, b: int) -> int: return a + b, 0)
 	if str(_session.get("state", "")) != "lobby":
 		return "The match has started — go!"
-	if n < 2:
-		return "Waiting for another player to join..."
-	if counts.max() != counts.min():
-		return "Waiting for one more player to even the teams..."
-	var starts := Time.get_unix_time_from_datetime_string(str(_session.get("starts_at", "")))
-	var left := ceili(float(starts) - Game.now())
-	return "Match starts in %d s" % left if left > 0 else "Starting..."
+	if _queue.is_empty():
+		return "Searching for players..."
+	var since := Time.get_ticks_msec() / 1000.0 - _queue_at
+	var left := maxi(0, int(_queue.get("search_s", 0)) - int(_queue.get("waited_s", 0)) - int(since))
+	return "Searching for players — %d of %d · %d:%02d left" % [int(_queue.get("players", 0)),
+		int(_queue.get("needed", 0)), left / 60, left % 60]
 
 
 ## Once a second the countdown is redrawn; every other second this phone
@@ -662,11 +664,18 @@ func _process(delta: float) -> void:
 		return
 	_polling = true
 	var lobby := _lobby
-	var row: Dictionary = await Teams.poll_match(str(_session.get("id", "")))
+	var got: Dictionary = await Teams.poll_match(str(_session.get("id", "")))
 	_polling = false
-	if is_instance_valid(self) and lobby == _lobby and not row.is_empty():
-		_lobby.session.merge(row, true)
-		_draw_lobby()
+	if not is_instance_valid(self) or lobby != _lobby or got.is_empty():
+		return
+	if not bool(got.get("queued", true)):
+		_kicked()
+		return
+	_queue = got
+	_queue_at = Time.get_ticks_msec() / 1000.0
+	if got.get("session") is Dictionary:
+		_lobby.session.merge(got.session, true)
+	_draw_lobby()
 
 
 # --- Shared -----------------------------------------------------------------

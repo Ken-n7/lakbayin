@@ -407,10 +407,10 @@ static func auth_layout(parent: Node, title: String, form_w := 330.0) -> VBoxCon
 	brand.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# 34, not the splash's 44: beside a 330px form on a 640 canvas the column
 	# is ~250 wide, and the full-size name ran past it.
-	var logo := Art.title(Art.label("NumXventure", 34, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
+	var logo := Art.title(Art.label("Lakbayin", 34, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
 	brand.add_child(logo)
-	var tag := Art.title(Art.label("Explore.  Solve.  Conquer.", Pal.H2, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+	var tag := Art.title(Art.label("Hanapin.  Isulat.  Ipanalo.", Pal.H2, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(tag)
 	brand.add_child(tag)
 	split.add_child(brand)

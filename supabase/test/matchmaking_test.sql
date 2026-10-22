@@ -29,27 +29,35 @@ insert into public.questions(owner,station,prompt,answer)
 select pg_temp.uid(1), case when n<=8 then 1 when n<=11 then 2 else 3 end, 'House '||n, '2'
   from generate_series(1,14) n;
 
+create function pg_temp.poll_as(who uuid, sid uuid) returns jsonb language plpgsql as $$
+declare v jsonb;
+begin
+  perform set_config('request.jwt.claim.sub', who::text, true);
+  perform set_config('role', 'authenticated', true);
+  v := public.poll_match(sid);
+  perform set_config('role', 'postgres', true);
+  return v;
+end $$;
+
 do $$
-declare err text; s uuid; s2 uuid; t1 uuid; t2 uuid; row public.sessions;
+declare err text; s uuid; s2 uuid; t1 uuid; t2 uuid; row public.sessions; v jsonb;
 begin
   err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');
   perform pg_temp.check(err like '%not set up%', 'no house account: matchmaking refuses', err);
-  update public.match_config set house = pg_temp.uid(1), team_size = 2, lobby_s = 30, duration_s = 300;
+  update public.match_config set house = pg_temp.uid(1), team_size = 2, search_s = 90, duration_s = 300;
 
   err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');
   s := pg_temp.match_of(2);
   select * into row from public.sessions where id = s;
   perform pg_temp.check(err = '' and row.matchmade and row.state = 'lobby' and row.admin_id = pg_temp.uid(1)
-    and (select count(*) from public.teams where session_id = s) = 2 and row.starts_at is null,
-    'the first player opens a lobby with two teams and no countdown', err);
+    and (select count(*) from public.teams where session_id = s) = 2,
+    'the first player opens a lobby with two teams', err);
 
   err := pg_temp.as_player(pg_temp.uid(3), 'select public.find_match()');
   select team_id into t1 from public.members where session_id = s and profile_id = pg_temp.uid(2);
   select team_id into t2 from public.members where session_id = s and profile_id = pg_temp.uid(3);
   perform pg_temp.check(err = '' and pg_temp.match_of(3) = s and t1 <> t2,
     'the second player joins the same lobby, on the other team', err);
-  perform pg_temp.check((select starts_at > now() from public.sessions where id = s),
-    'a second player starts the countdown');
 
   err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');
   perform pg_temp.check(err = '' and (select count(*) from public.members where profile_id = pg_temp.uid(2)) = 1,
@@ -64,72 +72,78 @@ begin
   perform pg_temp.check(err <> '' and pg_temp.match_of(4) is null,
     'nobody joins a match by inserting themselves', err);
 
-  err := pg_temp.as_player(pg_temp.uid(2), format('select public.poll_match(%L)', s));
-  perform pg_temp.check(err = '' and (select state = 'lobby' from public.sessions where id = s),
-    'a check-in before the countdown ends leaves the lobby waiting', err);
+  v := pg_temp.poll_as(pg_temp.uid(2), s);
+  perform pg_temp.check((v->>'queued')::boolean and (v->>'players')::int = 2 and (v->>'needed')::int = 4
+    and (v->>'search_s')::int = 90 and v->'session'->>'state' = 'lobby',
+    'a check-in reports the queue: 2 of 4, still waiting', v::text);
 
-  -- 2v1: uneven teams wait even after the countdown.
   err := pg_temp.as_player(pg_temp.uid(4), 'select public.find_match()');
-  update public.sessions set starts_at = now() - interval '1 second' where id = s;
-  err := err || pg_temp.as_player(pg_temp.uid(3), format('select public.poll_match(%L)', s));
   perform pg_temp.check(err = '' and pg_temp.match_of(4) = s and (select state = 'lobby' from public.sessions where id = s),
-    'the countdown over but the teams 2 v 1: still waiting', err);
+    'three of four: a match never starts short-handed', err);
 
-  -- A quiet phone is dropped; then 1 v 1 and due: it starts.
+  -- A quiet phone is dropped.
   update public.members set updated_at = now() - interval '1 minute' where session_id = s and profile_id = pg_temp.uid(4);
-  err := pg_temp.as_player(pg_temp.uid(2), format('select public.poll_match(%L)', s));
+  v := pg_temp.poll_as(pg_temp.uid(2), s);
+  perform pg_temp.check(pg_temp.match_of(4) is null and (v->>'players')::int = 2,
+    'a phone that stopped checking in leaves the lobby', v::text);
+
+  -- Waiting too long: out of the queue, told so, not an error.
+  update public.members set queued_at = now() - interval '91 seconds' where session_id = s and profile_id = pg_temp.uid(3);
+  v := pg_temp.poll_as(pg_temp.uid(3), s);
+  perform pg_temp.check(not (v->>'queued')::boolean and pg_temp.match_of(3) is null,
+    'after search_s a player drops out with "no match found"', v::text);
+
+  -- Full: 2 v 2 starts at once.
+  err := pg_temp.as_player(pg_temp.uid(5), 'select public.find_match()')
+      || pg_temp.as_player(pg_temp.uid(6), 'select public.find_match()');
+  perform pg_temp.check(err = '' and (select state = 'lobby' from public.sessions where id = s),
+    'three of four again: waiting', err);
+  err := pg_temp.as_player(pg_temp.uid(7), 'select public.find_match()');
   select * into row from public.sessions where id = s;
-  perform pg_temp.check(err = '' and pg_temp.match_of(4) is null,
-    'a phone that stopped checking in leaves the lobby', err);
-  perform pg_temp.check(row.state = 'running' and row.ends_at between now() + interval '299 seconds' and now() + interval '301 seconds',
-    'even teams and the countdown over: the match starts with no teacher, on the configured clock');
+  perform pg_temp.check(err = '' and row.state = 'running'
+    and row.ends_at between now() + interval '299 seconds' and now() + interval '301 seconds',
+    'the fourth player fills the lobby: it starts at once, on the configured clock', err);
+  perform pg_temp.check((select bool_and(k = 2) from (select count(*) k from public.members
+      where session_id = s group by team_id) x), 'a full match is dealt 2 v 2');
   perform pg_temp.check(jsonb_array_length(row.question_bank) = 14,
     'the match plays the house account''s question bank');
 
   err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');
   perform pg_temp.check(err = '' and pg_temp.match_of(2) = s,
     'a player in a running match is sent back to it', err);
-  err := pg_temp.as_player(pg_temp.uid(5), 'select public.find_match()');
-  perform pg_temp.check(err = '' and pg_temp.match_of(5) <> s,
+  err := pg_temp.as_player(pg_temp.uid(8), 'select public.find_match()');
+  s2 := pg_temp.match_of(8);
+  perform pg_temp.check(err = '' and s2 <> s,
     'a running match takes nobody new: the next player gets a new lobby', err);
 
-  -- Full: 2 v 2 starts at once, no countdown needed.
-  s2 := pg_temp.match_of(5);
-  err := pg_temp.as_player(pg_temp.uid(6), 'select public.find_match()')
-      || pg_temp.as_player(pg_temp.uid(7), 'select public.find_match()');
-  perform pg_temp.check(err = '' and (select state = 'lobby' from public.sessions where id = s2),
-    'three of four: waiting', err);
-  err := pg_temp.as_player(pg_temp.uid(8), 'select public.find_match()');
-  perform pg_temp.check(err = '' and (select state = 'running' from public.sessions where id = s2),
-    'the fourth player fills the lobby and the match starts at once', err);
-  perform pg_temp.check((select bool_and(k = 2) from (select count(*) k from public.members
-      where session_id = s2 group by team_id) x), 'a full match is dealt 2 v 2');
+  -- Raising the team size is one setting.
+  update public.match_config set team_size = 3;
+  v := pg_temp.poll_as(pg_temp.uid(8), s2);
+  perform pg_temp.check((v->>'needed')::int = 6, 'team_size 3: a lobby needs six', v::text);
+  update public.match_config set team_size = 2;
 
   -- Leaving the queue.
   err := pg_temp.as_player(pg_temp.uid(9), 'select public.find_match()')
-      || pg_temp.as_player(pg_temp.uid(10), 'select public.find_match()');
-  s := pg_temp.match_of(9);
-  err := err || pg_temp.as_player(pg_temp.uid(10), format('select public.leave_match(%L)', s));
-  perform pg_temp.check(err = '' and pg_temp.match_of(10) is null
-    and (select starts_at is null from public.sessions where id = s),
-    'leaving takes the player out and a lone player''s countdown stops', err);
-  err := pg_temp.as_player(pg_temp.uid(5), format('select public.leave_match(%L)', s2));
-  perform pg_temp.check(pg_temp.match_of(5) = s2,
+      || pg_temp.as_player(pg_temp.uid(9), format('select public.leave_match(%L)', s2));
+  perform pg_temp.check(err = '' and pg_temp.match_of(9) is null and pg_temp.match_of(8) = s2,
+    'leaving takes only that player out of the queue', err);
+  err := pg_temp.as_player(pg_temp.uid(5), format('select public.leave_match(%L)', s));
+  perform pg_temp.check(pg_temp.match_of(5) = s,
     'after Start, leaving does not erase a result', err);
 
   -- Movement: no teacher, so members publish their own snapshots.
   perform set_config('request.jwt.claim.sub', pg_temp.uid(6)::text, true);
-  perform pg_temp.check(public.can_use_movement('numxventure:snap:' || s2, true),
+  perform pg_temp.check(public.can_use_movement('numxventure:snap:' || s, true),
     'a match member may publish on the snapshot channel');
   perform set_config('request.jwt.claim.sub', pg_temp.uid(11)::text, true);
-  perform pg_temp.check(not public.can_use_movement('numxventure:snap:' || s2, true)
-    and not public.can_use_movement('numxventure:snap:' || s2, false),
+  perform pg_temp.check(not public.can_use_movement('numxventure:snap:' || s, true)
+    and not public.can_use_movement('numxventure:snap:' || s, false),
     'a non-member can neither publish nor read a match''s movement');
 
   -- Done with a match: the next Find Match is a new one.
-  update public.members set finished = true where session_id = s2 and profile_id = pg_temp.uid(6);
+  update public.members set finished = true where session_id = s and profile_id = pg_temp.uid(6);
   err := pg_temp.as_player(pg_temp.uid(6), 'select public.find_match()');
-  perform pg_temp.check(err = '' and pg_temp.match_of(6) <> s2,
+  perform pg_temp.check(err = '' and pg_temp.match_of(6) <> s,
     'a finished player is queued for a new match', err);
 end $$;
 

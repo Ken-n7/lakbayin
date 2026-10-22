@@ -10,6 +10,9 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1          # the `game` directory
 LIMIT=${TEST_TIMEOUT:-240}
+# The suites are offline by design but expect a backend to be configured (the
+# sign-in screens, the admin's bank line): a dead address, never a real project.
+export SUPABASE_URL=https://offline.invalid SUPABASE_ANON_KEY=test-anon-key
 fail=0
 
 run() {                                     # run <name> <godot args...>
@@ -58,6 +61,7 @@ else
 fi
 run "keyboard    " res://scripts/tests/keyboard_test.tscn
 run "backdrop    " res://scripts/tests/backdrop_test.tscn
+run "baybayin    " res://scripts/tests/baybayin_test.tscn
 run "tower       " res://scripts/tests/tower_test.tscn
 run "netretry    " res://scripts/tests/net_retry_test.tscn
 run "multiplayer " res://scripts/tests/multiplayer_test.tscn

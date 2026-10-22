@@ -210,8 +210,10 @@ static func find_match() -> Dictionary:
 	return {"error": "", "session": got.data if got.data is Dictionary else {}}
 
 
-## A lobby phone's check-in: keeps its place and starts the match when it is
-## due. The session as it now stands, `{}` on a failure (the next one retries).
+## A lobby phone's check-in: keeps its place and starts the match once it is
+## full. {session, queued, waited_s, search_s, players, needed} -- `queued`
+## false: this player waited too long and is out of the queue. `{}` on a
+## failure (the next check-in retries).
 static func poll_match(session_id: String) -> Dictionary:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/poll_match",
 		{"p_session": session_id})

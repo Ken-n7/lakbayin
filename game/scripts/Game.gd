@@ -1,6 +1,6 @@
 extends Node
 
-## NumXventure global run state: gems economy, adventure timer, scoring rules,
+## Lakbayin global run state: gems economy, adventure timer, scoring rules,
 ## player profile and persistence. Mirrors the rules in the game design doc.
 
 signal gems_changed(gems: int)
@@ -42,7 +42,7 @@ const HERO_COUNT := 32
 
 ## `--profile=NAME` (after `--`) gives a desktop window its own save, so three
 ## windows can be a teacher and two students instead of one login three times.
-var SAVE_PATH := "user://numxventure%s.cfg" % profile_suffix()
+var SAVE_PATH := "user://lakbayin%s.cfg" % profile_suffix()
 
 
 ##

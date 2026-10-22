@@ -673,16 +673,18 @@ grant execute on function public.shuffle_teams(uuid) to authenticated;
 -- 4d. Match finder (Level Up fork) ------------------------------------------
 -- No teacher: a player presses Find Match and the server puts them in the
 -- oldest open lobby, or opens one with two teams. Joiners are dealt onto the
--- smaller team and cannot switch. A full lobby starts at once; otherwise the
--- countdown starts when a second player arrives and the match starts when it
--- runs out and the teams are even. The clock is the session's as before, and
--- a match ends by itself: everyone done (`end_when_all_done`) or time up.
+-- smaller team and cannot switch. A match starts only when it is full
+-- (team_size a side, so the teams are always even). A player still waiting
+-- after `search_s` drops out of the queue ("no match found") and searches
+-- again by hand. The clock is the session's as before, and a match ends by
+-- itself: everyone done (`end_when_all_done`) or time up.
 --
 -- Nothing runs on the server by itself: lobby phones check in every few
--- seconds (`poll_match`), and that check-in is what starts a match that is
--- due and drops whoever stopped checking in -- a closed app, a dead phone.
+-- seconds (`poll_match`), and that check-in is what starts a full match and
+-- drops whoever stopped checking in -- a closed app, a dead phone -- or has
+-- waited too long.
 alter table public.sessions add column if not exists matchmade boolean not null default false;
-alter table public.sessions add column if not exists starts_at timestamptz;
+alter table public.members add column if not exists queued_at timestamptz not null default now();
 
 -- The knobs, one row, set in the dashboard. `house` is the admin account
 -- whose question bank every match plays (and who appears as each match's
@@ -691,10 +693,19 @@ alter table public.sessions add column if not exists starts_at timestamptz;
 create table if not exists public.match_config (
   id         int primary key default 1 check (id = 1),
   house      uuid references public.profiles on delete set null,
-  team_size  int not null default 3 check (team_size between 1 and 5),
-  lobby_s    int not null default 30 check (lobby_s between 5 and 600),
-  duration_s int not null default 600 check (duration_s between 60 and 7200)
+  -- Players a side. Raise it as the player base grows: 2 v 2 up to 5 v 5.
+  team_size  int not null default 3 check (team_size between 2 and 5),
+  -- How long one player waits for a full lobby before "no match found".
+  search_s   int not null default 90 check (search_s between 15 and 600),
+  duration_s int not null default 360 check (duration_s between 60 and 7200),
+  -- Monks (words) per match; both teams play the same ones.
+  monk_count int not null default 10 check (monk_count between 1 and 40)
 );
+-- A project made before the search limit: `create table if not exists` skipped it.
+alter table public.match_config add column if not exists
+  search_s int not null default 90 check (search_s between 15 and 600);
+alter table public.match_config add column if not exists
+  monk_count int not null default 10 check (monk_count between 1 and 40);
 insert into public.match_config (id) values (1) on conflict (id) do nothing;
 alter table public.match_config enable row level security;
 drop policy if exists read_match_config on public.match_config;
@@ -705,30 +716,20 @@ language sql stable security definer set search_path = '' as $$
   select coalesce((select matchmade from public.sessions where id = p_session), false)
 $$;
 
--- A phone that has not checked in for this long has left the lobby.
+-- Out of the queue: a phone silent for 15s (gone), or a player who has
+-- waited longer than search_s. Full: the match starts.
 create or replace function numxventure_private.start_if_due(p_session uuid) returns void
 language plpgsql security definer set search_path = '' as $$
-declare s public.sessions; c public.match_config; n int; gap int;
+declare s public.sessions; c public.match_config;
 begin
   select * into s from public.sessions where id = p_session for update;
   if s is null or not s.matchmade or s.state <> 'lobby' then return; end if;
   select * into c from public.match_config where id = 1;
   delete from public.members
-   where session_id = p_session and updated_at < now() - interval '15 seconds';
-  select coalesce(sum(k), 0), coalesce(max(k) - min(k), 0) into n, gap
-    from (select count(m.profile_id) as k from public.teams t
-            left join public.members m on m.team_id = t.id
-           where t.session_id = p_session group by t.id) per_team;
-  if n < 2 then
-    -- Back to one: the countdown starts again with the next arrival.
-    update public.sessions set starts_at = null where id = p_session and starts_at is not null;
-    return;
-  end if;
-  if s.starts_at is null then
-    update public.sessions set starts_at = now() + make_interval(secs => c.lobby_s)
-     where id = p_session returning * into s;
-  end if;
-  if gap = 0 and (n >= 2 * c.team_size or s.starts_at <= now()) then
+   where session_id = p_session
+     and (updated_at < now() - interval '15 seconds'
+          or queued_at < now() - make_interval(secs => c.search_s));
+  if (select count(*) from public.members where session_id = p_session) >= 2 * c.team_size then
     update public.sessions
        set state = 'running', ends_at = now() + make_interval(secs => s.duration_s)
      where id = p_session;
@@ -777,9 +778,13 @@ end $$;
 -- A lobby phone's check-in, every few seconds: keeps its place (a write at
 -- most every 5s, so a lobby is not a stream of row changes), and starts the
 -- match if it is due. Session lock first, as every scoring call takes it.
-create or replace function public.poll_match(p_session uuid) returns public.sessions
+-- Returns {session, queued, waited_s, search_s, players, needed}: `queued`
+-- false means this player timed out (or went silent) and is out of the queue.
+-- A status, not an error: raising would roll the removal back.
+drop function if exists public.poll_match(uuid);
+create or replace function public.poll_match(p_session uuid) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare s public.sessions;
+declare s public.sessions; c public.match_config; m public.members;
 begin
   if auth.uid() is null then raise exception 'sign in first'; end if;
   perform 1 from public.sessions where id = p_session for update;
@@ -788,7 +793,15 @@ begin
      and updated_at < now() - interval '5 seconds';
   perform numxventure_private.start_if_due(p_session);
   select * into s from public.sessions where id = p_session;
-  return s;
+  select * into c from public.match_config where id = 1;
+  select * into m from public.members where session_id = p_session and profile_id = auth.uid();
+  return jsonb_build_object(
+    'session', to_jsonb(s) - 'question_bank',
+    'queued', m.profile_id is not null,
+    'waited_s', coalesce(extract(epoch from now() - m.queued_at)::int, 0),
+    'search_s', c.search_s,
+    'players', (select count(*) from public.members where session_id = p_session),
+    'needed', 2 * c.team_size);
 end $$;
 
 -- Out of the queue before the match starts. After Start the row stays: the
@@ -810,6 +823,176 @@ revoke all on function public.leave_match(uuid) from public, anon;
 grant execute on function public.find_match() to authenticated;
 grant execute on function public.poll_match(uuid) to authenticated;
 grant execute on function public.leave_match(uuid) to authenticated;
+
+-- 4e. Monks and the Monastery (Lakbayin, DESIGN.md 3) -----------------------
+-- Every monk holds a Filipino word; a player writes it in Baybayin. A correct
+-- answer is carried, and counts only once deposited at the Monastery before
+-- the clock runs out. Each monk is answered once per team; both teams get
+-- the same words. The team that deposits every word first wins and ends the
+-- match; otherwise the clock does, and the most deposits win.
+
+-- The word list (supabase/words.sql, generated by game/tools/make_words.py).
+-- Both spellings are accepted: `modern` writes a vowelless consonant with the
+-- krus-kudlit, `traditional` leaves it out. Readable by every player: a
+-- Baybayin spelling is a rule anyone can apply, so it is not a secret --
+-- what the server guards is who answered what, and when.
+create table if not exists public.words (
+  id          serial primary key,
+  word        text unique not null,
+  meaning     text not null,
+  syllables   int  not null,
+  modern      text not null,
+  traditional text not null
+);
+alter table public.words enable row level security;
+drop policy if exists read_words on public.words;
+create policy read_words on public.words for select to authenticated using (true);
+
+-- Which word each monk holds in a match: drawn at Start, monks 0..n-1. Where
+-- the monks stand comes from the session's seed, on every phone alike.
+create table if not exists public.session_words (
+  session_id uuid not null references public.sessions on delete cascade,
+  monk       int  not null,
+  word_id    int  not null references public.words,
+  primary key (session_id, monk)
+);
+alter table public.session_words enable row level security;
+drop policy if exists read_session_words on public.session_words;
+create policy read_session_words on public.session_words for select to authenticated using (true);
+
+-- A team's answer to a monk: who wrote it, when, and when it was deposited
+-- (null while carried). One per team and monk.
+create table if not exists public.monk_answers (
+  session_id   uuid not null references public.sessions on delete cascade,
+  team_id      uuid not null references public.teams on delete cascade,
+  monk         int  not null,
+  profile_id   uuid not null references public.profiles on delete cascade,
+  answered_at  timestamptz not null default now(),
+  deposited_at timestamptz,
+  primary key (session_id, team_id, monk)
+);
+alter table public.monk_answers enable row level security;
+drop policy if exists read_monk_answers on public.monk_answers;
+create policy read_monk_answers on public.monk_answers for select to authenticated using (true);
+
+-- A wrong answer locks that player out of that monk for 10s. Server only.
+create table if not exists numxventure_private.monk_tries (
+  session_id uuid not null references public.sessions on delete cascade,
+  profile_id uuid not null references public.profiles on delete cascade,
+  monk       int  not null,
+  wrong_at   timestamptz not null,
+  primary key (session_id, profile_id, monk)
+);
+alter table numxventure_private.monk_tries enable row level security;
+
+alter table public.sessions add column if not exists winner_team uuid references public.teams on delete set null;
+
+-- Start draws the words: monk_count of them, at random, the same for both teams.
+create or replace function public.draw_words() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare n int;
+begin
+  if new.state = 'running' and old.state = 'lobby' then
+    select monk_count into n from public.match_config where id = 1;
+    insert into public.session_words (session_id, monk, word_id)
+    select new.id, (row_number() over ()) - 1, w.id
+      from (select id from public.words order by random() limit coalesce(n, 10)) w
+    on conflict do nothing;
+  end if;
+  return new;
+end $$;
+drop trigger if exists sessions_draw_words on public.sessions;
+create trigger sessions_draw_words after update on public.sessions
+  for each row execute function public.draw_words();
+
+-- What a player typed, as the server compares it: no spaces, and the newer
+-- pamudpod (U+1715) read as the krus-kudlit (U+1714) -- both cancel the vowel.
+create or replace function public.baybayin_clean(p text) returns text
+language sql immutable set search_path = '' as $$
+  select replace(regexp_replace(coalesce(p, ''), '\s', '', 'g'), U&'\1715', U&'\1714')
+$$;
+
+-- Answer a monk: 'correct' (carried now), 'wrong' (locked out 10s), 'locked'
+-- (still locked out), or 'taken' (your team already answered it). Running
+-- matches only; the session lock serializes two teammates at one monk.
+create or replace function public.answer_monk(p_session uuid, p_monk int, p_typed text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare me public.members; w public.words; typed text := public.baybayin_clean(p_typed);
+begin
+  perform numxventure_private.running_session(p_session);
+  select * into me from public.members where session_id = p_session and profile_id = auth.uid();
+  if me is null or me.team_id is null then raise exception 'you are not in this match'; end if;
+  select wd.* into w from public.session_words sw join public.words wd on wd.id = sw.word_id
+   where sw.session_id = p_session and sw.monk = p_monk;
+  if w is null then raise exception 'no such monk'; end if;
+  if exists (select 1 from public.monk_answers
+              where session_id = p_session and team_id = me.team_id and monk = p_monk) then
+    return 'taken';
+  end if;
+  if exists (select 1 from numxventure_private.monk_tries
+              where session_id = p_session and profile_id = auth.uid() and monk = p_monk
+                and wrong_at > now() - interval '10 seconds') then
+    return 'locked';
+  end if;
+  if typed in (w.modern, w.traditional) then
+    insert into public.monk_answers (session_id, team_id, monk, profile_id)
+    values (p_session, me.team_id, p_monk, auth.uid());
+    return 'correct';
+  end if;
+  insert into numxventure_private.monk_tries values (p_session, auth.uid(), p_monk, now())
+  on conflict (session_id, profile_id, monk) do update set wrong_at = excluded.wrong_at;
+  return 'wrong';
+end $$;
+
+-- Deposit everything this player carries. Returns how many went in. When the
+-- team has now deposited every monk, it has finished: it wins and the match
+-- ends for everyone. After the clock, nothing is deposited (running_session).
+create or replace function public.deposit(p_session uuid)
+returns int language plpgsql security definer set search_path = '' as $$
+declare me public.members; n int; total int; done int;
+begin
+  perform numxventure_private.running_session(p_session);
+  select * into me from public.members where session_id = p_session and profile_id = auth.uid();
+  if me is null or me.team_id is null then raise exception 'you are not in this match'; end if;
+  update public.monk_answers set deposited_at = now()
+   where session_id = p_session and profile_id = auth.uid() and deposited_at is null;
+  get diagnostics n = row_count;
+  select count(*) into total from public.session_words where session_id = p_session;
+  select count(*) into done from public.monk_answers
+   where session_id = p_session and team_id = me.team_id and deposited_at is not null;
+  if total > 0 and done >= total then
+    update public.sessions set state = 'ended', winner_team = me.team_id
+     where id = p_session and state = 'running';
+  end if;
+  return n;
+end $$;
+
+revoke all on function public.answer_monk(uuid, int, text) from public, anon;
+revoke all on function public.deposit(uuid) from public, anon;
+grant execute on function public.answer_monk(uuid, int, text) to authenticated;
+grant execute on function public.deposit(uuid) to authenticated;
+
+-- Standings (DESIGN.md 3.5): deposits first, then who reached that total
+-- sooner -- the time of their last deposit. A finished team outranks all.
+create or replace view public.team_standings with (security_invoker = on) as
+  select t.session_id, t.id as team_id, t.name,
+         count(a.deposited_at)::int as deposited,
+         max(a.deposited_at)        as reached_at,
+         (s.winner_team = t.id)     as finished
+    from public.teams t
+    join public.sessions s on s.id = t.session_id
+    left join public.monk_answers a on a.team_id = t.id
+   group by t.session_id, t.id, t.name, s.winner_team;
+
+create or replace view public.player_standings with (security_invoker = on) as
+  select m.session_id, m.profile_id, m.team_id,
+         count(a.deposited_at)::int as deposited,
+         max(a.deposited_at)        as reached_at
+    from public.members m
+    left join public.monk_answers a
+      on a.session_id = m.session_id and a.profile_id = m.profile_id
+   group by m.session_id, m.profile_id, m.team_id;
+grant select on public.team_standings, public.player_standings to authenticated;
 
 -- 5. Leaderboard ------------------------------------------------------------
 -- The team's total is its members' gems less the two team penalties (SPECS

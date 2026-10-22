@@ -50,7 +50,9 @@ static func top_of(height: float) -> Vector2:
 
 
 func _ready() -> void:
-	_font = load(Art.TITLE_FONT)
+	# Baybayin round a monk or on Home, the display face for maths.
+	var script_signs := signs.any(func(s: String) -> bool: return s.unicode_at(0) >= 0x1700 and s.unicode_at(0) <= 0x171F)
+	_font = Art.baybayin() if script_signs else load(Art.TITLE_FONT)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = get_instance_id()       # towers along the way do not move alike
 	_angle = rng.randf() * TAU

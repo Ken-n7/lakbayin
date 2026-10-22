@@ -14,8 +14,10 @@ extends Node2D
 ## A fixed composition (a seeded generator, so every launch is the same), like
 ## the rest of the backdrop. Drawn in one `_draw`: a handful of strings a frame.
 
-const GLYPHS := ["+", "−", "×", "÷", "=", "π", "√", "x²", "½", "∞", "%", "≠",
-		"3", "7", "2³", "(−2)", "9", "4²", "a+b", "0"]
+## Baybayin since Lakbayin: the script's vowels and consonants, and a few
+## words -- the game's own name among them (ᜎᜃ᜔ᜊᜌᜒᜈ᜔, lakbayin).
+const GLYPHS := ["ᜀ", "ᜊ", "ᜃ", "ᜇ", "ᜄ", "ᜑ", "ᜎ", "ᜋ", "ᜈ", "ᜅ", "ᜉ", "ᜐ",
+		"ᜆ", "ᜏ", "ᜌ", "ᜎᜃ᜔ᜊᜌᜒᜈ᜔", "ᜊᜑᜌ᜔", "ᜁᜊᜓᜈ᜔", "ᜊᜓᜈ᜔ᜇᜓᜃ᜔", "ᜀᜐᜓ"]
 const COUNT := 16
 const SPEED := [7.0, 13.0]         # world px per second
 const TRAVEL := [120.0, 220.0]     # how far one drifts before it fades, px
@@ -36,7 +38,7 @@ func _init(world_size: Vector2) -> void:
 
 
 func _ready() -> void:
-	_font = load(Art.TITLE_FONT)
+	_font = Art.baybayin()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SEED
 	for i in COUNT:

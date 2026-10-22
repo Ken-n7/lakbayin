@@ -182,7 +182,7 @@ func _run() -> void:
 
 	print("== 1. splash -> sign in -> home ==")
 	check("booted to splash", _script_of(_screen(), "res://scripts/SplashScreen.gd"))
-	check("splash shows the tagline", _find_label(_screen(), "Explore.") != null)
+	check("splash shows the tagline", _find_label(_screen(), "Hanapin.") != null)
 	_screen().call("skip")
 	await _wait(3)
 	# With keys in project.godot the backend is always configured, so a launch
@@ -346,17 +346,17 @@ func _run() -> void:
 	check("Change Character left the menu", _find_button(_screen(), "Change Character") == null)
 	_click(_screen(), "Quit")
 	await _wait(2)
-	check("Quit asks first", _find_label(_screen(), "Quit NumXventure?") != null)
+	check("Quit asks first", _find_label(_screen(), "Quit Lakbayin?") != null)
 	_click(_screen(), "Stay")
 	await _wait(2)
-	check("Stay keeps you here", _find_label(_screen(), "Quit NumXventure?") == null
+	check("Stay keeps you here", _find_label(_screen(), "Quit Lakbayin?") == null
 		and _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	_screen().call("go_back")
 	await _wait(2)
-	check("back asks as well", _find_label(_screen(), "Quit NumXventure?") != null)
+	check("back asks as well", _find_label(_screen(), "Quit Lakbayin?") != null)
 	_screen().call("go_back")
 	await _wait(2)
-	check("back again closes the question", _find_label(_screen(), "Quit NumXventure?") == null)
+	check("back again closes the question", _find_label(_screen(), "Quit Lakbayin?") == null)
 	_click(_screen(), "Settings")
 	await _wait(2)
 	check("Settings offers Change Character", _find_button(_screen(), "Change Character") != null)

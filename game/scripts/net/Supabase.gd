@@ -40,8 +40,8 @@ var _relay: RelayLink
 
 
 func _init() -> void:
-	url = _conf("SUPABASE_URL", "numxventure/supabase/url").rstrip("/")
-	anon_key = _conf("SUPABASE_ANON_KEY", "numxventure/supabase/anon_key")
+	url = _conf("SUPABASE_URL", "lakbayin/supabase/url").rstrip("/")
+	anon_key = _conf("SUPABASE_ANON_KEY", "lakbayin/supabase/anon_key")
 
 
 func _ready() -> void:
@@ -345,7 +345,7 @@ func _load_profile() -> String:
 		# Desktop windows run side by side under `--profile`; the title says
 		# which account each one is, since the screens all look alike.
 		if Game.profile_suffix() != "":
-			get_window().title = "NumXventure — %s (%s)" % [username, role]
+			get_window().title = "Lakbayin — %s (%s)" % [username, role]
 	return ""
 
 

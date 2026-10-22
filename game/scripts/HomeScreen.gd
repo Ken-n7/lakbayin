@@ -54,13 +54,13 @@ func _hail() -> String:
 
 
 func _sub() -> String:
-	return "Every problem is a new adventure waiting to be solved."
+	return "Find the monks. Write their words in Baybayin."
 
 
 ## The player's strapline. The admin column has no room for it once the
 ## mockup's longer heading has wrapped.
 func _tagline() -> String:
-	return "Explore.  Solve.  Conquer."
+	return "Hanapin.  Isulat.  Ipanalo."
 
 
 ## [label, route, button kind, data, icon]; an empty route means "work it
@@ -217,7 +217,7 @@ func _build_tower(at: Vector2) -> void:
 	holder.z_index = 1
 	_world.add_child(holder)
 	var signs := TowerSymbols.new()
-	signs.signs = ["+", "x²", "÷", "( )"]
+	signs.signs = ["ᜊ", "ᜎ", "ᜃ᜔", "ᜌᜒ"]
 	# The whole 256px sheet is drawn here, not the trimmed cell the board uses:
 	# the tower itself runs from art row 46 to 230, so its base is 13 px up.
 	signs.position = Vector2(0, -13) + TowerSymbols.top_of((230 - 46) * 0.5) - Vector2(0, 1)
@@ -343,7 +343,7 @@ func _build_menu() -> void:
 	col.add_theme_constant_override("separation", 4)
 	add_child(col)
 
-	var tl := Art.title(Art.label("NumXventure", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
+	var tl := Art.title(Art.label("Lakbayin", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
 	tl.custom_minimum_size = Vector2(COL_W, 0)
 	Art.shadow(tl, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(tl)
@@ -453,7 +453,8 @@ const CREDITS := [
 	["Art", "Tiny Swords by Pixel Frog\nCharacters: Super Retro World by Gif (@gif_not_jif), Noiracide (@Noiracide) and Romi (@DessRomaric)"],
 	["Music", "Original music by Marllon Silva (xDeviruchi)"],
 	["Sound effects", "Original sounds made for this game\nRetro 512 by Juhani Junkala (CC0)\nInterface Sounds by Kenney (CC0)"],
-	["Fonts", "Patrick Hand by Patrick Wagesreiter (OFL)\nMedievalSharp by wmk69 (OFL)\nDejaVu Sans by the DejaVu fonts team"],
+	["Fonts", "Patrick Hand by Patrick Wagesreiter (OFL)\nMedievalSharp by wmk69 (OFL)\nNoto Sans Tagalog by the Noto Project Authors (OFL)\nDejaVu Sans by the DejaVu fonts team"],
+	["Words", "From the Tagalog Swadesh list, Wiktionary (CC BY-SA 4.0)"],
 	["AI disclosure", "Programming assisted by Claude (Anthropic). No AI-generated art, music or voices."],
 ]
 
@@ -539,7 +540,7 @@ func _confirm_logout() -> void:
 
 func _confirm_quit() -> void:
 	_dialog = Ui.dim(self)
-	var box := Ui.screen_panel(_dialog, Vector2(300, 150 if _has_gems() else 124), "Quit NumXventure?")
+	var box := Ui.screen_panel(_dialog, Vector2(300, 150 if _has_gems() else 124), "Quit Lakbayin?")
 	box.add_theme_constant_override("separation", 10)
 	if _has_gems():                      # a player's reassurance; a teacher has no gems
 		box.add_child(Art.label("Your gems are saved.", Pal.SMALL, Pal.INK_MUTED,
