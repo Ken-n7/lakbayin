@@ -10,8 +10,8 @@ extends GridContainer
 
 signal changed(text: String)
 
-const KEY := Vector2(44, 46)
-const GLYPH_SIZE := 24
+const KEY := Vector2(44, 52)
+const GLYPH_SIZE := 22
 const MAX_LEN := 24
 
 var text := ""
@@ -35,7 +35,7 @@ func _key(glyph: String, latin: String) -> Button:
 	var col := VBoxContainer.new()
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", -4)
+	col.add_theme_constant_override("separation", 0)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# A mark is shown on a dotted circle, the way type specimens show them.
 	var face := ("◌" + glyph) if Baybayin.MARKS.has(glyph) else glyph

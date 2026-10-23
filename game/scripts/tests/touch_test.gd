@@ -49,10 +49,29 @@ func view() -> Vector2:
 	return _map._cam.get_screen_center_position()
 
 
-## The screen position of circle `n`'s tower, as the player sees it.
-func tower_on_screen(n: int) -> Vector2:
-	var c: Node2D = _map._circles[n]
-	return get_viewport().get_canvas_transform() * (c.get_meta("tower_mid", c.position) as Vector2)
+## The screen position of monk `n`, as the player sees him.
+func monk_on_screen(n: int) -> Vector2:
+	return get_viewport().get_canvas_transform() * (_map.world.monks[n].position + Vector2(0, -16))
+
+
+## Somewhere the hero can stand about `off` from monk `n`, out of his reach
+## and left of him, with room to walk left from there.
+func beside_monk(n: int, off: Vector2) -> Vector2:
+	var monk: Vector2 = _map.world.monks[n].position
+	var want := monk + off
+	var best := want
+	var best_d := INF
+	for c: Vector2i in MapGrid.rings(MapGrid.cell_at(want), 6):
+		var at := MapGrid.cell_mid(c)
+		if at.x > monk.x - 90.0 or at.distance_to(monk) < MapCfg.INTERACT_RADIUS + 40.0:
+			continue
+		var room := true
+		for dx in [0.0, -16.0, -32.0]:
+			room = room and _map.grid.box_walkable(at + Vector2(dx, 0), _map.hero_box)
+		if room and at.distance_to(want) < best_d:
+			best_d = at.distance_to(want)
+			best = at
+	return best
 
 
 func frames(n := 4) -> void:
@@ -76,11 +95,10 @@ func _ready() -> void:
 	var main: Node = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 	await frames(2)
-	main.open("adventure")
+	main.open("adventure", {"practice": true})
 	await frames(4)
 	_map = main.current
-	# The map opens frozen on the aerial POV. The client was explicit: no joystick
-	# before the adventure starts, and only a press starts it.
+	# The match opens on the aerial view: no joystick before it starts.
 	check("pad built", _map.hud.pad != null)
 	check("pad hidden on the aerial POV", not _map.hud.pad.visible)
 	check("start hint offered", _map._start_hint != null)
@@ -98,7 +116,7 @@ func _ready() -> void:
 
 	# Re-freeze and prove the button removal didn't just move the trigger --
 	# skip_intro() is still the instant collapse the rest of the suite uses.
-	main.open("adventure")
+	main.open("adventure", {"practice": true})
 	await frames(8)
 	_map = main.current
 	check("start hint offered", _map._start_hint != null)
@@ -143,18 +161,18 @@ func _ready() -> void:
 
 	await _looking_around()
 
-	# GO on a station doorstep opens the quiz, and the pad gets out of the way.
-	_map.player.position = _map.stations.nodes[0].position
+	# GO beside a monk opens his word, and the pad gets out of the way.
+	_map.player.position = _map.world.monks[0].position + Vector2(0, 24)
 	await frames(2)
 	touch(Vector2(574, 290), true)
 	await frames(4)
 	touch(Vector2(574, 290), false)
 	await frames(4)
-	check("GO enters the station", _map._overlay != null)
-	check("pad hidden under the quiz", not _map.hud.pad.visible)
-	_map.close_overlay()
+	check("GO opens the monk's word", _map._overlay != null)
+	check("pad hidden under the keypad", not _map.hud.pad.visible)
+	_map._overlay.close()
 	await frames(2)
-	check("pad back after the quiz", _map.hud.pad.visible)
+	check("pad back after the keypad", _map.hud.pad.visible)
 
 	Game.abandon_adventure()
 	completed = true
@@ -166,34 +184,34 @@ func _ready() -> void:
 ## Every way a look can collide with the controls is tried here.
 func _looking_around() -> void:
 	var zoom: float = _map._cam.zoom.x
-	# The hero just left of circle 1's tower, so the tower sits right of the
-	# joystick's half of the screen, where the board takes touches.
-	await place_hero((_map._circles[0] as Node2D).position + Vector2(-120, 40))
-	var tower := tower_on_screen(0)
-	check("the test tower is on the board's side of the screen", tower.x > 330.0 and tower.x < 560.0,
+	# The hero left of monk 1, so the monk sits right of the joystick's half
+	# of the screen, where the board takes touches.
+	await place_hero(beside_monk(0, Vector2(-130, 30)))
+	var tower := monk_on_screen(0)
+	check("the test monk is on the board's side of the screen", tower.x > 330.0 and tower.x < 590.0,
 			str(tower))
 
-	# A tap on a tower still opens its card -- on the lift, not the press.
+	# A tap on a monk out of reach says to walk up -- on the lift, not the press.
 	touch(tower, true, 1)
 	await frames(2)
-	check("pressing a tower opens nothing yet", _map._card == null)
+	check("pressing a monk opens nothing yet", _map._overlay == null)
 	touch(tower, false, 1)
 	await frames(2)
-	check("a tap on a tower opens its card", _map._card != null)
-	_map._close_card()
+	check("a tap on a monk out of reach says to walk there", _map.hud.prompt.text.contains("Walk up"),
+			_map.hud.prompt.text)
 
-	# A drag that starts on that tower looks around instead, and opens no card.
+	# A drag that starts on that monk looks around instead, and opens nothing.
 	var before := view()
 	touch(tower, true, 1)
 	await slide(tower, tower + Vector2(-200, 0), 1)
 	check("dragging the board looks around", _map._looking)
-	check("a drag that starts on a tower opens no card", _map._card == null)
+	check("a drag that starts on a monk opens nothing", _map._overlay == null)
 	var moved := view() - before
 	check("the view follows the finger 1:1", absf(moved.x - 200.0 / zoom) < 2.0 and absf(moved.y) < 1.0,
 			str(moved))
 	touch(tower + Vector2(-200, 0), false, 1)
 	await frames(2)
-	check("lifting the finger opens no card", _map._card == null)
+	check("lifting the finger opens nothing", _map._overlay == null)
 	check("zoom unchanged by a look", is_equal_approx(_map._cam.zoom.x, zoom))
 
 	# The camera stays where it was left -- no drifting home on its own.
@@ -217,7 +235,7 @@ func _looking_around() -> void:
 	touch(ptr_at, false, 1)
 	check("tapping the arrow ends the look", not _map._looking)
 	check("the arrow hides once home", not ptr.visible)
-	check("tapping the arrow opens no card", _map._card == null)
+	check("tapping the arrow opens nothing", _map._overlay == null)
 	var home: Vector2 = _map._settled_cam(_map.player.position, zoom)
 	await wait_until(func() -> bool: return view().distance_to(home) < 4.0)
 	check("the camera glides home to the hero",
@@ -259,7 +277,7 @@ func _looking_around() -> void:
 	await frames(2)
 
 	# A look that slides across GO does not press it.
-	await place_hero((_map._circles[0] as Node2D).position + Vector2(-120, 40))
+	await place_hero(beside_monk(0, Vector2(-130, 30)))
 	var pressed_go := false
 	touch(Vector2(430, 200), true, 1)
 	for k in range(1, 13):

@@ -70,7 +70,6 @@ func _ready() -> void:
 		_cfg_backup = FileAccess.get_file_as_bytes(DevPanel.SAVE)
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(DevPanel.SAVE))
 	DevPanel.last_tabs = {}
-	DevPanel.hub_pinned = false
 	Game.touch = true
 	Game.player_name = "PanelTest"
 	_main = load("res://scenes/Main.tscn").instantiate()
@@ -81,7 +80,7 @@ func _ready() -> void:
 	if _panel == null:
 		finish("DEVPANEL")
 		return
-	_main.open("adventure")
+	_main.open("adventure", {"practice": true})
 	await frames(4)
 	_map = _main.current
 	_map.skip_intro()
@@ -93,7 +92,6 @@ func _ready() -> void:
 	check("...and opens the panel", _panel.is_open())
 	check("on the map it opens on the Map tab", _panel.get("_shown") == "Map", str(_panel.get("_shown")))
 	check("Map is offered on the map", tab("Map").visible)
-	check("Hub is not, off Game Controls", not tab("Hub").visible)
 	fits("the Map tab")
 
 	var b: Dictionary = _panel.map_buttons()
@@ -112,13 +110,6 @@ func _ready() -> void:
 	await press(b["_fast_walk"])
 	check("...and again slows him down", is_equal_approx(float(_map.get("_speed_mult")), 1.0))
 
-	var spr: AnimatedSprite2D = _map.player.get_node("Spr")
-	var size0: float = spr.scale.x
-	check("Hero + is pressed", await press(b["_hero_bigger"]))
-	check("...and the hero grows", spr.scale.x > size0, "%.2f -> %.2f" % [size0, spr.scale.x])
-	check("Hero - is pressed", await press(b["_hero_smaller"]))
-	check("...and shrinks back", is_equal_approx(spr.scale.x, size0), "%.2f" % spr.scale.x)
-
 	check("Show Walls is pressed", await press(b["_show_walls"]))
 	check("...and draws them", _panel.get("_map").get("_walls") != null)
 	await press(b["_show_walls"])
@@ -129,16 +120,15 @@ func _ready() -> void:
 	await press(b["_aerial"])
 	check("...and again brings it down", not bool(_map.get("_dev_aerial")))
 
-	check("Open Gates is pressed", await press(b["_open_gates"]))
-
 	var at: Vector2 = _map.player.position
 	check("Teleport is pressed", await press(b["_teleport"]))
 	check("...and moves the hero", _map.player.position.distance_to(at) > 1.0,
 		"%s -> %s" % [at, _map.player.position])
 
-	var done: int = Game.items_done
-	check("Skip Station is pressed", await press(b["_skip_station"]))
-	check("...and clears the station", Game.items_done > done, "%d -> %d" % [done, Game.items_done])
+	var had: int = _map.play.answers.size()
+	check("Answer Monk is pressed", await press(b["_answer_monk"]))
+	await frames(2)
+	check("...and answers one", _map.play.answers.size() == had + 1, "%d -> %d" % [had, _map.play.answers.size()])
 
 	# The Network tab: on every screen, its switches flip and say so.
 	check("the Network tab is pressed", await press(tab("Network")))
@@ -166,18 +156,16 @@ func _ready() -> void:
 	# The Screens tab, and where the screen-only tabs show.
 	check("the Screens tab is pressed", await press(tab("Screens")))
 	fits("the Screens tab")
-	_panel.on_screen("controls")
-	check("on Game Controls, Hub is offered", _panel.available("Hub") and not _panel.available("Map"))
 	_panel.on_screen("home")
-	check("on Home, neither Map nor Hub", not _panel.available("Hub") and not _panel.available("Map"))
+	check("on Home, no Map tab", not _panel.available("Map"))
 	_panel.on_screen("adventure")
 
-	# Last: End Run, which closes the map.
+	# Last: End Match, which closes the map.
 	_panel.show_tab("Map")
 	await frames(2)
-	check("End Run is pressed", await press(_panel.map_buttons()["_end_run"]))
+	check("End Match is pressed", await press(_panel.map_buttons()["_end_match"]))
 	await frames(4)
-	check("...and ends the run", not Game.adventure_active)
+	check("...and ends the match", not Game.adventure_active and _map._ending)
 	check("the panel is still there for the next screen", is_instance_valid(_panel))
 
 	_panel.close()

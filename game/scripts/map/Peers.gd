@@ -384,6 +384,16 @@ func _stop(done: int) -> Vector2:
 	return _gate if done >= _anchors.size() else _anchors[done]
 
 
+## Where `team_id`'s players stand right now, as drawn: what the minimap's
+## team vision sees with (AdventureScreen._look_for_monks).
+func positions_of(team_id: String) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for id: String in _markers:
+		if str((_roster.get(id, {}) as Dictionary).get("team_id", "")) == team_id:
+			out.append((_markers[id] as Node2D).position)
+	return out
+
+
 ## Teams take colours in `set_team_order`'s order; one missing from it takes
 ## the next free colour and keeps it for as long as the board is open. Public:
 ## the player's own hero asks it too, so their arrow matches everyone's.

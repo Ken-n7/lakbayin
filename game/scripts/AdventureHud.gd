@@ -1,17 +1,16 @@
 class_name AdventureHud
 extends RefCounted
 
-## Everything drawn over the board: the top bar (name, station, pips, gems,
-## clock, Rescue), the prompt line, the controls crib, the gem gauge and the
-## touch pad. Players have no menu (client, 2026-10-01): the only choice is to
-## play.
+## Everything drawn over the match (Lakbayin): the top bar -- who you are, the
+## score, what you carry, the clock -- the minimap, the prompt line, the
+## controls crib and the touch pad.
 ##
 ## Two CanvasLayers, because the player's Camera2D transforms every canvas item
 ## in layer 0 -- UI included -- so screen-space elements dragged around the
 ## world with the camera until they were lifted out of it.
 ##
-## Holds no game state: it reads `Game` and the screen it was handed, and is
-## told when to refresh.
+## Holds no game state: it reads the screen's `Match` and `Game`'s clock, and
+## is told when to refresh (the screen's `play`).
 
 var adv: Control
 var hud_layer: CanvasLayer   # the board furniture
@@ -19,16 +18,11 @@ var ui_layer: CanvasLayer    # overlays, over the top of it
 
 var prompt: Label
 var joystick: Node2D = null
+var minimap: Minimap = null
 
-var _gems: Label
+var _score_box: HBoxContainer
+var _carry: Label
 var _time: Label
-var _time_plate: PanelContainer
-var _rescue: Button               # team games only, beside the gems it gives away
-var _ribbon: HBoxContainer        # the station banner, re-coloured per station
-var _pips: HBoxContainer          # one dot per item in this station
-var _bar: HBoxContainer           # the three plates and the ribbon between
-var _shown_gems := -99999         # what the plate last showed, to flash the change
-var _gem_tw: Tween = null
 var _hint_bar: Label = null  # the controls crib, hidden while the board is frozen
 var _conn_label: Label = null   # "Weak connection" / "Reconnecting…", while it is
 var _crib_tw: Tween = null
@@ -42,13 +36,9 @@ var _pad_buttons: Array[TouchScreenButton] = []
 var hero_pointer: HeroPointer = null
 var _flash_active := false
 
-## The board is held -- waiting on the session, or the run over. The screen
-## reads this to stop the hero walking and to keep the board from taking taps.
-## Rescue greys out with it.
-var paused := false:
-	set(v):
-		paused = v
-		_refresh_rescue()
+## The board is held -- the intro, or the match over. The screen reads this to
+## stop the hero walking and to keep the board from taking taps.
+var paused := false
 
 
 func _init(screen: Control) -> void:
@@ -57,9 +47,6 @@ func _init(screen: Control) -> void:
 
 # --- HUD --------------------------------------------------------------------
 func build() -> void:
-	# The player's Camera2D transforms every canvas item in layer 0, UI included,
-	# so screen-space elements have to live in their own CanvasLayers or they
-	# get dragged around the world with the camera.
 	hud_layer = CanvasLayer.new()
 	hud_layer.layer = 1
 	adv.add_child(hud_layer)
@@ -70,17 +57,15 @@ func build() -> void:
 
 	# Full-width, not centre-anchored: PRESET_CENTER_BOTTOM puts the box's left
 	# edge at mid-screen, so a 640-wide label started in the middle and ran off
-	# the right edge -- centred text ended up hanging off the screen.
-	# The row is full-width; the CenterContainer keeps the label hugging its
-	# text, so the plate behind it is only as wide as what it says.
+	# the right edge. The CenterContainer keeps the label hugging its text.
 	var prompt_row := CenterContainer.new()
 	prompt_row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	prompt_row.offset_top = -104.0
 	prompt_row.offset_bottom = -74.0
 	prompt_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(prompt_row)
-	# "Tap GO — Answer Quest!" is the one line that says what to do next; bare
-	# text over grass and trees was easy to miss, so it sits on a dark plate.
+	# The one line that says what to do next, on a dark plate: bare text over
+	# grass and trees was easy to miss.
 	prompt = Art.label("", Pal.H2, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
 	var plate := StyleBoxFlat.new()
 	plate.bg_color = Color(0, 0, 0, 0.6)
@@ -94,10 +79,9 @@ func build() -> void:
 	prompt.visible = false
 	prompt_row.add_child(prompt)
 
-	var keys := ("joystick — move   ·   drag — look   ·   GO — enter" if Game.touch
-			else "WASD / arrows — move   ·   drag — look   ·   E — interact")
-	var hint_bar: Label = Art.label(keys, Pal.TINY,
-			Pal.WHITE_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	var keys := ("joystick — move   ·   drag — look   ·   GO — answer / deposit" if Game.touch
+			else "WASD / arrows — move   ·   drag — look   ·   E — answer / deposit")
+	var hint_bar: Label = Art.label(keys, Pal.TINY, Pal.WHITE_DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	if Game.touch:
 		hint_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 		hint_bar.offset_top = 52.0
@@ -109,20 +93,28 @@ func build() -> void:
 	hint_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(hint_bar)
 	_hint_bar = hint_bar
-
-	# Both float over open terrain, so they need a shadow to stay readable.
 	for l in [prompt, hint_bar]:
 		Art.shadow(l)
 
-	# The line, when it is bad -- a game's red signal bars, in words. Nothing
-	# while it is fine; under the clock, on the right.
+	# The map in the corner, under the clock (Minimap below).
+	minimap = Minimap.new()
+	minimap.name = "Minimap"
+	minimap.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	minimap.offset_left = -Minimap.SIZE.x - 8.0
+	minimap.offset_right = -8.0
+	minimap.offset_top = 48.0
+	minimap.offset_bottom = 48.0 + Minimap.SIZE.y
+	hud_layer.add_child(minimap)
+
+	# The line, when it is bad -- a game's red signal bars, in words. Under the
+	# minimap, on the right.
 	_conn_label = Art.label("", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_RIGHT)
 	_conn_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_conn_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_conn_label.offset_left = -330.0
 	_conn_label.offset_right = -10.0
-	_conn_label.offset_top = 50.0
-	_conn_label.offset_bottom = 74.0
+	_conn_label.offset_top = 52.0 + Minimap.SIZE.y
+	_conn_label.offset_bottom = 76.0 + Minimap.SIZE.y
 	_conn_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_conn_label.visible = false
 	var conn_plate := StyleBoxFlat.new()
@@ -141,22 +133,12 @@ func build() -> void:
 
 
 # --- The top bar ------------------------------------------------------------
-## Three plates floating over the board, not one plank across it: the map
-## shows between them, and each plate is one thing to read.
+## Plates floating over the board, not one plank across it: the map shows
+## between them, and each plate is one thing to read.
 ##   left   -- the player's own hero in a wooden frame, name and team
-##   centre -- the station as a ribbon in its own livery, a dot per item
-##   right  -- gems (flashes on a change), Rescue in team games (it gives gems
-##             away, so it sits by them), and the clock (red in the last
-##             minute, "Paused" while the teacher holds it)
-## All from the Tiny Swords UI pack already in `assets/ui`.
-## The pack's wooden bar: thin end caps, made for a strip this height. The
-## WoodTable and paper sheets carry 30px+ corners at any readable scale, which
-## made every plate twice the height of the bar.
+##   centre -- the score: Blue's deposits and Red's, or yours of the words
+##   right  -- what you carry, and the clock (red in the last minute)
 const PLANK := "res://assets/ui/BigBar_Base.png"
-## BigRibbons rows, per station, matching the towers on the map: blue, the
-## yellow that stands in for the mockups' orange, red. The gate gets purple.
-const RIBBON_ROW := Ui.STATION_RIBBON
-const GATE_ROW := Ui.RIBBON_PURPLE
 const BAR_H := 40.0
 const LAST_MINUTE := 60
 
@@ -169,8 +151,6 @@ func _plate(pad_x: float) -> PanelContainer:
 
 
 func _build_top_bar() -> void:
-	# Anchored across the top, not a fixed width: at 20:9 the canvas is ~800
-	# wide and a 632px bar left a quarter of a phone's top edge bare.
 	var bar := HBoxContainer.new()
 	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	bar.offset_left = 6.0
@@ -180,10 +160,8 @@ func _build_top_bar() -> void:
 	bar.add_theme_constant_override("separation", 4)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(bar)
-	_bar = bar
 
-	# Left: who is playing. The hero is the one they picked and the one
-	# walking on the board -- a stock portrait here matched neither.
+	# Left: who is playing, the hero they picked, and their team.
 	var who := _plate(4)
 	var who_row := HBoxContainer.new()
 	who_row.add_theme_constant_override("separation", 6)
@@ -197,152 +175,86 @@ func _build_top_bar() -> void:
 	var names := VBoxContainer.new()
 	names.alignment = BoxContainer.ALIGNMENT_CENTER
 	names.add_theme_constant_override("separation", -2)
-	# A fixed column: an 18-letter team name must not widen the plate and
-	# squeeze the ribbon off the far end of a 640px screen.
-	var team := Game.team_name if Game.team_name != "" else "Adventurer"
-	# The account's username is the player's name; the typed one is gone.
-	var me := Net.username if Net.signed_in() else Game.player_name
-	for spec in [[me, Pal.CREAM], [team, Pal.WHITE_SOFT]]:
+	var me := Net.username if Net.signed_in() else (Game.player_name if Game.player_name != "" else "You")
+	var m: Match = adv.play
+	var team: String = "Practice" if m.practice else "Team " + str(Match.TEAMS[m.team])
+	for spec in [[me, Pal.CREAM], [team, Peers.TEAM_COLOURS[m.team].lightened(0.25)]]:
 		var l := Art.label(str(spec[0]), Pal.SMALL, spec[1])
 		l.clip_text = true
 		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		l.custom_minimum_size = Vector2(100, 0)
+		l.custom_minimum_size = Vector2(96, 0)
 		names.add_child(l)
 	who_row.add_child(names)
 	bar.add_child(who)
 
-	# Centre: where they are. The ribbon takes the station's colour.
-	var mid := VBoxContainer.new()
+	# Centre: the score on a ribbon -- the one number everybody watches.
+	var mid := CenterContainer.new()
 	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mid.alignment = BoxContainer.ALIGNMENT_CENTER
-	mid.add_theme_constant_override("separation", 2)
 	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ribbon_centre := CenterContainer.new()
-	ribbon_centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ribbon = HBoxContainer.new()
-	_ribbon.add_theme_constant_override("separation", 0)
-	ribbon_centre.add_child(_ribbon)
-	mid.add_child(ribbon_centre)
-	var pips_centre := CenterContainer.new()
-	pips_centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_pips = HBoxContainer.new()
-	_pips.add_theme_constant_override("separation", 3)
-	pips_centre.add_child(_pips)
-	mid.add_child(pips_centre)
+	_score_box = HBoxContainer.new()
+	_score_box.add_theme_constant_override("separation", 0)
+	mid.add_child(_score_box)
 	bar.add_child(mid)
 
-	# Right: the two numbers that change -- gems, then the clock.
-	var gems := _plate(4)
-	var gems_row := HBoxContainer.new()
-	gems_row.add_theme_constant_override("separation", 3)
-	gems.add_child(gems_row)
-	gems_row.add_child(Art.texrect(Ui.GEM, 22, 22))
-	_gems = Art.label(str(Game.START_GEMS), Pal.BODY, Pal.CREAM)
-	_gems.custom_minimum_size = Vector2(30, 0)
-	_gems.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	gems_row.add_child(_gems)
-	bar.add_child(gems)
-
-	# Not focusable: E, Space and Enter are the map's interact keys, and a
-	# focused button would take them.
-	_rescue = Ui.button("Rescue", 74, Ui.H, Ui.SMALL)
-	_rescue.name = "Rescue"
-	_rescue.focus_mode = Control.FOCUS_NONE
-	_rescue.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_rescue.pressed.connect(func() -> void: adv.open_rescue())
-	bar.add_child(_rescue)
-	_refresh_rescue()
-
-	_time_plate = _plate(6)
+	# Right: what you carry, then the clock.
+	var carry := _plate(6)
+	_carry = Art.label("", Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	_carry.name = "Carry"
+	_carry.custom_minimum_size = Vector2(70, 0)
+	_carry.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	carry.add_child(_carry)
+	bar.add_child(carry)
+	var clock := _plate(6)
 	_time = Art.label(Ui.mmss(int(Game.time_left)), Pal.BODY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	_time.custom_minimum_size = Vector2(58, 0)   # "Paused" and "10:00" alike
+	_time.custom_minimum_size = Vector2(52, 0)
 	_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_time_plate.add_child(_time)
-	bar.add_child(_time_plate)
+	clock.add_child(_time)
+	bar.add_child(clock)
 
 
-## Rescue shows in team games, and is greyed with the reason once it cannot be
-## used -- the question screen's own Rescue button does the same.
-func _refresh_rescue() -> void:
-	if not is_instance_valid(_rescue):
-		return
-	_rescue.visible = Game.session_id != ""
-	var why: String = adv.rescue_block()
-	_rescue.disabled = why != ""
-	_rescue.text = "Rescued" if Game.rescue_sent else "Rescue"
-	_rescue.tooltip_text = why if why != "" else "Give some of your gems to a teammate"
-
-
-## Whether the bar, ribbon and all, fits the screen as painted. Measured, not
-## estimated: the ribbon's end caps and the plates' own margins are whatever
-## the art makes them.
-func _fits() -> bool:
-	if not is_instance_valid(_bar) or not adv.is_inside_tree():
-		return true
-	return _bar.get_combined_minimum_size().x <= adv.get_viewport_rect().size.x - 12.0
-
-
-## The station ribbon, in the row of BigRibbons that is this station's colour.
-func _paint_ribbon(row: int, text: String) -> void:
-	if not is_instance_valid(_ribbon):
-		return
-	for c in _ribbon.get_children():
-		_ribbon.remove_child(c)
+## The score and what is carried, from the match.
+func refresh() -> void:
+	var m: Match = adv.play
+	for c in _score_box.get_children():
+		_score_box.remove_child(c)
 		c.queue_free()
-	_ribbon.add_child(Ui.ribbon(row, text))
+	var text := ("%d / %d words" % [m.deposited(), m.monk_count()] if m.practice
+		else "Blue %d  –  %d Red" % [m.deposited(0), m.deposited(1)])
+	var rib := Ui.ribbon(Ui.RIBBON_BLUE if m.team == 0 else Ui.RIBBON_RED, text)
+	rib.name = "Score"
+	_score_box.add_child(rib)
+	var n := m.carried().size()
+	_carry.text = "Carry %d" % n
+	_carry.add_theme_color_override("font_color", Pal.GOLD if n > 0 else Pal.CREAM)
+	on_time(int(ceilf(Game.time_left)))
 
 
-## A dot per item in the current station: done, the one being played, to come.
-## Shape as well as colour -- done is filled, current is ringed.
-func _paint_pips(station: int, done_in_station: int) -> void:
-	if not is_instance_valid(_pips):
+## The clock: red in the last minute.
+func on_time(sec: int) -> void:
+	if not is_instance_valid(_time):
 		return
-	for c in _pips.get_children():
-		c.queue_free()
-	var total: int = Game.ITEMS_PER_STATION[station] if station >= 0 else 0
-	for i in total:
-		var dot := Panel.new()
-		dot.custom_minimum_size = Vector2(9, 9)
-		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var face := StyleBoxFlat.new()
-		face.set_corner_radius_all(5)
-		if i < done_in_station:
-			face.bg_color = Pal.GOLD
-			face.border_color = Pal.SHADOW
-			face.set_border_width_all(1)
-		elif i == done_in_station:
-			face.bg_color = Color(1, 1, 1, 0.25)
-			face.border_color = Pal.WHITE
-			face.set_border_width_all(2)
-		else:
-			face.bg_color = Color(0, 0, 0, 0.45)
-			face.border_color = Color(1, 1, 1, 0.35)
-			face.set_border_width_all(1)
-		dot.add_theme_stylebox_override("panel", face)
-		_pips.add_child(dot)
+	_time.text = Ui.mmss(sec)
+	_time.add_theme_color_override("font_color",
+		Pal.WRONG_BRIGHT if sec <= LAST_MINUTE and Game.adventure_active else Pal.CREAM)
 
 
 # --- Touch controls ---------------------------------------------------------
 ## The stick is a raw-touch Node2D (its own finger index, like TouchScreenButton
 ## tracks), and GO stays a TouchScreenButton -- both read real touch rather
 ## than mouse-emulated, so steering and pressing GO work on separate fingers at
-## once. Each feeds a real InputMap action (the stick with analog strength), so
-## `_process` and `_unhandled_input` stay untouched.
+## once. Each feeds a real InputMap action (the stick with analog strength).
 func _build_pad() -> void:
 	if not Game.touch:
 		return
 	pad = Node2D.new()
 	hud_layer.add_child(pad)
-	# Kept a thumb's width off the bottom edge: that strip is Android's
-	# swipe-up-home gesture zone, immersive mode or not.
 	joystick = preload("res://scripts/Joystick.gd").new()
 	# The arrow back to the hero, and the dev panel: the stick takes touches
 	# before any button, so it has to be told what is not its.
 	joystick.ignore = func(at: Vector2) -> bool: return pointer_hit(at) or DevUi.owns(adv.get_tree(), at)
 	pad.add_child(joystick)
 	# Measured in from the right edge, not from 640: `keep_height` makes the
-	# canvas ~800 wide on a 20:9 phone, and fixed coordinates left GO
-	# stranded 160px short of the thumb that reaches for it.
+	# canvas ~800 wide on a 20:9 phone.
 	var right := adv.get_viewport_rect().size.x
 	_touch_btn("interact", "GO", Vector2(right - 66, 290), 0.52, 20)
 
@@ -354,8 +266,6 @@ func _touch_btn(action: String, text: String, center: Vector2, s: float, font: i
 	b.texture_pressed = Art.tex(skin % "Pressed")
 	b.action = action
 	b.passby_press = true   # a thumb sliding onto GO still presses it
-	# The art is 128px drawn from the node's origin, so the hit circle is its
-	# own centre at full size and rides `scale` down with the sprite.
 	var circle := CircleShape2D.new()
 	circle.radius = 64.0
 	b.shape = circle
@@ -385,8 +295,8 @@ func set_connection(state: String) -> void:
 			Pal.WRONG_BRIGHT if state == "offline" else Pal.GOLD)
 
 
-## The controls crib, hidden while the board is frozen: the aerial POV is the
-## one screen the client asked to be left alone to look at.
+## The controls crib: a reminder for the first moments of play on a phone,
+## then it fades and leaves the top of the board clear.
 func set_crib(on: bool) -> void:
 	if _hint_bar == null or not is_instance_valid(_hint_bar):
 		return
@@ -394,9 +304,6 @@ func set_crib(on: bool) -> void:
 		_crib_tw.kill()
 	_hint_bar.modulate.a = 1.0
 	_hint_bar.visible = on
-	# On a phone it runs along the top, across the numbers of the towers up
-	# there (seen on a device): a reminder for the first moments of play, then
-	# it fades and leaves the top of the board clear.
 	if on and Game.touch:
 		_crib_tw = _hint_bar.create_tween()
 		_crib_tw.tween_interval(CRIB_HOLD_S)
@@ -404,24 +311,23 @@ func set_crib(on: bool) -> void:
 		_crib_tw.tween_callback(func() -> void: _hint_bar.visible = false)
 
 
-## The dev panel (DevPanel, debug builds), shut: a question coming up should
-## not open under it.
+## The dev panel (DevPanel, debug builds), shut: a monk's panel coming up
+## should not open under it.
 func close_dev() -> void:
 	adv.get_tree().call_group("dev_panel", "close")
 
 
 # --- Looking around the map -------------------------------------------------
-## While a finger drags the view, GO stops pressing itself when a
-## finger slides onto them (`passby_press`): a look across the bottom-right
-## corner would otherwise press GO on the way past.
+## While a finger drags the view, GO stops pressing itself when a finger slides
+## onto it (`passby_press`): a look across the bottom-right corner would
+## otherwise press GO on the way past.
 func set_panning(on: bool) -> void:
 	for b in _pad_buttons:
 		b.passby_press = not on
 
 
 ## A touch at `pos` (viewport px) that belongs to the HUD, not to the board:
-## GO, the hero pointer, any HUD control that takes clicks (the top bar's
-## plates), or the dev panel. The board neither pans nor taps from these.
+## GO, the hero pointer, any HUD control that takes clicks, or the dev panel.
 func owns_touch(pos: Vector2) -> bool:
 	if DevUi.owns(adv.get_tree(), pos):
 		return true
@@ -440,16 +346,14 @@ func owns_touch(pos: Vector2) -> bool:
 	return false
 
 
-## `pos` is on the hero pointer (and it is showing). The screen asks this for
-## raw touches, because a second finger -- the left thumb already on the stick
-## -- is never turned into the mouse click the button itself listens for.
+## `pos` is on the hero pointer (and it is showing). Asked for raw touches: a
+## second finger -- the left thumb already on the stick -- is never turned into
+## the mouse click the button itself listens for.
 func pointer_hit(pos: Vector2) -> bool:
 	return hero_pointer != null and hero_pointer.visible \
 			and hero_pointer.get_global_rect().grow(6.0).has_point(pos)
 
 
-## Shows the pointer at `at` (its centre, viewport px) aiming along `dir`, or
-## hides it.
 func point_to_hero(show: bool, at := Vector2.ZERO, dir := Vector2.RIGHT) -> void:
 	if hero_pointer == null:
 		return
@@ -461,7 +365,7 @@ func point_to_hero(show: bool, at := Vector2.ZERO, dir := Vector2.RIGHT) -> void
 
 ## Hiding a TouchScreenButton releases its action on its own; the stick is a
 ## plain Node2D, so a held drag needs the same release told explicitly, or it
-## would survive into a quiz.
+## would survive into a monk's panel.
 func set_pad(on: bool) -> void:
 	if pad != null:
 		pad.visible = on
@@ -469,11 +373,8 @@ func set_pad(on: bool) -> void:
 		joystick.release()
 
 
-## A line over everything -- the question screen included -- for news from
-## another player: "ana rescued you! +15 gems". The prompt line sits under the
-## overlays, where a player mid-question would never see it.
-## On the HUD's own wooden plate, so it reads over the parchment of a question
-## as well as over the map.
+## A line over everything -- a monk's panel included -- for news: a teammate's
+## answer, the other team's last word.
 var _news: Label = null
 var _news_bar: Control = null
 var _news_tw: Tween = null
@@ -501,7 +402,7 @@ func announce(text: String) -> void:
 	if _news_tw != null and _news_tw.is_valid():
 		_news_tw.kill()
 	_news_tw = _news_bar.create_tween()
-	_news_tw.tween_interval(3.5)
+	_news_tw.tween_interval(3.0)
 	_news_tw.tween_property(_news_bar, "modulate:a", 0.0, 0.5)
 	_news_tw.tween_callback(func() -> void:
 		_news_bar.visible = false
@@ -519,8 +420,7 @@ func flash(text: String) -> void:
 
 
 ## The prompt line -- what pressing E would do, right now. Ignored while a
-## toast owns the line: a tip has no business being overwritten a frame later
-## by the walk's running commentary.
+## toast owns the line.
 func set_prompt(text: String) -> void:
 	if _flash_active or not is_instance_valid(prompt):
 		return
@@ -529,8 +429,8 @@ func set_prompt(text: String) -> void:
 	prompt.visible = text != ""
 
 
-## The prompt hugs its text, up to PROMPT_MAX_W; longer (a server's error in
-## a flash) wraps onto more lines instead of running off both sides.
+## The prompt hugs its text, up to PROMPT_MAX_W; longer wraps onto more lines
+## instead of running off both sides.
 const PROMPT_MAX_W := 560.0
 func _fit_prompt(text: String) -> void:
 	var w := prompt.get_theme_font("font").get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT,
@@ -538,68 +438,6 @@ func _fit_prompt(text: String) -> void:
 	var wraps := w > PROMPT_MAX_W
 	prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if wraps else TextServer.AUTOWRAP_OFF
 	prompt.custom_minimum_size.x = PROMPT_MAX_W if wraps else 0.0
-
-
-## The gem plate, and a flash of the change: green up, red down. A number
-## that just changes is easy to miss mid-walk.
-func on_gems(g: int) -> void:
-	if not is_instance_valid(_gems):
-		return
-	_gems.text = str(g)
-	if _shown_gems != -99999 and g != _shown_gems:
-		if _gem_tw != null and _gem_tw.is_valid():
-			_gem_tw.kill()
-		_gems.add_theme_color_override("font_color", Pal.CORRECT_BRIGHT if g > _shown_gems else Pal.WRONG_BRIGHT)
-		_gem_tw = _gems.create_tween()
-		_gem_tw.tween_interval(0.6)
-		_gem_tw.tween_callback(func() -> void: _gems.add_theme_color_override("font_color", Pal.CREAM))
-	_shown_gems = g
-	_refresh_rescue()
-
-
-## The clock: red in the last minute, and "Paused" while the teacher holds it
-## -- a frozen number alone reads as the game having hung.
-func on_time(sec: int) -> void:
-	if not is_instance_valid(_time):
-		return
-	if Game.session_state == "paused":
-		_time.text = "Paused"
-		_time.add_theme_color_override("font_color", Pal.AMBER)
-		return
-	_time.text = Ui.mmss(sec)
-	_time.add_theme_color_override("font_color",
-		Pal.WRONG_BRIGHT if sec <= LAST_MINUTE and Game.adventure_active else Pal.CREAM)
-
-
-func refresh() -> void:
-	on_gems(Game.gems)
-	_refresh_rescue()
-	on_time(int(ceilf(Game.time_left)))
-	var next := Game.completed_stations.find(false)
-	if Game.items_done >= Game.TOTAL_ITEMS:
-		_paint_ribbon(GATE_ROW, "Victory Gate!")
-		_paint_pips(-1, 0)
-	else:
-		var st := Game.station_of_item(Game.items_done)
-		var meta: Dictionary = QuestionGen.station_meta(st)
-		# "Station 1: Master the Basics!" -> "Station 1 · Master the Basics!",
-		# or the topic's short name when the full title will not fit between
-		# the plates -- at 640 wide, Station 3's pushed the clock off-screen.
-		# With Rescue on the bar too, 640 wide has room for "Station 1" alone.
-		_paint_ribbon(RIBBON_ROW[st], str(meta.title).replace(": ", "  ·  "))
-		for text in ["Station %d  ·  %s" % [st + 1, str(meta.short)], "Station %d" % (st + 1)]:
-			if _fits():
-				break
-			_paint_ribbon(RIBBON_ROW[st], text)
-		_paint_pips(st, Game.item_in_station(Game.items_done))
-	# Label the boards on the map itself, otherwise all three look identical.
-	for i in adv.stations.locks.size():
-		var mark := "—"
-		if Game.completed_stations[i]:
-			mark = "★" if Game.perfect_stations[i] else "✓"
-		elif i == next:
-			mark = "▶"
-		adv.stations.locks[i].text = "Station %d  %s" % [i + 1, mark]
 
 
 ## The arrow back to the hero: a wooden disc on the edge of the screen with an
@@ -633,8 +471,6 @@ class HeroPointer extends Control:
 		draw_colored_polygon(PackedVector2Array([tip, back + side * 10.0, c - _dir * 2.0,
 				back - side * 10.0]), Pal.CREAM)
 
-	## A touch arrives here as a touch, not only as the mouse a phone makes of
-	## it -- and a second finger (the first on the stick) only ever as a touch.
 	func _gui_input(event: InputEvent) -> void:
 		var tap := (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed) \
 				or (event is InputEventMouseButton and (event as InputEventMouseButton).pressed
@@ -642,3 +478,64 @@ class HeroPointer extends Control:
 		if tap:
 			accept_event()
 			pressed.emit()
+
+
+## The world in the corner: the island, the monks your team has come near
+## (Black) or answered (your colour), your teammates, you, and the Monastery
+## once found (DESIGN.md 3.2, team vision). Drawn from `points()` five times a
+## second -- the screen hands it the lot.
+class Minimap extends Control:
+	const SIZE := Vector2(132, 74)
+	const EVERY_S := 0.2
+	var land: Texture2D = null
+	## {me, mates: [Vector2], mate_colour, monks: [[Vector2, state]], monastery}
+	## in world px; a monk's state is "seen" or "ours"; monastery null till seen.
+	var source: Callable
+	var _t := 0.0
+	var _pts := {}
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		custom_minimum_size = SIZE
+
+	## The island as an image, a pixel a cell, drawn scaled.
+	func set_land(cells: Dictionary) -> void:
+		var img := Image.create(MapCfg.WORLD_W, MapCfg.WORLD_H, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0.16, 0.27, 0.45, 0.85))
+		for c: Vector2i in cells:
+			img.set_pixelv(c, Color(0.49, 0.66, 0.31))
+		land = ImageTexture.create_from_image(img)
+		queue_redraw()
+
+	func _process(delta: float) -> void:
+		_t -= delta
+		if _t > 0.0 or not source.is_valid():
+			return
+		_t = EVERY_S
+		_pts = source.call()
+		queue_redraw()
+
+	func _at(p: Vector2) -> Vector2:
+		return Vector2(p.x / (MapCfg.WORLD_W * MapCfg.TILE) * SIZE.x,
+				p.y / (MapCfg.WORLD_H * MapCfg.TILE) * SIZE.y)
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2(-2, -2), SIZE + Vector2(4, 4)), Color(0.24, 0.16, 0.1, 0.9))
+		if land != null:
+			draw_texture_rect(land, Rect2(Vector2.ZERO, SIZE), false)
+		if _pts.is_empty():
+			return
+		if _pts.get("monastery") != null:
+			var c := _at(_pts.monastery)
+			draw_rect(Rect2(c - Vector2(4, 5), Vector2(8, 8)), Color("8e5cc9"))
+			draw_rect(Rect2(c - Vector2(4, 5), Vector2(8, 8)), Pal.CREAM, false, 1.0)
+		var col: Color = _pts.get("mate_colour", Color.WHITE)
+		for m: Array in _pts.get("monks", []):
+			var c := _at(m[0])
+			draw_circle(c, 2.6, Pal.SHADOW)
+			draw_circle(c, 2.0, col if m[1] == "ours" else Color(0.85, 0.85, 0.85))
+		for p: Vector2 in _pts.get("mates", []):
+			draw_circle(_at(p), 2.2, col)
+		if _pts.has("me"):
+			draw_circle(_at(_pts.me), 3.2, Pal.SHADOW)
+			draw_circle(_at(_pts.me), 2.4, Color.WHITE)

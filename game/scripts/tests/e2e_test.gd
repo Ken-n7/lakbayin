@@ -1,12 +1,15 @@
 extends TestCase
-## E2E: drives the real UI — title → hero select → adventure map → tower
-## briefing → one circle per item → Victory Gate → summary → leaderboard/learn —
-## then restores the saved profile.
+## E2E: drives the real UI -- splash -> sign in -> Home -> hero select -> the
+## offline team form -> a Practice match: a monk answered and deposited through
+## GO, every word deposited -> the results and their buttons -- then restores
+## the saved profile. The match's own rules are match_test's; this is the
+## flow between screens.
 ## Run with:  godot --headless res://scripts/tests/e2e_test.tscn
 
 var _main_scene: Node = null
 var _pname := ""
 var _tname := ""
+
 
 func _ready() -> void:
 	seed(20260921)
@@ -60,10 +63,18 @@ func _find_line_edit(root: Node) -> LineEdit:
 	return null
 
 
+func _find_button_tooltip(root: Node, tip: String) -> Button:
+	for child in root.get_children():
+		if child is Button and child.tooltip_text == tip:
+			return child
+		var hit := _find_button_tooltip(child, tip)
+		if hit != null:
+			return hit
+	return null
+
+
 func _click(root: Node, text: String) -> void:
 	var b := _find_button(root, text)
-	# A bare glyph -- the "←" in a screen's title -- is found by what it says
-	# it does: its tooltip.
 	if b == null:
 		b = _find_button_tooltip(root, text)
 	if b == null:
@@ -78,101 +89,17 @@ func _wait(frames := 3) -> void:
 		await get_tree().process_frame
 
 
-func _stash_text(s: String) -> String:
-	if s == "":
-		return "Adventurer"
-	return s
-
-
-func _find_button_tooltip(root: Node, tip: String) -> Button:
-	for child in root.get_children():
-		if child is Button and child.tooltip_text == tip:
-			return child
-		var hit := _find_button_tooltip(child, tip)
-		if hit != null:
-			return hit
-	return null
-
-
-## Every map open starts frozen on the aerial POV; collapse it so nothing in the
-## test waits on a tween — and so the clock is running again.
-func _map() -> Node:
-	var scr := _screen()
-	if scr != null and scr.has_method("skip_intro"):
-		scr.call("skip_intro")
-	return scr
-
-
-## The tower hands out the station briefing card and nothing else.
-func _enter_tower(adv: Node, s: int) -> void:
-	(adv.get("player") as Node2D).position = (adv.get("stations").nodes[s] as Node2D).position
-	adv.call("_try_enter_station")
+## GO, as the keyboard presses it: the interact action.
+func _press_go() -> void:
+	var ev := InputEventAction.new()
+	ev.action = "interact"
+	ev.pressed = true
+	Input.parse_input_event(ev)
 	await _wait(2)
-	var ov: Node = adv.get("_overlay")
-	check("station %d briefing opened" % (s + 1), ov != null)
-	if ov == null:
-		return
-	check("briefing is the intro card", bool(ov.get("intro_only")))
-	_click(ov, "Continue")
-	await _wait(2)
-	check("briefing returns to the map", adv.get("_overlay") == null)
-	check("station %d circles unlocked" % (s + 1), Game.towers_entered[s])
-
-
-## Walk onto circle `n` and open its item. Returns the overlay, or null.
-func _open_circle(adv: Node, n: int) -> Node:
-	(adv.get("player") as Node2D).position = (adv.get("_circles")[n] as Node2D).position
-	adv.call("_try_answer_circle")
-	await _wait(2)
-	return adv.get("_overlay")
-
-
-## Answers every circle of station `s` correctly, one overlay each, and clicks
-## through the completion ribbon its last item raises.
-func _play_station(adv: Node, s: int) -> void:
-	await _enter_tower(adv, s)
-	var count: int = Game.ITEMS_PER_STATION[s]
-	for i in count:
-		var n: int = Game.items_done
-		var ov: Node = await _open_circle(adv, n)
-		if ov == null:
-			check("circle %d opened" % (n + 1), false)
-			return
-		check("circle %d in question phase" % (n + 1), int(ov.get("phase")) == 1, str(ov.get("phase")))
-		_find_line_edit(ov).text = str(ov.get("answer"))
-		_click(ov, "Submit Answer")
-		await _wait(1)
-		check("feedback on circle %d" % (n + 1), int(ov.get("phase")) == 2, str(ov.get("phase")))
-		_click(ov, "Continue")
-		await _wait(1)
-		if i < count - 1:
-			check("circle %d returned to the map" % (n + 1), adv.get("_overlay") == null)
-		else:
-			# The station's last item pays the perfect bonus on its own ribbon.
-			check("station %d ribbon shown" % (s + 1), int(ov.get("phase")) == 3, str(ov.get("phase")))
-			_click(ov, "Return to Map")
-			await _wait(2)
-
-
-## Deterministically end the active adventure by exhausting the timer:
-## headless runs unthrottled frames, so waiting on wall-clock would flake.
-func _end_via_time() -> void:
-	Game.time_left = 0.01
-	await Game.adventure_ended
-	await _wait(2)
-
-
-## Start Adventure is two steps now: the home screen, then the team name.
-## Every "Join Quest" in this suite goes through both.
-## A player types a name every run, so the default is a name and not "".
-## Section 8 clears `Game.team_name`, and an empty field is refused -- which
-## is the screen behaving, not a broken step.
-func _continue_quest(team := "Test Team") -> void:
-	_click(_screen(), "Join Quest")
-	await _wait(3)
-	_screen()._team.text = team
-	_click(_screen(), "Ready!")
-	await _wait(4)
+	ev = ev.duplicate()
+	ev.pressed = false
+	Input.parse_input_event(ev)
+	await _wait(1)
 
 
 func _run() -> void:
@@ -185,326 +112,90 @@ func _run() -> void:
 	check("splash shows the tagline", _find_label(_screen(), "Hanapin.") != null)
 	_screen().call("skip")
 	await _wait(3)
-	# With keys in project.godot the backend is always configured, so a launch
-	# lands on the login form -- which is the point, and what a phone does.
-	# This suite is offline by design: it asserts the gate, then steps over it
-	# rather than signing in, because a suite that needs the network is a suite
-	# that fails on a train.
-	check("a fresh launch asks you to sign in",
-		_script_of(_screen(), "res://scripts/LoginScreen.gd"))
+	# With a project configured, a launch lands on the login form. This suite
+	# is offline by design: it asserts the gate, then steps over it.
+	check("a fresh launch asks you to sign in", _script_of(_screen(), "res://scripts/LoginScreen.gd"))
 	check("login offers a way to register", _find_button(_screen(), "Create Account") != null)
 	check("login offers recovery", _find_button(_screen(), "Forgot Password?") != null)
+	_main_scene.call("open", "register")
+	await _wait(3)
+	check("registering asks for no role", _find_label(_screen(), "Role") == null)
 	_main_scene.call("open", "home")
 	await _wait(3)
-	check("splash routes to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	check("home is the title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
 	check("start button present", _find_button(_screen(), "Start Adventure") != null)
-	check("no Learn button", _find_button(_screen(), "Learn") == null)
-	check("board button present", _find_button(_screen(), "Leaderboard") != null)
+	check("Practice present", _find_button(_screen(), "Practice") != null)
+	for gone in ["Learn", "Leaderboard"]:
+		check("no %s button" % gone, _find_button(_screen(), gone) == null)
 
-	print("== 2. hero select ==")
+	print("== 2. hero select -> the offline team form -> a match ==")
 	_click(_screen(), "Start Adventure")
 	await _wait(3)
 	var hero := _screen()
 	check("reached hero select", _script_of(hero, "res://scripts/HeroSelectScreen.gd"))
-	# No name to type: the account's username is the name.
 	check("no name field", _find_line_edit(hero) == null)
+	for id in [1, Game.HERO_COUNT]:
+		check("adventurer #%d present" % id, _find_button_tooltip(hero, "Adventurer #%d" % id) != null)
 	_find_button_tooltip(hero, "Adventurer #12").pressed.emit()
 	_click(hero, "Set")
 	await _wait(3)
-	# Hero select hands off to the team name, which is what begins the run.
+	check("hero 12 kept", Game.hero_id == 12, str(Game.hero_id))
+	# Signed out, the team screen is the offline form, and it starts Practice.
 	_screen()._team.text = "Test Team"
 	_click(_screen(), "Ready!")
+	await _wait(6)
+	var adv := _screen()
+	check("reached the match", _script_of(adv, "res://scripts/AdventureScreen.gd"))
+	check("offline, it is Practice", adv.play.practice)
+	adv.skip_intro()
+	await _wait(2)
+	check("the world is built", adv.world.gen.land.size() > 800, str(adv.world.gen.land.size()))
+	check("ten monks stand on it", adv.world.monks.size() == 10)
+	check("the hero starts at Blue's spawn", adv.player.position == adv.world.spawn_of(0))
+	check("the clock runs", Game.adventure_active and not Game.clock_paused)
+
+	print("== 3. a monk through GO, then the Monastery ==")
+	adv.player.position = adv.world.monks[2].position + Vector2(0, 24)
+	await _wait(2)
+	await _press_go()
+	var monk: Control = adv._overlay
+	check("GO beside a monk opens his word", monk != null)
+	if monk != null:
+		var spelling := str(adv.play.words[2].modern)
+		for i in spelling.length():
+			monk._keypad.press(spelling[i])
+		_click(monk, "Submit")
+		await get_tree().create_timer(1.5).timeout
+		check("his word is carried", adv.play.carried() == [2])
+		check("the panel closed itself", adv._overlay == null)
+	adv.player.position = adv.world.door()
+	await _wait(2)
+	await _press_go()
+	await _wait(2)
+	check("GO at the Monastery deposits it", adv.play.deposited() == 1)
+
+	print("== 4. every word deposited -> results ==")
+	for i in 10:
+		if not adv.play.ours(i):
+			await adv.play.answer(i, str(adv.play.words[i].modern))
+	var first_word := str(adv.play.words[0].modern)
+	await _press_go()
+	check("the last deposit ends the match", adv._ending)
+	await get_tree().create_timer(4.6).timeout
+	var res := _screen()
+	check("the results open", _script_of(res, "res://scripts/ResultsScreen.gd"))
+	check("they say every word went in", _find_label(res, "Every word deposited") != null)
+	check("they show the words in Baybayin", _find_label(res, first_word) != null)
+	_click(res, "Practice again")
+	await _wait(6)
+	check("Practice again opens a new match", _script_of(_screen(), "res://scripts/AdventureScreen.gd")
+		and _screen().play.practice)
+	_screen().go_back()
 	await _wait(4)
+	check("back from Practice goes Home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
+	check("and the clock stops", not Game.adventure_active)
 
-	print("== 3. adventure map ==")
-	var adv := _map()
-	check("reached adventure", adv.has_method("_try_enter_station"))
-	var land: Dictionary = adv.get("grid").land
-	check("island cells", land.size() > 700, str(land.size()))
-	check("three stations", (adv.get("stations").nodes as Array).size() == 3)
-	check("all circles built", (adv.get("_circles") as Array).size() == Game.TOTAL_ITEMS,
-			str((adv.get("_circles") as Array).size()))
-	check("victory gate built", adv.get("stations").gate != null)
-	check("player spawned", adv.get("player") != null and adv.get("player").get_child_count() > 0)
-	check("player starts at base camp", (adv.get("player") as Node2D).position == (adv.get("grid").anchors as Array)[0])
-	check("world y-sorted", (adv.get("world") as Node2D).y_sort_enabled)
-	check("grass meta set", (adv.get("world") as Node2D).has_meta("grass"))
-	check("intro collapsed, clock running", not Game.clock_paused)
-
-	# No circle answers before its tower briefing, and the gate is shut.
-	var stations: Array = adv.get("stations").nodes
-	var player: Node2D = adv.get("player")
-	check("circle 1 locked before the briefing", not bool(adv.call("_can_answer", 0)))
-	check("gate shut at the start", not bool(adv.call("_can_enter_gate")))
-	var early: Node = await _open_circle(adv, 0)
-	check("locked circle opens nothing", early == null)
-
-	print("== 4. station 1: briefing, then one circle per item ==")
-	var gems0 := Game.gems
-	check("start gems 50", Game.gems == Game.START_GEMS, str(Game.gems))
-	await _enter_tower(adv, 0)
-	check("circle 1 current after the briefing", bool(adv.call("_can_answer", 0)))
-	check("circle 2 still locked", not bool(adv.call("_can_answer", 1)))
-
-	# The "!" over the hero is the only cue that an item is answerable -- there is
-	# no marker on the ground any more -- so it has to track the gating exactly.
-	var bang: Control = adv.get("_bang")
-	check("bang exists, hidden until something is in reach", bang != null and not bang.visible)
-	(adv.get("player") as Node2D).position = (adv.get("_circles")[0] as Node2D).position
-	adv.call("_update_interaction")
-	check("bang on at the answerable circle", bang != null and bang.visible)
-	(adv.get("player") as Node2D).position = (adv.get("_circles")[3] as Node2D).position
-	adv.call("_update_interaction")
-	check("bang off at a locked circle", bang != null and not bang.visible)
-	# Open grass: a land cell well away from every stop on the board.
-	var grid: MapGrid = adv.get("grid")
-	var far := Vector2.ZERO
-	for c: Vector2i in grid.land:
-		var p := MapGrid.cell_mid(c)
-		var clear := true
-		for a: Vector2 in grid.anchors:
-			if p.distance_to(a) < MapCfg.INTERACT_RADIUS * 4.0:
-				clear = false
-				break
-		if clear:
-			far = p
-			break
-	(adv.get("player") as Node2D).position = far
-	adv.call("_update_interaction")
-	check("bang off in open grass", bang != null and not bang.visible)
-
-	# circle 1: correct
-	var ov: Node = await _open_circle(adv, 0)
-	check("circle overlay opened", ov != null)
-	check("circle is not the intro card", not bool(ov.get("intro_only")))
-	check("question phase", int(ov.get("phase")) == 1, str(ov.get("phase")))
-	_find_line_edit(ov).text = str(ov.get("answer"))
-	_click(ov, "Submit Answer")
-	await _wait(2)
-	check("feedback after submit", int(ov.get("phase")) == 2, str(ov.get("phase")))
-	check("correct gains +10", Game.gems == gems0 + 10, str(Game.gems))
-	_click(ov, "Continue")
-	await _wait(2)
-	check("one item, then back to the map", adv.get("_overlay") == null)
-	check("circle 1 done", Game.items_done == 1, str(Game.items_done))
-
-	# circle 2: wrong
-	ov = await _open_circle(adv, 1)
-	# Rescue is for team games: playing alone there is nobody to give gems to.
-	var rescue := _find_button(ov, "Rescue")
-	check("no Rescue when playing alone", rescue == null or not rescue.is_visible_in_tree())
-	_find_line_edit(ov).text = "999"
-	_click(ov, "Submit Answer")
-	await _wait(2)
-	check("wrong loses 5", Game.gems == gems0 + 5, str(Game.gems))
-	_click(ov, "Continue")
-	await _wait(2)
-
-	# circle 3: hint, then correct
-	ov = await _open_circle(adv, 2)
-	_click(ov, "Hint")
-	await _wait(1)
-	check("hint consumed", Game.hints_used == 1, str(Game.hints_used))
-	_find_line_edit(ov).text = str(ov.get("answer"))
-	_click(ov, "Submit Answer")
-	await _wait(2)
-	check("hint costs 5 then +10", Game.gems == gems0 + 10, str(Game.gems))
-	_click(ov, "Continue")
-	await _wait(2)
-
-	# circle 4: skip
-	ov = await _open_circle(adv, 3)
-	_click(ov, "Skip")
-	await _wait(2)
-	check("skip costs 15", Game.gems == gems0 - 5, str(Game.gems))
-	check("skip resolves the circle", Game.items_done == 4, str(Game.items_done))
-	check("skip returns to the map", adv.get("_overlay") == null)
-
-	print("== 5. finish run -> summary ==")
-	Game.end_adventure()
-	await _wait(4)
-	var sum := _screen()
-	check("summary shown", _script_of(sum, "res://scripts/SummaryScreen.gd"))
-	var result: Dictionary = Game.last_run
-	check("result recorded", not result.is_empty())
-	check("penalty applied (45-25=20)", result.get("gems", 0) == 20, str(result.get("gems")))
-
-	print("== 6. navigate onward ==")
-	_click(sum, "Leaderboard")
-	await _wait(3)
-	check("leaderboard shown", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
-	_click(_screen(), "Back")
-	await _wait(3)
-	check("back to home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	check("main backref wired", true)
-
-	print("== 7. continue quest + pause menu ==")
-	check("continue quest shown", _find_button(_screen(), "Join Quest") != null)
-	# Change Character and Log Out live in Settings; Quit asks first.
-	check("menu has Settings", _find_button(_screen(), "Settings") != null)
-	check("menu has Quit", _find_button(_screen(), "Quit") != null)
-	check("Change Character left the menu", _find_button(_screen(), "Change Character") == null)
-	_click(_screen(), "Quit")
-	await _wait(2)
-	check("Quit asks first", _find_label(_screen(), "Quit Lakbayin?") != null)
-	_click(_screen(), "Stay")
-	await _wait(2)
-	check("Stay keeps you here", _find_label(_screen(), "Quit Lakbayin?") == null
-		and _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	_screen().call("go_back")
-	await _wait(2)
-	check("back asks as well", _find_label(_screen(), "Quit Lakbayin?") != null)
-	_screen().call("go_back")
-	await _wait(2)
-	check("back again closes the question", _find_label(_screen(), "Quit Lakbayin?") == null)
-	_click(_screen(), "Settings")
-	await _wait(2)
-	check("Settings offers Change Character", _find_button(_screen(), "Change Character") != null)
-	_click(_screen(), "Change Character")
-	await _wait(3)
-	check("change character opens hero select", _script_of(_screen(), "res://scripts/HeroSelectScreen.gd"))
-	_click(_screen(), "Set")
-	await _wait(3)
-	check("Set from Settings goes back Home", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	# Start Adventure now goes by way of the team name, per SPECS §3.
-	_click(_screen(), "Join Quest")
-	await _wait(3)
-	check("continue quest asks for the team name",
-		_script_of(_screen(), "res://scripts/TeamNameScreen.gd"))
-	_screen()._team.text = "Test Team"
-	_click(_screen(), "Ready!")
-	await _wait(4)
-	adv = _map()
-	check("reached adventure from continue", adv.has_method("_try_enter_station"))
-	check("team name carried into the run", Game.team_name == "Test Team")
-	# No menu (client, 2026-10-01): the only choice is to play. Back leaves
-	# the player on the map, the run going.
-	adv.call("go_back")
-	await _wait(1)
-	check("back opens nothing", _map() == adv and adv.get("_overlay") == null
-			and not bool(adv.get("hud").paused) and Game.adventure_active)
-	for gone in ["Resume", "Home", "Restart", "New Game", "Leaderboard"]:
-		check("no %s on the map" % gone, _find_button(adv, gone) == null)
-
-	print("== 8. hero select variations ==")
-	Game.player_name = ""
-	Game.team_name = ""
-	_main_scene.call("open", "home")
-	await _wait(3)
-	check("start button without profile", _find_button(_screen(), "Start Adventure") != null)
-	_click(_screen(), "Start Adventure")
-	await _wait(3)
-	hero = _screen()
-	for id in [1, Game.HERO_COUNT]:
-		check("adventurer #%d present" % id, _find_button_tooltip(hero, "Adventurer #%d" % id) != null)
-	# Duration left this screen with G6 -- the admin owns the clock now, and a
-	# player who could pick their own length could out-sit the class.
-	for dur in ["5 min", "10 min", "15 min"]:
-		check("duration %s is gone from hero select" % dur, _find_button(hero, dur) == null)
-	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
-	check("hero local set", int(hero.get("_hero_id")) == 7, str(hero.get("_hero_id")))
-	_click(hero, "Back")
-	await _wait(3)
-	check("hero back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	_click(_screen(), "Start Adventure")
-	await _wait(3)
-	hero = _screen()
-	# re-pick after the screen was recreated (Back discarded the locals)
-	_find_button_tooltip(hero, "Adventurer #7").pressed.emit()
-	_click(hero, "Set")
-	await _wait(3)
-	# Hero select hands off to the team name, which is what begins the run.
-	_screen()._team.text = "Test Team"
-	_click(_screen(), "Ready!")
-	await _wait(4)
-	check("reached adventure (hero 7)", _screen().has_method("_try_enter_station"))
-	check("hero 7 persisted", Game.hero_id == 7, str(Game.hero_id))
-	# The run takes whatever duration the admin set; hero select no longer has
-	# a say, so the default is what survives.
-	check("duration came from Game, not the player",
-		Game.duration_seconds == 600, str(Game.duration_seconds))
-	# Out of the run the way a test can, not a player: there is no Home on the map.
-	Game.abandon_adventure()
-	_main_scene.call("open", "home")
-	await _wait(4)
-
-	print("== 9. summary buttons / natural end ==")
-	await _continue_quest()
-	_map()
-	check("adventure again (fresh)", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
-	await _end_via_time()
-	sum = _screen()
-	check("summary after time up", _script_of(sum, "res://scripts/SummaryScreen.gd"))
-	var res9: Dictionary = Game.last_run
-	check("time_up flagged", res9.get("time_up", false))
-	check("penalty applied (25)", int(res9.get("gems", 0)) == 25, str(res9.get("gems")))
-	_click(sum, "Adventure again")
-	await _wait(4)
-	_map()
-	check("adventure again reached", _screen().has_method("_try_enter_station"))
-	await _end_via_time()
-	sum = _screen()
-	check("summary again", _script_of(sum, "res://scripts/SummaryScreen.gd"))
-	_click(sum, "Home")
-	await _wait(3)
-	check("summary home to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	_click(_screen(), "Leaderboard")
-	await _wait(3)
-	check("board reachable", _script_of(_screen(), "res://scripts/LeaderboardScreen.gd"))
-	check("board non-empty", not (Game.leaderboard.is_empty()))
-	_click(_screen(), "Back")
-	await _wait(3)
-	check("board back to title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-
-	print("== 10. walk the whole board via the UI ==")
-	await _continue_quest()
-	adv = _map()
-	check("fresh adventure", Game.adventure_active and Game.gems == Game.START_GEMS, str(Game.gems))
-	check("all stations locked", (Game.completed_stations as Array) == [false, false, false])
-	check("no circles resolved", Game.items_done == 0, str(Game.items_done))
-	player = adv.get("player") as Node2D
-	stations = adv.get("stations").nodes as Array
-	var p0: Vector2 = (stations[0] as Node2D).position
-	var p1: Vector2 = (stations[1] as Node2D).position
-	var p2: Vector2 = (stations[2] as Node2D).position
-	check("stations distinct cells", p0 != p1 and p1 != p2 and p0 != p2, "%s / %s / %s" % [p0, p1, p2])
-	Sfx.heard.clear()
-	for s in 3:
-		await _play_station(adv, s)
-		check("station %d returned to map" % (s + 1), adv.get("_overlay") == null)
-		check("station %d complete" % (s + 1), Game.completed_stations[s])
-		check("station %d perfect" % (s + 1), Game.perfect_stations[s])
-		if s < 2:
-			check("station %d does not end the run" % (s + 1), Game.adventure_active)
-	check("all stations complete", (Game.completed_stations as Array) == [true, true, true])
-	check("all circles resolved", Game.items_done == Game.TOTAL_ITEMS, str(Game.items_done))
-	check("perfect gems 330 (14 correct with the combo + 3 perfect bonuses)", Game.gems == 330, str(Game.gems))
-	check("board cleared but the run is still live", Game.adventure_active)
-
-	# The Victory Gate is the end of the player flow (SPECS Q6): it scores the run.
-	var gate: Node2D = adv.get("stations").gate
-	check("gate now open", bool(adv.call("_can_enter_gate")))
-	player.position = gate.position
-	adv.call("_try_enter_gate")
-	await _wait(4)
-	check("gate ended the adventure", not Game.adventure_active)
-	# What a player hears on the way: briefing, the knight standing aside,
-	# the circles lighting, each answer, each station, the gate.
-	for want in ["enter_tower", "knight", "circle_unlock", "correct", "station_complete", "gate"]:
-		check("sound: %s" % want, want in Sfx.heard, str(Sfx.heard))
-	check("no wrong sound on a perfect run", not "wrong" in Sfx.heard)
-	sum = _screen()
-	check("summary after full run", _script_of(sum, "res://scripts/SummaryScreen.gd"))
-	var res10: Dictionary = Game.last_run
-	check("finished_all", res10.get("finished_all", false))
-	check("no penalty (330)", int(res10.get("gems", 0)) == 330, str(res10.get("gems")))
-	check("14 correct", int(res10.get("correct", 0)) == 14, str(res10.get("correct")))
-	check("0 wrong/skip/hint", int(res10.get("wrong", 0)) == 0 and int(res10.get("skipped", 0)) == 0 and int(res10.get("hints", 0)) == 0)
-	_click(sum, "Home")
-	await _wait(3)
-	check("title after full run", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-
-	print("== 12a. join codes ==")
+	print("== 5. join codes ==")
 	check("codes are cleaned as typed", Teams.clean_code(" k7-qm ") == "K7QM", Teams.clean_code(" k7-qm "))
 	check("a look-alike twin becomes the character codes use",
 		Teams.clean_code("zsbvg") == "258U6", Teams.clean_code("zsbvg"))
@@ -514,44 +205,10 @@ func _run() -> void:
 			Teams.CODE_CHARS.contains(Teams.TWINS[twin]))
 	check("look-alikes are caught", Teams.bad_chars("O0I1L") == "O0I1L", Teams.bad_chars("O0I1L"))
 	check("a real code has none", Teams.bad_chars("K7QM") == "")
-	check("the note names them", Teams.bad_note("O0") == "Codes never use O 0 — check that character.",
-		Teams.bad_note("O0"))
 	# The game's alphabet and the server's must be one string, or the game
 	# would refuse codes the server hands out.
 	var schema := FileAccess.get_file_as_string(
 		ProjectSettings.globalize_path("res://") + "../supabase/schema.sql")
 	check("the code alphabet matches session_code() in schema.sql",
 		schema.contains("abc text := '%s';" % Teams.CODE_CHARS))
-
-	print("== 12. the teacher's map view ==")
-	_main_scene.call("open", "controls")
-	await _wait(3)
-	var gc := _screen()
-	_click(gc, "View Map")
-	await _wait(3)
-	var watch: Control = gc.get("_map")
-	check("View Map opens the map", watch != null and watch.visible)
-	check("the panel steps aside", not (gc.get("_panel_root") as Control).visible)
-	check("the bar keeps the controls", _find_button(gc, "Controls") != null)
-	var board: Node2D = watch.get("world")
-	check("the map starts on the whole board",
-		is_equal_approx(board.scale.x, watch.call("_min_zoom")), str(board.scale.x))
-	# Zooming keeps the point under the finger where it was.
-	var at := Vector2(300, 200)
-	var under: Vector2 = (at - board.position) / board.scale.x
-	watch.call("_set_zoom", 0.9, at)
-	check("zoom holds the point under the finger",
-		((at - board.position) / board.scale.x).distance_to(under) < 0.5)
-	check("zoom stops at the closest", (watch.call("_set_zoom", 99.0, at) == null)
-		and is_equal_approx(board.scale.x, MapWatch.MAX_ZOOM))
-	watch.call("_pan", Vector2(100000, 100000))
-	check("the board cannot be dragged off screen", board.position == Vector2.ZERO)
-	gc.call("go_back")
-	await _wait(2)
-	check("back from the map is back to the controls",
-		not watch.visible and (gc.get("_panel_root") as Control).visible)
-	_main_scene.call("open", "home")
-	await _wait(3)
-	# The last line of _run(): anything that aborts the coroutine early leaves
-	# this unset and `finish()` fails the suite.
 	completed = true
