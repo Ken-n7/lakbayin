@@ -61,6 +61,10 @@ var _see_clock := 0.0
 var _my_team_id := ""
 var _session_row := {}
 var _loading: Label = null
+var _typing_monk := -1
+var _typing_clock := 0.0
+var _busy_clock := 0.0
+var _typing_peers: Array[String] = []
 
 # --- Looking around the map, as a MOBA does ---------------------------------
 ## A finger dragged across the board moves the camera, at the play zoom, to see
@@ -152,6 +156,14 @@ func _build() -> void:
 func _exit_tree() -> void:
 	if _frozen:
 		Game.clock_paused = false
+	if not play.practice:
+		var rt := Net.realtime()
+		if rt.presence_changed.is_connected(_refresh_busy):
+			rt.presence_changed.disconnect(_refresh_busy)
+		# A newer screen may already have announced itself in this frame.
+		if str(rt.get("_tracked").get("sid", "")) == play.session_id \
+				and str(rt.get("_tracked").get("where", "")) == "map":
+			rt.untrack()
 	if hud != null:
 		Game.time_changed.disconnect(hud.on_time)
 		Game.time_changed.disconnect(_time_warning)
@@ -237,7 +249,9 @@ func _go_live() -> void:
 	rt.watch("sessions", "id=eq." + sid)
 	rt.watch("members", "session_id=eq." + sid)
 	rt.watch("monk_answers", "session_id=eq." + sid)
-	rt.track({"sid": sid, "where": "map", "name": Net.username})
+	if not rt.presence_changed.is_connected(_refresh_busy):
+		rt.presence_changed.connect(_refresh_busy)
+	_publish_activity(-1)
 	rt.watch_positions([Realtime.snap_topic(sid)])
 	var relay := Net.relay()
 	if not relay.snap.is_connected(_on_relay_snap):
@@ -298,6 +312,45 @@ func _refresh_peers() -> void:
 		_peers.set_team_order(play.team_ids)
 		world.add_child(_peers)
 	_peers.refresh(rows, [world.door()], world.door(), Net.user_id)
+	_typing_peers.clear()
+	for row: Dictionary in rows:
+		var id := str(row.get("profile_id", ""))
+		if id != "" and id != Net.user_id and str(row.get("team_id", "")) == _my_team_id:
+			_typing_peers.append(id)
+	_refresh_busy()
+
+
+func _publish_activity(monk: int) -> void:
+	_typing_monk = monk
+	_typing_clock = 0.0
+	if play.practice or _ending or not is_inside_tree():
+		return
+	var meta := {"sid": play.session_id, "where": "map", "name": Net.username}
+	if monk >= 0:
+		meta["typing_monk"] = monk
+		meta["typing_until"] = Game.now() + MonkActivity.TTL
+	Net.realtime().track(meta)
+
+
+func _tick_activity(delta: float) -> void:
+	if play.practice or _ending:
+		return
+	_typing_clock += delta
+	_busy_clock += delta
+	if _typing_monk >= 0 and _typing_clock >= MonkActivity.REFRESH_S:
+		_publish_activity(_typing_monk)
+	if _busy_clock >= 1.0:
+		_busy_clock = 0.0
+		_refresh_busy()
+
+
+func _refresh_busy() -> void:
+	if play.practice or world == null or _ending:
+		return
+	var active := MonkActivity.active(Net.realtime().online, _typing_peers,
+		play.session_id, play.monk_count(), Game.now())
+	for i in world.monks.size():
+		world.monks[i].set_busy(active.has(i) and not play.ours(i))
 
 
 ## Where this hero is, for everybody else's board: the path walked, sampled
@@ -515,6 +568,7 @@ func _process(delta: float) -> void:
 	_watch_connection(delta)
 	_share_position(delta)
 	_look_for_monks(delta)
+	_tick_activity(delta)
 	if _overlay != null and is_instance_valid(_overlay):
 		return
 	if hud.paused or _frozen or _ending:
@@ -690,6 +744,10 @@ func _open_monk(i: int) -> void:
 	var overlay: Control = preload("res://scripts/MonkOverlay.gd").new()
 	var check := func(typed: String) -> String: return await play.answer(i, typed)
 	overlay.setup({"word": play.words[i], "monk": i, "labels": play.practice, "check": check})
+	overlay.activity_changed.connect(func(active: bool) -> void:
+		var monk := i if active else -1
+		if monk != _typing_monk:
+			_publish_activity(monk))
 	overlay.answered.connect(func(result: String) -> void:
 		if result == "correct":
 			world.monks[i].take(Match.TEAMS[play.team]))
@@ -701,10 +759,12 @@ func _open_monk(i: int) -> void:
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.tree_exited.connect(_on_overlay_gone)
 	hud.ui_layer.add_child(overlay)
+	_publish_activity(i)
 
 
 func _on_overlay_gone() -> void:
 	_overlay = null
+	_publish_activity(-1)
 	if not _ending and hud != null:
 		hud.set_pad(true)
 		_update_interaction()

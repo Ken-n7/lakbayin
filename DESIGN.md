@@ -69,7 +69,9 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 - **Each monk is answered once per team.** Both teams can answer the same monk.
   Once a teammate has answered it, it greys out for the rest of that team.
 - While a teammate is typing at a monk, it shows as **busy** to the rest of
-  that team, so two players don't waste time on the same word.
+  that team, so two players don't waste time on the same word. This is an
+  advisory marker, not a lock. It clears on close or lockout and expires
+  after 12 s without renewal; typed answers are never included in presence.
 - **Wrong answer:** that player is locked out of that monk for **10 s**.
   Teammates can still try it. The correct spelling is **not** shown during the
   match, or the team would just copy it.

@@ -9,6 +9,7 @@ extends Control
 ## the team would copy it -- the results screen shows every spelling.
 
 signal answered(result: String)
+signal activity_changed(active: bool)
 
 const LOCK_S := 10.0
 const ANSWER_SIZE := 30
@@ -79,7 +80,10 @@ func _build() -> void:
 	# Right: the keypad, under the thumb.
 	_keypad = BaybayinKeypad.new()
 	_keypad.labels = labels
-	_keypad.changed.connect(func(t: String) -> void: _answer.text = t)
+	_keypad.changed.connect(func(t: String) -> void:
+		_answer.text = t
+		if not _busy and _locked_until <= 0.0 and not _submit.disabled:
+			activity_changed.emit(true))
 	row.add_child(_keypad)
 
 
@@ -94,6 +98,7 @@ func _process(_delta: float) -> void:
 		_locked_until = 0.0
 		_status.text = ""
 		_submit.disabled = false
+		activity_changed.emit(true)
 
 
 func _on_submit() -> void:
@@ -104,12 +109,14 @@ func _on_submit() -> void:
 		Sfx.play("refused")
 		return
 	_busy = true
+	activity_changed.emit(true)
 	_submit.disabled = true
 	var result: String = await check.call(_keypad.text)
 	if not is_instance_valid(self):
 		return
 	_busy = false
 	_submit.disabled = false
+	activity_changed.emit(false)
 	match result:
 		"correct":
 			Sfx.play("correct")

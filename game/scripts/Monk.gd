@@ -19,6 +19,8 @@ var colour := "Black"                # Black, Blue or Red: the pack's monks
 
 var _body: AnimatedSprite2D
 var _signs: TowerSymbols
+var _typing: Label
+var busy := false
 
 
 func _ready() -> void:
@@ -28,6 +30,14 @@ func _ready() -> void:
 	_signs.position = SIGNS_AT
 	_signs.scale = Vector2(SIGNS_SCALE, SIGNS_SCALE)
 	add_child(_signs)
+	_typing = Art.label("Teammate typing…", 14, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	_typing.name = "Typing"
+	_typing.position = Vector2(-68, -78)
+	_typing.size = Vector2(136, 22)
+	_typing.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Art.shadow(_typing)
+	add_child(_typing)
+	set_busy(busy)
 
 
 ## Standing on his feet: the frame's empty rows below them taken up.
@@ -61,7 +71,17 @@ func take(team_colour: String) -> void:
 	if team_colour == colour:
 		return
 	colour = team_colour
+	set_busy(false)
 	_body.queue_free()
 	_body = _make_body()
 	if is_instance_valid(_signs) and not _signs.bursting():
 		_signs.burst()
+
+
+## A cooperative hint; a player can still interact with a busy monk.
+func set_busy(on: bool) -> void:
+	busy = on and colour == "Black"
+	if is_instance_valid(_typing):
+		_typing.visible = busy
+	if is_instance_valid(_signs) and not _signs.bursting():
+		_signs.visible = not busy

@@ -98,14 +98,19 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - **Validation:** full SQL suite (179 checks plus schema/concurrency checks),
   Godot multiplayer suite (14 checks), Godot match suite (44 checks), live
   timeout standings read, Android export, and the two-phone finish above.
-  Changes are **not committed**; commit only when asked.
+  The user has authorized testing and a separate commit after each remaining
+  feature. Baseline commit: `ad34cb7` (rooms, fonts, scenery, 1 v 1 fixes).
 - **Next verification:** six players at 3 v 3, including teammate monk states,
   then normal walking, disconnect/rejoin, and balance. Online code paths:
   `AdventureScreen._join_online`, `_go_live`, `_on_row`, `Match.start_online`
   / `take_row`, `ResultsScreen._standings`.
 
-### Not built (from DESIGN.md)
-1. The "teammate is typing" **busy** marker on monks (§3.2).
+### Remaining features and verification (from DESIGN.md)
+1. **Typing marker built:** teammate presence shows “Teammate typing…” on
+   monks. Hints expire after 12 s and clear on close, lockout, answer, or
+   disconnect; they never block interaction or transmit typed answers.
+   Local multiplayer regressions pass; live verification awaits a valid
+   project public key (the saved anon key currently returns 401).
 2. **Custom rooms** (§6.2): built. Home → Custom Room → `RoomScreen.gd`
    (extends `TeamNameScreen`'s lobby); server `create_room` / `start_room` /
    `leave_room` (schema 4f, `rooms_test.sql`). Not yet: host move/shuffle,

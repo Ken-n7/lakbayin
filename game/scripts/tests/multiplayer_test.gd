@@ -35,6 +35,7 @@ func _ready() -> void:
 	_private_movement()
 	_channel_recovery()
 	_lobby_reconnect()
+	await _monk_activity()
 	_account_change()
 	Net.realtime().close_socket()
 	Net.relay().leave()
@@ -149,3 +150,59 @@ func _account_change() -> void:
 	Net.access_token = "bob-token"
 	link.join("s1", "player")
 	check("logout discards the previous player's relay ticket", link.get("_ticket") == "" and link.get("_ticket_user") == "")
+
+
+func _monk_activity() -> void:
+	var peers: Array[String] = ["mate"]
+	var online := {"mate": [{"sid": "s1", "where": "map", "typing_monk": 2.0, "typing_until": 1010.0}],
+		"enemy": [{"sid": "s1", "where": "map", "typing_monk": 3, "typing_until": 1010.0}]}
+	check("only roster-confirmed teammates mark monks", MonkActivity.active(online, peers, "s1", 10, 1000) == {2: true})
+	check("typing hints are scoped to their match", MonkActivity.active(online, peers, "s2", 10, 1000).is_empty())
+	check("a dropped typist's hint expires", MonkActivity.active(online, peers, "s1", 10, 1011).is_empty())
+	for value: Variant in [-1, 10, 1.5, "2", null, INF]:
+		online.mate[0]["typing_monk"] = value
+		check("invalid typing index is ignored: %s" % str(value), MonkActivity.active(online, peers, "s1", 10, 1000).is_empty())
+	online.mate = [{"sid": "s1", "where": "map", "typing_monk": 2, "typing_until": 5000}]
+	check("a hint cannot claim an unbounded lifetime", MonkActivity.active(online, peers, "s1", 10, 1000).is_empty())
+	online.mate = [{"sid": "s1", "where": "lobby", "typing_monk": 1, "typing_until": 1010},
+		{"sid": "s1", "where": "map", "typing_monk": 2, "typing_until": 1010}]
+	check("all devices count, but lobby metadata cannot mark a monk", MonkActivity.active(online, peers, "s1", 10, 1000) == {2: true})
+
+	var adv := MovementAdventure.new()
+	add_child(adv)
+	adv.setup({"practice": true})
+	adv.skip_intro()
+	adv.play.practice = false
+	adv.play.session_id = "s1"
+	adv._typing_peers.assign(peers)
+	var rt := Net.realtime()
+	rt.online = {"mate": [{"sid": "s1", "where": "map", "typing_monk": 2,
+		"typing_until": Game.now() + 10}]}
+	adv._refresh_busy()
+	var monk: Monk = adv.world.monks[2]
+	check("a teammate's typing is visible on the actual monk", monk.busy and monk.get_node("Typing").visible)
+	rt.online.clear()
+	adv._refresh_busy()
+	check("departed typists clear the actual marker", not monk.busy)
+	monk.set_busy(true)
+	monk.take("Blue")
+	check("answered monks cannot remain busy", not monk.busy)
+	adv._open_monk(0)
+	check("opening the keypad announces its monk", rt.get("_tracked").get("typing_monk", -1) == 0)
+	check("typing presence never contains the answer", not rt.get("_tracked").has("typed") and not rt.get("_tracked").has("word"))
+	var overlay: Control = adv._overlay
+	var activity: Array = []
+	overlay.activity_changed.connect(func(active: bool) -> void: activity.append(active))
+	overlay.check = func(_typed: String) -> String: return "wrong"
+	overlay._keypad.press("ᜀ")
+	await overlay._on_submit()
+	check("a wrong answer clears typing during lockout", not activity.is_empty() and activity[-1] == false and not rt.get("_tracked").has("typing_monk"))
+	overlay._locked_until = Time.get_ticks_msec() / 1000.0 - 0.1
+	overlay._process(0.0)
+	check("an open keypad resumes typing when lockout ends", activity[-1] == true and rt.get("_tracked").get("typing_monk", -1) == 0)
+	overlay.close()
+	await get_tree().process_frame
+	check("closing the keypad clears typing presence", not rt.get("_tracked").has("typing_monk"))
+	adv.queue_free()
+	await get_tree().process_frame
+	rt.close_socket()
