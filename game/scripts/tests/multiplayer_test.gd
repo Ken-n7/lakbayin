@@ -300,6 +300,9 @@ func _watch_view() -> void:
 	check("watch renders the same match seed without creating a controllable player", screen.world.seed == Game.seed_of("s1")
 		and screen.find_children("*", "TouchScreenButton", true, false).is_empty()
 		and screen.find_children("*", "MonkOverlay", true, false).is_empty())
+	snapshot.session.state = "ended"
+	screen._apply(snapshot)
+	check("a finished spectator view stops showing an active countdown", screen.get("_time").text == "Final")
 	check("watch keeps individual carry and deposit counts visible", screen.get("_lists")[0].get_child_count() == 1
 		and str(screen.get("_lists")[0].get_child(0).text).contains("carry 1"))
 	screen._on_position("snap", {"sid": "other", "p": [{"id": "mate", "x": 10, "y": 20}]})
@@ -332,6 +335,9 @@ func _records_view() -> void:
 	labels = records.find_children("*","Label",true,false).map(func(l: Label) -> String: return l.text)
 	check("global board shows wins and deposited answers", labels.any(func(t: String) -> bool: return t.contains("2 wins") and t.contains("7 deposited")))
 	var results := preload("res://scripts/ResultsScreen.gd")
+	check("results and history share ranks for exact player ties", results._place([
+		{"deposited":2,"reached_s":3.0},{"deposited":2,"reached_s":3.0},{"deposited":0}],1) == 1
+		and results._place([{"deposited":2},{"deposited":2},{"deposited":0}],2) == 3)
 	check("results preserve sub-second deposit tie-breaks", is_equal_approx(results._seconds_in("2026-10-23T00:00:00.125+00:00",float(Time.get_unix_time_from_datetime_string("2026-10-23T00:00:00"))),0.125))
 	records.queue_free()
 	await get_tree().process_frame

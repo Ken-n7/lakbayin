@@ -72,7 +72,7 @@ func _build() -> void:
 		for i in players.size():
 			var p: Dictionary = players[i]
 			var me := str(p.profile_id) == Net.user_id
-			list.add_child(Art.label("%d.  %s%s   %d%s" % [i + 1, "★ " if me else "", p.username,
+			list.add_child(Art.label("%d.  %s%s   %d%s" % [_place(players, i), "★ " if me else "", p.username,
 				p.deposited, ("   ·  %s" % Ui.mmss(int(p.reached_s))) if float(p.reached_s) >= 0.0 else ""],
 				Pal.SMALL, Pal.WRONG if me else Peers.TEAM_COLOURS[clampi(int(p.team), 0, 1)].darkened(0.3)))
 
@@ -151,6 +151,14 @@ static func _rank_key(r: Dictionary) -> Array:
 	var at := float(r.get("reached_s", -1))
 	return [0 if r.get("finished") == true else 1, -int(r.get("deposited", 0)),
 		at if at >= 0.0 else INF]
+
+
+## The same contribution and timestamp share a place, as My Matches does.
+static func _place(rows: Array, index: int) -> int:
+	var first := index
+	while first > 0 and _rank_key(rows[first - 1]) == _rank_key(rows[index]):
+		first -= 1
+	return first + 1
 
 
 static func ranked(rows: Array) -> Array:

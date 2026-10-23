@@ -8,7 +8,7 @@ Written 2026-10-23 for the next agent (Codex). Read this, then `DESIGN.md`
 **Lakbayin** is a Godot 4.6 game for the **DOST Level Up 3.0 Esports Game Dev
 Challenge** (Student Category; themes: Education + Philippine culture).
 
-- 3 v 3 (setting goes 2–5 a side), matchmade, timed matches.
+- 3 v 3 (setting goes 1–5 a side), matchmade, timed matches.
 - Each match builds a **procedurally generated, mirrored island** from a seed.
 - **Monks** are scattered around it, each holding a Filipino word.
 - A player walks to any monk and types the word in **Baybayin** on a 20-key
@@ -83,9 +83,9 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   phones loaded **Red 10–0 Blue**, matching player standings and word lists.
   The winner's words were marked deposited. Neither updated phone process
   logged a script error.
-  - Existing debug Teleport and Answer Monk tools accelerated the finish;
-    a full match using ordinary walking and a six-player 3 v 3 are still to
-    be playtested. A 1 v 1 cannot verify teammate-specific visual updates.
+  - Existing debug Teleport and Answer Monk tools accelerated that earlier
+    finish. Six-player ordinary walking and teammate updates have now been
+    verified below.
   - Evidence: `build/shots/1v1-results-realme.png` and
     `build/shots/1v1-results-second-phone.png` (ignored build artifacts).
 - **Two live bugs fixed:**
@@ -100,12 +100,13 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   timeout standings read, Android export, and the two-phone finish above.
   The user has authorized testing and a separate commit after each remaining
   feature. Baseline commit: `ad34cb7` (rooms, fonts, scenery, 1 v 1 fixes).
-- **Next verification:** six players at 3 v 3, including teammate monk states,
-  then normal walking, disconnect/rejoin, and balance. Online code paths:
+- **Current verification:** six-player custom matches now pass normal walking,
+  teammate updates, reconnect/carry recovery, timeout ties and a ten-word
+  finish (below). Human balance review remains. Online code paths:
   `AdventureScreen._join_online`, `_go_live`, `_on_row`, `Match.start_online`
   / `take_row`, `ResultsScreen._standings`.
 
-### Remaining features and verification (from DESIGN.md)
+### Completed features and remaining submission work
 1. **Typing marker built:** teammate presence shows “Teammate typing…” on
    monks. Hints expire after 12 s and clear on close, lockout, answer, or
    disconnect; they never block interaction or transmit typed answers.
@@ -141,9 +142,45 @@ Challenge** (Student Category; themes: Education + Philippine culture).
    The user applied the SQL. Verified actual My Matches and Global Players
    on the updated Realme, including its earlier 10-deposit matchmade win.
    All Godot suites and the complete SQL suite pass.
-5. **Videos and forms** for the 25 Oct entry: 1–2 min trailer, 3–5 min
+5. **Full 3 v 3 verified:** five isolated laptop clients plus the Realme,
+   three players per team. See the live playtest notes below.
+6. **Videos and forms** for the 25 Oct entry: 1–2 min trailer, 3–5 min
    gameplay video, Forms 01–03, a ≤500-word synopsis. Practice mode records
    fine solo.
+
+### Live six-player playtest: verified 2026-10-23
+- **Timeout:** room `889Y`, session `fa96d515-956b-4d9d-8cdd-2eb7a7e21ed3`.
+  All six connected, five remote positions on every laptop, identical seed
+  `93709977`. Blue teammate typing/answered states propagated. Carried words
+  survived restarting all five laptop clients. Both sides walked to monks,
+  answered and walked to the Monastery. Final: **Red wins 2–2**, reaching two
+  deposits at `09:45:12.151046Z` before Blue at `09:45:23.760422Z`.
+- **Ten-word finish:** room `E4KU`, session
+  `3f39041a-041a-4312-8c82-ffb13e22a964`. Automated laptop controls used normal
+  movement, collision checks, keypad entry and interaction throughout; no
+  teleport or direct scoring RPC shortcut. All three Blue players contributed
+  (4/3/3 deposits), and both Red laptop players deposited three each. The
+  Realme stayed connected on Red. Final: **Blue 10–6 Red**, ending for all six
+  at `13:01:46.628282Z`. All five laptop Results and the Realme agreed.
+- The phone's history records the Custom loss, rank 6, zero own deposits.
+  The global board stayed unchanged by both custom matches. Live Watch also
+  received a complete 10–0 finish in room `NRC6` before these tests.
+- Evidence under ignored `build/shots/features/`: `six-timeout.json`,
+  `six-complete.json`, `six-live-run.json`, `six-finish-progress.json`,
+  `six-teammate-typing.json`, `watch-live-*.json`. Phone captures copied there
+  as `six-timeout-realme.png`, `six-complete-realme.png`, `records-realme.png`,
+  `board-realme.png`. Private test credentials remain only in `/tmp`.
+- Live-play fixes: completed Watch shows **Final**, and Results shares ranks
+  for exact contribution/time ties, matching My Matches. Neither changes map
+  generation, fonts or the approved Home composition.
+- Latest validation: all 15 Godot suites, including multiplayer **55**, match
+  **44**, and layout **0** overflows at 640/800; complete SQL suite **264**
+  numbered checks plus schema upgrade/rerun and concurrency checks. Android
+  debug export and updated Realme install. Records commit: `06b8a7e`.
+- This was automated multi-client testing with a connected phone, not six
+  human players. Word review, human usability/balance and submission media
+  still need attention. Live ranked size remains **1** and email confirmation
+  remains **off**, as requested; custom 3 v 3 needs no configuration change.
 
 ### Known rough edges
 - The minimap (132×74) covers the top-right of the play view.

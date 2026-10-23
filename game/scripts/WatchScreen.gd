@@ -229,7 +229,7 @@ func _frame_map() -> void:
 func _update_clock() -> void:
 	var session: Dictionary = data.get("session", {})
 	var sec := WatchFeed.time_left(session, Time.get_unix_time_from_system() + _offset)
-	_time.text = Ui.mmss(sec)
+	_time.text = "Final" if str(session.get("state", "")) == "ended" else Ui.mmss(sec)
 	if str(session.get("state", "")) == "lobby":
 		_status.text = "Waiting for the host to start · scores count deposited words"
 	elif str(session.get("state", "")) == "ended" or sec == 0:

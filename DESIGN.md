@@ -108,7 +108,8 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 - **Team result:** a team that finishes beats any team that didn't. Otherwise
   the rule above applies to team totals.
 - **Player ranking inside a match** (MVP list): the same rule, on each player's
-  own deposits. This is "placed by contribution and time".
+  own deposits. This is "placed by contribution and time". Players tied on
+  both share a rank in Results and My Matches.
 - **One number on screen**, if needed:
   `score = deposited × 10000 + seconds_left_when_reached`. It sorts exactly
   like the two-step rule, because time can never outweigh one answer.
@@ -244,7 +245,8 @@ spelling**, marking which ones your team got right, got wrong, or missed.
 - A player still waiting after **90 s** (`match_config.search_s`) drops out of
   the queue: "No match found — tap Find Match to search again."
 - Team size is one setting (`match_config.team_size`, 1 to 5). It is **3** by
-  default; use **1** for a two-phone playtest, then restore **3**.
+  default; **1** also supports two-phone testing. The live project remains
+  at **1** by request; custom rooms can still test 3 v 3.
 - Lobby phones check in every few seconds. One silent for 15 s loses its place.
   The lobby shows "Searching for players — 4 of 6 · 1:07 left".
 - **Counts for the global leaderboard.**
@@ -393,9 +395,9 @@ The phone never decides an outcome. The server:
 | Day | Work | Status |
 |---|---|---|
 | **Day 1** | Word list, Baybayin keypad, Noto Sans Tagalog, server answer checking, monks; rename to Lakbayin | Done |
-| **Day 2** | Procedural world (mirrored; monks, Monastery, fair spawns), per-team monk state, team vision on the minimap, carry/deposit, timer win, results screen, Practice mode; teacher mode and the old rules removed | Done. Live two-phone 1 v 1 verified Oct 23: keypad answers, carry, deposit, shared match end, and standings. Full 3 v 3 playtest pending |
+| **Day 2** | Procedural world (mirrored; monks, Monastery, fair spawns), per-team monk state, team vision on the minimap, carry/deposit, timer win, results screen, Practice mode; teacher mode and the old rules removed | Done. Live two-phone 1 v 1 verified Oct 23: keypad answers, carry, deposit, shared match end, and standings. Six-player custom tests verified Oct 23: normal walking, teammate updates, reconnect/carry recovery, timeout tie-break and Blue 10–6 finish |
 | **Oct 25** | Record the trailer (1–2 min) and gameplay video (3–5 min, .mp4); Forms 01–03; synopsis (≤500 words); submit | |
-| Before Nov 9 | Custom rooms, Watch mode, My Matches, global board, polish | Implemented and tested locally and live; six-player playtest next |
+| Before Nov 9 | Custom rooms, Watch mode, My Matches, global board, polish | Implemented and tested locally and live; six-player verification complete |
 | Before Nov 26 | Playtests, balance (clock, monk count), word list review, art polish | |
 
 Ship order if time runs short: practice mode and a working 3 v 3 match first.
