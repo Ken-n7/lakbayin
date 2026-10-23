@@ -29,11 +29,6 @@ var solid: Array[Rect2] = []          # walls: buildings, boulders, guards
 var station_rects: Array[Rect2] = []  # keep-outs the decor pass avoids
 var sign_rects: Array[Rect2] = []     # the station signboards, specifically
 
-## The walk, in order: base camp, then each station's tower and its circles,
-## then the Victory Gate. Owned here because it is the one thing every
-## footprint has to be checked against -- nothing the player must stand on may
-## end up inside a wall.
-var anchors: Array = []
 
 ## The grass layer. Walkability asks `land`, which is exactly what it is
 ## painted from -- and is there before the paint, when Terrain checks its work.
@@ -247,15 +242,6 @@ func clear_of_buildings(r: Rect2) -> bool:
 
 func clear_of_signs(r: Rect2) -> bool:
 	return clear_of(r, sign_rects)
-
-
-## Nothing the player has to stand on may end up inside a wall.
-func clear_of_anchors(rect: Rect2) -> bool:
-	var r := rect.grow(MapCfg.ANCHOR_CLEARANCE)
-	for a in anchors:
-		if r.has_point(a):
-			return false
-	return true
 
 
 # --- Writing ----------------------------------------------------------------

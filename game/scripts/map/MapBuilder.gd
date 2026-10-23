@@ -59,14 +59,3 @@ func retile(cells: Array) -> void:
 		# Cols 0-3 are the foam-outlined land-meets-water set, so the shoreline
 		# is baked into the tile itself and reads the same on all four sides.
 		grass.set_cell(c, 0, Art.autotile(left, right, up, down))
-
-
-# --- The walk ---------------------------------------------------------------
-## Anchor index of each tower: one before each station's run of circles.
-func tower_anchors() -> Array:
-	var out: Array = []
-	var k := 1                       # anchor 0 is the base camp
-	for st in Game.ITEMS_PER_STATION.size():
-		out.append(k)
-		k += 1 + Game.ITEMS_PER_STATION[st]
-	return out
