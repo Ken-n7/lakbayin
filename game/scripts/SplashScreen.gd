@@ -116,7 +116,7 @@ func skip() -> void:
 	if not Net.signed_in() or Net.role == "":
 		main.open("login")
 	else:
-		main.open("admin" if Net.role == "admin" else "home")
+		main.open("home")
 
 
 func go_back() -> void:

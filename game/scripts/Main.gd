@@ -11,14 +11,8 @@ const SCREENS := {
 	"home": preload("res://scripts/HomeScreen.gd"),
 	"hero": preload("res://scripts/HeroSelectScreen.gd"),
 	"team": preload("res://scripts/TeamNameScreen.gd"),
-	"admin": preload("res://scripts/AdminHomeScreen.gd"),
-	"questions": preload("res://scripts/QuestionMgmtScreen.gd"),
-	"controls": preload("res://scripts/GameControlsScreen.gd"),
-	"feedback": preload("res://scripts/FeedbackScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),
-	"board": preload("res://scripts/LeaderboardScreen.gd"),
-	"history": preload("res://scripts/HistoryScreen.gd"),
-	"summary": preload("res://scripts/SummaryScreen.gd"),
+	"results": preload("res://scripts/ResultsScreen.gd"),
 }
 
 ## Music per screen (client), a playlist in `Music.gd`: the town songs on the
@@ -29,14 +23,10 @@ const SCREENS := {
 ## to The Journey once the adventure starts.
 const MUSIC := {
 	"login": "town", "register": "town", "reset": "town", "home": "town",
-	"team": "town", "board": "town",
+	"team": "town",
 	"hero": "shop",
-	"summary": "victory",
+	"results": "victory",
 	"adventure": "battle",
-	# The Quest Keeper's side matches the players' (client): its home and what
-	# that opens are the town songs; Game Controls follows its session.
-	"admin": "town", "questions": "town", "feedback": "town", "controls": "town",
-	"history": "town",
 }
 
 var current: Control = null
@@ -47,7 +37,7 @@ var music: Music
 ## screen so it carries on across screen changes instead of restarting.
 var backdrop: Backdrop
 ## Screens with a scene of their own: the map, and Home's island diorama.
-const OWN_SCENE := ["adventure", "home", "admin"]
+const OWN_SCENE := ["adventure", "home"]
 
 
 func _ready() -> void:
@@ -86,24 +76,18 @@ func _build_dev_panel() -> void:
 		dev_panel.on_screen(current_name)
 
 
-## Dev only: the map with no session, signed in or not -- nothing online,
-## nothing scored, a clock long enough not to end on you. The dev panel's Map
-## tab (Teleport, Skip Station, Open Gates, Fast Walk, Show Walls) does the rest.
-const EXPLORE_S := 7200
-
-
+## Dev only: a Practice match, signed in or not -- nothing online, nothing
+## scored. The dev panel's Map tab (Teleport, Answer Monk, Fast Walk, Show
+## Walls) does the rest.
 func explore_map() -> void:
 	Game.abandon_adventure()
-	Game.begin_adventure(EXPLORE_S)
-	open("adventure", {"explore": true})
+	open("adventure", {"practice": true})
 
 
-## The map is the one screen with a precondition -- it reads a run that may not
-## exist yet -- so jumping to it starts one rather than showing a dead board.
+## The map is the one screen with a precondition -- it needs a match -- so
+## jumping to it starts a Practice one rather than showing a dead board.
 func _dev_open(name: String) -> void:
-	if name == "adventure" and not Game.adventure_active:
-		Game.begin_adventure(int(Game.duration_seconds))
-	open(name)
+	open(name, {"practice": true} if name == "adventure" else {})
 
 
 func open(name: String, data: Dictionary = {}) -> void:

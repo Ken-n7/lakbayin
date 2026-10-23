@@ -1,54 +1,27 @@
 extends Node
 
-## Lakbayin global run state: gems economy, adventure timer, scoring rules,
-## player profile and persistence. Mirrors the rules in the game design doc.
+## Lakbayin's global state: the match clock (read off the server's deadline),
+## the session this phone is in, the player's profile and hero, and the input
+## map. The match itself -- words, answers, deposits -- is `Match`'s.
 
-signal gems_changed(gems: int)
 signal time_changed(seconds_left: int)
 signal adventure_started
+## The clock ran out (or `end_adventure` was called): the match screen ends it.
 signal adventure_ended(result: Dictionary)
-## lobby / running / paused / ended, as the admin's session row says.
+## lobby / running / ended, as the session row says.
 signal session_state_changed(state: String)
-## Gems reached zero. The team is charged GEM_ELIMINATED once.
-signal eliminated_changed
-
-# --- Gems scoring rules (from the NumXventure design) -----------------------
-const START_GEMS := 50
-const GEM_CORRECT := 10
-const GEM_WRONG := -5
-const GEM_HINT := -5
-const GEM_SKIP := -15
-const GEM_PERFECT_BONUS := 10
-## Level Up rules. The combo: each correct answer in a row with no hint is
-## worth GEM_STREAK_STEP more than the last, up to STREAK_CAP steps (10..20).
-## A miss, a skip or a hint resets it. Restated on the server (apply_answer).
-const GEM_STREAK_STEP := 2
-const STREAK_CAP := 5
-## The race to the Victory Gate: first, second, third through, then everyone
-## after. Paid by the server (finish_run), which alone knows the order.
-const GEM_RACE := [20, 15, 10, 5]
-const GEM_TEAM_FINISH_PENALTY := -25
-## Charged to the team the first time a member reaches zero gems.
-const GEM_ELIMINATED := -50
-
-# --- Adventure shape --------------------------------------------------------
-const ITEMS_PER_STATION := [8, 3, 3]      # Station 1/2/3
-const TOTAL_ITEMS := 14                   # sum of ITEMS_PER_STATION: one circle each
-const DURATION_CHOICES := [300, 600, 900] # 5 / 10 / 15 minutes
 
 # --- Hero roster ------------------------------------------------------------
 ## Super Retro World character pack: 32 sheets, one per adventurer.
 const HERO_COUNT := 32
 
 ## `--profile=NAME` (after `--`) gives a desktop window its own save, so three
-## windows can be a teacher and two students instead of one login three times.
+## windows can be three players instead of one login three times.
 var SAVE_PATH := "user://lakbayin%s.cfg" % profile_suffix()
 
 
-##
 ## The live checks under `res://tools/` sign up throwaway accounts, and saved
-## them over the real login -- the teacher's window came back as a test admin
-## that owned none of the class's sessions. They get a profile of their own.
+## them over the real login. They get a profile of their own.
 static func profile_suffix() -> String:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--profile="):
@@ -58,62 +31,38 @@ static func profile_suffix() -> String:
 			return "-tools"
 	return ""
 
-# --- Palette (sampled from the pack) ---------------------------------------
-
-
-var gems := START_GEMS
-var correct := 0
-var wrong := 0
-var skipped := 0
-var hints_used := 0
-var streak := 0
-## What the last correct answer was worth, combo included, for the result card.
-var last_gain := GEM_CORRECT
 
 var adventure_active := false
 var duration_seconds := 600.0
 ## Seconds left, read off a deadline rather than counted down frame by frame.
 ## Adding up frame deltas ran slow wherever frames stall -- a phone in the
-## background, a window out of focus -- so every board in the room showed a
-## different clock, and none the teacher's. Anything that sets it (a session
-## row, the dev panel's +1:00) moves the deadline with it.
+## background, a window out of focus -- so every phone showed a different
+## clock. Anything that sets it (a session row, the dev panel's +1:00) moves
+## the deadline with it.
 var time_left := 0.0:
 	set(v):
 		time_left = v
 		_deadline = now() + v
 var _deadline := 0.0
 ## Server time minus this device's clock, from the `Date` on every reply (see
-## Supabase.gd). Phones in one classroom disagree by seconds to minutes; a
-## deadline read against each one's own clock gave each a different countdown.
+## Supabase.gd). Phones disagree by seconds to minutes; a deadline read against
+## each one's own clock gave each a different countdown.
 var clock_offset := 0.0
-
-var current_station := 0          # 0-based index of the active quiz station
-var items_done := 0               # global circle progress, 0..TOTAL_ITEMS
-var towers_entered: Array[bool] = [false, false, false]  # station intro card seen
-## Frozen aerial POV, and the admin's pause. Unpausing starts the deadline
-## again from what was left.
+## The aerial view before the start holds Practice's clock. Unpausing starts
+## the deadline again from what was left.
 var clock_paused := false:
 	set(v):
 		clock_paused = v
 		if not v:
 			_deadline = now() + time_left
-var completed_stations: Array[bool] = [false, false, false]
-var perfect_stations: Array[bool] = [false, false, false]
-var station_flawed := false       # flags a "no errors" run inside the current station
-var station_used_hint := false    # any hint this station -> no perfect bonus
-var item_used_hint := false       # one hint per item; reset by the quiz per question
 
 var player_name := ""
 var team_name := ""
-## The session this phone joined by code, kept across launches so Continue
-## Quest goes straight back in -- a dead phone mid-lesson must not need the
-## code read out again. `session_id` is the run being played; this is the door.
+## The session this phone joined, kept across launches so it goes straight
+## back in -- a dead phone mid-match must not lose its place.
 var joined_session := ""
 var joined_code := ""
 var hero_id := 1
-
-var leaderboard: Array = []   # [{name, gems}]
-var last_run: Dictionary = {}
 
 
 ## Sheet for an adventurer. Kept here so every screen spells the path once.
@@ -160,27 +109,12 @@ func _ready() -> void:
 	load_profile()
 
 
-## The state of the admin's session, "" when playing offline.
+## The state of the session, "" in Practice.
 var session_state := ""
-## Latches once, and the team is only ever charged for it once. In a session an
-## eliminated player is out: they watch the rest of the adventure from the map
-## (client; `AdventureScreen._begin_spectating`). Playing alone, they carry on.
-var eliminated := false
-## This player's one rescue is spent (client: ONE chance per player per
-## adventure). The server enforces it (`public.rescue`); this keeps the button
-## honest, and comes back from the member row on a restore.
-var rescue_sent := false
-## The session the score belongs to, "" when playing offline.
+## The session being played, "" in Practice.
 var session_id := ""
-## A run with no session to follow (offline, explore): its own towers, fixed
-## when it begins (`board_seed`).
-var solo_seed := 0
 
 
-## The server owns the clock (SPECS §3: "durungan an ira pag-answer dapat").
-## `ends_at` is the deadline while running and `remaining_s` is what was banked
-## at a pause; the local tick in `_process` only fills the gaps between
-## updates, so a phone that joins late or sleeps still agrees with the room.
 ## The time everyone's clock is read against: the server's, as near as this
 ## device can tell. Unix seconds.
 func now() -> float:
@@ -197,6 +131,9 @@ static func http_date(v: String) -> int:
 		p[3], months.find(p[2]) + 1, int(p[1]), p[4]])
 
 
+## The server owns the clock: `ends_at` is the deadline while running. The
+## local tick in `_process` only fills the gaps between updates, so a phone
+## that joins late or sleeps still agrees with the room.
 func apply_session(row: Dictionary) -> void:
 	var state := str(row.get("state", ""))
 	duration_seconds = float(int(row.get("duration_s", 600)))
@@ -205,30 +142,17 @@ func apply_session(row: Dictionary) -> void:
 			var ends := Time.get_unix_time_from_datetime_string(str(row.get("ends_at", "")))
 			time_left = maxf(0.0, float(ends) - now())
 			clock_paused = false
-		"paused":
-			# What the pause banked, not what this phone had counted to.
-			time_left = float(int(row.get("remaining_s", 0)))
-			clock_paused = true
 		"ended":
 			time_left = 0.0
 			clock_paused = true
 		_:
-			# lobby: the board is up, the clock has not started.
+			# lobby: the clock has not started.
 			time_left = duration_seconds
 			clock_paused = true
 	session_state = state
 	session_id = str(row.get("id", session_id))
 	time_changed.emit(int(ceilf(time_left)))
 	session_state_changed.emit(state)
-
-
-## Something happened that changes the score. Whoever is online listens and
-## forwards it; `Game` itself never names the backend, because `test_rules.gd`
-## loads this file with `--script`, which registers no autoloads -- naming
-## `Net` here hangs a suite instead of failing it.
-##
-## `kind` is answer / hint / skip / station; `flag` is correct, or perfect.
-signal scored(kind: String, flag: bool)
 
 
 func _process(_delta: float) -> void:
@@ -239,274 +163,37 @@ func _process(_delta: float) -> void:
 			end_adventure()
 
 
-# --- Adventure lifecycle ----------------------------------------------------
+# --- The match's clock ------------------------------------------------------
 func begin_adventure(seconds: int = 600) -> void:
-	_gems_reset()
 	duration_seconds = float(seconds)
 	time_left = duration_seconds
 	adventure_active = true
 	clock_paused = false
-	eliminated = false
-	rescue_sent = false
-	current_station = 0
-	items_done = 0
-	towers_entered = [false, false, false]
-	completed_stations = [false, false, false]
-	perfect_stations = [false, false, false]
-	# Last run's session must not leak into this one: an `ended` state left
-	# over would refuse every answer until the fresh fetch landed.
+	# Last match's session must not leak into this one.
 	session_id = ""
 	session_state = ""
-	solo_seed = randi() % 2000000000 + 1
 	adventure_started.emit()
 
 
-## Which towers this run's board stands (Terrain.tower_seed): a game's
-## session, so every phone in it -- and the Quest Keeper's map -- builds the
-## same board, and a phone coming back builds it again; with none, the run's
-## own. 0 is the board as drawn.
-func board_seed() -> int:
-	# `Net` looked up, not named: this script is compiled where the other
-	# autoloads are not identifiers yet (a `--script` suite), and naming one
-	# fails the whole of Game with it.
-	var net: Node = (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Net")
-	if joined_session != "" and net != null and net.signed_in():
-		return seed_of(joined_session)
-	return solo_seed
-
-
-## A session's tower seed: positive, never 0.
-static func seed_of(session: String) -> int:
-	return (hash(session) & 0x3FFFFFFF) + 1
-
-
-## Only while the clock runs does an answer count. The server refuses a score
-## outside `running`, so a phone that took one locally anyway would walk on
-## ahead of its own row and the team total would never see it.
-func can_score() -> bool:
-	return session_state == "" or (session_state == "running" and time_left > 0.0)
-
-
-## Back into a run already under way -- a phone that died, an app restarted,
-## "Join Quest" after leaving the board. The server's member row is the
-## progress; a fresh local run would put the player back on circle 1 while
-## every answer still moved the server's counter on from where it was.
-func restore_from(row: Dictionary) -> void:
-	gems = int(row.get("gems", START_GEMS))
-	correct = int(row.get("correct", 0))
-	items_done = clampi(int(row.get("items_done", 0)), 0, TOTAL_ITEMS)
-	wrong = int(row.get("wrong", maxi(items_done - correct, 0)))
-	skipped = int(row.get("skipped", 0))
-	hints_used = int(row.get("hints_used", 0))
-	streak = int(row.get("streak", 0))
-	station_flawed = bool(row.get("station_flawed", false))
-	station_used_hint = bool(row.get("station_used_hint", false))
-	item_used_hint = bool(row.get("item_used_hint", false))
-	eliminated = bool(row.get("eliminated", false))
-	rescue_sent = row.get("rescued_at") != null
-	current_station = station_of_item(items_done)
-	var end := 0
-	var finished_stations := int(row.get("stations_done", -1))
-	var perfect: Array = row.get("perfect_stations", [false, false, false])
-	for s in ITEMS_PER_STATION.size():
-		var start := end
-		end += ITEMS_PER_STATION[s]
-		completed_stations[s] = s < finished_stations if finished_stations >= 0 else items_done >= end
-		perfect_stations[s] = bool(perfect[s]) if s < perfect.size() else false
-		# Past its first circle means its briefing was read.
-		towers_entered[s] = items_done > start
-	gems_changed.emit(gems)
-
-
-## Walking away from a run: dropped, not scored. No summary, no leaderboard row
-## and no -25 for the stations left unfinished.
+## The clock stops, nothing more: the match screen has already ended the match.
 func abandon_adventure() -> void:
 	adventure_active = false
 
 
+## The clock ran out.
 func end_adventure() -> void:
 	if not adventure_active:
 		return
 	adventure_active = false
-	var finished_all := completed_stations.all(func(v: bool) -> bool: return v)
-	var result := {
-		"gems": gems,
-		"correct": correct,
-		"wrong": wrong,
-		"skipped": skipped,
-		"hints": hints_used,
-		"completed": completed_stations,
-		"perfect": perfect_stations,
-		"finished_all": finished_all,
-		"time_up": time_left <= 0.0,
-	}
-	if not finished_all:
-		gems += GEM_TEAM_FINISH_PENALTY
-		gems_changed.emit(gems)
-		result.gems = gems
-	last_run = result
-	_register_leaderboard(me(), gems)
-	save_profile()
-	adventure_ended.emit(result)
+	adventure_ended.emit({"time_up": time_left <= 0.0})
 
 
-## Who this run scores as: the team if one was joined, else the player. The
-## client's winner is always a team, so this is the leaderboard's row key and
-## the name the summary highlights.
-func me() -> String:
-	return team_name if team_name != "" else player_name
+## A session's world seed: positive, never 0.
+static func seed_of(session: String) -> int:
+	return (hash(session) & 0x3FFFFFFF) + 1
 
 
-# --- Circle progress --------------------------------------------------------
-## The 20/10/10 split is decoded in exactly these two places. `items_done` is a
-## single global counter because the path is strictly sequential -- circle n+1
-## cannot be resolved before n, so one number is the whole progress state.
-static func station_of_item(i: int) -> int:
-	var seen := 0
-	for s in ITEMS_PER_STATION.size():
-		seen += ITEMS_PER_STATION[s]
-		if i < seen:
-			return s
-	return ITEMS_PER_STATION.size() - 1   # past the last circle: stay on station 3
-
-
-static func item_in_station(i: int) -> int:
-	var seen := 0
-	for s in ITEMS_PER_STATION.size():
-		if i < seen + ITEMS_PER_STATION[s]:
-			return i - seen
-		seen += ITEMS_PER_STATION[s]
-	return ITEMS_PER_STATION[ITEMS_PER_STATION.size() - 1] - 1
-
-
-# --- Gems bookkeeping -------------------------------------------------------
-func _gems_reset() -> void:
-	gems = START_GEMS
-	correct = 0
-	wrong = 0
-	skipped = 0
-	hints_used = 0
-	streak = 0
-	station_flawed = false
-	station_used_hint = false
-	item_used_hint = false
-	gems_changed.emit(gems)
-
-
-## No clamp. Gems reach zero and the player is eliminated -- the paper's
-## "Eliminated Member (reaching 0 gems): -50 gems", which could never fire
-## while this floored at zero. The -50 is charged once, by `eliminated`
-## latching, so a run cannot keep billing the team.
-func _apply(delta: int) -> void:
-	gems += delta
-	if gems <= 0 and not eliminated:
-		eliminated = true
-		eliminated_changed.emit()
-	gems_changed.emit(gems)
-
-
-## Why this player cannot rescue a teammate right now, or "" when they can.
-## A rescue gives away at least 1 gem and keeps at least 1, so it takes 2.
-## The server checks all of it again; this is what the button says.
-func rescue_block() -> String:
-	if session_id == "":
-		return "Rescue is for team games — join a Quest"
-	if rescue_sent:
-		return "You have used your rescue"
-	if eliminated:
-		return "You are out of gems"
-	if gems < 2:
-		return "You need at least 2 gems to rescue"
-	return ""
-
-
-## The most this player may give: everything but the 1 gem they keep.
-func rescue_max() -> int:
-	return maxi(gems - 1, 0)
-
-
-## A rescue the server has taken: the gems leave this player's purse now, and
-## their one chance is spent.
-func give_rescue(amount: int, settled: Dictionary = {}) -> void:
-	rescue_sent = true
-	if settled.has("gems"):
-		# The change feed may have delivered this debit before its HTTP reply.
-		gems = int(settled.gems)
-		eliminated = bool(settled.get("eliminated", eliminated))
-		gems_changed.emit(gems)
-	else:
-		_apply(-amount)
-
-
-## One hint per item, -5 gems each (design doc: "Use of Hint: -5 gems").
-func spend_hint() -> bool:
-	if item_used_hint:
-		return false
-	item_used_hint = true
-	station_used_hint = true
-	hints_used += 1
-	streak = 0
-	_apply(GEM_HINT)
-	scored.emit("hint", false)
-	return true
-
-
-func begin_item() -> void:
-	item_used_hint = false
-
-
-func mark_wrong() -> void:
-	wrong += 1
-	items_done += 1
-	station_flawed = true
-	streak = 0
-	_apply(GEM_WRONG)
-	scored.emit("answer", false)
-
-
-func mark_correct() -> void:
-	correct += 1
-	items_done += 1
-	last_gain = GEM_CORRECT if item_used_hint else GEM_CORRECT + GEM_STREAK_STEP * mini(streak, STREAK_CAP)
-	streak = 0 if item_used_hint else streak + 1
-	_apply(last_gain)
-	scored.emit("answer", true)
-
-
-func mark_skipped() -> void:
-	skipped += 1
-	items_done += 1
-	station_flawed = true
-	streak = 0
-	_apply(GEM_SKIP)
-	scored.emit("skip", false)
-
-
-## Through the Victory Gate: the server records this player's own time.
-func mark_finished() -> void:
-	scored.emit("finish", true)
-
-
-## Call after finishing a station's last item.
-func finish_station(station_index: int) -> int:
-	# Online, the final answer commits the completion and bonus atomically.
-	# Its reply may arrive before the player presses Continue on the result.
-	if completed_stations[station_index]:
-		return GEM_PERFECT_BONUS if perfect_stations[station_index] else 0
-	var bonus := 0
-	if not station_flawed and not station_used_hint:
-		bonus = GEM_PERFECT_BONUS
-		_apply(bonus)
-	scored.emit("station", bonus > 0)
-	completed_stations[station_index] = true
-	perfect_stations[station_index] = bonus > 0
-	station_flawed = false
-	station_used_hint = false
-	item_used_hint = false
-	return bonus
-
-
-# --- Profile / leaderboard persistence --------------------------------------
+# --- Profile ----------------------------------------------------------------
 func load_profile() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SAVE_PATH) != OK:
@@ -516,7 +203,6 @@ func load_profile() -> void:
 	joined_session = cfg.get_value("profile", "session", "")
 	joined_code = cfg.get_value("profile", "code", "")
 	hero_id = clampi(int(cfg.get_value("profile", "hero_id", 1)), 1, HERO_COUNT)
-	leaderboard = cfg.get_value("leaderboard", "rows", leaderboard)
 
 
 func save_profile() -> void:
@@ -526,22 +212,4 @@ func save_profile() -> void:
 	cfg.set_value("profile", "session", joined_session)
 	cfg.set_value("profile", "code", joined_code)
 	cfg.set_value("profile", "hero_id", hero_id)
-	cfg.set_value("leaderboard", "rows", leaderboard)
 	cfg.save(SAVE_PATH)
-
-
-## The offline board: this machine's own runs, best score per team name. The
-## four invented rival parties are gone -- they sat above real students on a
-## board the client reads as a result.
-func _register_leaderboard(entry_name: String, entry_gems: int) -> void:
-	var best: Dictionary = {}
-	for row in leaderboard:
-		best[row.name] = maxi(int(row.gems), int(best.get(row.name, 0)))
-	if entry_name != "":
-		best[entry_name] = entry_gems   # this run replaces the player's old row
-	best.erase("")
-	var rows: Array = []
-	for n in best:
-		rows.append({"name": n, "gems": best[n]})
-	rows.sort_custom(func(a, b): return a.gems > b.gems)
-	leaderboard = rows.slice(0, 8)

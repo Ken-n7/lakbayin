@@ -71,7 +71,8 @@ func _entries() -> Array:
 	var has_profile := Game.player_name != ""
 	return [
 		["Join Quest" if has_profile else "Start Adventure", "", Ui.RED, {}, "play"],
-		["Leaderboard", "board", Ui.SMALL, {}, "trophy"],
+		# Alone, offline, with the keypad's Latin labels: learning the script.
+		["Practice", "adventure", Ui.SMALL, {"practice": true}, "book"],
 		["Settings", _open_settings, Ui.SMALL, {}, "gear"],
 		["Quit", _confirm_quit, Ui.SMALL, {}, "exit"],
 	]
@@ -81,41 +82,6 @@ func _entries() -> Array:
 ## header: its column has no room for Settings and Quit.
 func _logout_in_settings() -> bool:
 	return true
-
-
-## The gem total in the header and "Your gems are saved." on Quit: a teacher
-## plays no adventures, so has no gems.
-func _has_gems() -> bool:
-	return true
-
-
-## Every gem the player's adventures have come to, ahead of their name: the
-## glinting gem and the total, then a bar (client). Sized as it was under the
-## menu -- a 16px gem, the number in body text. Shown once the server
-## answers; 0 until the first adventure is over.
-func _load_gems(head: HBoxContainer) -> void:
-	var icon := Art.texrect(Ui.GEM, 16, 16)
-	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var n := Art.label("", Pal.BODY, Pal.GOLD)
-	n.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	Art.shadow(n, Pal.SHADOW, 2, 0)
-	var bar := Art.label("|", Pal.BODY, Pal.CREAM)
-	bar.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	Art.shadow(bar, Pal.SHADOW, 2, 0)
-	for c: Control in [icon, n, bar]:
-		c.visible = false
-		head.add_child(c)
-	var results: Array = await Teams.my_results()
-	if not is_instance_valid(n):
-		return
-	# A new player shows 0 rather than nothing: the count is there to grow.
-	var total := 0
-	for r: Dictionary in results:
-		total += int(r.gems)
-	n.text = str(total)
-	n.tooltip_text = "Gems from %d adventures" % results.size()
-	for c: Control in [icon, n, bar]:
-		c.visible = true
 
 
 ## Hook for anything a subclass wants under the buttons.
@@ -271,9 +237,6 @@ func _build_header() -> void:
 	head.offset_bottom = INSET + 30
 	head.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(head)
-
-	if _has_gems():
-		_load_gems(head)
 
 	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
 	who.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -432,9 +395,7 @@ func _open_settings() -> void:
 
 	Ui.section(box, "Account")
 	var hero := _account_button(box, "Change Character", "hero", Ui.SMALL)
-	# Back to whichever home this is: the player's, or the teacher's dashboard.
-	var back := "admin" if Net.role == "admin" else "home"
-	hero.pressed.connect(func() -> void: main.open("hero", {"then": back}))
+	hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
 	# Credits shares Log Out's row, so the panel keeps its height.
 	var credits := _account_button(box, "Credits", "book", Ui.SMALL)
 	credits.custom_minimum_size.x = 137
@@ -540,11 +501,8 @@ func _confirm_logout() -> void:
 
 func _confirm_quit() -> void:
 	_dialog = Ui.dim(self)
-	var box := Ui.screen_panel(_dialog, Vector2(300, 150 if _has_gems() else 124), "Quit Lakbayin?")
+	var box := Ui.screen_panel(_dialog, Vector2(300, 124), "Quit Lakbayin?")
 	box.add_theme_constant_override("separation", 10)
-	if _has_gems():                      # a player's reassurance; a teacher has no gems
-		box.add_child(Art.label("Your gems are saved.", Pal.SMALL, Pal.INK_MUTED,
-			HORIZONTAL_ALIGNMENT_CENTER))
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 10)

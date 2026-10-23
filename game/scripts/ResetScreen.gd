@@ -111,7 +111,7 @@ func _apply() -> void:
 	# confirm_reset leaves a live session behind, so there is nothing to sign
 	# back in to.
 	Sfx.play("success")
-	main.open("admin" if Net.role == "admin" else "home")
+	main.open("home")
 
 
 func _say(text: String, col: Color) -> void:

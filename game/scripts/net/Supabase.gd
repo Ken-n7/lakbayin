@@ -279,9 +279,6 @@ func restore_session() -> String:
 
 
 func sign_out() -> void:
-	# Loaded at runtime: Scores names Net, so a compile-time dependency here
-	# would break the standalone script suites that load Supabase directly.
-	load("res://scripts/net/Scores.gd").reset()
 	if is_instance_valid(_realtime):
 		_realtime.close_socket()
 	if is_instance_valid(_relay):

@@ -6,7 +6,6 @@ extends Control
 ##   Screens  -- jump to any screen, the board with no session, sign out
 ##   Map      -- the cheats, on the adventure map only (DevMapTools)
 ##   Network  -- this device's connections now, and switches (DevNetTools)
-##   Hub      -- the teacher's live message stats, on Game Controls only
 ## Debug builds only: Main never builds it in a release export. Lives on
 ## Main's own layer, so opening a screen -- which frees the last -- leaves it.
 ## F1 opens and closes it on a desktop.
@@ -21,13 +20,8 @@ const TAB_RECT := Rect2(0, 340, 30, 18)
 const PANEL_POS := Vector2(4, 4)
 const PANEL_W := 300.0
 const CONTENT_H := 292.0
-## Where the pinned Hub stats sit on Game Controls: against the right edge,
-## under the top bar's buttons -- over the map or the team list, never over
-## anything to press (layout_check).
-const PIN_TOP := 100.0
-const PIN_RIGHT := 8.0
 const SAVE := "user://dev.cfg"
-const TABS := ["Screens", "Map", "Network", "Hub"]
+const TABS := ["Screens", "Map", "Network"]
 
 var main: Control
 var _screen := ""
@@ -39,14 +33,12 @@ var _scroll: ScrollContainer
 var _shown := ""                 # the tab whose contents are up
 var _map: DevMapTools = null
 var _net := DevNetTools.new()
-var _pin: Control = null
 var _clock := 0.0
 
 ## Remembered on this device (SAVE): the last tab on each kind of screen (the
-## map, Game Controls, the rest), the Hub pin, the phone reports. The other
+## map, the rest), the phone reports. The other
 ## switches are for one test and reset with the app.
 static var last_tabs := {}
-static var hub_pinned := false
 
 
 func _ready() -> void:
@@ -54,8 +46,6 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_to_group("dev_panel")
 	_load()
-	if "--hub-debug" in OS.get_cmdline_user_args():
-		hub_pinned = true          # the live test scripts start with it pinned
 
 	_tab = DevUi.button("DEV", TAB_RECT.size.y)
 	_tab.custom_minimum_size = TAB_RECT.size
@@ -100,7 +90,6 @@ func on_screen(name: String) -> void:
 	_screen = name
 	if name != "adventure" and _map != null:
 		_map = null
-	_place_pin()
 	if is_open():
 		show_tab(_shown if available(_shown) else _default_tab())
 
@@ -109,8 +98,6 @@ func available(t: String) -> bool:
 	match t:
 		"Map":
 			return _screen == "adventure" and main != null and is_instance_valid(main.current)
-		"Hub":
-			return _screen == "controls"
 	return t in TABS
 
 
@@ -164,8 +151,6 @@ func show_tab(t: String) -> void:
 			body = _map_tools().build()
 		"Network":
 			body = _net.build(get_tree())
-		"Hub":
-			body = _hub()
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.add_child(body)
 	_fit.call_deferred(body)
@@ -180,13 +165,11 @@ func _fit(body: Control) -> void:
 	_box.reset_size()
 
 
-## The tab that fits where we are: the map's cheats on the map, the teacher's
-## stats on Game Controls, else the screen list.
+## The tab that fits where we are: the map's cheats on the map, else the
+## screen list.
 func _default_tab() -> String:
 	if available("Map"):
 		return "Map"
-	if available("Hub"):
-		return "Hub"
 	return "Screens"
 
 
@@ -266,49 +249,6 @@ func _go(text: String, then: Callable) -> Button:
 	return b
 
 
-# --- Hub -----------------------------------------------------------------------
-func _hub() -> Control:
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 2)
-	var pin := DevUi.button("Pin on screen")
-	DevUi.mark(pin, hub_pinned)
-	pin.pressed.connect(func() -> void:
-		hub_pinned = not hub_pinned
-		save_switches()
-		_place_pin()
-		show_tab("Hub"))
-	col.add_child(pin)
-	if hub_pinned:
-		col.add_child(DevUi.note("Pinned: the stats stay on Game Controls with this panel shut."))
-	else:
-		var stats := HubDebug.new()
-		stats.gc = main.current
-		stats.inline = true
-		col.add_child(stats)
-	return col
-
-
-## The pinned stats: on Game Controls while pinned, nowhere else. One at a
-## time -- HubDebug counts messages as it reads them.
-func _place_pin() -> void:
-	var want := hub_pinned and _screen == "controls" and main != null and is_instance_valid(main.current)
-	if want and (_pin == null or not is_instance_valid(_pin) or _pin.get("gc") != main.current):
-		if _pin != null and is_instance_valid(_pin):
-			_pin.queue_free()
-		_pin = HubDebug.new()
-		_pin.gc = main.current
-		_pin.compact = true
-		add_child(_pin)
-		_pin.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-		_pin.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-		_pin.offset_top = PIN_TOP
-		_pin.offset_right = -PIN_RIGHT
-		move_child(_pin, 0)           # under the tab and the panel
-	elif not want and _pin != null and is_instance_valid(_pin):
-		_pin.queue_free()
-		_pin = null
-
-
 # --- Remembered ----------------------------------------------------------------
 func _load() -> void:
 	var cfg := ConfigFile.new()
@@ -316,13 +256,11 @@ func _load() -> void:
 		return
 	var tabs: Variant = cfg.get_value("dev", "tabs", {})
 	last_tabs = tabs if tabs is Dictionary else {}
-	hub_pinned = bool(cfg.get_value("dev", "hub_pinned", hub_pinned))
 	NetReport.enabled = bool(cfg.get_value("dev", "reports", NetReport.enabled))
 
 
 static func save_switches() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("dev", "tabs", last_tabs)
-	cfg.set_value("dev", "hub_pinned", hub_pinned)
 	cfg.set_value("dev", "reports", NetReport.enabled)
 	cfg.save(SAVE)

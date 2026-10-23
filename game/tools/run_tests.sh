@@ -41,47 +41,17 @@ run "relay       " --script res://test_relay.gd
 # The home relay's own script runs nowhere in the suites: a parse error there
 # took the live relay down once (2026-10-09). This at least loads it.
 run "relay tool  " --check-only --script res://tools/relay.gd
-run "mathtext    " --script res://test_mathtext.gd
 run "auth        " --script res://test_auth.gd
-run "collisions  " --script res://test_collisions.gd
-# The towers change per game (Terrain.tower_seed): a few games' boards too.
-for s in 11 4242 90210 777777; do
-	run "  seed $(printf '%-6s' $s)" --script res://test_collisions.gd -- $s
-done
-run "smoke       " res://scripts/tests/smoke_test.tscn
+run "world       " res://scripts/tests/world_test.tscn
+run "match       " res://scripts/tests/match_test.tscn
 run "e2e         " res://scripts/tests/e2e_test.tscn
 run "touch       " res://scripts/tests/touch_test.tscn
 run "devpanel    " res://scripts/tests/dev_panel_test.tscn
-run "rescue      " res://scripts/tests/rescue_test.tscn
-run "alltime     " res://scripts/tests/alltime_test.tscn
-if out=$(timeout "$LIMIT" python3 tools/test_rankings.py 2>&1); then
-	echo "ok    rankings     $(echo "$out" | grep -E '^---- ' | tail -1)"
-else
-	echo "FAIL  rankings"; echo "$out"; fail=1
-fi
 run "keyboard    " res://scripts/tests/keyboard_test.tscn
 run "backdrop    " res://scripts/tests/backdrop_test.tscn
 run "baybayin    " res://scripts/tests/baybayin_test.tscn
-run "tower       " res://scripts/tests/tower_test.tscn
-run "netretry    " res://scripts/tests/net_retry_test.tscn
 run "multiplayer " res://scripts/tests/multiplayer_test.tscn
-run "removal     " res://scripts/tests/removal_test.tscn
 run "layout      " res://tools/layout.tscn
-
-# The two windowed tools need a GL context, so CI will skip them -- but they
-# reach deep into AdventureScreen and nothing else exercises them, so run them
-# wherever there is a display. map_shot's `_norm` call sat broken through a
-# whole refactor because nothing did.
-if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
-	shots=$(mktemp -d)
-	run "guards (GL) " --script res://tools/check_guards.gd
-	timeout "$LIMIT" godot --path . --script res://tools/map_shot.gd -- "$shots" >/dev/null 2>&1 \
-		&& echo "ok    shots (GL)   $(ls "$shots" | wc -l) written" \
-		|| { echo "FAIL  shots (GL)  -- map_shot.gd"; fail=1; }
-	rm -rf "$shots"
-else
-	echo "skip  GL tools -- no display"
-fi
 
 # The server's rules (supabase/schema.sql) on plain Postgres, wherever there is
 # one to talk to: PGHOST / PGPORT / PGUSER pointing at a server that lets this

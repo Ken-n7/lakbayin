@@ -77,47 +77,6 @@ static func find(code: String) -> Dictionary:
 		"session": {}}
 
 
-## Every adventure this player finished, newest first: [{gems, at}]. `gems`
-## is what the adventure left them with, counted the way `team_scores`
-## counts it -- the -25 for circles left and the -50 for being out -- so Home,
-## the summary and the board agree. A run still going is not a result yet.
-static func my_results() -> Array:
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		MEMBERS + "?select=gems,items_done,eliminated,sessions(state,created_at,ends_at)"
-		+ "&profile_id=eq." + Net.user_id)
-	var out: Array = []
-	for row: Dictionary in (got.data if got.data is Array else []):
-		var s: Variant = row.get("sessions")
-		if not (s is Dictionary) or not expired(s):
-			continue
-		out.append({"gems": final_gems(row), "at": _stamp((s as Dictionary).get("created_at"))})
-	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.at > b.at)
-	return out
-
-
-## A random (v4) uuid, made here so a new row can be announced before the
-## server has answered with its id.
-## A member row's gems once its adventure is over: less 50 if they were
-## eliminated, less 25 if they did not finish every item -- the team board's
-## rules (`team_scores`), for one player.
-static func final_gems(row: Dictionary) -> int:
-	var g := int(row.get("gems", 0))
-	if bool(row.get("eliminated", false)):
-		g -= 50
-	if int(row.get("items_done", 0)) < Game.TOTAL_ITEMS:
-		g += Game.GEM_TEAM_FINISH_PENALTY
-	return g
-
-
-static func uuid() -> String:
-	var b := Crypto.new().generate_random_bytes(16)
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	var h := b.hex_encode()
-	return "%s-%s-%s-%s-%s" % [h.substr(0, 8), h.substr(8, 4), h.substr(12, 4),
-		h.substr(16, 4), h.substr(20, 12)]
-
-
 ## One session by id, `{}` if it is gone. What a phone that already joined
 ## goes back to, rather than asking for the code again.
 static func session(session_id: String) -> Dictionary:
@@ -268,37 +227,6 @@ static func membership(session_id: String) -> Dictionary:
 	return rows[0] if not rows.is_empty() else {}
 
 
-## The caller's team-mates in this session, minus the caller. Who Rescue can
-## send to, and the only list it is allowed to offer -- the server checks the
-## same thing, since a dropdown is not a permission.
-static func teammates(session_id: String) -> Array:
-	var mine: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		MEMBERS + "?select=team_id&session_id=eq." + session_id
-		+ "&profile_id=eq." + Net.user_id)
-	var rows: Array = mine.data if mine.data is Array else []
-	if rows.is_empty():
-		return []
-	var team: Variant = rows[0].get("team_id")
-	if team == null:
-		return []
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		MEMBERS + "?select=profile_id,gems,eliminated,finished,profiles(username)"
-		+ "&session_id=eq." + session_id + "&team_id=eq." + str(team) + "&order=gems")
-	var out: Array = []
-	for row: Dictionary in (got.data if got.data is Array else []):
-		if str(row.get("profile_id", "")) == Net.user_id:
-			continue
-		var who: Variant = row.get("profiles")
-		out.append({
-			"profile_id": str(row.get("profile_id", "")),
-			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else "?",
-			"gems": int(row.get("gems", 0)),
-			"eliminated": bool(row.get("eliminated", false)),
-			"finished": bool(row.get("finished", false)),
-		})
-	return out
-
-
 ## Everyone in the session, whatever team: who they are, where they have got
 ## to, and which team's colour to draw them in. This is what puts the whole
 ## class on one board.
@@ -320,27 +248,5 @@ static func everyone(session_id: String) -> Array:
 			"items_done": int(row.get("items_done", 0)),
 			"gems": int(row.get("gems", 0)),
 			"eliminated": bool(row.get("eliminated", false)),
-		})
-	return out
-
-
-## team id -> [{profile_id, username}], with "" for everybody who has not
-## picked a team yet. What Game Controls lists on each card, and under "No
-## team", for the teacher to Move.
-static func roster(session_id: String) -> Dictionary:
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		MEMBERS + "?select=profile_id,team_id,profiles(username)&session_id=eq." + session_id
-		+ "&order=profile_id")
-	var out := {}
-	if got.error != "" or not (got.data is Array):
-		return out
-	for row: Dictionary in got.data:
-		var team: String = "" if row.get("team_id") == null else str(row.get("team_id"))
-		if not out.has(team):
-			out[team] = []
-		var who: Variant = row.get("profiles")
-		out[team].append({
-			"profile_id": str(row.get("profile_id", "")),
-			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else "?",
 		})
 	return out

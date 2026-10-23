@@ -6,8 +6,6 @@ extends Control
 const FORM_W := 290.0
 ## Username and Role share a row; Role gets the wider half, because
 ## "Player (student)" is longer than any username hint needs.
-const USER_W := 118.0
-const ROLE_W := 162.0
 const MIN_PASSWORD := 8
 
 var main: Control
@@ -15,7 +13,6 @@ var main: Control
 var _email: LineEdit
 var _user: LineEdit
 var _pass: LineEdit
-var _role: OptionButton
 var _msg: Label
 var _go: Button
 
@@ -25,27 +22,10 @@ func setup(_data: Dictionary) -> void:
 	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 	var box := Ui.auth_layout(self, "Create Account", 320)
 
-	# Three rows, not five: Email, then Username beside Role, then Password.
-	# Stacked, the form ran into a phone keyboard; two full columns ran off a
-	# 640px screen beside the logo, and squeezed the password under its Show.
+	# Three rows: Email, Username, Password. Everyone is a player -- there is
+	# no teacher role to pick.
 	_email = Ui.field(box, "Email", "you@example.com", false, FORM_W)
-	var pair := HBoxContainer.new()
-	pair.add_theme_constant_override("separation", 10)
-	box.add_child(pair)
-	var left := VBoxContainer.new()
-	left.add_theme_constant_override("separation", 2)
-	pair.add_child(left)
-	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", 2)
-	pair.add_child(right)
-	_user = Ui.field(left, "Username", "3-20 letters", false, USER_W)
-	right.add_child(Art.label("Role", Pal.LABEL, Pal.INK_MUTED))
-	_role = Ui.option(ROLE_W, 30.0)
-	# Who each role is, in the words of a classroom -- "Admin" alone does not
-	# tell a student not to pick it.
-	_role.add_item("Player (student)")
-	_role.add_item("Admin (Quest Keeper)")
-	right.add_child(_role)
+	_user = Ui.field(box, "Username", "3-20 letters", false, FORM_W)
 	_pass = Ui.password_field(box, "Password", "at least %d characters" % MIN_PASSWORD, FORM_W)
 
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
@@ -91,8 +71,7 @@ func _submit() -> void:
 
 	_go.disabled = true
 	_go.text = "Registering..."
-	var role := "admin" if _role.selected == 1 else "player"
-	var err: String = await Net.sign_up(_email.text, user, _pass.text, role)
+	var err: String = await Net.sign_up(_email.text, user, _pass.text, "player")
 	_go.disabled = false
 	_go.text = "Register"
 	if err != "":
@@ -101,7 +80,7 @@ func _submit() -> void:
 	# Registered and signed in: straight to the character pick, per §2.
 	# An admin never plays, so there is no character to pick.
 	Sfx.play("success")
-	main.open("admin" if Net.role == "admin" else "hero")
+	main.open("hero")
 
 
 ## A form problem, said and sounded.

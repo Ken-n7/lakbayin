@@ -1,75 +1,11 @@
 extends SceneTree
 
-## Self-check for the gems rules. Run:
+## Self-check for the rules that stand on their own: the fonts, the match clock
+## (read off the server's deadline), and how other players are drawn. Run:
 ##   godot --headless --path game --script res://test_rules.gd
 
 func _init() -> void:
 	var G: Node = load("res://scripts/Game.gd").new()
-	G.begin_adventure(600)
-	assert(G.gems == 50, "starts at 50")
-
-	# Fix #3: one hint per ITEM, -5 each -- not one per station.
-	G.begin_item()
-	assert(G.spend_hint() == true, "first hint of item 1 lands")
-	assert(G.spend_hint() == false, "second hint on the SAME item is refused")
-	assert(G.gems == 45, "one -5, not two: %d" % G.gems)
-	G.begin_item()
-	assert(G.spend_hint() == true, "hint works again on the next item")
-	assert(G.gems == 40, "second item's hint charged: %d" % G.gems)
-	assert(G.hints_used == 2, "both hints counted")
-
-	# A hint anywhere in the station still forfeits the perfect bonus.
-	assert(G.finish_station(0) == 0, "hinted station earns no bonus")
-	assert(G.completed_stations[0] == true)
-	assert(G.item_used_hint == false and G.station_used_hint == false, "flags reset")
-
-	# Clean station -> +10 bonus.
-	G.begin_item(); G.mark_correct()
-	assert(G.finish_station(1) == 10, "flawless station pays the bonus")
-	assert(G.gems == 60, "40 +10 correct +10 bonus: %d" % G.gems)
-
-	# Wrong/skip spoil it.
-	G.begin_item(); G.mark_wrong()
-	assert(G.finish_station(2) == 0, "a wrong answer kills the bonus")
-
-	# Fix #1's condition: all three done is detectable.
-	assert(G.completed_stations.all(func(v: bool) -> bool: return v), "all complete")
-
-	# Finishing everything must NOT trigger the -25 incomplete penalty.
-	var before: int = G.gems
-	G.end_adventure()
-	assert(G.gems == before, "no -25 when every station is done: %d -> %d" % [before, G.gems])
-	assert(G.last_run.finished_all == true)
-
-	# One row per team, however many runs are saved. The four invented rival
-	# parties are gone -- a board the client reads as a result should not be
-	# padded with teams that never played.
-	G.player_name = "Ken"
-	for run in 3:
-		G._register_leaderboard("Ken", 200 + run)
-	var seen := {}
-	for row in G.leaderboard:
-		assert(not seen.has(row.name), "duplicate leaderboard row: %s" % row.name)
-		seen[row.name] = true
-	assert(seen.has("Ken"), "the player's own run is listed")
-	assert(G.leaderboard.size() == 1, "only real runs: %d rows" % G.leaderboard.size())
-	assert(int(G.leaderboard[0].gems) == 202, "best run kept: %d" % int(G.leaderboard[0].gems))
-
-	# Fix #8: no item should demand five-digit arithmetic.
-	var QG := load("res://scripts/QuestionGen.gd")
-	for station in [1, 2]:
-		var worst := 0
-		for i in 600:
-			var item: Dictionary = QG.item_for_station(station, i)
-			worst = maxi(worst, absi(int(item.answer)))
-		assert(worst <= 400, "station %d answers stay sane, worst was %d" % [station + 1, worst])
-		print("station %d worst answer over 600 items: %d" % [station + 1, worst])
-
-	# The mockups order the stations Basics / Order of Operations / Exponents.
-	assert(QG.station_meta(1).short == "Order of Operations", "S2 is order of operations")
-	assert(QG.station_meta(2).short == "Exponential Notation", "S3 is exponents")
-	assert(QG.item_for_station(2, 1).topic == "exp", "S3 items are exponents")
-	assert(QG.item_for_station(1, 0).topic == "pemdas", "S2 items are PEMDAS")
 
 	# Neither face has a tick/star/arrow; without the symbol fallback the HUD
 	# pips and Learn screen arrows silently render as blank boxes.
@@ -94,8 +30,8 @@ func _init() -> void:
 	print("ribbon cell: %s" % rib.region)
 
 	# --- The shared clock ---------------------------------------------------
-	# The admin's session row is what the clock reads, so it is worth pinning
-	# down offline: these are the four states a phone can arrive into.
+	# The session row is what the clock reads, so it is worth pinning down
+	# offline: these are the states a phone can arrive into.
 	var now := int(Time.get_unix_time_from_system())
 	var deadline := Time.get_datetime_string_from_unix_time(now + 300) + "Z"
 
@@ -108,12 +44,6 @@ func _init() -> void:
 	assert(absf(G.time_left - 300.0) < 3.0,
 		"running reads the deadline, not the duration: %f" % G.time_left)
 
-	# A pause hands back what it banked -- not what this phone had counted to,
-	# which is the whole reason the number lives on the server.
-	G.apply_session({"state": "paused", "duration_s": 600, "remaining_s": 123})
-	assert(G.clock_paused, "paused stops the clock")
-	assert(is_equal_approx(G.time_left, 123.0), "paused reads remaining_s: %f" % G.time_left)
-
 	G.apply_session({"state": "ended", "duration_s": 600})
 	assert(G.clock_paused and G.time_left == 0.0, "ended is zero and stopped")
 	assert(G.session_state == "ended", "state recorded")
@@ -122,7 +52,7 @@ func _init() -> void:
 	G.apply_session({"state": "running", "duration_s": 600,
 		"ends_at": Time.get_datetime_string_from_unix_time(now - 60) + "Z"})
 	assert(G.time_left == 0.0, "a passed deadline clamps at zero: %f" % G.time_left)
-	print("clock: lobby / running / paused / ended all read the session")
+	print("clock: lobby / running / ended all read the session")
 
 	# The countdown reads the deadline, not the frames. Two boards that drew
 	# a different number of frames -- one in the background -- show one time.
@@ -151,49 +81,10 @@ func _init() -> void:
 	assert(G.http_date("garbage") == 0, "a bad Date is ignored")
 	print("clock: deadline-driven, server-corrected, frame rate irrelevant")
 
-	# Only a running session scores; offline ("") always does.
-	G.apply_session({"state": "paused", "duration_s": 600, "remaining_s": 60})
-	assert(not G.can_score(), "a paused session refuses answers")
 	G.apply_session({"state": "running", "duration_s": 600, "ends_at": deadline})
-	assert(G.can_score(), "a running session takes them")
 	G.begin_adventure(600)
-	assert(G.session_state == "" and G.session_id == "", "a new run forgets the last session")
-	assert(G.can_score(), "offline scores")
-
-	# A rejoin picks up the server's row: circle 10 is station 2's third item.
-	var R: Node = load("res://scripts/Game.gd").new()
-	R.begin_adventure(600)
-	R.restore_from({"gems": 72, "correct": 7, "items_done": 10, "eliminated": false})
-	assert(R.gems == 72 and R.items_done == 10 and R.correct == 7, "row restored")
-	assert(R.current_station == 1, "on station 2: %d" % R.current_station)
-	assert(R.completed_stations == [true, false, false], "station 1 done")
-	assert(R.towers_entered == [true, true, false], "briefings 1 and 2 read")
-	R.free()
-	print("session: pause refuses, rejoin restores")
-
-	# --- Elimination --------------------------------------------------------
-	# The paper: "Eliminated Member (reaching 0 gems): -50 gems". It could
-	# never fire while gems floored at zero, which they did until now.
-	var E: Node = load("res://scripts/Game.gd").new()
-	E.begin_adventure(600)
-	assert(not E.eliminated, "nobody starts eliminated")
-	for i in 10:
-		E.begin_item()
-		E.mark_wrong()          # -5 each: 50 -> 0
-	assert(E.gems == 0, "ten wrong answers reach exactly zero: %d" % E.gems)
-	assert(E.eliminated, "reaching zero eliminates")
-
-	# Gems go past zero rather than sticking, and the team is charged once.
-	E.begin_item()
-	E.mark_wrong()
-	assert(E.gems == -5, "gems do not clamp: %d" % E.gems)
-	assert(E.eliminated, "still eliminated, not re-eliminated")
-
-	# A hint with no gems left is still allowed -- the cost is the point, and
-	# refusing it used to be an accident of the clamp rather than a rule.
-	E.begin_item()
-	assert(E.spend_hint(), "a hint is affordable even at zero")
-	print("elimination: fires at zero, latches, and gems run negative")
+	assert(G.session_state == "" and G.session_id == "", "a new match forgets the last session")
+	print("session: a new match starts clean")
 
 	# --- Everyone else on the board -----------------------------------------
 	# `items_done` is the position: a player who has answered three items

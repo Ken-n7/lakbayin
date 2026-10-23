@@ -14,9 +14,9 @@ extends Node
 ## 640 and ends up floating in the middle of a wider screen.
 const SIZES := [Vector2(640, 360), Vector2(800, 360)]
 var CANVAS := Vector2(640, 360)
-## Splash, team and adventure are settled; the client asked to leave them be.
-const SCREENS := ["login", "register", "reset", "home", "admin", "controls", "history",
-		"questions", "feedback", "hero", "board", "summary"]
+## Splash and team are settled; the match is the HUD's (checked against the DEV
+## tab below).
+const SCREENS := ["login", "register", "reset", "home", "hero", "results"]
 
 var _bad := 0
 
@@ -35,33 +35,32 @@ func _ready() -> void:
 		CANVAS = size
 		main.size = CANVAS
 		print("== %d x %d ==" % [int(size.x), int(size.y)])
-		# The quiz overlay is not a route, so the loop below never reached it --
-		# and it is the screen a student spends the whole session on. Checked
-		# first, in both the states it has.
-		for intro in [true, false]:
-			var quiz: Control = load("res://scripts/QuizOverlay.gd").new()
-			quiz.station_index = 0
-			quiz.intro_only = intro
-			main.add_child(quiz)
-			quiz.size = CANVAS
-			quiz.setup({})
+		# A monk's word and the keypad is not a route, so the loop below never
+		# reaches it -- and it is the panel a player spends the match on.
+		# Checked first, with the Latin labels (Practice) and without.
+		var word := {"word": "bundok", "modern": "ᜊᜓᜈ᜔ᜇᜓᜃ᜔", "traditional": "ᜊᜓᜇᜓ"}
+		for labels in [true, false]:
+			var monk: Control = load("res://scripts/MonkOverlay.gd").new()
+			monk.setup({"word": word, "monk": 4, "labels": labels,
+				"check": func(_t: String) -> String: return "wrong"})
+			main.add_child(monk)
+			monk.size = CANVAS
 			for i in 20:
 				await get_tree().process_frame
-			_audit("quiz (%s)" % ("intro" if intro else "question"), quiz)
-			quiz.queue_free()
+			_audit("monk (%s)" % ("labels" if labels else "glyphs only"), monk)
+			monk.queue_free()
 			await get_tree().process_frame
 
 		for name: String in SCREENS:
-			main.open(name)
+			main.open(name, _data_for(name))
 			main.current.size = CANVAS
 			for i in 30:
 				await get_tree().process_frame
 			_audit(name, main.current)
 			await _dev_clear(name, main, [main.current])
 
-		# The map is settled (see SCREENS), but the DEV tab is new on it: only
-		# that is checked there, against the HUD.
-		main.open("adventure")
+		# The match: only the DEV tab, against the HUD.
+		main.open("adventure", {"practice": true})
 		for i in 30:
 			await get_tree().process_frame
 		await _dev_clear("adventure", main, [main.current.hud.hud_layer, main.current.hud.ui_layer])
@@ -85,23 +84,24 @@ func _audit(screen: String, root: Control) -> void:
 	_bad += hits.size()
 
 
-## The dev panel's tab (debug builds) sits on every screen, and the pinned
-## Hub stats on Game Controls: neither may cover anything of the screen's.
+## A Practice result with every word, for the results screen: its longest list.
+func _data_for(name: String) -> Dictionary:
+	if name != "results":
+		return {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var words := Baybayin.draw(10, rng).map(func(w: Dictionary) -> Dictionary:
+		return {"word": w.word, "meaning": w.meaning, "modern": w.modern, "state": "deposited"})
+	return {"practice": true, "monks": 10, "my_deposits": 10, "reached_s": 245.0, "words": words}
+
+
+## The dev panel's tab (debug builds) sits on every screen: it may not cover
+## anything of the screen's.
 func _dev_clear(screen: String, main: Control, roots: Array) -> void:
 	var panel: Control = main.get("dev_panel")
 	if panel == null:
 		return
 	var mine := [["the DEV tab", (panel.get("_tab") as Control).get_global_rect()]]
-	if screen == "controls":
-		DevPanel.hub_pinned = true
-		panel.call("_place_pin")
-		for i in 10:
-			await get_tree().process_frame
-		var pin: Control = panel.get("_pin")
-		if pin != null:
-			mine.append(["the pinned Hub stats", pin.get_global_rect()])
-		DevPanel.hub_pinned = false
-		panel.call("_place_pin")
 	var leaves: Array[Control] = []
 	for r: Node in roots:
 		_collect(r, leaves)

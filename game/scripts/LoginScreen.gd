@@ -73,7 +73,7 @@ func _submit() -> void:
 		_say(err)
 		return
 	Sfx.play("success")
-	main.open("admin" if Net.role == "admin" else "home")
+	main.open("home")
 
 
 func _busy(on: bool) -> void:

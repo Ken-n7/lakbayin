@@ -1,21 +1,18 @@
 extends TestCase
 ## The phone's keyboard never covers the field being typed in (client,
-## 2026-09-27). Every screen with a text field, and the Rescue pop-up on the
-## map's own layer: each field focused in turn under keyboards from 50% to 70%
-## of a landscape screen, and it has to sit fully between the top of the screen
-## and the keyboard. The keyboard is `Main.fake_keyboard` -- a real one only
+## 2026-09-27). Every screen with a text field: each field focused in turn
+## under keyboards from 50% to 70% of a landscape screen, and it has to sit
+## fully between the top of the screen and the keyboard. (A monk's keypad is
+## the game's own and never opens the phone's.) The keyboard is `Main.fake_keyboard` -- a real one only
 ## exists on a phone -- and the rest is the real Main and the real screens.
 ##   godot --headless res://scripts/tests/keyboard_test.tscn
 
 ## [what, screen, how to get to its fields]. Some fields only show part way
-## through: the join code (signed in), the reset's second step, the team
-## names on the teacher's cards once there are teams.
+## through: the join code (signed in), the reset's second step.
 var SCREENS := [
 	["login", "login", Callable()], ["register", "register", Callable()],
 	["reset, step 1", "reset", Callable()], ["reset, step 2", "reset", _reset_step2],
 	["team name (offline)", "team", Callable()], ["join code", "team", _join_code],
-	["questions", "questions", Callable()], ["controls", "controls", Callable()],
-	["controls, team cards", "controls", _team_cards], ["feedback", "feedback", Callable()],
 ]
 const KEYBOARDS := [0.5, 0.6, 0.7]      # share of the screen's height
 
@@ -80,7 +77,6 @@ func _ready() -> void:
 	await frames(4)
 	await _every_field()
 	await _how_it_moves()
-	await _rescue_popup()
 	main.fake_keyboard = -1.0
 	completed = true
 	finish("KEYBOARD")
@@ -94,14 +90,6 @@ func _join_code(screen: Control) -> void:
 	for c in screen.get_children():
 		c.free()
 	screen.call("_build_code")
-
-
-## Six teams, the class the client plays with.
-func _team_cards(screen: Control) -> void:
-	var lobby: Object = screen.get("_lobby")
-	lobby.set("teams", range(6).map(func(i: int) -> Dictionary:
-		return {"id": "t%d" % i, "name": "Team %d" % (i + 1)}))
-	screen.call("_draw_teams")
 
 
 func _every_field() -> void:
@@ -184,35 +172,3 @@ func _how_it_moves() -> void:
 	main.open("register")
 	await frames(20)
 	check("a new screen starts where it belongs", main.current.position.y == 0.0)
-
-
-func _rescue_popup() -> void:
-	print("-- a pop-up on a layer of its own")
-	Game.begin_adventure(600)
-	Game.gems = 50
-	main.open("home")
-	await frames(10)
-	var layer := CanvasLayer.new()
-	layer.layer = 2
-	main.current.add_child(layer)
-	var r: Control = load("res://scripts/RescueOverlay.gd").new()
-	r.fetch_mates = func() -> Array:
-		await get_tree().process_frame
-		return [{"profile_id": "ben-id", "username": "ben", "gems": 6, "eliminated": false, "finished": false}]
-	layer.add_child(r)
-	r.setup({})
-	await frames(6)
-	(r.find_child("Mate_ben", true, false).find_child("Pick", true, false) as Button).pressed.emit()
-	await frames(6)
-	var amount := r.find_child("Amount", true, false) as Control
-	var worst := ""
-	for share: float in KEYBOARDS:
-		var got: Array = await in_view(amount, share)
-		if not got[0]:
-			worst += " %d%%: %s" % [int(share * 100), got[1]]
-	check("Rescue's amount stays in view", worst == "", worst)
-	check("it is the pop-up that moves, not the screen under it",
-		r.position.y < 0.0 and main.current.position.y == 0.0, "%s / %s" % [r.position.y, main.current.position.y])
-	await release()
-	check("the pop-up comes back down", r.position.y == 0.0, str(r.position.y))
-	Game.abandon_adventure()
