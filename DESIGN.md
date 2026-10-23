@@ -252,10 +252,14 @@ spelling**, marking which ones your team got right, got wrong, or missed.
 ### 6.2 Custom Room (with friends)
 - **Create Room:** the host gets a 4-character code.
 - **Join Room:** type the code to land in the lobby.
-- Players pick sides and may switch until Start. (Host move/shuffle: not built.)
+- Players pick sides and may switch until Start. The host may **Move Player**
+  or **Shuffle** everyone into balanced sides. Both controls lock at Start.
 - **Only the host starts**, once both sides have a player. Any number a
   side, uneven too (1 v 3 is fine).
-- If the host leaves the lobby, hosting passes to the next player.
+- If the host leaves the lobby, hosting passes to the next player. Lobby
+  phones check in every 3 s; 30 s silence removes a disconnected member,
+  transferring hosting to the oldest active member when necessary. Running
+  match memberships and results are retained.
 - Shows in **My Matches** with a **Custom** tag, but does **not** count for
   the global leaderboard (rigged rooms could farm it), as MOBAs do.
 

@@ -24,6 +24,11 @@ class MovementAdventure extends "res://scripts/AdventureScreen.gd":
 		pass
 
 
+class RoomPreview extends "res://scripts/RoomScreen.gd":
+	func _process(_delta: float) -> void:
+		pass
+
+
 func _ready() -> void:
 	backup_save()
 	var was_url := Net.url
@@ -36,6 +41,7 @@ func _ready() -> void:
 	_channel_recovery()
 	_lobby_reconnect()
 	await _monk_activity()
+	await _room_controls()
 	_account_change()
 	Net.realtime().close_socket()
 	Net.relay().leave()
@@ -206,3 +212,33 @@ func _monk_activity() -> void:
 	adv.queue_free()
 	await get_tree().process_frame
 	rt.close_socket()
+
+
+func _room_controls() -> void:
+	var room := RoomPreview.new()
+	add_child(room)
+	room.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	room._lobby.session = {"id": "room-preview", "state": "lobby", "custom": true,
+		"admin_id": Net.user_id, "code": "AB3K"}
+	room._lobby.teams = [{"id": "blue", "name": "Blue"}, {"id": "red", "name": "Red"}]
+	room._lobby.players = {Net.user_id: {"username": "Host", "team_id": "blue"},
+		"mate": {"username": "Mate", "team_id": "red"}}
+	room._build_lobby()
+	await get_tree().process_frame
+	check("room hosts see Move and Shuffle", room._move.visible and room._shuffle.visible)
+	room._move_dialog()
+	await get_tree().process_frame
+	check("Move opens a player and destination picker", room._move_panel.find_children("*", "OptionButton", true, false).size() == 2)
+	room.go_back()
+	await get_tree().process_frame
+	check("Back closes Move without leaving the room", not is_instance_valid(room._move_panel) and not room._lobby.session.is_empty())
+	room._lobby.session.admin_id = "mate"
+	room._draw_lobby()
+	check("room members cannot see host controls", not room._move.visible and not room._shuffle.visible and not room._go.visible)
+	room._lobby.session.admin_id = Net.user_id
+	room._lobby.session.state = "running"
+	room._entering = true
+	room._draw_lobby()
+	check("host controls disappear at Start", not room._move.visible and not room._shuffle.visible)
+	room.queue_free()
+	await get_tree().process_frame

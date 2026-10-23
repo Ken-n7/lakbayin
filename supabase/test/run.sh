@@ -281,6 +281,54 @@ else
 fi
 rm -f /tmp/nx_removal_start.$$ /tmp/nx_removal_delete.$$
 
+# Start and stale-room cleanup take the same session lock, in either order.
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+q -f supabase/words.sql >/dev/null 2>&1
+q -f supabase/test/room_race_setup.sql >/dev/null 2>&1 || { echo "FAIL  room race setup"; fail=1; }
+room_action() {
+ local kind=$1 sid=$2 hold=$3 who=00000000-0000-0000-0000-00000000e001 fn=start_room
+ [[ $kind == poll ]] && who=00000000-0000-0000-0000-00000000e002 fn=poll_room
+ PGAPPNAME="nx_room_$kind" psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" -c "begin;
+  select set_config('request.jwt.claim.sub','$who',true);
+  set local role authenticated;
+  select public.$fn('$sid'); select pg_sleep($hold); commit;" > "/tmp/nx_room_$kind.$$" 2>&1
+}
+ROOM_ONE=11111111-1111-1111-1111-11111111cc01
+ROOM_TWO=11111111-1111-1111-1111-11111111cc02
+# Start normally cleans old members first. Make the ghost fresh for Start,
+# then age it inside Start's transaction, before the waiting poll may run.
+q -c "update public.members set updated_at=clock_timestamp() where session_id='$ROOM_ONE';" >/dev/null
+PGAPPNAME=nx_room_start psql -X -q -t -A -v ON_ERROR_STOP=1 -d "$DB" -c "begin;
+ select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000e001',true);
+ set local role authenticated; select public.start_room('$ROOM_ONE');
+ reset role; update public.members set updated_at=clock_timestamp()-interval '1 minute'
+ where session_id='$ROOM_ONE' and profile_id='00000000-0000-0000-0000-00000000e003';
+ select pg_sleep(1); commit;" > /tmp/nx_room_start.$$ 2>&1 & room_first=$!
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_room_start' and wait_event='PgSleep')" || fail=1
+room_action poll "$ROOM_ONE" 0 & room_second=$!
+blocked=0
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_room_poll' and cardinality(pg_blocking_pids(pid))>0)" && blocked=1
+wait "$room_first" || fail=1
+wait "$room_second" || fail=1
+kept=$(q -t -A -c "select count(*) from public.members where session_id='$ROOM_ONE' and profile_id='00000000-0000-0000-0000-00000000e003'")
+if [[ $blocked == 1 && $kept == 1 ]] && ! grep -qi error /tmp/nx_room_start.$$ /tmp/nx_room_poll.$$; then
+ echo "ok    room Start wins: waiting cleanup keeps every running membership"
+else echo "FAIL  room Start/cleanup race: blocked=$blocked kept=$kept"; cat /tmp/nx_room_start.$$ /tmp/nx_room_poll.$$; fail=1; fi
+room_action poll "$ROOM_TWO" 1 & room_first=$!
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_room_poll' and wait_event='PgSleep')" || fail=1
+room_action start "$ROOM_TWO" 0 & room_second=$!
+blocked=0
+wait_for_sql "select exists(select 1 from pg_stat_activity where application_name='nx_room_start' and cardinality(pg_blocking_pids(pid))>0)" && blocked=1
+wait "$room_first" || fail=1
+wait "$room_second" || fail=1
+kept=$(q -t -A -c "select count(*) from public.members where session_id='$ROOM_TWO' and profile_id='00000000-0000-0000-0000-00000000e003'")
+state=$(q -t -A -c "select state from public.sessions where id='$ROOM_TWO'")
+if [[ $blocked == 1 && $kept == 0 && $state == running ]] && ! grep -qi error /tmp/nx_room_start.$$ /tmp/nx_room_poll.$$; then
+ echo "ok    room cleanup wins: Start waits and uses the remaining roster"
+else echo "FAIL  room cleanup/Start race: blocked=$blocked kept=$kept state=$state"; cat /tmp/nx_room_start.$$ /tmp/nx_room_poll.$$; fail=1; fi
+rm -f /tmp/nx_room_start.$$ /tmp/nx_room_poll.$$
+
 psql -X -q -c "drop database if exists $DB;" >/dev/null
 [[ $fail -eq 0 ]] && echo "server rules green" || echo "SERVER RULES FAILED"
 exit $fail

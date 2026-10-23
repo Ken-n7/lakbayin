@@ -109,12 +109,19 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 1. **Typing marker built:** teammate presence shows “Teammate typing…” on
    monks. Hints expire after 12 s and clear on close, lockout, answer, or
    disconnect; they never block interaction or transmit typed answers.
-   Local multiplayer regressions pass; live verification awaits a valid
-   project public key (the saved anon key currently returns 401).
+   Verified between two real laptop clients in the same live room: opening
+   one keypad marks the monk on the other client. The public key was valid;
+   an OpenAPI discovery failure was initially mistaken for a key error.
+   Core game API requests work. Typing commit: `c420069`.
 2. **Custom rooms** (§6.2): built. Home → Custom Room → `RoomScreen.gd`
    (extends `TeamNameScreen`'s lobby); server `create_room` / `start_room` /
-   `leave_room` (schema 4f, `rooms_test.sql`). Not yet: host move/shuffle,
-   dropping a member whose phone closed in the lobby.
+   `leave_room` (schema 4f, `rooms_test.sql`). Host Move/Shuffle and room
+   heartbeat cleanup are now implemented. Lobby phones poll every 3 s;
+   30 s silence drops a member and transfers hosting if needed. Running
+   memberships remain intact. The user applied the SQL. Verified live Move,
+   Shuffle, closed-client cleanup, and host transfer across laptop clients,
+   with the Realme joining the same room. SQL: 37 room checks plus both
+   Start/cleanup lock-order races; client multiplayer: 38 checks.
 3. **Watch mode** (§6.4, spectator for the event screen).
 4. **My Matches** history and the **global player board** (§7); the
    Leaderboard button was taken off Home.

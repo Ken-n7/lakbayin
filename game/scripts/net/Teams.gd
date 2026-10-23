@@ -202,6 +202,25 @@ static func start_room(session_id: String) -> String:
 	return got.error
 
 
+## Authoritative room heartbeat and roster; only members may check in.
+static func poll_room(session_id: String) -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/poll_room",
+		{"p_session": session_id})
+	return {"error": got.error, "data": got.data if got.data is Dictionary else {}}
+
+
+static func move_room_member(session_id: String, profile_id: String, team_id: String) -> String:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/move_room_member",
+		{"p_session": session_id, "p_profile": profile_id, "p_team": team_id})
+	return got.error
+
+
+static func shuffle_room(session_id: String) -> String:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/shuffle_room",
+		{"p_session": session_id})
+	return got.error
+
+
 ## Out of a room before Start; a leaving host hands it on.
 static func leave_room(session_id: String) -> String:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/leave_room",

@@ -850,6 +850,110 @@ begin
   return s;
 end $$;
 
+-- Definer implementations stay outside the Data API. The public wrappers
+-- are invokers; every implementation authenticates and authorizes its caller.
+create schema if not exists lakbayin_private;
+revoke all on schema lakbayin_private from public, anon;
+grant usage on schema lakbayin_private to authenticated;
+
+-- Room lobby check-ins are authoritative. Take the session lock before
+-- touching members, matching Start/Move/Shuffle's lock order.
+create or replace function numxventure_private.clean_room(p_session uuid)
+returns public.sessions language plpgsql security definer set search_path = '' as $$
+declare s public.sessions; next_host uuid;
+begin
+  select * into s from public.sessions where id = p_session for update;
+  if s.id is null or not s.custom or s.state <> 'lobby' then return s; end if;
+  delete from public.members where session_id = p_session
+    and updated_at < clock_timestamp() - interval '30 seconds';
+  if not exists (select 1 from public.members where session_id = p_session and profile_id = s.admin_id) then
+    select profile_id into next_host from public.members where session_id = p_session
+      order by queued_at, profile_id limit 1;
+    if next_host is null then
+      update public.sessions set state = 'ended' where id = p_session returning * into s;
+    else
+      update public.sessions set admin_id = next_host where id = p_session returning * into s;
+    end if;
+  end if;
+  return s;
+end $$;
+revoke all on function numxventure_private.clean_room(uuid) from public, anon, authenticated;
+
+create or replace function lakbayin_private.poll_room(p_session uuid) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions; present boolean;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select * into s from public.sessions where id = p_session for update;
+  if s.id is null or not s.custom then raise exception 'that room does not exist'; end if;
+  select exists (select 1 from public.members where session_id = p_session and profile_id = auth.uid()) into present;
+  if not present then return jsonb_build_object('member', false); end if;
+  if s.state = 'lobby' then
+    update public.members set updated_at = clock_timestamp()
+      where session_id = p_session and profile_id = auth.uid()
+      and updated_at < clock_timestamp() - interval '5 seconds';
+    s := numxventure_private.clean_room(p_session);
+  end if;
+  return jsonb_build_object('member', true, 'session', to_jsonb(s) - 'question_bank',
+    'roster', (select coalesce(jsonb_agg(jsonb_build_object('profile_id', m.profile_id,
+      'team_id', m.team_id, 'username', p.username) order by m.queued_at, m.profile_id), '[]'::jsonb)
+      from public.members m join public.profiles p on p.id = m.profile_id where m.session_id = p_session));
+end $$;
+
+create or replace function lakbayin_private.move_room_member(p_session uuid, p_profile uuid, p_team uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare s public.sessions;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select * into s from public.sessions where id = p_session for update;
+  if s.id is null or not s.custom or s.admin_id <> auth.uid() or not exists
+    (select 1 from public.members where session_id=p_session and profile_id=auth.uid())
+    then raise exception 'only the host can move players'; end if;
+  if s.state <> 'lobby' then raise exception 'teams are locked once the adventure starts'; end if;
+  if not exists (select 1 from public.teams where id = p_team and session_id = p_session) then
+    raise exception 'that team is not in this room';
+  end if;
+  update public.members set team_id = p_team where session_id = p_session and profile_id = p_profile;
+  if not found then raise exception 'that player is not in this room'; end if;
+end $$;
+
+create or replace function lakbayin_private.shuffle_room(p_session uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select * into s from public.sessions where id = p_session for update;
+  if s.id is null or not s.custom or s.admin_id <> auth.uid() or not exists
+    (select 1 from public.members where session_id=p_session and profile_id=auth.uid())
+    then raise exception 'only the host can shuffle players'; end if;
+  if s.state <> 'lobby' then raise exception 'teams are locked once the adventure starts'; end if;
+  if (select count(*) from public.teams where session_id = p_session) <> 2 then raise exception 'the room needs two sides'; end if;
+  with t as (select id, row_number() over (order by name) - 1 as k from public.teams where session_id = p_session),
+       m as (select profile_id, row_number() over (order by random()) - 1 as k from public.members where session_id = p_session)
+  update public.members mem set team_id = t.id from m,t
+    where mem.session_id = p_session and mem.profile_id = m.profile_id and t.k = m.k % 2;
+end $$;
+
+create or replace function public.poll_room(p_session uuid) returns jsonb
+language sql security invoker set search_path = '' as $$ select lakbayin_private.poll_room(p_session) $$;
+create or replace function public.move_room_member(p_session uuid, p_profile uuid, p_team uuid) returns void
+language sql security invoker set search_path = '' as $$ select lakbayin_private.move_room_member(p_session,p_profile,p_team) $$;
+create or replace function public.shuffle_room(p_session uuid) returns void
+language sql security invoker set search_path = '' as $$ select lakbayin_private.shuffle_room(p_session) $$;
+
+revoke all on function lakbayin_private.poll_room(uuid) from public, anon;
+grant execute on function lakbayin_private.poll_room(uuid) to authenticated;
+revoke all on function public.poll_room(uuid) from public, anon;
+revoke all on function lakbayin_private.move_room_member(uuid,uuid,uuid) from public, anon;
+grant execute on function lakbayin_private.move_room_member(uuid,uuid,uuid) to authenticated;
+revoke all on function public.move_room_member(uuid,uuid,uuid) from public, anon;
+revoke all on function lakbayin_private.shuffle_room(uuid) from public, anon;
+grant execute on function lakbayin_private.shuffle_room(uuid) to authenticated;
+revoke all on function public.shuffle_room(uuid) from public, anon;
+grant execute on function public.poll_room(uuid) to authenticated;
+grant execute on function public.move_room_member(uuid,uuid,uuid) to authenticated;
+grant execute on function public.shuffle_room(uuid) to authenticated;
+
 create or replace function public.start_room(p_session uuid) returns public.sessions
 language plpgsql security definer set search_path = '' as $$
 declare s public.sessions;
@@ -859,6 +963,8 @@ begin
   if s.id is null or not s.custom then raise exception 'no such room'; end if;
   if s.admin_id <> auth.uid() then raise exception 'only the host can start the room'; end if;
   if s.state <> 'lobby' then raise exception 'the room has already started'; end if;
+  update public.members set updated_at = clock_timestamp() where session_id = p_session and profile_id = auth.uid();
+  s := numxventure_private.clean_room(p_session);
   if exists (select 1 from public.members where session_id = p_session and team_id is null) then
     raise exception 'everyone must pick a side first';
   end if;
@@ -873,8 +979,7 @@ end $$;
 
 -- Out of a room before Start. A host who leaves hands the room to whoever
 -- joined first; the last one out closes it. After Start the row stays.
--- ponytail: a phone that just closes stays listed; drop silent members with a
--- check-in like poll_match if that bites in playtests.
+-- poll_room drops silent lobby phones and transfers hosting after 30 s.
 create or replace function public.leave_room(p_session uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 declare s public.sessions;

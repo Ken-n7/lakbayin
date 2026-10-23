@@ -12,6 +12,12 @@ extends "res://scripts/TeamNameScreen.gd"
 
 var _code: LineEdit
 var _make: Button
+var _shuffle: Button
+var _move: Button
+var _room_clock := 0.0
+var _room_polling := false
+var _room_operation := false
+var _move_panel: Control
 
 
 ## Joined a room before: try it quietly. Still going -> straight back to it.
@@ -131,6 +137,18 @@ func _build_lobby() -> void:
 	_go.pressed.disconnect(_to_map)
 	_go.pressed.connect(_start)
 	_go.text = "Start"
+	_go.custom_minimum_size.x = 112
+	var row := _go.get_parent()
+	_shuffle = Ui.button("Shuffle", 90, Ui.H, Ui.SMALL)
+	_shuffle.pressed.connect(_shuffle_players)
+	row.add_child(_shuffle)
+	row.move_child(_shuffle, 1)
+	_move = Ui.button("Move Player", 118, Ui.H, Ui.SMALL)
+	_move.pressed.connect(_move_dialog)
+	row.add_child(_move)
+	row.move_child(_move, 2)
+	_room_clock = 0.0
+	_draw_lobby()
 
 
 func _draw_lobby() -> void:
@@ -161,7 +179,13 @@ func _draw_lobby() -> void:
 		_status.text = "You're on %s — tap the other side to switch. Waiting for %s to start." \
 			% [team_name, host_name]
 	_go.visible = hosting and not started
-	_go.disabled = not ready
+	_go.disabled = not ready or _room_operation
+	for control: Button in [_shuffle, _move]:
+		if is_instance_valid(control):
+			control.visible = hosting and not started
+			control.disabled = _room_operation
+	if not hosting and is_instance_valid(_move_panel):
+		_move_panel.queue_free()
 
 
 func _start() -> void:
@@ -182,3 +206,108 @@ func _start() -> void:
 ## A server reason ("both sides need a player") as a line to show.
 static func _sentence(err: String) -> String:
 	return err if err == "" else err[0].to_upper() + err.substr(1) + ("" if err.ends_with(".") else ".")
+
+
+## A closed phone loses its place after 30 s. Polling stops at Start; running
+## match memberships and their results are never removed by room cleanup.
+func _process(delta: float) -> void:
+	if _session.is_empty() or not bool(_session.get("custom", false)) \
+			or str(_session.get("state", "")) != "lobby" or _room_operation:
+		return
+	_room_clock -= delta
+	if _room_clock > 0.0 or _room_polling:
+		return
+	_room_clock = 3.0
+	_room_polling = true
+	var lobby := _lobby
+	var got := await Teams.poll_room(str(_session.id))
+	if not is_inside_tree():
+		return
+	_room_polling = false
+	if lobby != _lobby:
+		return
+	if got.error != "":
+		_say("Room check-in failed. Reconnecting…", Pal.WRONG)
+		return
+	var data: Dictionary = got.data
+	if not bool(data.get("member", false)):
+		_kicked()
+		return
+	if data.get("session") is Dictionary:
+		_lobby.session = data.session
+	if data.get("roster") is Array:
+		_lobby.players.clear()
+		for player: Dictionary in data.roster:
+			_lobby.players[str(player.profile_id)] = {"username": str(player.username),
+				"team_id": str(player.team_id) if player.team_id != null else ""}
+	_say("", Pal.INK)
+	_draw_lobby()
+
+
+func _shuffle_players() -> void:
+	if _room_operation:
+		return
+	_room_operation = true
+	_draw_lobby()
+	var error := await Teams.shuffle_room(str(_session.id))
+	if not is_inside_tree():
+		return
+	_room_operation = false
+	if error != "":
+		_say(_sentence(error), Pal.WRONG)
+	_draw_lobby()
+	_reload_lobby()
+
+
+func _move_dialog() -> void:
+	if is_instance_valid(_move_panel):
+		return
+	_move_panel = Ui.dim(self)
+	var panel := _move_panel
+	var box := Ui.back_panel(panel, Vector2(320, 0), "Move Player", panel.queue_free)
+	box.add_child(Art.label("Player", Pal.LABEL, Pal.INK_MUTED))
+	var player := Ui.option(280)
+	var ids: Array = _lobby.players.keys()
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		return str(_lobby.players[a].username).naturalnocasecmp_to(str(_lobby.players[b].username)) < 0)
+	for id: String in ids:
+		player.add_item(str(_lobby.players[id].username))
+		player.set_item_metadata(player.item_count - 1, id)
+	box.add_child(player)
+	box.add_child(Art.label("Destination", Pal.LABEL, Pal.INK_MUTED))
+	var team := Ui.option(280)
+	for entry: Dictionary in _lobby.teams:
+		team.add_item(str(entry.name))
+		team.set_item_metadata(team.item_count - 1, str(entry.id))
+	box.add_child(team)
+	var message := Art.label("", Pal.SMALL, Pal.WRONG)
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(message)
+	var move := Ui.button("Move", 280, Ui.H, Ui.RED)
+	move.disabled = player.item_count == 0 or team.item_count == 0
+	move.pressed.connect(func() -> void:
+		if _room_operation:
+			return
+		_room_operation = true
+		move.disabled = true
+		var error := await Teams.move_room_member(str(_session.id),
+			str(player.get_item_metadata(player.selected)), str(team.get_item_metadata(team.selected)))
+		if not is_inside_tree():
+			return
+		_room_operation = false
+		if not is_instance_valid(panel):
+			return
+		if error != "":
+			message.text = _sentence(error)
+			move.disabled = false
+			return
+		panel.queue_free()
+		_reload_lobby())
+	box.add_child(move)
+
+
+func go_back() -> void:
+	if is_instance_valid(_move_panel):
+		_move_panel.queue_free()
+	else:
+		super.go_back()

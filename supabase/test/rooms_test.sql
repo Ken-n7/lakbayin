@@ -93,6 +93,76 @@ begin
     'the last one out closes the room');
 end $$;
 
+do $$
+declare s uuid; other uuid; blue uuid; red uuid; foreign_team uuid; got text; data jsonb; before_seen timestamptz;
+begin
+  s := pg_temp.as_player(pg_temp.uid(1), 'select (public.create_room()).id::text')::uuid;
+  select id into blue from public.teams where session_id = s and name = 'Blue';
+  select id into red from public.teams where session_id = s and name = 'Red';
+  insert into public.members(session_id,profile_id,team_id) values
+    (s,pg_temp.uid(2),blue),(s,pg_temp.uid(3),blue),(s,pg_temp.uid(4),null);
+  select updated_at into before_seen from public.members where session_id=s and profile_id=pg_temp.uid(2);
+  got := pg_temp.as_player(pg_temp.uid(1),format('select public.move_room_member(%L,%L,%L)',s,pg_temp.uid(2),red));
+  perform pg_temp.check(got='' and (select team_id=red and updated_at=before_seen from public.members where session_id=s and profile_id=pg_temp.uid(2)),
+    'host moves a member without fabricating their heartbeat',got);
+  got := pg_temp.as_player(pg_temp.uid(2),format('select public.move_room_member(%L,%L,%L)',s,pg_temp.uid(3),red));
+  perform pg_temp.check(got like 'ERROR%only the host%', 'a member cannot move another player',got);
+  got := pg_temp.as_player(pg_temp.uid(5),format('select public.move_room_member(%L,%L,%L)',s,pg_temp.uid(3),red));
+  perform pg_temp.check(got like 'ERROR%only the host%', 'an outsider cannot move players',got);
+  other := pg_temp.as_player(pg_temp.uid(7),'select (public.create_room()).id::text')::uuid;
+  select id into foreign_team from public.teams where session_id=other limit 1;
+  got := pg_temp.as_player(pg_temp.uid(1),format('select public.move_room_member(%L,%L,%L)',s,pg_temp.uid(2),foreign_team));
+  perform pg_temp.check(got like 'ERROR%not in this room%', 'a host cannot move players across rooms',got);
+  got := pg_temp.as_player(pg_temp.uid(1),format('select public.move_room_member(%L,%L,%L)',s,pg_temp.uid(8),red));
+  perform pg_temp.check(got like 'ERROR%player is not in this room%', 'a host cannot recruit an outsider with Move',got);
+  got := pg_temp.as_player(pg_temp.uid(2),format('select public.shuffle_room(%L)',s));
+  perform pg_temp.check(got like 'ERROR%only the host%', 'a member cannot shuffle',got);
+  got := pg_temp.as_player(pg_temp.uid(1),format('select public.shuffle_room(%L)',s));
+  perform pg_temp.check(got='' and (select count(*)=2 from public.members where session_id=s and team_id=blue)
+    and (select count(*)=2 from public.members where session_id=s and team_id=red),
+    'host Shuffle balances sides, including unassigned players',got);
+  update public.members set updated_at=clock_timestamp()-interval '31 seconds'
+    where session_id=s and profile_id in (pg_temp.uid(1),pg_temp.uid(3));
+  update public.members set updated_at=clock_timestamp()-interval '10 seconds' where session_id=s and profile_id=pg_temp.uid(2);
+  data := pg_temp.as_player(pg_temp.uid(2),format('select public.poll_room(%L)',s))::jsonb;
+  perform pg_temp.check((data->>'member')::boolean and jsonb_array_length(data->'roster')=2,
+    'room poll removes silent phones and returns the authoritative roster',data::text);
+  perform pg_temp.check((select updated_at > clock_timestamp()-interval '5 seconds' from public.members where session_id=s and profile_id=pg_temp.uid(2)),
+    'poll refreshes the caller heartbeat');
+  perform pg_temp.check((select admin_id=pg_temp.uid(2) from public.sessions where id=s),
+    'a silent host is replaced by the oldest active member');
+  data := pg_temp.as_player(pg_temp.uid(3),format('select public.poll_room(%L)',s))::jsonb;
+  perform pg_temp.check(data='{"member":false}'::jsonb and not exists(select 1 from public.members where session_id=s and profile_id=pg_temp.uid(3)),
+    'an expired member cannot resurrect its row by polling',data::text);
+  data := pg_temp.as_player(pg_temp.uid(5),format('select public.poll_room(%L)',s))::jsonb;
+  perform pg_temp.check(data='{"member":false}'::jsonb,'an outsider cannot poll the roster',data::text);
+  got := pg_temp.as_player(pg_temp.uid(1),format('select public.shuffle_room(%L)',s));
+  perform pg_temp.check(got like 'ERROR%only the host%', 'a removed host loses host powers',got);
+
+  insert into public.members(session_id,profile_id,team_id)
+    select other,pg_temp.uid(8),id from public.teams where session_id=other and name='Red';
+  got := pg_temp.as_player(pg_temp.uid(7),format('select (public.start_room(%L)).state',other));
+  perform pg_temp.check(got='running','control fixture starts normally',got);
+  update public.members set updated_at=clock_timestamp()-interval '1 minute' where session_id=other and profile_id=pg_temp.uid(8);
+  data := pg_temp.as_player(pg_temp.uid(7),format('select public.poll_room(%L)',other))::jsonb;
+  perform pg_temp.check((select count(*)=2 from public.members where session_id=other),
+    'room cleanup never deletes running match memberships');
+  got := pg_temp.as_player(pg_temp.uid(7),format('select public.shuffle_room(%L)',other));
+  perform pg_temp.check(got like 'ERROR%locked%', 'Shuffle locks at Start',got);
+  got := pg_temp.as_player(pg_temp.uid(7),format('select public.move_room_member(%L,%L,%L)',other,pg_temp.uid(8),foreign_team));
+  perform pg_temp.check(got like 'ERROR%locked%', 'Move locks at Start',got);
+  perform pg_temp.check(not has_function_privilege('anon','public.poll_room(uuid)','EXECUTE')
+    and not has_function_privilege('anon','public.move_room_member(uuid,uuid,uuid)','EXECUTE')
+    and not has_function_privilege('anon','public.shuffle_room(uuid)','EXECUTE'),
+    'room controls are not callable anonymously');
+  perform pg_temp.check(not has_schema_privilege('authenticated','numxventure_private','USAGE'),
+    'clients cannot invoke the private cleanup helper');
+end $$;
+
+select pg_temp.check((select not prosecdef from pg_proc where oid='public.move_room_member(uuid,uuid,uuid)'::regprocedure)
+  and (select prosecdef and proconfig @> array['search_path=""'] from pg_proc where oid='lakbayin_private.move_room_member(uuid,uuid,uuid)'::regprocedure),
+  'public room API is an invoker; privileged implementation has a fixed private search path');
+
 select case when ok then 'ok  ' else 'FAIL' end || '  ' || name
        || case when not ok and detail<>'' then '   <'||detail||'>' else '' end from results order by n;
 select format('---- ROOMS SQL %s ---- %s checks, %s failures',
