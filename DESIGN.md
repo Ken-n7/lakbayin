@@ -206,9 +206,10 @@ spelling**, marking which ones your team got right, got wrong, or missed.
   id) is kept. The hand-made fixed board and tower pool go.
 
 ### 5.2 Art — Tiny Swords (Pixel Frog)
-- **Used:** Monk (Idle, Heal_Effect for a correct answer), Pawn, Houses,
-  **Monastery** (the "church"), terrain, trees, bushes, plain rocks, sheep,
-  clouds, water.
+- **Used:** Monk (Idle), Pawn, Houses, **Monastery** (the "church"), terrain,
+  trees, bushes, plain rocks, water rocks, clouds, water.
+- The Monastery is **Purple**: it belongs to neither team. Monks stand
+  **Black** until your team answers them, then turn your colour.
 - **Removed:** towers, warriors and knights, archers, castles, barracks, the
   archery range, carved maths rocks.
 - **Player characters:** all 32 Super Retro World heroes, for now. The pack
@@ -366,13 +367,13 @@ The phone never decides an outcome. The server:
 
 ## 12. Plan
 
-| Day | Work |
-|---|---|
-| **Oct 23** | Word list draft, Baybayin keypad, Noto Sans Tagalog, server answer checking, monks with words; remove teacher mode and the old rules |
-| **Oct 24** | Procedural world (monks, Monastery, fair spawns), per-team monk state, team vision on the minimap, carry/deposit, timer win, results screen |
-| **Oct 25** | Record the trailer (1–2 min) and gameplay video (3–5 min, .mp4); Forms 01–03; synopsis (≤500 words); submit |
-| Before Nov 9 | Custom rooms, Watch mode, My Matches, global board, polish |
-| Before Nov 26 | Playtests, balance (clock, monk count), word list review, art polish |
+| Day | Work | Status |
+|---|---|---|
+| **Day 1** | Word list, Baybayin keypad, Noto Sans Tagalog, server answer checking, monks; rename to Lakbayin | Done |
+| **Day 2** | Procedural world (mirrored; monks, Monastery, fair spawns), per-team monk state, team vision on the minimap, carry/deposit, timer win, results screen, Practice mode; teacher mode and the old rules removed | Done. Online play still to be tried on the live project once `schema.sql` and `words.sql` are run there |
+| **Oct 25** | Record the trailer (1–2 min) and gameplay video (3–5 min, .mp4); Forms 01–03; synopsis (≤500 words); submit | |
+| Before Nov 9 | Custom rooms, Watch mode, My Matches, global board, polish | |
+| Before Nov 26 | Playtests, balance (clock, monk count), word list review, art polish | |
 
 Ship order if time runs short: practice mode and a working 3 v 3 match first.
 Custom rooms, Watch mode and the boards can follow, since screening judges the
