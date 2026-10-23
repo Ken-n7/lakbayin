@@ -389,9 +389,11 @@ func _share_position(delta: float) -> void:
 		_path.pop_front()
 	if relay.up:
 		_share_relay(delta, now, relay)
-		_bundle_clock = 0.0
-		_moved_since_send = false
-		return
+		# Event viewers receive snapshots without joining the movement relay.
+		if not WatchFeed.has_viewers(Net.realtime().online, play.session_id):
+			_bundle_clock = 0.0
+			_moved_since_send = false
+			return
 	_bundle_clock += delta
 	if not ((_moved_since_send and _bundle_clock >= every) or _bundle_clock >= STILL_EVERY_S):
 		return

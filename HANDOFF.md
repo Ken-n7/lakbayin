@@ -121,8 +121,14 @@ Challenge** (Student Category; themes: Education + Philippine culture).
    memberships remain intact. The user applied the SQL. Verified live Move,
    Shuffle, closed-client cleanup, and host transfer across laptop clients,
    with the Realme joining the same room. SQL: 37 room checks plus both
-   Start/cleanup lock-order races; client multiplayer: 38 checks.
-3. **Watch mode** (§6.4, spectator for the event screen).
+   Start/cleanup lock-order races; client multiplayer: 38 checks. Room commit: `ee83e9d`.
+3. **Watch mode built** (§6.4): Custom Room → code → Watch. Read-only aerial
+   island, both rosters, per-team monk markers, carried/deposited counts,
+   final result. Renewable viewer registrations never create memberships;
+   movement receive only. Relay players also send bounded snapshots while
+   viewers are present. Local SQL: 24 authorization/state checks; multiplayer:
+   48 checks, plus a clean 640/800 layout run. All other client suites pass.
+   Live schema application and viewer verification pending.
 4. **My Matches** history and the **global player board** (§7); the
    Leaderboard button was taken off Home.
 5. **Videos and forms** for the 25 Oct entry: 1–2 min trailer, 3–5 min

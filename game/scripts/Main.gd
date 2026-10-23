@@ -12,6 +12,7 @@ const SCREENS := {
 	"hero": preload("res://scripts/HeroSelectScreen.gd"),
 	"team": preload("res://scripts/TeamNameScreen.gd"),
 	"room": preload("res://scripts/RoomScreen.gd"),
+	"watch": preload("res://scripts/WatchScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),
 	"results": preload("res://scripts/ResultsScreen.gd"),
 }
@@ -24,7 +25,7 @@ const SCREENS := {
 ## to The Journey once the adventure starts.
 const MUSIC := {
 	"login": "town", "register": "town", "reset": "town", "home": "town",
-	"team": "town", "room": "town",
+	"team": "town", "room": "town", "watch": "battle",
 	"hero": "shop",
 	"results": "victory",
 	"adventure": "battle",
@@ -38,7 +39,7 @@ var music: Music
 ## screen so it carries on across screen changes instead of restarting.
 var backdrop: Backdrop
 ## Screens with a scene of their own: the map, and Home's island diorama.
-const OWN_SCENE := ["adventure", "home"]
+const OWN_SCENE := ["adventure", "home", "watch"]
 
 
 func _ready() -> void:

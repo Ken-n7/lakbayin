@@ -69,9 +69,13 @@ func _build_code() -> void:
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_msg.custom_minimum_size = Vector2(260, 0)
 	box.add_child(_msg)
-	_go = Ui.button("Join", 260, Ui.H, Ui.BLUE)
+	_go = Ui.button("Join", 126, Ui.H, Ui.BLUE)
 	_go.pressed.connect(_enter)
-	Ui.centre_row(box, _go)
+	var watch := Ui.button("Watch", 126, Ui.H, Ui.SMALL)
+	watch.pressed.connect(func() -> void:
+		if not _joining:
+			main.open("watch", {"code": _code.text}))
+	Ui.centre_row(box, _go).add_child(watch)
 	var back := Ui.link("Back")
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)

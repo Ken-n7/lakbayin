@@ -271,6 +271,11 @@ spelling**, marking which ones your team got right, got wrong, or missed.
 ### 6.4 Watch (spectator)
 - An aerial view of a live match, for the event screen at NSTW.
 - Shows both teams, monk states, and carried and deposited counts.
+- Open **Custom Room**, enter the live code, and press **Watch**. A viewer
+  waits through the lobby and sees the same seeded island when play starts.
+- Viewers never join a team or submit answers, deposits, or movement. Each
+  monk has separate Blue/Red markers: an outline is carried, a fill deposited.
+- The event screen keeps the final result visible until the viewer leaves.
 
 ---
 

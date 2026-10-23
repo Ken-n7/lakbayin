@@ -42,6 +42,7 @@ func _ready() -> void:
 	_lobby_reconnect()
 	await _monk_activity()
 	await _room_controls()
+	await _watch_view()
 	_account_change()
 	Net.realtime().close_socket()
 	Net.relay().leave()
@@ -209,6 +210,29 @@ func _monk_activity() -> void:
 	overlay.close()
 	await get_tree().process_frame
 	check("closing the keypad clears typing presence", not rt.get("_tracked").has("typing_monk"))
+	var previous_socket: Variant = rt.get("_ws")
+	var previous_state: int = rt.get("_state")
+	var direct := Socket.new()
+	rt.set("_ws", direct)
+	rt.set("_state", WebSocketPeer.STATE_OPEN)
+	rt.set("_pos_live", {Realtime.snap_topic("s1"): true})
+	var relay := Net.relay()
+	var fast := Socket.new()
+	relay.set("_ws", fast)
+	relay.set("_role", "player")
+	relay.up = true
+	rt.online.clear()
+	adv._share_position(3.0)
+	check("relay players avoid duplicate direct broadcasts without viewers", direct.messages.is_empty() and fast.samples > 0)
+	rt.online = {"viewer": [{"sid": "s1", "where": "watch"}]}
+	adv._share_position(3.0)
+	check("relay players also deliver positions to event viewers", direct.messages.size() == 1
+		and direct.messages[0].event == "broadcast")
+	relay.set("_ws", null)
+	relay.up = false
+	rt.set("_ws", previous_socket)
+	rt.set("_state", previous_state)
+	rt.close_socket()
 	adv.queue_free()
 	await get_tree().process_frame
 	rt.close_socket()
@@ -242,3 +266,39 @@ func _room_controls() -> void:
 	check("host controls disappear at Start", not room._move.visible and not room._shuffle.visible)
 	room.queue_free()
 	await get_tree().process_frame
+
+
+func _watch_view() -> void:
+	check("only matching event viewers request spectator snapshots", WatchFeed.has_viewers(
+		{"viewer": [{"sid": "s1", "where": "watch"}]}, "s1") and not WatchFeed.has_viewers(
+		{"viewer": [{"sid": "other", "where": "watch"}]}, "s1"))
+	var snapshot := {"session": {"id": "s1", "state": "running", "duration_s": 600}, "monks": 3,
+		"teams": [{"id": "blue", "name": "Blue", "deposited": 1, "carried": 1, "reached_at": "2026-10-23T00:01:00.1+00:00"},
+			{"id": "red", "name": "Red", "deposited": 1, "carried": 0, "reached_at": "2026-10-23T00:01:00.9+00:00"}],
+		"players": [{"profile_id": "mate", "team_id": "blue", "username": "Mate", "hero": 1, "carried": 1, "deposited": 1}],
+		"answers": [{"team_id": "blue", "monk": 0, "deposited": false}, {"team_id": "red", "monk": 0, "deposited": true}]}
+	check("watch monk state is independent for each team", WatchFeed.monk_state(snapshot, "blue", 0) == 1
+		and WatchFeed.monk_state(snapshot, "red", 0) == 2 and WatchFeed.monk_state(snapshot, "blue", 1) == 0)
+	check("watch timeout tie-break keeps fractional deposit times", WatchFeed.outcome(snapshot) == "Blue wins!")
+	snapshot.teams[1].reached_at = snapshot.teams[0].reached_at
+	check("watch true ties are draws", WatchFeed.outcome(snapshot) == "Draw")
+	snapshot.session.winner_team = "red"
+	check("watch trusts the server's completed-team winner", WatchFeed.outcome(snapshot) == "Red wins!")
+	var screen := preload("res://scripts/WatchScreen.gd").new()
+	add_child(screen)
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	screen._build_ui()
+	screen._apply(snapshot)
+	for _frame in 4:
+		await get_tree().process_frame
+	check("watch renders the same match seed without creating a controllable player", screen.world.seed == Game.seed_of("s1")
+		and screen.find_children("*", "TouchScreenButton", true, false).is_empty()
+		and screen.find_children("*", "MonkOverlay", true, false).is_empty())
+	check("watch keeps individual carry and deposit counts visible", screen.get("_lists")[0].get_child_count() == 1
+		and str(screen.get("_lists")[0].get_child(0).text).contains("carry 1"))
+	screen._on_position("snap", {"sid": "other", "p": [{"id": "mate", "x": 10, "y": 20}]})
+	screen._on_position("snap", {"sid": "", "p": [{"id": "stranger", "x": 10, "y": 20}]})
+	check("watch ignores foreign-session and non-roster movement", (screen.peers.get("_live") as Dictionary).is_empty())
+	screen.queue_free()
+	for _frame in 2:
+		await get_tree().process_frame

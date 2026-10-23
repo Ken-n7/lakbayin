@@ -1505,6 +1505,87 @@ $$;
 grant execute on function public.host_relay(uuid, text, int) to authenticated;
 grant execute on function public.unhost_relay(uuid) to authenticated;
 
+-- 7b. Read-only event spectators --------------------------------------------
+-- A watcher has a short lease, never a members row. Only the authenticated
+-- RPCs write it; movement authorization permits receiving snapshots only.
+create table if not exists public.match_watchers (
+  session_id uuid not null references public.sessions on delete cascade,
+  profile_id uuid not null references public.profiles on delete cascade,
+  seen_at timestamptz not null default now(),
+  primary key (session_id, profile_id)
+);
+alter table public.match_watchers enable row level security;
+revoke all on public.match_watchers from anon, authenticated;
+grant select on public.match_watchers to authenticated;
+drop policy if exists own_watch on public.match_watchers;
+create policy own_watch on public.match_watchers for select to authenticated
+  using (profile_id = (select auth.uid()));
+
+create or replace function lakbayin_private.watch_match(p_code text) returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare sid uuid;
+begin
+  if auth.uid() is null then raise exception 'sign in to watch'; end if;
+  select id into sid from public.sessions
+    where code = upper(trim(p_code)) and (custom or matchmade)
+      and state in ('lobby','running') and created_at > now() - interval '3 hours'
+      and (ends_at is null or ends_at > now())
+    order by created_at desc limit 1;
+  if sid is null then raise exception 'no live match with that code'; end if;
+  if exists (select 1 from public.members where session_id = sid and profile_id = auth.uid())
+    then raise exception 'players cannot watch their own match'; end if;
+  insert into public.match_watchers(session_id,profile_id) values(sid,auth.uid())
+    on conflict (session_id,profile_id) do update set seen_at = now();
+  return sid;
+end $$;
+
+create or replace function lakbayin_private.watch_snapshot(p_session uuid) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions; n int;
+begin
+  if auth.uid() is null then raise exception 'sign in to watch'; end if;
+  update public.match_watchers set seen_at = now()
+    where session_id = p_session and profile_id = auth.uid()
+      and seen_at > now() - interval '30 seconds';
+  if not found then raise exception 'watch expired; enter the code again'; end if;
+  if exists (select 1 from public.members where session_id = p_session and profile_id = auth.uid())
+    then raise exception 'players cannot watch their own match'; end if;
+  select * into s from public.sessions where id = p_session;
+  select count(*) into n from public.session_words where session_id = p_session;
+  if n = 0 then select monk_count into n from public.match_config where id = 1; end if;
+  return jsonb_build_object(
+    'session', jsonb_build_object('id',s.id,'code',s.code,'state',s.state,'ends_at',s.ends_at,
+      'duration_s',s.duration_s,'winner_team',s.winner_team,'server_now',now()), 'monks', n,
+    'teams', coalesce((select jsonb_agg(to_jsonb(t) order by t.name) from (
+      select ts.team_id as id, ts.name, ts.deposited, ts.reached_at,
+        (select count(*) from public.monk_answers a where a.team_id = ts.team_id and a.deposited_at is null) as carried
+      from public.team_standings ts where ts.session_id = p_session) t),'[]'::jsonb),
+    'players', coalesce((select jsonb_agg(to_jsonb(p) order by p.username) from (
+      select m.profile_id, m.team_id, pr.username, pr.hero,
+        count(a.answered_at) filter (where a.deposited_at is null)::int as carried,
+        count(a.deposited_at)::int as deposited
+      from public.members m join public.profiles pr on pr.id = m.profile_id
+      left join public.monk_answers a on a.session_id = m.session_id and a.profile_id = m.profile_id
+      where m.session_id = p_session group by m.profile_id,m.team_id,pr.username,pr.hero) p),'[]'::jsonb),
+    'answers', coalesce((select jsonb_agg(jsonb_build_object('monk',monk,'team_id',team_id,
+      'deposited',deposited_at is not null)) from public.monk_answers where session_id = p_session),'[]'::jsonb));
+end $$;
+
+create or replace function lakbayin_private.leave_watch(p_session uuid) returns void
+language sql security definer set search_path = '' as $$
+  delete from public.match_watchers where session_id = p_session and profile_id = auth.uid()
+$$;
+create or replace function public.watch_match(p_code text) returns uuid
+language sql security invoker set search_path = '' as $$ select lakbayin_private.watch_match(p_code) $$;
+create or replace function public.watch_snapshot(p_session uuid) returns jsonb
+language sql security invoker set search_path = '' as $$ select lakbayin_private.watch_snapshot(p_session) $$;
+create or replace function public.leave_watch(p_session uuid) returns void
+language sql security invoker set search_path = '' as $$ select lakbayin_private.leave_watch(p_session) $$;
+revoke all on function public.watch_match(text), public.watch_snapshot(uuid), public.leave_watch(uuid),
+  lakbayin_private.watch_match(text), lakbayin_private.watch_snapshot(uuid), lakbayin_private.leave_watch(uuid) from public, anon;
+grant execute on function public.watch_match(text), public.watch_snapshot(uuid), public.leave_watch(uuid),
+  lakbayin_private.watch_match(text), lakbayin_private.watch_snapshot(uuid), lakbayin_private.leave_watch(uuid) to authenticated;
+
 -- Movement broadcasts use private channels. A player's input topic belongs
 -- to that player; only the session's teacher may publish its snapshots.
 create or replace function public.can_use_movement(p_topic text, p_send boolean)
@@ -1524,7 +1605,9 @@ begin
   if parts[2] = 'snap' then
     -- A match has no teacher to gather positions: each member publishes its
     -- own on the snapshot channel instead (AdventureScreen, the direct path).
-    return teacher or (member and (not p_send or public.is_matchmade(sid)
+    return (not p_send and exists (select 1 from public.match_watchers
+      where session_id = sid and profile_id = auth.uid() and seen_at > now() - interval '30 seconds'))
+      or teacher or (member and (not p_send or public.is_matchmade(sid)
       or exists (select 1 from public.sessions where id = sid and custom)));
   end if;
   return (not p_send and teacher) or (member and parts[4] = auth.uid()::text);
