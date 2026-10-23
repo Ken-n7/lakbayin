@@ -52,13 +52,32 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   then `supabase/words.sql`** in the SQL Editor; the house-removal change needs
   the re-run.
 - Never ask for, or store, the `service_role` key.
-- **First job: a real 2-phone match.**
-  1. Set `update public.match_config set team_size = 2;` for testing.
-  2. Two accounts press Find Match.
-  3. Check that the match starts, both see the same world, answers grey out
+- **First job: a real 2-phone match.** The user connects two phones and signs
+  a test account in on each. Do this first:
+  1. **Allow 1 v 1.** `match_config.team_size` is `check (team_size between
+     2 and 5)` in `supabase/schema.sql`, so two players can never start a
+     match; the smallest is 2 v 2, four players. Change it to `between 1 and
+     5`.
+     - `create table if not exists` won't change an existing table's check,
+       so add an `alter table ... drop constraint ... / add constraint` that
+       re-runs safely.
+     - Update the matchmaking SQL test.
+     - Run the SQL suite.
+     - Commit, caveman style.
+  2. Have the user re-run `supabase/schema.sql` then `supabase/words.sql` in
+     the Supabase SQL Editor, and set
+     `update public.match_config set team_size = 1;`. Set it back to 3 after
+     testing.
+  3. For throwaway test accounts, the user turns off Authentication →
+     Providers → Email → **Confirm email**, or uses real inboxes.
+  4. Build and install the current game on both phones:
+     `game/tools/device.sh install`, one phone plugged in at a time (Gradle
+     note in §5).
+  5. Both accounts press Find Match.
+  6. Check that the match starts, both see the same world, answers grey out
      monks for teammates, deposits update the scoreline, and the results load
      standings.
-  4. Online code paths to watch: `AdventureScreen._join_online`, `_go_live`,
+  7. Online code paths to watch: `AdventureScreen._join_online`, `_go_live`,
      `_on_row`, `Match.start_online` / `take_row`, `ResultsScreen._standings`.
 
 ### Not built (from DESIGN.md)
