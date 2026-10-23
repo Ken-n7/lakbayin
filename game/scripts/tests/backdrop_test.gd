@@ -1,5 +1,5 @@
 extends TestCase
-## The math drifting over the menus' scene (MathMotes, in Backdrop): behind the
+## Baybayin drifting over the menus' scene (MathMotes, in Backdrop): behind the
 ## screens, never over them; rising, fading in and out, never popping; the
 ## same every launch.
 ##   godot --headless res://scripts/tests/backdrop_test.tscn
@@ -83,27 +83,56 @@ func _ready() -> void:
 	await frames(3)
 	check("hidden with the backdrop where a screen has its own scene", not motes.is_visible_in_tree())
 
-	# Home's own island: the black castle, a tower with maths going round it,
-	# and plain rocks.
+	# Both scenes tell the current game's story: a neutral Monastery and monks,
+	# without the old castles, towers, barracks or combat units.
 	var home: Control = main.current
-	var castle_black := home.find_children("*", "Sprite2D", true, false).any(
-		func(sp: Sprite2D) -> bool:
-			var tex: Texture2D = sp.texture
-			if tex is AtlasTexture:
-				tex = (tex as AtlasTexture).atlas      # the castle is a cell of its sheet
-			return tex != null and tex.resource_path.ends_with("Black_Castle.png"))
-	check("Home's castle is the black one", castle_black)
-	var tower := home.find_child("Tower", true, false) as Sprite2D
-	check("Home has a tower", tower != null and tower.texture.resource_path.ends_with("Black_Tower.png"))
-	var signs := home.find_children("*", "TowerSymbols", true, false)
-	# Baybayin since Lakbayin: every sign starts with a glyph of the script.
-	var mix: Array = (signs[0] as TowerSymbols).signs if signs.size() == 1 else []
-	var every := not mix.is_empty() and mix.all(func(m: String) -> bool:
-		return m.unicode_at(0) >= 0x1700 and m.unicode_at(0) <= 0x171F)
-	check("with Baybayin circling it", signs.size() == 1 and every, str(mix))
+	for scene: Node in [main.backdrop, home]:
+		var monastery := scene.find_child("Monastery", true, false) as Sprite2D
+		check("%s has the neutral Purple Monastery" % scene.name,
+			monastery != null and _source(monastery.texture).ends_with("Purple_Monastery.png"))
+		var monks := scene.find_children("*", "", true, false).filter(func(n: Node) -> bool: return n is Monk)
+		check("%s has monks teaching the script" % scene.name, not monks.is_empty())
+		check("%s has no obsolete military scenery" % scene.name, _military_assets(scene).is_empty(),
+			str(_military_assets(scene)))
+	var signs := home.find_children("*", "", true, false).filter(func(n: Node) -> bool: return n is TowerSymbols)
+	var every := not signs.is_empty()
+	var below_menus := true
+	for ring: TowerSymbols in signs:
+		every = every and not ring.signs.is_empty() and ring.signs.all(func(g: String) -> bool:
+			return g.unicode_at(0) >= 0x1700 and g.unicode_at(0) <= 0x171F)
+		var ancestor: Node = ring
+		while ancestor != home:
+			if ancestor is CanvasItem and ((ancestor as CanvasItem).z_index > 0 or (ancestor as CanvasItem).top_level):
+				below_menus = false
+			ancestor = ancestor.get_parent()
+	check("Home's monks carry decorative Baybayin", every)
+	check("Home's glyphs stay beneath menus and dialogs", below_menus)
 	var home_rocks := ["blue_b", "yellow_a", "red_c"].filter(func(n: String) -> bool:
 		var r := home.find_child(n, true, false) as Sprite2D
 		return r != null and r.texture.resource_path == MapCfg.plain_rock(n))
 	check("and plain rocks", home_rocks.size() == 3, str(home_rocks))
 	completed = true
 	finish("BACKDROP")
+
+
+func _source(texture: Texture2D) -> String:
+	if texture is AtlasTexture:
+		return _source((texture as AtlasTexture).atlas)
+	return texture.resource_path if texture != null else ""
+
+
+func _military_assets(scene: Node) -> Array[String]:
+	var found: Array[String] = []
+	for node: Node in scene.find_children("*", "", true, false):
+		var paths: Array[String] = []
+		if node is Sprite2D:
+			paths.append(_source(node.texture))
+		elif node is AnimatedSprite2D and node.sprite_frames != null:
+			for animation: StringName in node.sprite_frames.get_animation_names():
+				if node.sprite_frames.get_frame_count(animation) > 0:
+					paths.append(_source(node.sprite_frames.get_frame_texture(animation, 0)))
+		for path in paths:
+			for obsolete in ["_Castle.png", "_Tower.png", "_Barracks.png", "_Archery.png", "Warrior_", "Archer_"]:
+				if path.contains(obsolete):
+					found.append(path)
+	return found

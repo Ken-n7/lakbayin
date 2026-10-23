@@ -115,10 +115,12 @@ func _build() -> void:
 	home.pressed.connect(func() -> void: main.open("home"))
 	buttons.add_child(home)
 	var practice := bool(result.get("practice", true))
-	var again := Ui.button("Practice again" if practice else "Find another match", 200, Ui.H, Ui.RED)
+	var custom := bool(result.get("custom", false))
+	var again := Ui.button("Practice again" if practice else "New room" if custom else "Find another match",
+		200, Ui.H, Ui.RED)
 	again.name = "Again"
 	again.pressed.connect(func() -> void:
-		main.open("adventure", {"practice": true}) if practice else main.open("team"))
+		main.open("adventure", {"practice": true}) if practice else main.open("room" if custom else "team"))
 	buttons.add_child(again)
 	box.add_child(buttons)
 
@@ -143,7 +145,7 @@ func _title(teams: Array) -> Array:
 ## words, then the sooner that total was reached (never reached sorts last).
 static func _rank_key(r: Dictionary) -> Array:
 	var at := float(r.get("reached_s", -1))
-	return [0 if bool(r.get("finished", false)) else 1, -int(r.get("deposited", 0)),
+	return [0 if r.get("finished") == true else 1, -int(r.get("deposited", 0)),
 		at if at >= 0.0 else INF]
 
 
@@ -167,6 +169,12 @@ static func _seconds_in(stamp: Variant, start: float) -> float:
 	return maxf(0.0, float(t) - start)
 
 
+static func _team_standing(row: Dictionary, index: int, start: float) -> Dictionary:
+	return {"name": str(row.name), "index": index, "deposited": int(row.deposited),
+		# SQL returns null for finished when the match has no winner_team.
+		"finished": row.get("finished") == true, "reached_s": _seconds_in(row.reached_at, start)}
+
+
 ## {teams, players}, ranked, from the server's standings.
 func _standings(sid: String) -> Dictionary:
 	var session: Dictionary = await Teams.session(sid)
@@ -179,8 +187,7 @@ func _standings(sid: String) -> Dictionary:
 	var team_index := {}
 	for t: Dictionary in (got.data if got.data is Array else []):
 		team_index[str(t.team_id)] = teams.size()
-		teams.append({"name": str(t.name), "index": teams.size(), "deposited": int(t.deposited),
-			"finished": bool(t.get("finished", false)), "reached_s": _seconds_in(t.reached_at, start)})
+		teams.append(_team_standing(t, teams.size(), start))
 	var ps: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
 		"/rest/v1/player_standings?select=profile_id,team_id,deposited,reached_at&session_id=eq." + sid)
 	var names := {}

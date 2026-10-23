@@ -109,7 +109,7 @@ func _run() -> void:
 
 	print("== 1. splash -> sign in -> home ==")
 	check("booted to splash", _script_of(_screen(), "res://scripts/SplashScreen.gd"))
-	check("splash shows the tagline", _find_label(_screen(), "Hanapin.") != null)
+	check("splash shows the tagline", _find_label(_screen(), Art.TAGLINE) != null)
 	_screen().call("skip")
 	await _wait(3)
 	# With a project configured, a launch lands on the login form. This suite
@@ -123,13 +123,19 @@ func _run() -> void:
 	_main_scene.call("open", "home")
 	await _wait(3)
 	check("home is the title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
-	check("start button present", _find_button(_screen(), "Start Adventure") != null)
+	check("Find Match present", _find_button(_screen(), "Find Match") != null)
 	check("Practice present", _find_button(_screen(), "Practice") != null)
+	check("Custom Room present", _find_button(_screen(), "Custom Room") != null)
+	_main_scene.call("open", "room")
+	await _wait(3)
+	check("Custom Room opens its own screen", _script_of(_screen(), "res://scripts/RoomScreen.gd"))
+	_main_scene.call("open", "home")
+	await _wait(3)
 	for gone in ["Learn", "Leaderboard"]:
 		check("no %s button" % gone, _find_button(_screen(), gone) == null)
 
 	print("== 2. hero select -> the offline team form -> a match ==")
-	_click(_screen(), "Start Adventure")
+	_click(_screen(), "Find Match")
 	await _wait(3)
 	var hero := _screen()
 	check("reached hero select", _script_of(hero, "res://scripts/HeroSelectScreen.gd"))

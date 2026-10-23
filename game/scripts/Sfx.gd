@@ -20,7 +20,7 @@ const SOUNDS := {
 	"time_warning": "time_warning.wav", "time_up": "time_up.wav", "eliminated": "eliminated.wav",
 	"paused": "paused.wav", "resumed": "resumed.wav", "ended": "ended.wav",
 	"team_changed": "team_changed.wav", "gem": "gem.wav", "button": "button.wav",
-	"panel_open": "panel_open.wav", "panel_close": "panel_close.wav", "error": "time_warning.wav",
+	"panel_open": "button.wav", "panel_close": "button.wav", "error": "time_warning.wav",
 	"success": "success.wav", "player_joins": "player_joins.wav", "qk_start": "qk_start.wav",
 	"qk_team": "qk_team.ogg",
 }
@@ -34,6 +34,9 @@ static var volume := 0.8
 static var heard: Array[String] = []
 static var _pool: Array[AudioStreamPlayer] = []
 static var _next := 0
+## The file each player started and on which frame: a button that opens a
+## dialog asks for its click and the dialog's sound together -- one sound.
+static var _started := {}
 
 
 static func play(event: String, delay := 0.0) -> void:
@@ -52,6 +55,10 @@ static func play(event: String, delay := 0.0) -> void:
 	_next = (_next + 1) % _pool.size()
 	if not p.is_inside_tree():
 		return                    # made this frame, deferred: in on the next
+	var frame := Engine.get_process_frames()
+	if _started.get(SOUNDS[event], -1) == frame:
+		return
+	_started[SOUNDS[event]] = frame
 	p.stream = load(DIR + SOUNDS[event])
 	p.play()
 

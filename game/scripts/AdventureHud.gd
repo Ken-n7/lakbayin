@@ -170,22 +170,32 @@ func _build_top_bar() -> void:
 	face.texture = Art.grid(Game.hero_sheet(Game.hero_id), 3, 4)[1]   # facing out, standing
 	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	face.custom_minimum_size = Vector2(26, 32)
+	face.custom_minimum_size = Vector2(22, 26)
+	face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	who_row.add_child(face)
-	var names := VBoxContainer.new()
-	names.alignment = BoxContainer.ALIGNMENT_CENTER
-	names.add_theme_constant_override("separation", -2)
+	# Name and team on one line: the plank's slot holds one, and two stacked
+	# ran over its top and bottom edges.
 	var me := Net.username if Net.signed_in() else (Game.player_name if Game.player_name != "" else "You")
 	var m: Match = adv.play
-	var team: String = "Practice" if m.practice else "Team " + str(Match.TEAMS[m.team])
-	for spec in [[me, Pal.CREAM], [team, Peers.TEAM_COLOURS[m.team].lightened(0.25)]]:
-		var l := Art.label(str(spec[0]), Pal.SMALL, spec[1])
-		l.clip_text = true
-		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		l.custom_minimum_size = Vector2(96, 0)
-		names.add_child(l)
-	who_row.add_child(names)
+	var team: String = "Practice" if m.practice else str(Match.TEAMS[m.team])
+	var name_l := Art.label(me, Pal.SMALL, Pal.CREAM)
+	name_l.clip_text = true
+	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_l.custom_minimum_size = Vector2(72, 0)
+	name_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	who_row.add_child(name_l)
+	var team_l := Art.label(team, Pal.SMALL, Peers.TEAM_COLOURS[m.team].lightened(0.25))
+	team_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	who_row.add_child(team_l)
 	bar.add_child(who)
+	# Practice has nothing at stake, so a way out on screen (a match has none:
+	# go_back says so).
+	if m.practice:
+		var leave := Ui.button("Leave", 70, BAR_H - 6, Ui.SMALL)
+		leave.name = "Leave"
+		leave.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		leave.pressed.connect(adv.go_back)
+		bar.add_child(leave)
 
 	# Centre: the score on a ribbon -- the one number everybody watches.
 	var mid := CenterContainer.new()

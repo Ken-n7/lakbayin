@@ -35,8 +35,9 @@ var _rang_at := -INF
 ## Everything in one request: the session, its teams, its members and their
 ## names, embedded. Returns "" or the error.
 func load(session_id: String) -> String:
+	# The roster uses teams.session_id, not sessions.winner_team.
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		"/rest/v1/sessions?select=*,teams(id,name),members(profile_id,team_id,"
+		"/rest/v1/sessions?select=*,teams!teams_session_id_fkey(id,name),members(profile_id,team_id,"
 		+ "profiles(username))&id=eq." + session_id)
 	if got.error != "":
 		return got.error

@@ -44,50 +44,72 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   team vision), carry/deposit, timer win, results screen, Practice.
 - **Removed:** teacher mode, gems, stations, quizzes, Rescue and the old
   leaderboard.
+- **Menu scenery:** Home now shows a Purple Monastery village, houses,
+  monks with Baybayin glyphs, and the selected adventurer. `Backdrop.gd` pans
+  across peaceful monastery/village/forest islands; military scenery is gone.
+  Fonts and Home button layout are retained. Match-generation files are unchanged.
+- **Two-phone test setup:** `match_config.team_size` now accepts **1–5**,
+  with a re-runnable upgrade for existing projects. The default remains **3**.
+  The full SQL suite passes, including 29 matchmaking checks and an explicit
+  upgrade from the old 2–5 constraint that preserves a configured 1 v 1.
 
-### Not tested yet: online play on the live project
+### Live online play: two-phone 1 v 1 verified 2026-10-23
 - The user's Supabase project is `https://yvklwmtsvjgppnmtlede.supabase.co`;
   its anon key is already in `game/project.godot`.
-- Its tables exist. The user was asked to **re-run `supabase/schema.sql` and
-  then `supabase/words.sql`** in the SQL Editor; the house-removal change needs
-  the re-run.
+- The user reported running `schema.sql` and `words.sql`. The old 2–5
+  team-size check was still active, so the user applied the explicit
+  drop/add-constraint upgrade in the SQL Editor. Live API reads confirmed
+  `team_size = 1`.
 - Never ask for, or store, the `service_role` key.
-- **First job: a real 2-phone match.** The user connects two phones and signs
-  a test account in on each. Do this first:
-  1. **Allow 1 v 1.** `match_config.team_size` is `check (team_size between
-     2 and 5)` in `supabase/schema.sql`, so two players can never start a
-     match; the smallest is 2 v 2, four players. Change it to `between 1 and
-     5`.
-     - `create table if not exists` won't change an existing table's check,
-       so add an `alter table ... drop constraint ... / add constraint` that
-       re-runs safely.
-     - Update the matchmaking SQL test.
-     - Run the SQL suite.
-     - Commit, caveman style.
-  2. Have the user re-run `supabase/schema.sql` then `supabase/words.sql` in
-     the Supabase SQL Editor, and set
-     `update public.match_config set team_size = 1;`. Set it back to 3 after
-     testing.
-  3. For throwaway test accounts, the user turns off Authentication →
-     Providers → Email → **Confirm email**, or uses real inboxes.
-  4. Build and install the current game on both phones:
-     `game/tools/device.sh install`, one phone plugged in at a time (Gradle
-     note in §5).
-  5. Both accounts press Find Match.
-  6. Check that the match starts, both see the same world, answers grey out
-     monks for teammates, deposits update the scoreline, and the results load
-     standings.
-  7. Online code paths to watch: `AdventureScreen._join_online`, `_go_live`,
-     `_on_row`, `Match.start_online` / `take_row`, `ResultsScreen._standings`.
+- **Current live settings, by the user's explicit request:** leave
+  `team_size = 1` and **Confirm email off** for more testing. The schema's
+  default is still 3. Restore 3 v 3 and email confirmation when the user wants
+  normal settings again.
+- The Supabase connector's account **cannot access** Lakbayin's project.
+  The user must run administrative SQL in its SQL Editor; do not change
+  either of the unrelated projects the connector lists. Normal authenticated
+  API access as the test players works.
+- **Both phones have the current debug APK installed and are signed in:**
+  - Realme RMX1851: `6d718c9c`, player `laktest_a_e6be92`, hero 1.
+  - Second phone (23106RN0DA): `8DSWAYCU99PRWOMN`, player `laktest_b_e6be92`,
+    hero 2.
+  - USB debugging and USB installation are authorized. With both connected,
+    use `ANDROID_SERIAL` or `adb -s SERIAL` explicitly. The second phone may
+    require accepting an installation prompt again after each rebuild.
+- **Verified live:** both enter the same match and build the same island;
+  each manually typed a correct Baybayin answer; carried words do not score.
+  In the final match (`1df4e1b8-ee7f-4d54-8df6-1e77065381a4`), the Realme
+  deposited ten words at the Monastery. The server ended the match, and both
+  phones loaded **Red 10–0 Blue**, matching player standings and word lists.
+  The winner's words were marked deposited. Neither updated phone process
+  logged a script error.
+  - Existing debug Teleport and Answer Monk tools accelerated the finish;
+    a full match using ordinary walking and a six-player 3 v 3 are still to
+    be playtested. A 1 v 1 cannot verify teammate-specific visual updates.
+  - Evidence: `build/shots/1v1-results-realme.png` and
+    `build/shots/1v1-results-second-phone.png` (ignored build artifacts).
+- **Two live bugs fixed:**
+  - `Lobby.load` now selects `teams!teams_session_id_fkey`; the unqualified
+    embed became ambiguous after adding the match's winner relationship.
+  - `ResultsScreen` treats a null `team_standings.finished` as false, avoiding
+    a crash on timeout when there is no `winner_team`. Parsing and ranking
+    have regression coverage. Reading the actual timed-out match's standings
+    now succeeds with both teams, both players, and a draw title.
+- **Validation:** full SQL suite (179 checks plus schema/concurrency checks),
+  Godot multiplayer suite (14 checks), Godot match suite (44 checks), live
+  timeout standings read, Android export, and the two-phone finish above.
+  Changes are **not committed**; commit only when asked.
+- **Next verification:** six players at 3 v 3, including teammate monk states,
+  then normal walking, disconnect/rejoin, and balance. Online code paths:
+  `AdventureScreen._join_online`, `_go_live`, `_on_row`, `Match.start_online`
+  / `take_row`, `ResultsScreen._standings`.
 
 ### Not built (from DESIGN.md)
 1. The "teammate is typing" **busy** marker on monks (§3.2).
-2. **Custom rooms** (§6.2): `TeamNameScreen` still has join-by-code and the
-   team picker from teacher mode.
-   - Rework so a player is host: create room, code, start.
-   - The server's `can_use_movement` lets members publish snapshots only in
-     `matchmade` sessions; custom rooms need the same.
-   - `is_matchmade` gates the join rules.
+2. **Custom rooms** (§6.2): built. Home → Custom Room → `RoomScreen.gd`
+   (extends `TeamNameScreen`'s lobby); server `create_room` / `start_room` /
+   `leave_room` (schema 4f, `rooms_test.sql`). Not yet: host move/shuffle,
+   dropping a member whose phone closed in the lobby.
 3. **Watch mode** (§6.4, spectator for the event screen).
 4. **My Matches** history and the **global player board** (§7); the
    Leaderboard button was taken off Home.
@@ -96,8 +118,6 @@ Challenge** (Student Category; themes: Education + Philippine culture).
    fine solo.
 
 ### Known rough edges
-- On Home, the tower's floating glyphs draw over open dialogs
-  (`HomeScreen._build_tower`, `holder.z_index = 1`). Pre-existing.
 - The minimap (132×74) covers the top-right of the play view.
 - `schema.sql` still holds the dead teacher/gem functions and tables
   (`apply_answer`, `rescue`, `questions`, `team_scores`, …). They're harmless;

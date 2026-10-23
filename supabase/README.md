@@ -109,10 +109,22 @@ One row, `match_config`, edited in the Table Editor or SQL Editor:
 
 | Column | Default | Meaning |
 |---|---|---|
-| `team_size` | 3 | players a side (2-5) |
+| `team_size` | 3 | players a side (1-5; use 1 for a two-phone playtest) |
 | `search_s` | 90 | how long a player waits for a full lobby |
 | `duration_s` | 360 | the match clock |
 | `monk_count` | 10 | monks (words) per match |
+
+For a two-phone playtest, re-run `schema.sql`, then `words.sql`, and set:
+
+```sql
+update public.match_config set team_size = 1 where id = 1;
+```
+
+After the playtest, restore the normal 3 v 3 setting:
+
+```sql
+update public.match_config set team_size = 3 where id = 1;
+```
 
 ## What is in the schema
 

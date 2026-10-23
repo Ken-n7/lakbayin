@@ -109,6 +109,7 @@ func _ready() -> void:
 	check("a word still carried at the end is lost", r.get_script().resource_path == "res://scripts/ResultsScreen.gd"
 		and lost.size() == 1 and bool(r.result.time_up))
 	_online_rows()
+	_online_standings()
 	completed = true
 	finish("MATCH")
 
@@ -137,6 +138,31 @@ func _online_rows() -> void:
 	m.take_row("INSERT", {"team_id": "stranger", "monk": 1, "profile_id": "x"})
 	check("online: a row from no team of this match is ignored", not m.ours(1) and m.answers.size() == 3)
 	Net.user_id = was_user
+
+
+## A timed-out match has no winner_team: SQL returns null, not false, for
+## team_standings.finished. Parse that live response and rank by deposits/time.
+func _online_standings() -> void:
+	var results_script := load("res://scripts/ResultsScreen.gd")
+	var start := float(Time.get_unix_time_from_datetime_string("2026-10-23T10:00:00"))
+	var blue: Dictionary = results_script._team_standing({"name": "Blue", "deposited": 1,
+		"finished": null, "reached_at": "2026-10-23T10:00:30+00:00"}, 0, start)
+	var red: Dictionary = results_script._team_standing({"name": "Red", "deposited": 1,
+		"finished": null, "reached_at": "2026-10-23T10:00:20+00:00"}, 1, start)
+	check("online results: null finished parses as false", blue.finished == false and red.finished == false)
+	var ordered: Array = results_script.ranked([blue, red])
+	check("online results: timeout standings break equal deposits by time", ordered[0].name == "Red")
+	red.deposited = 0
+	red.reached_s = -1.0
+	ordered = results_script.ranked([red, blue])
+	check("online results: deposited words outrank an empty team", ordered[0].name == "Blue")
+	# Ranking also tolerates nullable or absent flags, while true still wins.
+	ordered = results_script.ranked([
+		{"name": "unfinished", "finished": null, "deposited": 2, "reached_s": 10.0},
+		{"name": "finished", "finished": true, "deposited": 1, "reached_s": 30.0},
+		{"name": "player", "deposited": 1, "reached_s": 20.0}])
+	check("online results: only true marks a finisher, and missing flags are safe",
+		ordered[0].name == "finished" and ordered[1].name == "unfinished" and ordered[2].name == "player")
 
 
 func _score(s: Control) -> String:

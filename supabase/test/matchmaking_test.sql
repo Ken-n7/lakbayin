@@ -38,6 +38,54 @@ end $$;
 do $$
 declare err text; s uuid; s2 uuid; t1 uuid; t2 uuid; row public.sessions; v jsonb;
 begin
+  perform pg_temp.check((select team_size = 3 from public.match_config),
+    'the default remains 3 v 3');
+  begin
+    update public.match_config set team_size = 0;
+    perform pg_temp.check(false, 'zero players a side is rejected');
+  exception when check_violation then
+    perform pg_temp.check(true, 'zero players a side is rejected');
+  end;
+  begin
+    update public.match_config set team_size = 6;
+    perform pg_temp.check(false, 'more than five players a side is rejected');
+  exception when check_violation then
+    perform pg_temp.check(true, 'more than five players a side is rejected');
+  end;
+  update public.match_config set team_size = 5;
+  perform pg_temp.check((select team_size = 5 from public.match_config),
+    'five players a side is still supported');
+
+  -- Two phones can play a full match, with the same queue and fairness rules.
+  update public.match_config set team_size = 1, search_s = 90, duration_s = 300;
+  err := pg_temp.as_player(pg_temp.uid(1), 'select public.find_match()');
+  s := pg_temp.match_of(1);
+  v := pg_temp.poll_as(pg_temp.uid(1), s);
+  perform pg_temp.check(err = '' and (v->>'queued')::boolean
+    and (v->>'players')::int = 1 and (v->>'needed')::int = 2
+    and v->'session'->>'state' = 'lobby',
+    '1 v 1: the first phone waits for a second player', err || v::text);
+
+  err := pg_temp.as_player(pg_temp.uid(12), 'select public.find_match()');
+  select * into row from public.sessions where id = s;
+  perform pg_temp.check(err = '' and pg_temp.match_of(12) = s and row.state = 'running'
+    and row.ends_at between now() + interval '299 seconds' and now() + interval '301 seconds',
+    '1 v 1: the second phone starts the match on the configured clock', err);
+  perform pg_temp.check((select count(*) = 2 and count(distinct team_id) = 2
+    from public.members where session_id = s),
+    '1 v 1: each team has exactly one player');
+  v := pg_temp.poll_as(pg_temp.uid(1), s);
+  perform pg_temp.check((v->>'players')::int = 2 and (v->>'needed')::int = 2
+    and v->'session'->>'state' = 'running',
+    '1 v 1: both phones see a full running match', v::text);
+  err := pg_temp.as_player(pg_temp.uid(10), 'select public.find_match()');
+  s2 := pg_temp.match_of(10);
+  perform pg_temp.check(err = '' and s2 <> s
+    and (select state = 'lobby' from public.sessions where id = s2),
+    '1 v 1: a third player waits in a separate lobby', err);
+
+  -- Keep the existing 2 v 2 coverage independent of the playtest matches.
+  update public.sessions set state = 'ended' where id in (s, s2);
   update public.match_config set team_size = 2, search_s = 90, duration_s = 300;
 
   err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');

@@ -35,8 +35,7 @@ func setup(_data: Dictionary) -> void:
 	var logo := Art.title(Art.label("Lakbayin", Pal.LOGO, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(logo)
-	var tag := Art.title(Art.label("Hanapin.  Isulat.  Ipanalo.", Pal.H2, Pal.GOLD,
-			HORIZONTAL_ALIGNMENT_CENTER))
+	var tag := Art.tagline(Pal.H2)
 	Art.shadow(tag)      # over a moving scene now, not a flat colour
 	col.add_child(tag)
 

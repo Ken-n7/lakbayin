@@ -57,7 +57,7 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 ## 3. Match rules
 
 ### 3.1 Teams and fairness
-- **3 v 3** in matchmaking. Custom rooms allow any split up to 3 v 3.
+- **3 v 3** in matchmaking. Custom rooms allow any number a side, uneven too.
 - Both teams play the **same world**: the same monk positions, the **same words**,
   and the same Monastery.
 - Each team spawns at its own point. The Monastery is placed at an **equal
@@ -223,6 +223,12 @@ spelling**, marking which ones your team got right, got wrong, or missed.
   symbols. They are **not** the answer. The word itself appears on the answer
   panel.
 - Menus and backdrop: the floating maths symbols become Baybayin glyphs.
+- **Menu scenery:** Home is a Monastery village with two houses,
+  black monks with decorative Baybayin, and the selected adventurer. The
+  shared backdrop slowly pans across monastery, village and forest islands.
+  Both use existing Tiny Swords / Super Retro World art; obsolete castles,
+  towers, barracks, archery buildings and combat units are absent. These are
+  fixed decorative scenes, separate from procedural match generation.
 
 ---
 
@@ -235,8 +241,8 @@ spelling**, marking which ones your team got right, got wrong, or missed.
 - A match starts **only when full** (3 v 3), so the teams are always even.
 - A player still waiting after **90 s** (`match_config.search_s`) drops out of
   the queue: "No match found — tap Find Match to search again."
-- Team size is one setting (`match_config.team_size`, 2 to 5). It is **3** for
-  now; raise it as more people play.
+- Team size is one setting (`match_config.team_size`, 1 to 5). It is **3** by
+  default; use **1** for a two-phone playtest, then restore **3**.
 - Lobby phones check in every few seconds. One silent for 15 s loses its place.
   The lobby shows "Searching for players — 4 of 6 · 1:07 left".
 - **Counts for the global leaderboard.**
@@ -244,8 +250,9 @@ spelling**, marking which ones your team got right, got wrong, or missed.
 ### 6.2 Custom Room (with friends)
 - **Create Room:** the host gets a 4-character code.
 - **Join Room:** type the code to land in the lobby.
-- Players pick sides. The host can move or shuffle players.
-- **Only the host starts.** Uneven teams are allowed (1 v 1 up to 3 v 3).
+- Players pick sides and may switch until Start. (Host move/shuffle: not built.)
+- **Only the host starts**, once both sides have a player. Any number a
+  side, uneven too (1 v 3 is fine).
 - If the host leaves the lobby, hosting passes to the next player.
 - Shows in **My Matches** with a **Custom** tag, but does **not** count for
   the global leaderboard (rigged rooms could farm it), as MOBAs do.
@@ -356,7 +363,7 @@ The phone never decides an outcome. The server:
   required by the license.
 - **Sound effects:** original sounds made for this game. Retro 512 by Juhani
   Junkala (CC0). Interface Sounds by Kenney (CC0).
-- **Fonts:** Patrick Hand, MedievalSharp, DejaVu Sans, Noto Sans Tagalog (OFL).
+- **Fonts:** Kalam, Kaushan Script, DejaVu Sans, Noto Sans Tagalog (OFL).
 - **AI disclosure (Form 03):** programming assisted by Claude (Anthropic). No
   AI-generated art, music or voices.
 - **Inspiration** (for the synopsis): Baybayin learning games such as Likha!
@@ -370,7 +377,7 @@ The phone never decides an outcome. The server:
 | Day | Work | Status |
 |---|---|---|
 | **Day 1** | Word list, Baybayin keypad, Noto Sans Tagalog, server answer checking, monks; rename to Lakbayin | Done |
-| **Day 2** | Procedural world (mirrored; monks, Monastery, fair spawns), per-team monk state, team vision on the minimap, carry/deposit, timer win, results screen, Practice mode; teacher mode and the old rules removed | Done. Online play still to be tried on the live project once `schema.sql` and `words.sql` are run there |
+| **Day 2** | Procedural world (mirrored; monks, Monastery, fair spawns), per-team monk state, team vision on the minimap, carry/deposit, timer win, results screen, Practice mode; teacher mode and the old rules removed | Done. Live two-phone 1 v 1 verified Oct 23: keypad answers, carry, deposit, shared match end, and standings. Full 3 v 3 playtest pending |
 | **Oct 25** | Record the trailer (1–2 min) and gameplay video (3–5 min, .mp4); Forms 01–03; synopsis (≤500 words); submit | |
 | Before Nov 9 | Custom rooms, Watch mode, My Matches, global board, polish | |
 | Before Nov 26 | Playtests, balance (clock, monk count), word list review, art polish | |
@@ -387,7 +394,7 @@ videos.
 | Name | **Lakbayin**: *lakbay* (journey) as a verb, "to travel or explore a place", ending in *-bayin* like Baybayin. Explore the world, write in Baybayin. No game or app found using it. |
 | Points per word | 1 per deposited word |
 | Match end | Ends for everyone when a team finishes |
-| Team size | 3 v 3; one setting raises it to 4 v 4 or 5 v 5 |
+| Team size | 3 v 3 by default; one setting allows 1 v 1 through 5 v 5, with 1 v 1 for two-phone playtests |
 | Matchmaking wait | Starts only when full; 90 s limit, then "No match found" and search again |
 | Keypad labels | On in Practice, off in matchmade and custom games |
 | Player characters | All 32 heroes for now |

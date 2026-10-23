@@ -1,15 +1,17 @@
 extends Control
 
-## Start Adventure -> the session code -> pick your team -> the map.
+## Start Adventure -> Find Match -> the match's lobby -> the map.
 ##
-## Online, the teacher presses New Session and reads out a four-character
-## code; the student types it, then taps the team they want in the lobby. They
-## can switch until the teacher presses Start, after which teams are locked --
-## the server refuses a switch, this screen only says so first. A phone that
-## already joined comes straight back to the lobby with no code to retype.
+## Online, Find Match puts the player in a match and the server deals the
+## teams; the lobby waits until it is full, then opens the map by itself. A
+## phone that already joined comes straight back to its lobby.
 ##
-## Offline there is nobody to check a code against, so it is the old form: a
-## team name, recorded, and the run starts -- which is how a dev run and the
+## The lobby itself -- teams as boxes, live off the socket -- is shared with
+## RoomScreen (a custom room), which extends this screen with a code, sides
+## the players pick, and a host's Start.
+##
+## Offline there is nobody to match with, so it is the old form: a team name,
+## recorded, and a Practice run starts -- which is how a dev run and the
 ## headless suites still reach the map.
 
 const PANEL := Vector2(360, 230)
@@ -26,7 +28,6 @@ const SHOW_NAMES := 4
 var main: Control
 
 var _team: LineEdit          # offline: the team name
-var _code: LineEdit          # online: the session code
 var _msg: Label
 var _go: Button
 
@@ -72,13 +73,12 @@ func setup(data: Dictionary) -> void:
 	if bool(data.get("removed", false)):
 		_say("You were removed from that session.", Pal.WRONG)
 		return
-	# Joined a session before: try it quietly. Still going -> straight back to
-	# the lobby. Over -> forgotten, and the student sees an empty field, not a
-	# warning about a code they never typed.
-	if Game.joined_code != "":
-		_code.text = Game.joined_code
-		_enter(true)
-	elif Game.joined_session != "":
+	_resume()
+
+
+## Joined a match before: back to it quietly if it is still going.
+func _resume() -> void:
+	if Game.joined_session != "":
 		_rejoin_match()
 
 
@@ -99,7 +99,7 @@ func _background() -> void:
 func _build_offline() -> void:
 	_background()
 	var box := Ui.screen_panel(self, PANEL, "Enter Team Name")
-	box.add_child(Art.label("Type the team name your Quest Keeper gave you.",
+	box.add_child(Art.label("Offline: name your team for a Practice run.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	_team = Ui.field(box, "Team", "e.g. Math Mavericks")
 	_team.text = Game.team_name
@@ -138,71 +138,13 @@ func _build_code() -> void:
 	_find_btn = Ui.button("Find Match", 260, Ui.H, Ui.RED)
 	_find_btn.pressed.connect(_find)
 	Ui.centre_row(box, _find_btn)
-	box.add_child(Art.label("or type the code your Quest Keeper shows",
-			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	# The code as a code: four big spaced letters, the way it is read off the
-	# board, not a line of small text in a form field.
-	_code = Ui.line_edit("K7QM", 200, 52, 32)
-	_code.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_code.max_length = 4
-	_code.add_theme_constant_override("minimum_character_width", 4)
-	var code_row := CenterContainer.new()
-	code_row.add_child(_code)
-	box.add_child(code_row)
-	# Capitals as they type, and a character no code has is said at once,
-	# not after a trip to the server.
-	# A look-alike becomes the character codes use (a typed Z shows as 2).
-	_code.text_changed.connect(func(t: String) -> void:
-		var up := Teams.clean_code(t)
-		if up != t:
-			var at := mini(_code.caret_column, up.length())
-			_code.text = up
-			_code.caret_column = at
-		var bad := Teams.bad_chars(up)
-		_say(Teams.bad_note(bad) if bad != "" else "", Pal.WRONG))
-	_code.text_submitted.connect(func(_t: String) -> void: _enter())
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_msg.custom_minimum_size = Vector2(260, 0)
 	box.add_child(_msg)
-	_go = Ui.button("Join", 260, Ui.H, Ui.BLUE)
-	_go.pressed.connect(_enter)
-	Ui.centre_row(box, _go)
 	var back := Ui.link("Back")
 	back.pressed.connect(go_back)
 	Ui.centre_row(box, back)
-
-
-## `quiet`: the code came from memory, not from the student, so a failure
-## just clears the field instead of warning about it.
-func _enter(quiet := false) -> void:
-	if _joining:
-		return
-	if _code.text.strip_edges().is_empty():
-		_say("Enter the code.", Pal.WRONG)
-		return
-	_go.disabled = true
-	_go.text = "Joining..."
-	_joining = true
-	_join_version += 1
-	var version := _join_version
-	var got: Dictionary = await Teams.enter(_code.text)
-	if not is_instance_valid(self) or version != _join_version:
-		return
-	if got.error != "":
-		_joining = false
-		_go.disabled = false
-		_go.text = "Join"
-		if quiet:
-			_code.text = ""
-		else:
-			_say(got.error, Pal.WRONG)
-		# A remembered code that has since ended is simply forgotten.
-		Game.joined_code = ""
-		Game.joined_session = ""
-		Game.save_profile()
-		return
-	await _open_lobby(got.session, quiet, version)
 
 
 ## Find Match: the server picks the match and the team (Teams.find_match).
@@ -236,6 +178,9 @@ func _rejoin_match() -> void:
 	var session: Dictionary = await Teams.session(Game.joined_session)
 	if not is_instance_valid(self) or version != _join_version:
 		return
+	if bool(session.get("custom", false)):
+		_joining = false      # a room's: RoomScreen goes back to it
+		return
 	if session.is_empty() or Teams.expired(session) or not bool(session.get("matchmade", false)):
 		_joining = false
 		Game.joined_session = ""
@@ -251,7 +196,7 @@ func _open_lobby(session: Dictionary, quiet: bool, version: int) -> void:
 	_lobby.session = _session.duplicate()
 	var lobby := _lobby
 	Game.joined_session = str(_session.get("id", ""))
-	# A match is found again by its id; only a teacher's session by its code.
+	# A match is found again by its id; a room by its code.
 	Game.joined_code = "" if _matchmade() else str(_session.get("code", ""))
 	Game.save_profile()
 	# Listening before the first read, so nothing that happens in between is
@@ -350,7 +295,7 @@ func _draw_lobby() -> void:
 		Game.save_profile()
 		var was_match := _matchmade()
 		_build_code()
-		_say("That match has ended." if was_match else "That adventure has ended. Enter the new code.",
+		_say("That match has ended." if was_match else "That room has ended.",
 				Pal.WRONG)
 		return
 	_session = _lobby.session
@@ -371,9 +316,6 @@ func _draw_lobby() -> void:
 		# Locked: only somebody with no team (never picked, or theirs was
 		# removed) may still pick. The server holds the same line.
 		_cards.add_child(_team_box(t, locked and _mine != "", most))
-	if _lobby.teams.is_empty():
-		_cards.add_child(Art.label("Your Quest Keeper has not made any teams yet.",
-				Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
 	var team_name := _lobby.name_of(_mine)
 	var tone := Pal.INK
@@ -420,6 +362,7 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 			NAME_LINE * (3 if compact else most + 3) + 8)
 	box.focus_mode = Control.FOCUS_NONE
 	box.disabled = mine or locked
+	Ui.click(box)
 	box.tooltip_text = "" if box.disabled else "Join " + str(t.name)
 	for st in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var face := StyleBoxFlat.new()
@@ -613,17 +556,20 @@ func _kicked() -> void:
 	_build_code()
 	# A match drops a phone that stopped checking in (poll_match).
 	_say("No match found — tap Find Match to search again." if was_match
-			else "You were removed from that session.", Pal.WRONG)
+			else "You were removed from that room.", Pal.WRONG)
 
 
-## Out of this session for good on this phone: the membership stays on the
-## server (the teacher still sees them, and the gems still count), but the
-## code is forgotten so Start Adventure asks for one again.
+## Out of this lobby on this phone. After Start the membership stays on the
+## server (the result still counts), but this phone forgets it.
 func _leave() -> void:
 	Net.realtime().untrack()
-	# Out of a match's queue too, or the match waits for this player.
-	if _matchmade() and str(_session.get("state", "")) == "lobby":
-		Teams.leave_match(str(_session.get("id", "")))
+	# Out of a match's queue too, or the match waits for this player; out of
+	# a room, or the host could start with a side nobody plays.
+	if str(_session.get("state", "")) == "lobby":
+		if _matchmade():
+			Teams.leave_match(str(_session.get("id", "")))
+		elif bool(_session.get("custom", false)):
+			Teams.leave_room(str(_session.get("id", "")))
 	Game.joined_code = ""
 	Game.joined_session = ""
 	Game.save_profile()

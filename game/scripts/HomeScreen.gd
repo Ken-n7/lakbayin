@@ -10,19 +10,15 @@ extends Control
 
 const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
 const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
-const CASTLE := "res://assets/buildings/Black_Castle.png"
-## A tower on the island's right, like the board's, with maths circling it.
-const TOWER := "res://assets/buildings/Black_Tower.png"
+const MONASTERY := "res://assets/buildings/Purple_Monastery.png"
 const TREE := "res://assets/terrain/decorations/Tree1.png"
 
 const INSET := 16      # safe-area gutter, ~5% of the 360px canvas height
-const COL_W := 186     # menu column width
-const HAIL_SIZE := Pal.BODY      # the welcome line; was Pal.H2
-const SUB_SIZE := Pal.TINY - 1   # the line under it; was Pal.TINY
+const COL_W := 200     # button width
+const MENU_W := 248    # full Baybayin tagline, centred over the buttons
+const TITLE_SIZE := 36  # the game's name over the menu
 const ICONS := "res://assets/ui/icons/%s.png"
-const BTN_H := Ui.H      # 30 x the ~3x phone upscale is ~90 physical px, still a
-                       # comfortable touch target; 40 did not leave room for the
-                       # welcome copy and five buttons above the tab bar
+const BTN_H := 38.0    # five equal touch targets fit above the bottom gutter
 const TILE := 32       # world px per cell; art is 64px drawn at 0.5
 const W := 27          # 27 x 32 = 864: covers 800, which is what `keep_height`
                        # gives a 20:9 phone. At 21 the right edge of the screen
@@ -40,6 +36,8 @@ var _land := {}   # Vector2i -> true
 func setup(_data: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_scene()
+	resized.connect(_position_scene)
+	_position_scene()
 	_build_menu()
 	_build_header()
 	_build_footer()
@@ -49,18 +47,10 @@ func setup(_data: Dictionary) -> void:
 ## The admin dashboard is this screen with different words and different
 ## destinations, so it inherits the island, the header and the footer and
 ## overrides only these four. Anything else and the two drift apart.
-func _hail() -> String:
-	return "Welcome, Adventurer!"
-
-
-func _sub() -> String:
-	return "Find the monks. Write their words in Baybayin."
-
-
 ## The player's strapline. The admin column has no room for it once the
 ## mockup's longer heading has wrapped.
 func _tagline() -> String:
-	return "Hanapin.  Isulat.  Ipanalo."
+	return Art.TAGLINE
 
 
 ## [label, route, button kind, data, icon]; an empty route means "work it
@@ -68,9 +58,10 @@ func _tagline() -> String:
 ## Change Character and Log Out live in Settings (client), which is what
 ## makes room for Quit.
 func _entries() -> Array:
-	var has_profile := Game.player_name != ""
 	return [
-		["Join Quest" if has_profile else "Start Adventure", "", Ui.RED, {}, "play"],
+		["Find Match", "", Ui.SMALL_RED, {}, "play"],
+		# Friends by a code, any number a side (RoomScreen).
+		["Custom Room", _open_room, Ui.SMALL, {}, "hero"],
 		# Alone, offline, with the keypad's Latin labels: learning the script.
 		["Practice", "adventure", Ui.SMALL, {"practice": true}, "book"],
 		["Settings", _open_settings, Ui.SMALL, {}, "gear"],
@@ -91,7 +82,7 @@ func _after_menu(_col: VBoxContainer) -> void:
 
 # --- Scene ------------------------------------------------------------------
 ## The island is a fixed composition, not a procedural map: every prop is placed
-## by hand so the castle stays the focal point and the menu column always has
+## by hand so the Monastery stays the focal point and the menu column always has
 ## quiet water behind it. No RNG, so it looks the same every launch.
 func _build_scene() -> void:
 	_world = Node2D.new()
@@ -102,7 +93,8 @@ func _build_scene() -> void:
 	# The raw tile is a pale teal (#47aba9); multiply it toward a deeper sea blue
 	# so the grass reads against it and the menu gradient has something to sit on.
 	water.modulate = MapCfg.WATER_TINT
-	_world.add_child(water)
+	# Keep the sea fixed while the island centres in the wider scene area.
+	add_child(water)
 	for y in H:
 		for x in W:
 			water.set_cell(Vector2i(x, y), 0, Vector2i(0, 0))
@@ -135,6 +127,10 @@ func _build_scene() -> void:
 	add_child(vignette)
 
 
+func _position_scene() -> void:
+	_world.position.x = maxf(size.x - Pal.CANVAS.x, 0.0) * 0.5
+
+
 ## Ellipse biased right of centre with an angular wobble, so the island body
 ## clears the menu column and the shoreline is not a perfect oval. Kept small
 ## enough that open water frames it on all four sides.
@@ -150,51 +146,36 @@ func _at(cx: float, cy: float) -> Vector2:
 
 
 func _build_props() -> void:
-	Art.sprite(_world, Art.cell(CASTLE, 0, 0), _at(13.0, 4.8), 0.5)
-
-	for spec in [[8.6, 6.2, 1.0], [17.4, 5.6, -1.0], [9.4, 7.6, 1.0], [16.8, 7.4, 1.0]]:
-		var t := Art.anim_sprite(_world, TREE, _at(spec[0], spec[1]), 0.42, 3.0, spec[2])
-		t.frame = int(abs(t.position.x)) % 8   # desync the sway so they don't pulse in unison
-
-	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Rock2.png"), _at(9.8, 4.8), 1.4)
-	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Rock4.png"), _at(16.6, 6.6), 1.4)
-	_build_tower(_at(17.2, 8.3))
-	# The menus' and the board's extra rocks, a few here too.
-	for c in [["blue_b", 10.4, 9.4, 1.2], ["yellow_a", 7.9, 7.3, 1.15], ["red_c", 15.2, 9.6, 1.1]]:
-		var r := Art.sprite(_world, Art.tex(MapCfg.plain_rock(c[0])), _at(c[1], c[2]), c[3])
-		r.name = c[0]
-	Art.sprite(_world, Art.tex("res://assets/terrain/decorations/Stump 1.png"), _at(11.6, 8.3), 0.4)
-
-	# The island's lower middle is left empty on purpose -- that is the hero's
-	# patrol band, and anything standing there y-sorts in front of him.
-
-
-## The tower, and its signs going round it -- all three stations' mixed, as
-## Home is all three. The signs hang off a holder at the tower's foot so the
-## y-sort puts them in front of it, as on the board.
-func _build_tower(at: Vector2) -> void:
-	var t := Art.sprite(_world, Art.tex(TOWER), at, 0.5)
-	t.name = "Tower"
-	var holder := Node2D.new()
-	holder.name = "TowerSigns"
-	holder.position = at + Vector2(0, 1)
-	# Over the island's vignette, so they read as brightly as on the board;
-	# the tower is on the right, clear of the menu column.
-	holder.z_index = 1
-	_world.add_child(holder)
-	var signs := TowerSymbols.new()
-	signs.signs = ["ᜊ", "ᜎ", "ᜃ᜔", "ᜌᜒ"]
-	# The whole 256px sheet is drawn here, not the trimmed cell the board uses:
-	# the tower itself runs from art row 46 to 230, so its base is 13 px up.
-	signs.position = Vector2(0, -13) + TowerSymbols.top_of((230 - 46) * 0.5) - Vector2(0, 1)
-	holder.add_child(signs)
+	# A village clearing: the place the journey leads back to.
+	var monastery := Art.sprite(_world, Art.cell(MONASTERY, 0, 0), _at(13.3, 6.0), 0.5)
+	monastery.name = "Monastery"
+	for spec in [["Blue_House1", 9.5, 7.6], ["Red_House1", 17.1, 7.5]]:
+		var house := Art.sprite(_world, Art.cell("res://assets/buildings/%s.png" % spec[0], 0, 0),
+			_at(spec[1], spec[2]), 0.45)
+		house.name = str(spec[0])
+	for spec in [[8.6, 5.8, 1.0], [17.6, 5.6, -1.0], [9.1, 9.1, 1.0], [17.3, 9.4, 1.0]]:
+		var tree := Art.anim_sprite(_world, TREE, _at(spec[0], spec[1]), 0.42, 3.0, spec[2])
+		tree.frame = int(abs(tree.position.x)) % 8
+	for i in 2:
+		var monk := Monk.new()
+		monk.name = "GuideMonk%d" % i
+		monk.index = i
+		monk.position = _at(11.0 if i == 0 else 16.0, 8.7 if i == 0 else 8.5)
+		_world.add_child(monk)
+	for spec in [["Bush1", 10.0, 5.6], ["Bush3", 15.1, 5.2], ["Bush2", 16.0, 9.7]]:
+		var bush := Art.anim_sprite(_world, "res://assets/terrain/decorations/%s.png" % spec[0],
+			_at(spec[1], spec[2]), 0.45, 3.0)
+		Art.sit_on_art(bush)
+	for c in [["blue_b", 10.4, 9.8, 0.85], ["yellow_a", 8.4, 7.0, 0.8], ["red_c", 16.2, 10.0, 0.8]]:
+		var rock := Art.sprite(_world, Art.tex(MapCfg.plain_rock(c[0])), _at(c[1], c[2]), c[3])
+		rock.name = c[0]
 
 
-## One adventurer pacing the shore in front of the castle. A looping tween
+## One adventurer exploring the clearing in front of the Monastery. A looping tween
 ## rather than _process: the menu has no other per-frame work to do.
 func _build_hero() -> void:
 	var hero := Node2D.new()
-	hero.position = _at(11.0, 7.4)
+	hero.position = _at(12.0, 9.1)
 	_world.add_child(hero)
 
 	var shade := Sprite2D.new()
@@ -212,9 +193,9 @@ func _build_hero() -> void:
 	hero.add_child(spr)
 
 	var tw := create_tween().set_loops()
-	tw.tween_property(hero, "position:x", _at(15.6, 0).x, 4.6)
+	tw.tween_property(hero, "position:x", _at(14.7, 0).x, 4.6)
 	tw.tween_callback(func() -> void: spr.play("left"))
-	tw.tween_property(hero, "position:x", _at(11.0, 0).x, 4.6)
+	tw.tween_property(hero, "position:x", _at(12.0, 0).x, 4.6)
 	tw.tween_callback(func() -> void: spr.play("right"))
 
 
@@ -271,6 +252,12 @@ func _build_header() -> void:
 	add_child(out)
 
 
+## A room, after a character if there is none yet.
+func _open_room() -> void:
+	main.open("room" if Game.player_name != "" else "hero",
+		{} if Game.player_name != "" else {"then": "room"})
+
+
 ## Team name comes before the map, but a player with no character yet has to
 ## pick one first -- that is the only reason this is a branch and not a route.
 func _adventure_route() -> String:
@@ -293,49 +280,35 @@ func _build_menu() -> void:
 	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
 	shade.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
-	shade.offset_right = COL_W + INSET * 3
+	shade.offset_right = MENU_W + INSET * 2
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
 
+	# The title and the menu as one block, centred down the left side.
 	var col := VBoxContainer.new()
-	col.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	col.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
 	col.offset_top = INSET
+	col.offset_bottom = -INSET
 	col.offset_left = INSET
-	col.offset_right = INSET + COL_W
-	col.custom_minimum_size = Vector2(COL_W, 0)
-	col.add_theme_constant_override("separation", 4)
+	col.offset_right = INSET + MENU_W
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", 6)
 	add_child(col)
 
-	var tl := Art.title(Art.label("Lakbayin", Pal.H1, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
-	tl.custom_minimum_size = Vector2(COL_W, 0)
+	var tl := Art.title(Art.label("Lakbayin", TITLE_SIZE, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
+	tl.custom_minimum_size = Vector2(MENU_W, 0)
 	Art.shadow(tl, Color(0, 0, 0, 0.6), 3, 0)
 	col.add_child(tl)
 
 	if _tagline() != "":
-		var tag := Art.title(Art.label(_tagline(), Pal.SMALL, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
-		tag.custom_minimum_size = Vector2(COL_W, 0)
+		var tag := Art.tagline(Pal.H2)
+		tag.text = _tagline()
+		Art.shadow(tag)
+		tag.custom_minimum_size = Vector2(MENU_W, 0)
 		col.add_child(tag)
 
-	# The mockup's welcome copy, word for word -- §1 treats the PDFs as a
-	# wording contract even though the art is ours.
-	# A size down (client), with the line under it: room for one more button.
-	var hail := Art.label(_hail(), HAIL_SIZE, Pal.PARCHMENT,
-			HORIZONTAL_ALIGNMENT_CENTER)
-	# Wrapped and pinned to the column width. Without this a longer heading --
-	# the admin's -- sets the VBox's minimum width, and every button in it
-	# stretches to match: 400px against Home's 186.
-	hail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hail.custom_minimum_size = Vector2(COL_W, 0)
-	Art.shadow(hail, Pal.SHADOW, 2, 0)
-	col.add_child(hail)
-	var sub := Art.label(_sub(),
-			SUB_SIZE, Pal.WHITE_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
-	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	sub.custom_minimum_size = Vector2(COL_W, 0)
-	col.add_child(sub)
-
 	var pad := Control.new()
-	pad.custom_minimum_size = Vector2(0, 4)
+	pad.custom_minimum_size = Vector2(0, 6)
 	col.add_child(pad)
 
 	# One navigation, not two. This column was carrying Continue / New Game /
@@ -346,6 +319,7 @@ func _build_menu() -> void:
 	# it on something the side already does.
 	for spec: Array in _entries():
 		var b := Ui.button(spec[0], COL_W, BTN_H, spec[2])
+		b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		b.clip_text = true
 		# Solid white pixel icons (tools/make_icons.py), at the left edge.
 		if spec.size() > 4 and str(spec[4]) != "":
@@ -414,7 +388,7 @@ const CREDITS := [
 	["Art", "Tiny Swords by Pixel Frog\nCharacters: Super Retro World by Gif (@gif_not_jif), Noiracide (@Noiracide) and Romi (@DessRomaric)"],
 	["Music", "Original music by Marllon Silva (xDeviruchi)"],
 	["Sound effects", "Original sounds made for this game\nRetro 512 by Juhani Junkala (CC0)\nInterface Sounds by Kenney (CC0)"],
-	["Fonts", "Patrick Hand by Patrick Wagesreiter (OFL)\nMedievalSharp by wmk69 (OFL)\nNoto Sans Tagalog by the Noto Project Authors (OFL)\nDejaVu Sans by the DejaVu fonts team"],
+	["Fonts", "Kalam by the Indian Type Foundry (OFL)\nKaushan Script by Pablo Impallari (OFL)\nNoto Sans Tagalog by the Noto Project Authors (OFL)\nDejaVu Sans by the DejaVu fonts team"],
 	["Words", "From the Tagalog Swadesh list, Wiktionary (CC BY-SA 4.0)"],
 	["AI disclosure", "Programming assisted by Claude (Anthropic). No AI-generated art, music or voices."],
 ]

@@ -40,6 +40,20 @@ if git cat-file -e HEAD:supabase/schema.sql 2>/dev/null; then
 	fi
 fi
 
+# Simulate the old 2-5 check even after HEAD has moved past that schema.
+# Upgrading must allow 1 v 1, and re-running must preserve that setting.
+if q -c "alter table public.match_config drop constraint match_config_team_size_check;
+	alter table public.match_config add constraint match_config_team_size_check
+	check (team_size between 2 and 5);" >/dev/null 2>&1 \
+	&& q -f supabase/schema.sql >/dev/null 2>&1 \
+	&& q -c "update public.match_config set team_size = 1;" >/dev/null 2>&1 \
+	&& q -f supabase/schema.sql >/dev/null 2>&1 \
+	&& [[ $(q -t -A -c "select team_size from public.match_config where id = 1") == 1 ]]; then
+	echo "ok    the old team-size check upgrades to 1 v 1, and re-runs preserve it"
+else
+	echo "FAIL  team-size check upgrade or 1 v 1 schema re-run"; fail=1
+fi
+
 fresh
 q -f supabase/schema.sql >/dev/null 2>&1
 out=$(q -t -A -f supabase/test/rescue_test.sql 2>&1)
@@ -95,6 +109,14 @@ q -f supabase/words.sql >/dev/null 2>&1 || { echo "FAIL  words.sql does not load
 out=$(q -t -A -f supabase/test/monks_test.sql 2>&1)
 echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
 echo "$out" | grep -q -- "---- MONKS SQL PASS" || fail=1
+echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
+
+fresh
+q -f supabase/schema.sql >/dev/null 2>&1
+q -f supabase/words.sql >/dev/null 2>&1
+out=$(q -t -A -f supabase/test/rooms_test.sql 2>&1)
+echo "$out" | grep -E "^(ok|FAIL)" | sed 's/^ok  /ok   /'
+echo "$out" | grep -q -- "---- ROOMS SQL PASS" || fail=1
 echo "$out" | grep -- "^---- " || { echo "$out" | tail -5; fail=1; }
 
 # Leave a clean schema for the relay race's fixed fixture IDs.

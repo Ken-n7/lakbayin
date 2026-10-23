@@ -11,6 +11,7 @@ const SCREENS := {
 	"home": preload("res://scripts/HomeScreen.gd"),
 	"hero": preload("res://scripts/HeroSelectScreen.gd"),
 	"team": preload("res://scripts/TeamNameScreen.gd"),
+	"room": preload("res://scripts/RoomScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),
 	"results": preload("res://scripts/ResultsScreen.gd"),
 }
@@ -23,7 +24,7 @@ const SCREENS := {
 ## to The Journey once the adventure starts.
 const MUSIC := {
 	"login": "town", "register": "town", "reset": "town", "home": "town",
-	"team": "town",
+	"team": "town", "room": "town",
 	"hero": "shop",
 	"results": "victory",
 	"adventure": "battle",

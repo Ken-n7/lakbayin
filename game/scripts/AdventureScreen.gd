@@ -95,7 +95,7 @@ func setup(data: Dictionary) -> void:
 			_loading.text = why
 			await get_tree().create_timer(1.8).timeout
 			if is_instance_valid(self):
-				main.open("team")
+				main.open("room" if Game.joined_code != "" else "team")
 			return
 		_loading.queue_free()
 	else:
@@ -143,7 +143,7 @@ func _build() -> void:
 	for band in world.cloud_bands:
 		band.keep_clear = [player]
 	Game.time_changed.connect(hud.on_time)
-	Game.time_changed.connect(_time_sounds)
+	Game.time_changed.connect(_time_warning)
 	Game.adventure_ended.connect(_on_time_up)
 	play.changed.connect(_on_play_changed)
 	_on_play_changed()
@@ -154,7 +154,7 @@ func _exit_tree() -> void:
 		Game.clock_paused = false
 	if hud != null:
 		Game.time_changed.disconnect(hud.on_time)
-		Game.time_changed.disconnect(_time_sounds)
+		Game.time_changed.disconnect(_time_warning)
 		Game.adventure_ended.disconnect(_on_time_up)
 
 
@@ -892,7 +892,9 @@ func finish(reason: String) -> void:
 	tw.tween_interval(END_HOLD_S)
 	tw.tween_callback(func() -> void:
 		if main != null:
-			main.open("results", play.result(reason == "time")))
+			var got := play.result(reason == "time")
+			got["custom"] = bool(_session_row.get("custom", false))
+			main.open("results", got))
 
 
 ## The clock ran out (Game ends the adventure at 0).
@@ -901,9 +903,14 @@ func _on_time_up(_result: Dictionary) -> void:
 
 
 ## One minute left, then each of the last ten seconds.
-func _time_sounds(sec: int) -> void:
-	if not _frozen and (sec == 60 or (sec >= 1 and sec <= 10)):
-		Sfx.play("time_warning")
+## Running low: a silent pop-up, not a sound.
+func _time_warning(sec: int) -> void:
+	if _frozen or hud == null:
+		return
+	if sec == 60:
+		hud.announce("1 minute left!")
+	elif sec == 10:
+		hud.announce("10 seconds left!")
 
 
 ## Android's back button. Practice: back to Home. A match: there is no way out

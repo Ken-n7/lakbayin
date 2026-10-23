@@ -690,14 +690,18 @@ alter table public.members add column if not exists queued_at timestamptz not nu
 -- defaults run a match.
 create table if not exists public.match_config (
   id         int primary key default 1 check (id = 1),
-  -- Players a side. Raise it as the player base grows: 2 v 2 up to 5 v 5.
-  team_size  int not null default 3 check (team_size between 2 and 5),
+  -- Players a side. Allow 1 v 1 for playtests; the default is still 3 v 3.
+  team_size  int not null default 3 check (team_size between 1 and 5),
   -- How long one player waits for a full lobby before "no match found".
   search_s   int not null default 90 check (search_s between 15 and 600),
   duration_s int not null default 360 check (duration_s between 60 and 7200),
   -- Monks (words) per match; both teams play the same ones.
   monk_count int not null default 10 check (monk_count between 1 and 40)
 );
+-- Existing projects keep the old check when CREATE TABLE is skipped.
+alter table public.match_config drop constraint if exists match_config_team_size_check;
+alter table public.match_config add constraint match_config_team_size_check
+  check (team_size between 1 and 5);
 -- A project made before the search limit: `create table if not exists` skipped it.
 alter table public.match_config add column if not exists
   search_s int not null default 90 check (search_s between 15 and 600);
@@ -822,6 +826,80 @@ revoke all on function public.leave_match(uuid) from public, anon;
 grant execute on function public.find_match() to authenticated;
 grant execute on function public.poll_match(uuid) to authenticated;
 grant execute on function public.leave_match(uuid) to authenticated;
+
+-- 4f. Custom rooms -----------------------------------------------------------
+-- A player hosts a room for friends: the server makes it, with its code and
+-- the two teams, the host on Blue. Friends join by the code and pick a side
+-- themselves (join_team / own_member; team_rules locks sides at Start). Any
+-- number a side, uneven too: the host starts it once both sides have
+-- somebody. A room is not matchmade, so Find Match never fills one and the
+-- global board leaves it out.
+alter table public.sessions add column if not exists custom boolean not null default false;
+
+create or replace function public.create_room() returns public.sessions
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions; d int;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select duration_s into d from public.match_config where id = 1;
+  insert into public.sessions (admin_id, custom, duration_s)
+  values (auth.uid(), true, coalesce(d, 360)) returning * into s;
+  insert into public.teams (session_id, name) values (s.id, 'Blue'), (s.id, 'Red');
+  insert into public.members (session_id, team_id, profile_id)
+  select s.id, t.id, auth.uid() from public.teams t where t.session_id = s.id and t.name = 'Blue';
+  return s;
+end $$;
+
+create or replace function public.start_room(p_session uuid) returns public.sessions
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select * into s from public.sessions where id = p_session for update;
+  if s.id is null or not s.custom then raise exception 'no such room'; end if;
+  if s.admin_id <> auth.uid() then raise exception 'only the host can start the room'; end if;
+  if s.state <> 'lobby' then raise exception 'the room has already started'; end if;
+  if exists (select 1 from public.members where session_id = p_session and team_id is null) then
+    raise exception 'everyone must pick a side first';
+  end if;
+  if (select count(distinct team_id) from public.members where session_id = p_session) < 2 then
+    raise exception 'both sides need a player';
+  end if;
+  update public.sessions
+     set state = 'running', ends_at = now() + make_interval(secs => s.duration_s)
+   where id = p_session returning * into s;
+  return s;
+end $$;
+
+-- Out of a room before Start. A host who leaves hands the room to whoever
+-- joined first; the last one out closes it. After Start the row stays.
+-- ponytail: a phone that just closes stays listed; drop silent members with a
+-- check-in like poll_match if that bites in playtests.
+create or replace function public.leave_room(p_session uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+declare s public.sessions;
+begin
+  if auth.uid() is null then raise exception 'sign in first'; end if;
+  select * into s from public.sessions where id = p_session for update;
+  if s.id is null or not s.custom or s.state <> 'lobby' then return; end if;
+  delete from public.members where session_id = p_session and profile_id = auth.uid();
+  if s.admin_id = auth.uid() then
+    update public.sessions set admin_id = m.profile_id
+      from (select profile_id from public.members where session_id = p_session
+             order by queued_at, profile_id limit 1) m
+     where id = p_session;
+    if not found then
+      update public.sessions set state = 'ended' where id = p_session;
+    end if;
+  end if;
+end $$;
+
+revoke all on function public.create_room() from public, anon;
+revoke all on function public.start_room(uuid) from public, anon;
+revoke all on function public.leave_room(uuid) from public, anon;
+grant execute on function public.create_room() to authenticated;
+grant execute on function public.start_room(uuid) to authenticated;
+grant execute on function public.leave_room(uuid) to authenticated;
 
 -- 4e. Monks and the Monastery (Lakbayin, DESIGN.md 3) -----------------------
 -- Every monk holds a Filipino word; a player writes it in Baybayin. A correct
@@ -1341,7 +1419,8 @@ begin
   if parts[2] = 'snap' then
     -- A match has no teacher to gather positions: each member publishes its
     -- own on the snapshot channel instead (AdventureScreen, the direct path).
-    return teacher or (member and (not p_send or public.is_matchmade(sid)));
+    return teacher or (member and (not p_send or public.is_matchmade(sid)
+      or exists (select 1 from public.sessions where id = sid and custom)));
   end if;
   return (not p_send and teacher) or (member and parts[4] = auth.uid()::text);
 end $$;

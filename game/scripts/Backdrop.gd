@@ -7,10 +7,10 @@ extends Control
 ## on smoothly while the screens change in front of it rather than restarting
 ## with each one.
 ##
-## Three small islands in the stations' three liveries, from the same Tiny
-## Swords art as the map: trees swaying, sheep grazing, workers walking their
-## rounds, a guard or two, clouds crossing, and the whole view panning slowly
-## back and forth. A fixed composition, no RNG, so every launch looks the same.
+## A monastery, village clearings and forest islands from the same Tiny Swords
+## art as the match. Monks carry decorative Baybayin glyphs, adventurers walk
+## between the houses, sheep graze, and clouds cross the archipelago. This is
+## a fixed menu composition, independent of the procedural match generator.
 ##
 ## A dark wash sits over it all: the scene is atmosphere, and the parchment
 ## panels and white titles in front of it have to read first.
@@ -27,14 +27,10 @@ const TREES := ["res://assets/terrain/decorations/Tree1.png",
 ## than watched: a moving background that pulls the eye is a distraction.
 const PAN_S := 70.0
 const WASH := 0.38                 # the dark wash over the scene
-## Maths in the scene (client, 2026-09-27), two ways to compare: signs rising
-## out of the sea (`MathMotes`), and rocks on each island -- carved with maths
-## once, plain pack rocks since the Level Up fork (`MapCfg.plain_rock`).
+## Baybayin drifting over the sea and ordinary rocks along the shore.
 const SHOW_MOTES := true
 const SHOW_CARVINGS := true
-## [piece, cell x, cell y, scale]: the pack's rocks, around the pack's rocks'
-## own 1.2. A different set on each island, and not in the same spots -- three
-## on Blue, two on Yellow, four on Red.
+## [piece, cell x, cell y, scale]: plain rocks placed on each island.
 const CARVINGS := [
 	["blue_a", 6.4, 10.2, 1.2], ["blue_b", 8.7, 8.3, 1.0], ["blue_c", 4.4, 9.9, 1.1],
 	["yellow_a", 20.6, 9.9, 1.25], ["yellow_b", 21.7, 8.1, 1.0],
@@ -66,7 +62,7 @@ func _ready() -> void:
 	_build_ground()
 	_build_islands()
 	_build_life()
-	# Maths rising out of the sea, over the islands and under the clouds. Its
+	# Baybayin drifting over the sea, over the islands and under the clouds. Its
 	# own node after the world, moved with it (`_pan_to`): inside the y-sorted
 	# world it would sort under the islands, and a z_index lifts it over the
 	# screens in front too -- it drew on the sign-in form.
@@ -130,19 +126,22 @@ func _build_ground() -> void:
 	_world.set_meta("tile", TILE)
 
 
-## A keep and its houses per island -- blue, yellow, red, the stations' order.
+## A neutral Monastery, mixed village houses, and woodland on the outer islands.
 func _build_islands() -> void:
 	var b := "res://assets/buildings/"
 	var place := [
-		[b + "Blue_Monastery.png", 7.4, 6.6, 0.5], [b + "Blue_House1.png", 4.2, 8.2, 0.5],
-		[b + "Blue_Tower.png", 10.6, 7.4, 0.45],
-		[b + "Yellow_Archery.png", 21.8, 6.0, 0.5], [b + "Yellow_House2.png", 18.6, 7.8, 0.5],
-		[b + "Yellow_Tower.png", 24.8, 8.0, 0.45],
-		[b + "Red_Barracks.png", 35.2, 6.8, 0.5], [b + "Red_House3.png", 38.8, 8.4, 0.5],
-		[b + "Red_Tower.png", 32.0, 8.2, 0.45],
+		[b + "Purple_Monastery.png", 7.5, 6.8, 0.5],
+		[b + "Blue_House1.png", 4.4, 8.4, 0.45],
+		[b + "Red_House1.png", 10.2, 8.8, 0.45],
+		[b + "Blue_House2.png", 19.4, 6.7, 0.5],
+		[b + "Red_House2.png", 23.5, 7.9, 0.5],
+		[b + "Blue_House3.png", 34.2, 7.0, 0.45],
+		[b + "Red_House3.png", 38.2, 8.5, 0.45],
 	]
 	for p: Array in place:
-		Art.sprite(_world, Art.tex(p[0]), _at(p[1], p[2]), p[3])
+		var building := Art.sprite(_world, Art.cell(p[0], 0, 0), _at(p[1], p[2]), p[3])
+		if str(p[0]).ends_with("Purple_Monastery.png"):
+			building.name = "Monastery"
 	var trees := [[3.0, 5.8], [5.2, 4.4], [11.6, 5.4], [9.4, 9.2], [17.2, 5.2],
 		[19.8, 4.0], [25.6, 5.0], [23.4, 9.0], [31.0, 5.8], [33.6, 4.6], [39.8, 5.8], [37.2, 9.4]]
 	for i in trees.size():
@@ -162,18 +161,19 @@ func _build_islands() -> void:
 				_at(r[1], r[2]), 0.5, 4.0, 1.0, 16)
 
 
-## Who lives here: sheep grazing, a worker on each island walking a round, a
-## knight and an archer standing their posts.
+## Peaceful island life: teachers of the script, travellers, and grazing sheep.
 func _build_life() -> void:
 	for s in [[6.0, 9.0], [20.4, 8.6], [36.8, 9.2], [9.8, 5.2]]:
 		_world.add_child(_sheep(_at(s[0], s[1])))
-	var u := "res://assets/units/"
-	_walker(u + "Blue/Pawn_Run.png", _at(4.6, 9.6), _at(10.0, 9.6), 5.0)
-	_walker(u + "Yellow/Pawn_Run.png", _at(18.4, 9.4), _at(24.2, 9.4), 5.6)
-	_walker(u + "Red/Pawn_Run.png", _at(32.6, 9.8), _at(38.4, 9.8), 5.2)
-	Art.anim_sprite(_world, u + "Blue/Warrior_Idle.png", _at(12.4, 8.4), 0.34, 8.0)
-	Art.anim_sprite(_world, u + "Yellow/Archer_Idle.png", _at(26.2, 6.8), 0.34, 8.0, -1.0)
-	Art.anim_sprite(_world, u + "Red/Warrior_Idle.png", _at(30.6, 7.2), 0.34, 8.0)
+	for i in 3:
+		var monk := Monk.new()
+		monk.index = i + 2
+		monk.name = "GuideMonk%d" % i
+		monk.position = _at([9.2, 21.5, 36.0][i], [7.4, 8.5, 8.4][i])
+		_world.add_child(monk)
+	_walker(Game.hero_id, _at(5.0, 9.8), _at(9.0, 9.8), 5.0)
+	_walker(14, _at(18.6, 9.6), _at(23.6, 9.6), 5.6)
+	_walker(7, _at(33.2, 10.0), _at(38.0, 10.0), 5.2)
 
 
 func _sheep(at: Vector2) -> Node2D:
@@ -191,13 +191,19 @@ func _sheep(at: Vector2) -> Node2D:
 
 
 ## Walks from `a` to `b` and back for ever, turning at each end.
-func _walker(path: String, a: Vector2, b: Vector2, secs: float) -> void:
-	var w := Art.anim_sprite(_world, path, a, 0.34, 10.0)
-	var tw := w.create_tween().set_loops()
-	tw.tween_property(w, "position", b, secs)
-	tw.tween_callback(func() -> void: w.scale.x = -absf(w.scale.x))
-	tw.tween_property(w, "position", a, secs)
-	tw.tween_callback(func() -> void: w.scale.x = absf(w.scale.x))
+func _walker(hero_id: int, a: Vector2, b: Vector2, secs: float) -> void:
+	var walker := AnimatedSprite2D.new()
+	walker.sprite_frames = Art.walk_frames(Game.hero_sheet(hero_id), 6.0)
+	walker.scale = Vector2(1.6, 1.6)
+	walker.offset = Vector2(0, -10)
+	walker.position = a
+	walker.play("right")
+	_world.add_child(walker)
+	var tw := walker.create_tween().set_loops()
+	tw.tween_property(walker, "position", b, secs)
+	tw.tween_callback(func() -> void: walker.play("left"))
+	tw.tween_property(walker, "position", a, secs)
+	tw.tween_callback(func() -> void: walker.play("right"))
 
 
 ## Across the islands and back, eased at each end so it never visibly stops

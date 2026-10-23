@@ -74,8 +74,8 @@ static func quiet(b: BaseButton) -> void:
 
 
 ## Steps a button's text size down until its label, icon and padding fit its
-## width -- never below `Art.MIN_FONT`. For labels that vary ("Start Adventure"
-## or "Join Quest") beside an icon. Call once it is in the tree, so the font
+## width -- never below `Art.MIN_FONT`. For labels that vary ("Find Match"
+## or "Custom Room") beside an icon. Call once it is in the tree, so the font
 ## measured is the one drawn.
 static func fit_text(b: Button) -> void:
 	var font := b.get_theme_font("font")
@@ -103,6 +103,7 @@ static func icon_button(tex: Texture2D, tip: String, side := 36.0) -> Button:
 	for state in ["icon_normal_color", "icon_hover_color", "icon_focus_color"]:
 		b.add_theme_color_override(state, Pal.INK)
 	b.add_theme_color_override("icon_pressed_color", Pal.WOOD)   # the press shows
+	click(b)
 	click(b)
 	return b
 
@@ -175,6 +176,7 @@ static func option(w: float, h := 30.0) -> OptionButton:
 	pop.add_theme_color_override("font_color", Pal.INK)
 	pop.add_theme_color_override("font_hover_color", Pal.TITLE)
 	pop.add_theme_font_size_override("font_size", Art.MIN_FONT)
+	click(o)
 	return o
 
 
@@ -222,6 +224,7 @@ static func tab_text(text: String, active: bool) -> VBoxContainer:
 	rule.color = Pal.TITLE if active else Color.TRANSPARENT
 	rule.custom_minimum_size = Vector2(0, 2)
 	col.add_child(rule)
+	click(b)
 	return col
 
 
@@ -240,6 +243,7 @@ static func glyph(text: String, size := 20, color: Color = Pal.TITLE) -> Button:
 	b.add_theme_font_size_override("font_size", size)
 	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
 		b.add_theme_color_override(state, color)
+	click(b)
 	click(b)
 	return b
 
@@ -410,7 +414,7 @@ static func auth_layout(parent: Node, title: String, form_w := 330.0) -> VBoxCon
 	var logo := Art.title(Art.label("Lakbayin", 34, Pal.PARCHMENT, HORIZONTAL_ALIGNMENT_CENTER))
 	Art.shadow(logo, Color(0, 0, 0, 0.6), 3, 0)
 	brand.add_child(logo)
-	var tag := Art.title(Art.label("Hanapin.  Isulat.  Ipanalo.", Pal.H2, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+	var tag := Art.tagline(Pal.H2)
 	Art.shadow(tag)
 	brand.add_child(tag)
 	split.add_child(brand)
@@ -459,6 +463,7 @@ static func link(text: String, color: Color = Pal.INFO_DEEP) -> Button:
 	for c in ["font_color", "font_focus_color", "font_pressed_color"]:
 		b.add_theme_color_override(c, color)
 	b.add_theme_color_override("font_hover_color", Pal.TITLE)
+	click(b)
 	return b
 
 

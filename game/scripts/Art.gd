@@ -12,16 +12,13 @@ extends RefCounted
 ## Raise it here after a real-device read, not per call site.
 const MIN_FONT := 14
 
-## Patrick Hand is the project-wide font (project.godot `gui/theme/custom_font`):
-## the questions, answers, keypad, numbers and every line of body text. It
-## replaced Pixelify Sans on the client's word that the text was hard to read,
-## which a 5x7 pixel grid could only be patched so far against; it matches the
-## hand-drawn Tiny Swords art, and carries every superscript 0-9 an exponent
-## question needs. MedievalSharp is the display face, for titles, banners and
-## logos only -- where the text should look good and is never a number someone
-## has to get right (`title()`).
-const TEXT_FONT := "res://assets/fonts/PatrickHand-Regular.ttf"
-const TITLE_FONT := "res://assets/fonts/MedievalSharp.ttf"
+## Kalam is the project-wide font (project.godot `gui/theme/custom_font`): the
+## words, prompts, buttons and every line of body text -- pen-stroke hand
+## lettering, near how Baybayin was written, and plain enough to read a word
+## exactly. Kaushan Script is the display face, brush lettering for titles,
+## banners and logos only -- never a word someone has to get right (`title()`).
+const TEXT_FONT := "res://assets/fonts/Kalam-Regular.ttf"
+const TITLE_FONT := "res://assets/fonts/KaushanScript-Regular.ttf"
 const SYMBOL_FONT := "res://assets/fonts/DejaVuSans.ttf"
 ## Baybayin (the Unicode Tagalog block): the keypad, the answers, the glyphs
 ## round the monks and over the menus -- set on those only (`baybayin()`). As a
@@ -68,6 +65,18 @@ static func baybayin() -> Font:
 
 ## Sets `c` in the display face: titles, banners and logos, never a question,
 ## an answer or a number. Returns `c` so it wraps a constructor.
+## "Hanapin. Isulat. Ipanalo." in Baybayin, each ending on the single
+## punctuation mark (U+1735), the script's own full stop.
+const TAGLINE := "ᜑᜈᜉᜒᜈ᜔᜵  ᜁᜐᜓᜎᜆ᜔᜵  ᜁᜉᜈᜎᜓ᜵"
+
+
+## The tagline under the game's name, in gold.
+static func tagline(size: int) -> Label:
+	var l := label(TAGLINE, size, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+	l.add_theme_font_override("font", baybayin())
+	return l
+
+
 static func title(c: Control) -> Control:
 	c.add_theme_font_override("font", load(TITLE_FONT) as FontFile)
 	return c

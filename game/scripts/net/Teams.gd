@@ -3,11 +3,11 @@ extends RefCounted
 
 ## Getting into an adventure, picking a side, and the roster that comes out.
 ##
-## The way in is the session's CODE: the teacher presses New Session, reads
-## out the four characters, and everybody types them. Then each student picks
-## their own team in the lobby, and may switch until the teacher presses Start
-## -- after that teams are locked (the server enforces it; see `team_rules` in
-## `supabase/schema.sql`). The winner is still a team, never a player.
+## Two ways in: Find Match, where the server deals the teams, or a custom
+## room's CODE: the host makes the room and reads out the four characters,
+## friends type them, then each picks a side and may switch until the host
+## presses Start -- after that sides are locked (the server enforces it; see
+## `team_rules` in `supabase/schema.sql`).
 
 const SESSIONS := "/rest/v1/sessions"
 const TEAMS := "/rest/v1/teams"
@@ -62,7 +62,7 @@ static func find(code: String) -> Dictionary:
 	if want.length() != 4:
 		return {"error": "The code is 4 letters and numbers.", "session": {}}
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		SESSIONS + "?select=*&matchmade=is.false&code=eq." + want.uri_encode()
+		SESSIONS + "?select=*&custom=is.true&code=eq." + want.uri_encode()
 		+ "&order=created_at.desc&limit=5")
 	if got.error != "":
 		return {"error": got.error, "session": {}}
@@ -71,9 +71,9 @@ static func find(code: String) -> Dictionary:
 		if not expired(row):
 			return {"error": "", "session": row}
 	if not rows.is_empty():
-		return {"error": "Adventure %s has ended. Ask your Quest Keeper for the new code." % want,
+		return {"error": "Room %s has ended. Ask the host for the new code." % want,
 			"session": {}}
-	return {"error": "No adventure with the code %s. Check it with your Quest Keeper." % want,
+	return {"error": "No room with the code %s. Check it with the host." % want,
 		"session": {}}
 
 
@@ -141,7 +141,7 @@ static func enter(code: String) -> Dictionary:
 		if mine.has("error"):
 			return {"error": str(mine.error), "session": {}}
 		if mine.is_empty():
-			return {"error": "That adventure has already started. Ask your Quest Keeper.", "session": {}}
+			return {"error": "That room has already started.", "session": {}}
 		return found
 	# Insert if missing, keep if there: one request, not look-then-add.
 	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST,
@@ -182,6 +182,29 @@ static func poll_match(session_id: String) -> Dictionary:
 ## Out of a match's queue; after Start the server keeps the row.
 static func leave_match(session_id: String) -> String:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/leave_match",
+		{"p_session": session_id})
+	return got.error
+
+
+## A custom room of this player's own, hosted by them, on Blue (`create_room`,
+## schema 4f). {error, session}.
+static func create_room() -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/create_room", {})
+	if got.error != "":
+		return {"error": got.error, "session": {}}
+	return {"error": "", "session": got.data if got.data is Dictionary else {}}
+
+
+## The host's Start. "" or why not (a side empty, somebody on none).
+static func start_room(session_id: String) -> String:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/start_room",
+		{"p_session": session_id})
+	return got.error
+
+
+## Out of a room before Start; a leaving host hands it on.
+static func leave_room(session_id: String) -> String:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/leave_room",
 		{"p_session": session_id})
 	return got.error
 

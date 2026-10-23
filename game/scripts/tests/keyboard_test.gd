@@ -12,7 +12,7 @@ extends TestCase
 var SCREENS := [
 	["login", "login", Callable()], ["register", "register", Callable()],
 	["reset, step 1", "reset", Callable()], ["reset, step 2", "reset", _reset_step2],
-	["team name (offline)", "team", Callable()], ["join code", "team", _join_code],
+	["team name (offline)", "team", Callable()], ["join code", "room", _join_code],
 ]
 const KEYBOARDS := [0.5, 0.6, 0.7]      # share of the screen's height
 
