@@ -1167,6 +1167,13 @@ begin
                    and schemaname = 'public' and tablename = 'teams') then
     alter publication supabase_realtime add table public.teams;
   end if;
+  -- A teammate's answer greys that monk out on every phone of the team, and
+  -- the scoreline moves with each deposit (AdventureScreen._on_row).
+  if not exists (select 1 from pg_publication_tables
+                 where pubname = 'supabase_realtime'
+                   and schemaname = 'public' and tablename = 'monk_answers') then
+    alter publication supabase_realtime add table public.monk_answers;
+  end if;
 end $$;
 
 -- 7b. Movement relay ---------------------------------------------------------
