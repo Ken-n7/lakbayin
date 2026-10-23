@@ -686,13 +686,10 @@ grant execute on function public.shuffle_teams(uuid) to authenticated;
 alter table public.sessions add column if not exists matchmade boolean not null default false;
 alter table public.members add column if not exists queued_at timestamptz not null default now();
 
--- The knobs, one row, set in the dashboard. `house` is the admin account
--- whose question bank every match plays (and who appears as each match's
--- admin_id); matchmaking refuses to run until it is set. Keep it an account
--- of its own: a teacher's New Session ends every session they own.
+-- The knobs, one row, set in the dashboard. Nothing has to be set: the
+-- defaults run a match.
 create table if not exists public.match_config (
   id         int primary key default 1 check (id = 1),
-  house      uuid references public.profiles on delete set null,
   -- Players a side. Raise it as the player base grows: 2 v 2 up to 5 v 5.
   team_size  int not null default 3 check (team_size between 2 and 5),
   -- How long one player waits for a full lobby before "no match found".
@@ -707,6 +704,9 @@ alter table public.match_config add column if not exists
 alter table public.match_config add column if not exists
   monk_count int not null default 10 check (monk_count between 1 and 40);
 insert into public.match_config (id) values (1) on conflict (id) do nothing;
+-- Matches once belonged to a "house" admin account, for its question bank;
+-- the words are the `words` table's now, and whoever opens a lobby owns it.
+alter table public.match_config drop column if exists house;
 alter table public.match_config enable row level security;
 drop policy if exists read_match_config on public.match_config;
 create policy read_match_config on public.match_config for select to authenticated using (true);
@@ -742,7 +742,6 @@ declare c public.match_config; s public.sessions; t uuid;
 begin
   if auth.uid() is null then raise exception 'sign in first'; end if;
   select * into c from public.match_config where id = 1;
-  if c.house is null then raise exception 'matchmaking is not set up yet'; end if;
   -- ponytail: one matchmaker at a time across the project, so two phones never
   -- open two half-empty lobbies. Per-lobby locks if a crowd ever queues at once.
   perform pg_advisory_xact_lock(hashtext('numxventure.find_match'));
@@ -762,7 +761,7 @@ begin
    for update;
   if s.id is null then
     insert into public.sessions (admin_id, matchmade, duration_s)
-    values (c.house, true, c.duration_s) returning * into s;
+    values (auth.uid(), true, c.duration_s) returning * into s;
     insert into public.teams (session_id, name) values (s.id, 'Blue'), (s.id, 'Red');
   end if;
   select t2.id into t from public.teams t2

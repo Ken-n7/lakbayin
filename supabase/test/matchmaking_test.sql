@@ -22,12 +22,8 @@ create function pg_temp.match_of(n int) returns uuid language sql as $$
 
 insert into auth.users(id,email,raw_user_meta_data)
 select pg_temp.uid(n), 'p'||n||'@t.dev',
-       case when n = 1 then '{"username":"house","role":"admin"}'
-            else ('{"username":"p'||n||'"}')::jsonb end
+       ('{"username":"p'||n||'"}')::jsonb
   from generate_series(1, 12) n;
-insert into public.questions(owner,station,prompt,answer)
-select pg_temp.uid(1), case when n<=8 then 1 when n<=11 then 2 else 3 end, 'House '||n, '2'
-  from generate_series(1,14) n;
 
 create function pg_temp.poll_as(who uuid, sid uuid) returns jsonb language plpgsql as $$
 declare v jsonb;
@@ -42,16 +38,14 @@ end $$;
 do $$
 declare err text; s uuid; s2 uuid; t1 uuid; t2 uuid; row public.sessions; v jsonb;
 begin
-  err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');
-  perform pg_temp.check(err like '%not set up%', 'no house account: matchmaking refuses', err);
-  update public.match_config set house = pg_temp.uid(1), team_size = 2, search_s = 90, duration_s = 300;
+  update public.match_config set team_size = 2, search_s = 90, duration_s = 300;
 
   err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');
   s := pg_temp.match_of(2);
   select * into row from public.sessions where id = s;
-  perform pg_temp.check(err = '' and row.matchmade and row.state = 'lobby' and row.admin_id = pg_temp.uid(1)
+  perform pg_temp.check(err = '' and row.matchmade and row.state = 'lobby' and row.admin_id = pg_temp.uid(2)
     and (select count(*) from public.teams where session_id = s) = 2,
-    'the first player opens a lobby with two teams', err);
+    'the first player opens a lobby with two teams, and owns it', err);
 
   err := pg_temp.as_player(pg_temp.uid(3), 'select public.find_match()');
   select team_id into t1 from public.members where session_id = s and profile_id = pg_temp.uid(2);
@@ -105,8 +99,6 @@ begin
     'the fourth player fills the lobby: it starts at once, on the configured clock', err);
   perform pg_temp.check((select bool_and(k = 2) from (select count(*) k from public.members
       where session_id = s group by team_id) x), 'a full match is dealt 2 v 2');
-  perform pg_temp.check(jsonb_array_length(row.question_bank) = 14,
-    'the match plays the house account''s question bank');
 
   err := pg_temp.as_player(pg_temp.uid(2), 'select public.find_match()');
   perform pg_temp.check(err = '' and pg_temp.match_of(2) = s,

@@ -282,7 +282,7 @@ board means nothing.
 | Old rules | Gems, hints, skip, Rescue, elimination, perfect-station bonus, combo, race bonus, the −25 unfinished penalty |
 | Old structure | The 3 stations, circle order, station briefings and intro cards, knights and gates (barricades), Victory Gate (replaced by the Monastery) |
 | Maths | Question generator, maths text formatting, maths symbols, Learn screen (already removed) |
-| Matchmaking | The "house" admin account in `match_config`: words come from the server's word list |
+| Matchmaking | The "house" admin account in `match_config`: words come from the server's word list, and whoever opens a lobby owns it |
 | Files | Client PDFs, the old spec, merge checklist (already removed) |
 
 ## 9. Kept and reworked

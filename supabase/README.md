@@ -113,9 +113,6 @@ One row, `match_config`, edited in the Table Editor or SQL Editor:
 | `search_s` | 90 | how long a player waits for a full lobby |
 | `duration_s` | 360 | the match clock |
 | `monk_count` | 10 | monks (words) per match |
-| `house` | — | **required for now**: any account, e.g. yours |
-
-    update public.match_config set house = (select id from public.profiles where username = '<you>');
 
 ## What is in the schema
 

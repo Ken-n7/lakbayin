@@ -21,10 +21,9 @@ end $$;
 
 insert into auth.users(id,email,raw_user_meta_data)
 select pg_temp.uid(n), 'p'||n||'@t.dev',
-       case when n = 1 then '{"username":"house","role":"admin"}'
-            else ('{"username":"p'||n||'"}')::jsonb end
+       ('{"username":"p'||n||'"}')::jsonb
   from generate_series(1, 6) n;
-update public.match_config set house = pg_temp.uid(1), team_size = 2, monk_count = 3, duration_s = 300;
+update public.match_config set team_size = 2, monk_count = 3, duration_s = 300;
 
 do $$
 declare s uuid; t2 uuid; t3 uuid; w public.words; got text; i int;
