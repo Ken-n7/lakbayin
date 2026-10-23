@@ -13,6 +13,7 @@ const SCREENS := {
 	"team": preload("res://scripts/TeamNameScreen.gd"),
 	"room": preload("res://scripts/RoomScreen.gd"),
 	"watch": preload("res://scripts/WatchScreen.gd"),
+	"records": preload("res://scripts/RecordsScreen.gd"),
 	"adventure": preload("res://scripts/AdventureScreen.gd"),
 	"results": preload("res://scripts/ResultsScreen.gd"),
 }
@@ -26,7 +27,7 @@ const SCREENS := {
 const MUSIC := {
 	"login": "town", "register": "town", "reset": "town", "home": "town",
 	"team": "town", "room": "town", "watch": "battle",
-	"hero": "shop",
+	"hero": "shop", "records": "town",
 	"results": "victory",
 	"adventure": "battle",
 }

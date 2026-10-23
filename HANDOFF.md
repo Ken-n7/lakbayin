@@ -128,9 +128,19 @@ Challenge** (Student Category; themes: Education + Philippine culture).
    movement receive only. Relay players also send bounded snapshots while
    viewers are present. Local SQL: 24 authorization/state checks; multiplayer:
    48 checks, plus a clean 640/800 layout run. All other client suites pass.
-   Live schema application and viewer verification pending.
-4. **My Matches** history and the **global player board** (§7); the
-   Leaderboard button was taken off Home.
+   The user applied the SQL. A live viewer receives both laptop positions,
+   lobby/start updates, independent monk state and carried/deposited counts.
+   Watch commit: `4cda679`.
+4. **Records built** (§7): Settings → Player Records; online Results also
+   links to My Matches. Completed history includes Custom tags, own rank and
+   deposits. Global Players counts only matchmade games, ordered by wins then
+   deposited answers. Abandoned lobbies / active matches / Practice are
+   excluded; exact ties award no wins. 20 rows/page, server-derived results;
+   24 SQL checks. Client multiplayer: 53 checks; match: 44; layout: zero
+   overflow at 640/800. Results now retain sub-second deposit tie-breaks.
+   The user applied the SQL. Verified actual My Matches and Global Players
+   on the updated Realme, including its earlier 10-deposit matchmade win.
+   All Godot suites and the complete SQL suite pass.
 5. **Videos and forms** for the 25 Oct entry: 1–2 min trailer, 3–5 min
    gameplay video, Forms 01–03, a ≤500-word synopsis. Practice mode records
    fine solo.

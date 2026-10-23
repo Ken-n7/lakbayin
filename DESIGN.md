@@ -290,6 +290,11 @@ spelling**, marking which ones your team got right, got wrong, or missed.
 There is no team leaderboard: matchmade teams are random, so an all-time team
 board means nothing.
 
+Open **Settings → Player Records**, or **My Matches** after an online match.
+Records show 20 entries per page. Only games that actually started and ended
+(or reached their deadline) count; abandoned lobbies do not. Exact ties are
+recorded as draws and award no global wins. Practice stays offline.
+
 ---
 
 ## 8. Removed
@@ -390,7 +395,7 @@ The phone never decides an outcome. The server:
 | **Day 1** | Word list, Baybayin keypad, Noto Sans Tagalog, server answer checking, monks; rename to Lakbayin | Done |
 | **Day 2** | Procedural world (mirrored; monks, Monastery, fair spawns), per-team monk state, team vision on the minimap, carry/deposit, timer win, results screen, Practice mode; teacher mode and the old rules removed | Done. Live two-phone 1 v 1 verified Oct 23: keypad answers, carry, deposit, shared match end, and standings. Full 3 v 3 playtest pending |
 | **Oct 25** | Record the trailer (1–2 min) and gameplay video (3–5 min, .mp4); Forms 01–03; synopsis (≤500 words); submit | |
-| Before Nov 9 | Custom rooms, Watch mode, My Matches, global board, polish | |
+| Before Nov 9 | Custom rooms, Watch mode, My Matches, global board, polish | Implemented and tested locally and live; six-player playtest next |
 | Before Nov 26 | Playtests, balance (clock, monk count), word list review, art polish | |
 
 Ship order if time runs short: practice mode and a working 3 v 3 match first.
@@ -414,5 +419,9 @@ videos.
 | Git history | Rewritten: the old documents are removed from every commit |
 
 ## 14. Open questions
-1. **Logo, title screen and package id** for Lakbayin
-   (`com.numxventure.game` today), and a tagline.
+1. **Balance after the full playtest:** keep or adjust the 6-minute clock and
+   10 monks.
+2. **Word-list review:** confirm spellings and meanings before recording.
+
+The title screen, package id (`com.lakbayin.game`), and Baybayin tagline are
+implemented. The display fonts remain Kaushan Script and Kalam.

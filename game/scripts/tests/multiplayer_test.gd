@@ -24,6 +24,11 @@ class MovementAdventure extends "res://scripts/AdventureScreen.gd":
 		pass
 
 
+class RecordsPreview extends "res://scripts/RecordsScreen.gd":
+	func _load() -> void:
+		pass
+
+
 class RoomPreview extends "res://scripts/RoomScreen.gd":
 	func _process(_delta: float) -> void:
 		pass
@@ -43,6 +48,7 @@ func _ready() -> void:
 	await _monk_activity()
 	await _room_controls()
 	await _watch_view()
+	await _records_view()
 	_account_change()
 	Net.realtime().close_socket()
 	Net.relay().leave()
@@ -302,3 +308,30 @@ func _watch_view() -> void:
 	screen.queue_free()
 	for _frame in 2:
 		await get_tree().process_frame
+
+
+func _records_view() -> void:
+	var records := RecordsPreview.new()
+	add_child(records)
+	records.setup({})
+	var rows: Array = []
+	for i in 21:
+		rows.append({"session_id":str(i),"code":"TEST","custom":true,"completed_at":"2026-10-23T10:11:12+00:00",
+			"result":"win","deposited":3,"place":2})
+	records._show(rows)
+	check("records show twenty rows and enable the next page", records.get("_list").get_child_count() == 20
+		and not records.get("_next").disabled)
+	var labels: Array = records.find_children("*","Label",true,false).map(func(l: Label) -> String: return l.text)
+	check("history labels Custom games and the player's rank", labels.any(func(t: String) -> bool: return t.contains("Custom"))
+		and labels.any(func(t: String) -> bool: return t.contains("rank 2")))
+	records._show([])
+	check("empty history disables Next and explains the empty list", records.get("_next").disabled
+		and records.get("_list").get_child_count() == 1)
+	records.set("_tab","player_board")
+	records._show([{"profile_id":Net.user_id,"username":"Me","place":1,"wins":2,"deposited":7,"played":3}])
+	labels = records.find_children("*","Label",true,false).map(func(l: Label) -> String: return l.text)
+	check("global board shows wins and deposited answers", labels.any(func(t: String) -> bool: return t.contains("2 wins") and t.contains("7 deposited")))
+	var results := preload("res://scripts/ResultsScreen.gd")
+	check("results preserve sub-second deposit tie-breaks", is_equal_approx(results._seconds_in("2026-10-23T00:00:00.125+00:00",float(Time.get_unix_time_from_datetime_string("2026-10-23T00:00:00"))),0.125))
+	records.queue_free()
+	await get_tree().process_frame

@@ -122,6 +122,10 @@ func _build() -> void:
 	again.pressed.connect(func() -> void:
 		main.open("adventure", {"practice": true}) if practice else main.open("room" if custom else "team"))
 	buttons.add_child(again)
+	if not practice:
+		var records := Ui.button("My Matches", 120, Ui.H, Ui.SMALL)
+		records.pressed.connect(func() -> void: main.open("records"))
+		buttons.add_child(records)
 	box.add_child(buttons)
 
 
@@ -165,8 +169,7 @@ static func ranked(rows: Array) -> Array:
 static func _seconds_in(stamp: Variant, start: float) -> float:
 	if stamp == null:
 		return -1.0
-	var t := Time.get_unix_time_from_datetime_string(str(stamp).left(19))
-	return maxf(0.0, float(t) - start)
+	return maxf(0.0, WatchFeed.stamp(str(stamp)) - start)
 
 
 static func _team_standing(row: Dictionary, index: int, start: float) -> Dictionary:

@@ -370,6 +370,8 @@ func _open_settings() -> void:
 	Ui.section(box, "Account")
 	var hero := _account_button(box, "Change Character", "hero", Ui.SMALL)
 	hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
+	var records := _account_button(box, "Player Records", "book", Ui.SMALL)
+	records.pressed.connect(func() -> void: main.open("records"))
 	# Credits shares Log Out's row, so the panel keeps its height.
 	var credits := _account_button(box, "Credits", "book", Ui.SMALL)
 	credits.custom_minimum_size.x = 137

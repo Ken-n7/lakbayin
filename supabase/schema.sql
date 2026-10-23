@@ -1624,6 +1624,73 @@ create policy movement_receive on realtime.messages for select to authenticated
 create policy movement_send on realtime.messages for insert to authenticated
   with check (extension = 'broadcast' and public.can_use_movement((select realtime.topic()), true));
 
+create index if not exists members_profile_sessions on public.members(profile_id,session_id);
+
+-- 7c. Match records ---------------------------------------------------------
+-- Derive results from server-owned deposits. An abandoned lobby has never
+-- drawn words and is not a played game. Clock-expired matches count even if
+-- no client remained to mark the session ended.
+create or replace view lakbayin_private.match_results as
+  with placed as (
+    select t.session_id, t.team_id,
+      rank() over(partition by t.session_id order by coalesce(t.finished,false) desc,
+        t.deposited desc, t.reached_at asc nulls last) as place
+    from public.team_standings t
+  )
+  select s.id, s.custom, s.matchmade, s.code,
+    coalesce(s.ended_at,s.ends_at) as completed_at,
+    case when count(*) filter(where p.place=1)=1
+      then (min(p.team_id::text) filter(where p.place=1))::uuid else null end as winner_team
+  from public.sessions s join placed p on p.session_id=s.id
+  where (s.custom or s.matchmade) and s.ends_at is not null
+    and (s.state='ended' or (s.state='running' and s.ends_at<=now()))
+    and exists(select 1 from public.session_words sw where sw.session_id=s.id)
+  group by s.id;
+revoke all on lakbayin_private.match_results from public,anon,authenticated;
+
+create or replace function lakbayin_private.my_matches(p_offset int default 0) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  with places as (
+    select ps.*, rank() over(partition by ps.session_id order by ps.deposited desc,
+      ps.reached_at asc nulls last) as place
+    from public.player_standings ps
+    where ps.session_id in (select session_id from public.members where profile_id=auth.uid())
+  ), page as (
+    select r.id as session_id,r.code,r.custom,r.completed_at,p.deposited,p.place,
+      case when r.winner_team is null then 'draw' when r.winner_team=p.team_id then 'win' else 'loss' end as result
+    from lakbayin_private.match_results r join places p on p.session_id=r.id
+    where p.profile_id=auth.uid() and p.team_id is not null
+    order by r.completed_at desc,r.id desc
+    limit 21 offset greatest(0,least(coalesce(p_offset,0),100000))
+  ) select coalesce(jsonb_agg(to_jsonb(page) order by completed_at desc,session_id desc),'[]'::jsonb) from page
+$$;
+
+create or replace function lakbayin_private.player_board(p_offset int default 0) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  with totals as (
+    select p.profile_id,count(*) filter(where p.team_id=r.winner_team)::int as wins,
+      sum(p.deposited)::int as deposited,count(*)::int as played
+    from public.player_standings p join lakbayin_private.match_results r on r.id=p.session_id
+    where r.matchmade and not r.custom and p.team_id is not null
+    group by p.profile_id
+  ), placed as (
+    select t.*,pr.username,rank() over(order by t.wins desc,t.deposited desc) as place
+    from totals t join public.profiles pr on pr.id=t.profile_id
+    where auth.uid() is not null
+  ), page as (
+    select * from placed order by wins desc,deposited desc,lower(username),profile_id
+    limit 21 offset greatest(0,least(coalesce(p_offset,0),100000))
+  ) select coalesce(jsonb_agg(to_jsonb(page) order by wins desc,deposited desc,lower(username),profile_id),'[]'::jsonb) from page
+$$;
+create or replace function public.my_matches(p_offset int default 0) returns jsonb
+language sql security invoker set search_path = '' as $$ select lakbayin_private.my_matches(p_offset) $$;
+create or replace function public.player_board(p_offset int default 0) returns jsonb
+language sql security invoker set search_path = '' as $$ select lakbayin_private.player_board(p_offset) $$;
+revoke all on function public.my_matches(int),public.player_board(int),
+  lakbayin_private.my_matches(int),lakbayin_private.player_board(int) from public,anon;
+grant execute on function public.my_matches(int),public.player_board(int),
+  lakbayin_private.my_matches(int),lakbayin_private.player_board(int) to authenticated;
+
 -- 8. Reset (commented out on purpose) ---------------------------------------
 -- Uncomment, run, then run this file again for a clean slate. Deletes every
 -- row. Accounts live in auth.users and survive -- delete those in the
