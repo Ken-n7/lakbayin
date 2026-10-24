@@ -47,6 +47,9 @@ func setup(_data: Dictionary) -> void:
 	_build_header()
 	_build_footer()
 	_build_online()
+	# The first time Home shows on this device, How to Play shows over it.
+	if not Game.guide_seen:
+		_open_guide()
 
 
 # --- What a subclass changes ------------------------------------------------
@@ -445,8 +448,13 @@ func _open_settings() -> void:
 	Ui.section(box, "Account")
 	var hero := _account_button(box, "Change Character", "swords", Ui.SMALL)
 	hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
-	var credits := _account_button(box, "Credits", "info", Ui.SMALL)
+	# How to Play and Credits share a row, as Log Out and Quit do: the panel
+	# keeps its height on a 360px-tall screen.
+	var guide := _half_button("How to Play", "info", Ui.SMALL)
+	guide.pressed.connect(_open_guide)
+	var credits := _half_button("Credits", "", Ui.SMALL)
 	credits.pressed.connect(_open_credits)
+	Ui.centre_row(box, guide).add_child(credits)
 	# Log Out and Quit share the last row, so the panel keeps its height
 	# (Player Records moved out to the menu).
 	var out := Ui.button("Log Out", 137, Ui.H, Ui.SMALL_RED)
@@ -484,6 +492,25 @@ func _open_credits() -> void:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.custom_minimum_size = Vector2(272, 0)
 		list.add_child(l)
+
+
+## How to Play, over Home or over Settings. Seen once, it waits in Settings.
+func _open_guide() -> void:
+	HowToPlay.open(_dialog if is_instance_valid(_dialog) else self, func() -> void:
+		if not Game.guide_seen:
+			Game.guide_seen = true
+			Game.save_profile())
+
+
+## Half a row: two of these side by side are one Account row.
+func _half_button(text: String, icon: String, kind: int) -> Button:
+	var b := Ui.button(text, 137, Ui.H, kind)
+	if icon != "":
+		b.icon = Ui.icon(icon)
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_constant_override("h_separation", 6)
+	Ui.fit_text(b)
+	return b
 
 
 ## An Account row: a full-width button, its icon at the left like the menu's.

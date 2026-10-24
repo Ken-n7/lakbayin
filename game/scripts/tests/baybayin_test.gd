@@ -94,5 +94,52 @@ func _ready() -> void:
 	await frames()
 	check("answered, it takes the team's colour",
 		monk.colour == "Blue" and monk._body.sprite_frames.get_frame_texture("sway", 0) != null)
+
+	# How to Play (HowToPlay.gd): typed Baybayin read back as its sounds.
+	check("the guide reads Baybayin as sounds", HowToPlay.read("ᜊᜑᜌ᜔") == "ba · ha · y"
+		and HowToPlay.read("ᜀᜐᜓ") == "a · su/o" and HowToPlay.read("ᜅᜒ") == "ngi/e",
+		HowToPlay.read("ᜀᜐᜓ"))
+	# It opens over Home the first time, and once closed, only from Settings.
+	Game.guide_seen = false
+	var main: Control = preload("res://scenes/Main.tscn").instantiate()
+	add_child(main)
+	await frames(4)
+	main.open("home")
+	await frames(4)
+	var guide := main.current.find_child("HowToPlay", true, false) as Control
+	check("How to Play opens over Home the first time", guide != null)
+	var next := guide.find_child("Next", true, false) as Button
+	for i in 4:
+		next.pressed.emit()
+	await frames()
+	var pads: Array = guide.find_children("*", "BaybayinKeypad", true, false).filter(
+		func(p: Node) -> bool: return (p as Control).is_visible_in_tree())
+	check("page 5 is a keypad to write on", pads.size() == 1, str(pads.size()))
+	for g in ["ᜀ", "ᜐ", Baybayin.KUDLIT_U]:
+		(pads[0] as BaybayinKeypad).press(g)
+	var tama: Array = guide.find_children("*", "Label", true, false).filter(
+		func(l: Node) -> bool: return (l as Label).text.begins_with("Tama!"))
+	check("writing aso there is praised", tama.size() == 1)
+	while next.text == "Next":
+		next.pressed.emit()
+	next.pressed.emit()
+	await frames()
+	var saved := ConfigFile.new()
+	saved.load(Game.SAVE_PATH)
+	check("Let's Go closes it, and the device remembers",
+		not is_instance_valid(guide) and Game.guide_seen and saved.get_value("profile", "guide_seen", false))
+	main.open("home")
+	await frames(4)
+	check("Home does not show it again", main.current.find_child("HowToPlay", true, false) == null)
+	main.current._open_settings()
+	await frames()
+	var again: Array = main.current.find_children("*", "Button", true, false).filter(
+		func(b: Node) -> bool: return (b as Button).text == "How to Play")
+	check("Settings has How to Play", again.size() == 1)
+	if again.size() == 1:
+		(again[0] as Button).pressed.emit()
+		await frames()
+	check("and it opens from there", main.current.find_child("HowToPlay", true, false) != null)
+	main.queue_free()
 	completed = true
 	finish("BAYBAYIN")

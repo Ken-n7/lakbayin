@@ -311,6 +311,18 @@ English meanings are not shown.
 - Shows in **My Matches** with a **Custom** tag, but does **not** count for
   the global leaderboard (rigged rooms could farm it), as MOBAs do.
 
+### 6.2a How to Play
+- Seven pages over Home the **first time Home shows on a device**
+  (`Game.guide_seen`, saved), and on request from **Settings → How to Play**.
+- 1 What is Baybayin (facts only: pre-colonial script; Spanish accounts
+  around 1600 describe it in everyday use; the *Doctrina Christiana*, 1593).
+  2 Letters say "a" (the keypad with sounds; tap any key). 3 Marks change the
+  sound (ᜊ → ᜊᜒ → ᜊᜓ → ᜊ᜔, animated). 4 Build a word (the keypad types
+  *bahay* itself). 5 Your turn (write *aso*; "Tama!"). 6 The match and
+  7 Play as a team: screenshots of the game itself
+  (`assets/ui/guide/`, remade by `game/tools/guide_shots.py`).
+- Only the game's own art, fonts and screens; no generated images.
+
 ### 6.3 Practice (solo, offline)
 - The same rules, alone, with no server.
 - For learning the keypad, for judges trying the game, and for recording

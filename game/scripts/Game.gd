@@ -63,6 +63,8 @@ var team_name := ""
 var joined_session := ""
 var joined_code := ""
 var hero_id := 1
+## How to Play has shown itself once on this device (HomeScreen).
+var guide_seen := false
 
 
 ## Sheet for an adventurer. Kept here so every screen spells the path once.
@@ -203,6 +205,7 @@ func load_profile() -> void:
 	joined_session = cfg.get_value("profile", "session", "")
 	joined_code = cfg.get_value("profile", "code", "")
 	hero_id = clampi(int(cfg.get_value("profile", "hero_id", 1)), 1, HERO_COUNT)
+	guide_seen = bool(cfg.get_value("profile", "guide_seen", false))
 
 
 func save_profile() -> void:
@@ -212,4 +215,5 @@ func save_profile() -> void:
 	cfg.set_value("profile", "session", joined_session)
 	cfg.set_value("profile", "code", joined_code)
 	cfg.set_value("profile", "hero_id", hero_id)
+	cfg.set_value("profile", "guide_seen", guide_seen)
 	cfg.save(SAVE_PATH)

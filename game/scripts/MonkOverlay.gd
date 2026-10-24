@@ -89,7 +89,7 @@ func _process(_delta: float) -> void:
 		return
 	var left := _locked_until - Time.get_ticks_msec() / 1000.0
 	if left > 0.0:
-		_status.text = "Not quite. Try this monk again in %d s." % ceili(left)
+		_status.text = "Not quite. Try again in %ds." % ceili(left)
 		_submit.disabled = true
 	else:
 		_locked_until = 0.0

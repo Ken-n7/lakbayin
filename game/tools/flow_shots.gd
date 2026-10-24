@@ -47,6 +47,8 @@ func _ready() -> void:
 	if OS.get_environment("FLOW_LIVE") != "" and (index == 0 or OS.get_environment("FLOW_LIVE") == "all"):
 		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(vp)
+	# Home's first-launch How to Play would cover every Home shot.
+	Game.guide_seen = true
 	main = load("res://scenes/Main.tscn").instantiate()
 	vp.add_child(main)
 	await _wait(1.0)

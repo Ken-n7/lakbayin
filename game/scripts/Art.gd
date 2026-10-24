@@ -63,6 +63,19 @@ static func baybayin() -> Font:
 	return f
 
 
+## The text face, for a line that mixes in Baybayin: a copy of it falling
+## back to the Baybayin face. A copy, because the Baybayin face already falls
+## back to the text face, and Godot refuses a loop.
+static var _mixed: FontFile
+
+
+static func mixed() -> Font:
+	if _mixed == null:
+		_mixed = (load(TEXT_FONT) as FontFile).duplicate()
+		_mixed.fallbacks = [baybayin()]
+	return _mixed
+
+
 ## Sets `c` in the display face: titles, banners and logos, never a question,
 ## an answer or a number. Returns `c` so it wraps a constructor.
 ## "Hanapin. Isulat. Ipanalo." in Baybayin, each ending on the single
@@ -75,6 +88,37 @@ static func tagline(size: int) -> Label:
 	var l := label(TAGLINE, size, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	l.add_theme_font_override("font", baybayin())
 	return l
+
+
+## Baybayin with a title's pop, in layers of the one font: a hard drop
+## shadow, a thick ink outline, then the gold with a darker lip below and a
+## cream glint above, each a pixel off -- a bevel. The logo, and How to Play.
+## A Control to lay out like any other; the layers fill it.
+const GOLD_LAYERS := [[Pal.INK, Vector2(0, 3), 8], [Pal.INK, Vector2.ZERO, 8],
+	[Pal.GOLD_DIM, Vector2(0, 1), 0], [Pal.CREAM, Vector2(0, -1), 0], [Pal.GOLD, Vector2.ZERO, 0]]
+
+
+static func gold_title(text: String, size: int, line_spacing := 0, layers: Array = GOLD_LAYERS) -> Control:
+	var stack := Control.new()
+	for layer: Array in layers:
+		var word := label(text, size, layer[0], HORIZONTAL_ALIGNMENT_CENTER)
+		word.add_theme_font_override("font", baybayin())
+		if line_spacing != 0:
+			word.add_theme_constant_override("line_spacing", line_spacing)
+		word.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		word.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var shift: Vector2 = layer[1]
+		word.offset_left = shift.x
+		word.offset_right = shift.x
+		word.offset_top = shift.y
+		word.offset_bottom = shift.y
+		if int(layer[2]) > 0:
+			word.add_theme_color_override("font_outline_color", layer[0])
+			word.add_theme_constant_override("outline_size", int(layer[2]))
+		stack.add_child(word)
+	# The labels fill the stack; the stack asks for the room the text takes.
+	stack.custom_minimum_size = (stack.get_child(0) as Label).get_minimum_size() + Vector2(8, 8)
+	return stack
 
 
 static func title(c: Control) -> Control:

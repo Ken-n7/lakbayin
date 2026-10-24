@@ -28,6 +28,9 @@ func _ready() -> void:
 	main.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	Game.player_name = "Adventurer"
+	# Home as it is every time but the first: How to Play is a dialog over it,
+	# and its title's stacked layers overlap on purpose.
+	Game.guide_seen = true
 	Game.team_name = "Math Mavericks"
 	Game.begin_adventure(600)
 
