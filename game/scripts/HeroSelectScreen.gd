@@ -100,6 +100,8 @@ func _preview_stage() -> Control:
 	wrap.add_child(shade)
 	_preview = AnimatedSprite2D.new()
 	_preview.scale = Vector2(PREVIEW_K, PREVIEW_K)
+	# Pixel art stays square-pixelled at x6 (a smooth filter blurred it).
+	_preview.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_preview.offset = Vector2(0, -10)      # feet on the ground
 	wrap.add_child(_preview)
 	# Centred on the room the slot's border leaves, not on fixed numbers: the
