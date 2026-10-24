@@ -7,7 +7,6 @@ const SCREENS := {
 	"splash": preload("res://scripts/SplashScreen.gd"),
 	"login": preload("res://scripts/LoginScreen.gd"),
 	"register": preload("res://scripts/RegisterScreen.gd"),
-	"reset": preload("res://scripts/ResetScreen.gd"),
 	"home": preload("res://scripts/HomeScreen.gd"),
 	"hero": preload("res://scripts/HeroSelectScreen.gd"),
 	"team": preload("res://scripts/TeamNameScreen.gd"),
@@ -25,7 +24,7 @@ const SCREENS := {
 ## own as it goes (`music.play()`): the team lobby to the battle songs, the map
 ## to The Journey once the adventure starts.
 const MUSIC := {
-	"login": "town", "register": "town", "reset": "town", "home": "town",
+	"login": "town", "register": "town", "home": "town",
 	"team": "town", "room": "town", "watch": "battle",
 	"hero": "shop", "records": "town",
 	"results": "victory",

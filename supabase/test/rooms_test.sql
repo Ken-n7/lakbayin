@@ -34,6 +34,8 @@ begin
                                 and admin_id = pg_temp.uid(1) and length(code) = 4
                            from public.sessions where id = s),
     'create_room: a custom lobby with a code, hosted by its maker');
+  perform pg_temp.check((select duration_s=900 from public.sessions where id=s),
+    'new custom rooms use a fifteen-minute clock');
   perform pg_temp.check(blue is not null and red is not null
     and (select team_id = blue from public.members where session_id = s and profile_id = pg_temp.uid(1)),
     'it has Blue and Red, the host on Blue');
@@ -79,6 +81,9 @@ begin
   perform pg_temp.as_player(pg_temp.uid(3), format('select public.leave_room(%L)::text', s));
   perform pg_temp.check((select count(*) = 3 from public.members where session_id = s),
     'leaving after Start keeps the row: the result counts');
+
+  perform pg_temp.check((select ends_at between now()+interval '899 seconds' and now()+interval '901 seconds'
+    from public.sessions where id=s), 'Start sets a fifteen-minute server deadline');
 
   -- Leaving a lobby: the host hands it on; the last one out closes it.
   r := pg_temp.as_player(pg_temp.uid(5), 'select (public.create_room()).id::text')::uuid;

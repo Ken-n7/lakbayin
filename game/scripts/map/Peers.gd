@@ -39,10 +39,9 @@ const STALE_S := 12.0
 ## Playback never jumps: behind where it should be it runs CATCH_UP times
 ## faster, ahead of it EASE times; out of path it carries on along the last
 ## step for CARRY_S, then waits for more.
-## Sized for a bundle every 0.33s (AdventureScreen.BUNDLE_S) and the trip
-## through the teacher: ~0.9s behind real time to start. Grows gently and
-## comes back quickly -- at +0.25 / -0.05 per 15s a few hiccups left it near
-## the top for minutes (client: "the delay is too long", 2026-10-08).
+## Older senders retain the legacy buffer. New direct senders advertise their
+## update cadence, so 100ms packets get a 150ms buffer instead of 750ms.
+## Jitter still grows the buffer; calm connections recover gradually.
 const LAG_START := 0.75
 const LAG_MIN := 0.5
 const LAG_MAX := 1.3
@@ -199,15 +198,20 @@ func move(id: String, data: Dictionary) -> void:
 	if bool(data.get("fast", false)):
 		got["fast_at"] = now
 	var fast := now - float(got.get("fast_at", -INF)) < FAST_HOLD_S
+	var base := direct_buffer(data)
+	var previous := float(got.get("direct_base", base))
+	got["direct_base"] = base
+	if not fast and got.has("lag") and not is_equal_approx(previous, base):
+		got["lag"] = clampf(float(got.lag) + base - previous, base, LAG_MAX)
 	if got.has("lag") and bool(got.get("fast", false)) != fast:
 		# On or off the relay: its own buffer, and the trip learnt afresh --
 		# the other path's fastest is no guide to this one's.
-		got["lag"] = FAST_LAG_START if fast else LAG_START
+		got["lag"] = FAST_LAG_START if fast else base
 		got.erase("offset")
 	got["fast"] = fast
 	got["offset"] = minf(float(got.get("offset", INF)), now - float(incoming[-1][0]))
 	if not got.has("lag"):
-		got["lag"] = FAST_LAG_START if fast else LAG_START
+		got["lag"] = FAST_LAG_START if fast else base
 		got["settled"] = now
 		got["dry"] = false
 		got["face"] = "down"
@@ -223,6 +227,15 @@ func move(id: String, data: Dictionary) -> void:
 		_markers[id] = marker
 		add_child(marker)
 	_dress(marker, got.hero)
+
+
+## Missing / malformed cadence belongs to an older sender. Clamp hints so a
+## packet cannot request an unbounded playback delay.
+static func direct_buffer(data: Dictionary) -> float:
+	var cadence: Variant = data.get("cadence")
+	if not (cadence is int or cadence is float) or not is_finite(float(cadence)) or float(cadence) <= 0.0:
+		return LAG_START
+	return clampf(float(cadence) + 0.05, 0.1, LAG_MAX)
 
 
 ## [[sender time, Vector2]] from a message: a bundle {t, dt, x: [], y: []}, a
@@ -309,7 +322,7 @@ static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 			got["settled"] = now
 	elif next <= newest:
 		got["dry"] = false
-	var least := FAST_LAG_MIN if fast else LAG_MIN
+	var least := FAST_LAG_MIN if fast else float(got.get("direct_base", LAG_MIN))
 	if now - float(got.settled) > (FAST_SETTLE_S if fast else LAG_SETTLE_S) and float(got.lag) > least:
 		got["lag"] = maxf(float(got.lag) - LAG_SHRINK, least)
 		got["settled"] = now

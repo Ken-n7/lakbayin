@@ -86,7 +86,7 @@ grant execute on function public.email_for_username(text) to anon, authenticated
 create table if not exists public.sessions (
   id          uuid primary key default gen_random_uuid(),
   admin_id    uuid not null references public.profiles on delete cascade,
-  duration_s  int  not null default 600 check (duration_s between 60 and 7200),
+  duration_s  int  not null default 900 check (duration_s between 60 and 7200),
   state       text not null default 'lobby'
               check (state in ('lobby','running','paused','ended')),
   ends_at     timestamptz,
@@ -138,6 +138,9 @@ end $$;
 drop trigger if exists sessions_stamp_ended on public.sessions;
 create trigger sessions_stamp_ended before update on public.sessions
   for each row execute function public.stamp_ended();
+
+-- Defaults also reach existing projects; live sessions keep their own clocks.
+alter table public.sessions alter column duration_s set default 900;
 
 -- 3. Teams and members ------------------------------------------------------
 -- The team name IS the join code, so it is unique within its session.
@@ -694,7 +697,7 @@ create table if not exists public.match_config (
   team_size  int not null default 3 check (team_size between 1 and 5),
   -- How long one player waits for a full lobby before "no match found".
   search_s   int not null default 90 check (search_s between 15 and 600),
-  duration_s int not null default 360 check (duration_s between 60 and 7200),
+  duration_s int not null default 900 check (duration_s between 60 and 7200),
   -- Monks (words) per match; both teams play the same ones.
   monk_count int not null default 10 check (monk_count between 1 and 40)
 );
@@ -707,6 +710,9 @@ alter table public.match_config add column if not exists
   search_s int not null default 90 check (search_s between 15 and 600);
 alter table public.match_config add column if not exists
   monk_count int not null default 10 check (monk_count between 1 and 40);
+-- Upgrade the former six-minute default while retaining other tuned values.
+alter table public.match_config alter column duration_s set default 900;
+update public.match_config set duration_s = 900 where duration_s = 360;
 insert into public.match_config (id) values (1) on conflict (id) do nothing;
 -- Matches once belonged to a "house" admin account, for its question bank;
 -- the words are the `words` table's now, and whoever opens a lobby owns it.
@@ -843,7 +849,7 @@ begin
   if auth.uid() is null then raise exception 'sign in first'; end if;
   select duration_s into d from public.match_config where id = 1;
   insert into public.sessions (admin_id, custom, duration_s)
-  values (auth.uid(), true, coalesce(d, 360)) returning * into s;
+  values (auth.uid(), true, coalesce(d, 900)) returning * into s;
   insert into public.teams (session_id, name) values (s.id, 'Blue'), (s.id, 'Red');
   insert into public.members (session_id, team_id, profile_id)
   select s.id, t.id, auth.uid() from public.teams t where t.session_id = s.id and t.name = 'Blue';

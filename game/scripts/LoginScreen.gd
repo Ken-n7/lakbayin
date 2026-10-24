@@ -1,6 +1,6 @@
 extends Control
 
-## Email + password, against `Net`. The first screen after the splash whenever
+## Username + password, against the self-hosted server. The first screen after the splash whenever
 ## there is no live session.
 ##
 ## Every form on this screen and its two siblings follows the same rule: the
@@ -21,18 +21,10 @@ func setup(_data: Dictionary) -> void:
 	# The game's name stands on the scene; the form sits beside it.
 	var box := Ui.auth_layout(self, "Sign In")
 
-	_email = Ui.field(box, "Email or Username", "you@example.com  or  yourname")
+	_email = Ui.field(box, "Username", "yourname")
 	_email.keep_editing_on_text_submit = true
 	_pass = Ui.password_field(box, "Password", "at least 8 characters")
 
-	# Recovery is a quiet link under the field it is about, not a red button
-	# competing with Sign In.
-	var forgot := Ui.link("Forgot Password?")
-	forgot.pressed.connect(func() -> void: main.open("reset", {"email": _email.text}))
-	var forgot_row := HBoxContainer.new()
-	forgot_row.alignment = BoxContainer.ALIGNMENT_END
-	forgot_row.add_child(forgot)
-	box.add_child(forgot_row)
 
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -62,7 +54,7 @@ func setup(_data: Dictionary) -> void:
 
 func _submit() -> void:
 	if _email.text.strip_edges().is_empty() or _pass.text.is_empty():
-		_say("Enter your email or username, and your password.")
+		_say("Enter your username and password.")
 		return
 	_busy(true)
 	var err: String = await Net.sign_in(_email.text, _pass.text)

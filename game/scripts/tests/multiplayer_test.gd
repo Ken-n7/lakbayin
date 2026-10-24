@@ -45,6 +45,7 @@ func _ready() -> void:
 	_private_movement()
 	_channel_recovery()
 	_lobby_reconnect()
+	await _direct_movement()
 	await _monk_activity()
 	await _room_controls()
 	await _watch_view()
@@ -340,4 +341,71 @@ func _records_view() -> void:
 		and results._place([{"deposited":2},{"deposited":2},{"deposited":0}],2) == 3)
 	check("results preserve sub-second deposit tie-breaks", is_equal_approx(results._seconds_in("2026-10-23T00:00:00.125+00:00",float(Time.get_unix_time_from_datetime_string("2026-10-23T00:00:00"))),0.125))
 	records.queue_free()
+	await get_tree().process_frame
+
+
+func _direct_movement() -> void:
+	var script := preload("res://scripts/AdventureScreen.gd")
+	check("1v1 movement can publish every 100ms", is_equal_approx(script.direct_interval({}, "s1", 2), 0.1))
+	check("3v3 movement respects the shared traffic budget", is_equal_approx(script.direct_interval({}, "s1", 6), 0.6))
+	var online := {"a":[{"sid":"s1","where":"map"}],"b":[{"sid":"s1","where":"map"}],
+		"c":[{"sid":"s2","where":"map"}],"d":[{"sid":"s2","where":"map"}],
+		"e":[{"sid":"s3","where":"map"}],"f":[{"sid":"s3","where":"map"}]}
+	check("simultaneous rooms share the direct message budget", is_equal_approx(script.direct_interval(online, "s1", 2), 0.2))
+	online = {"watchers":[{"sid":"s1","where":"watch"},{"sid":"s1","where":"watch"}],"bad":false}
+	check("viewer deliveries are included in the budget", is_equal_approx(script.direct_interval(online,"s1",2),0.15))
+	check("fast direct updates get a shorter playback buffer", is_equal_approx(Peers.direct_buffer({"cadence":0.1}),0.15))
+	check("old senders keep a compatible playback buffer", Peers.direct_buffer({}) == Peers.LAG_START)
+	check("malformed cadence cannot set unbounded delay", Peers.direct_buffer({"cadence":INF}) == Peers.LAG_START
+		and Peers.direct_buffer({"cadence":1000}) == Peers.LAG_MAX)
+	var points := Peers._points({"p":[[1.0,10,20],[1.07,12,20],[1.23,14,20]]},0.0)
+	check("frame hitches retain the real sample timestamps", points[1][0]==1.07 and points[2][0]==1.23)
+	var peer := Peers.new()
+	peer.move("remote",{"cadence":0.1,"p":[[1.0,10,20],[1.05,12,20]]})
+	check("actual peer playback uses the advertised cadence", is_equal_approx(float(peer.get("_live").remote.lag),0.15))
+	peer.free()
+
+	var adv := MovementAdventure.new()
+	add_child(adv)
+	adv.setup({"practice":true})
+	adv.skip_intro()
+	adv.set_process(false)
+	adv.play.practice=false
+	adv.play.session_id="pace-test"
+	adv._peers=Peers.new()
+	adv.world.add_child(adv._peers)
+	adv._peers.refresh([{"profile_id":"remote","team_id":"red","username":"Remote"}],[],Vector2.ZERO,Net.user_id)
+	var rt := Net.realtime()
+	var previous_socket: Variant=rt.get("_ws")
+	var previous_state: int=rt.get("_state")
+	var socket := Socket.new()
+	rt.set("_ws",socket)
+	rt.set("_state",WebSocketPeer.STATE_OPEN)
+	rt.set("_pos_live",{Realtime.snap_topic("pace-test"):true})
+	rt.online.clear()
+	adv._share_position(0.1)
+	check("the initial position is sent without an idle wait", socket.messages.size()==1)
+	socket.messages.clear()
+	adv.player.position.x+=5
+	adv._share_position(0.1)
+	socket.messages.clear()
+	adv._share_position(0.1)
+	check("a movement stop is sent before the idle heartbeat", socket.messages.size()==1)
+	var packet: Dictionary=socket.messages[0].payload.payload.p[0]
+	check("direct packets carry timestamped paths and cadence", packet.p is Array and is_equal_approx(float(packet.cadence),Net.movement_interval() if Net.has_method("movement_interval") else 0.1)
+		and packet.p[-1][1]==packet.p[-2][1])
+	socket.messages.clear()
+	adv._share_position(0.1)
+	check("standing still does not stream redundant movement", socket.messages.is_empty())
+	rt.set("_pos_live",{})
+	adv.player.position.x+=5
+	adv._share_position(0.1)
+	adv._share_position(0.1)
+	rt.set("_pos_live",{Realtime.snap_topic("pace-test"):true})
+	adv._share_position(0.05)
+	check("a joining channel retains pending movement for an immediate retry", socket.messages.size()==1)
+	rt.set("_ws",previous_socket)
+	rt.set("_state",previous_state)
+	rt.close_socket()
+	adv.queue_free()
 	await get_tree().process_frame

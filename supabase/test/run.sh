@@ -40,6 +40,21 @@ if git cat-file -e HEAD:supabase/schema.sql 2>/dev/null; then
 	fi
 fi
 
+# Upgrade the six-minute default, preserve the user's team size and custom
+# timings, and make re-running the schema safe.
+if q -c "update public.match_config set duration_s=360,team_size=1;" >/dev/null 2>&1 \
+	&& q -f supabase/schema.sql >/dev/null 2>&1 \
+	&& [[ $(q -t -A -c "select duration_s=900 and team_size=1 from public.match_config where id=1") == t ]] \
+	&& q -c "update public.match_config set duration_s=1200;" >/dev/null 2>&1 \
+	&& q -f supabase/schema.sql >/dev/null 2>&1 \
+	&& [[ $(q -t -A -c "select duration_s from public.match_config where id=1") == 1200 ]]; then
+	echo "ok    fifteen-minute upgrade preserves team size and other custom clocks"
+else
+	echo "FAIL  fifteen-minute clock upgrade"; fail=1
+fi
+
+q -c "update public.match_config set team_size=3,duration_s=900;" >/dev/null 2>&1
+
 # Simulate the old 2-5 check even after HEAD has moved past that schema.
 # Upgrading must allow 1 v 1, and re-running must preserve that setting.
 if q -c "alter table public.match_config drop constraint match_config_team_size_check;

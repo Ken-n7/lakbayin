@@ -15,7 +15,7 @@ config_version=5
 [application]
 
 config/name="Lakbayin"
-config/description="A gamified learning adventure for numerical expressions: integer operations, exponential notation, and order of operations."
+config/description="Explore the islands, learn Baybayin, and race to deposit Filipino words."
 config/version="0.1.0"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
@@ -29,10 +29,8 @@ boot_splash/show_image=false
 [autoload]
 
 Game="*res://scripts/Game.gd"
-; The backend, under the name the screens call it by. This is a name, not an
-; interface -- there is one implementation. If LAN ever ships, it is this line
-; that changes, which is the whole reason the screens never say "Supabase".
-Net="*res://scripts/net/Supabase.gd"
+; Authoritative self-hosted backend.
+Net="*res://scripts/net/SelfHosted.gd"
 
 [display]
 
@@ -64,13 +62,6 @@ environment/defaults/default_clear_color=Color(0.10, 0.08, 0.13, 1)
 
 [lakbayin]
 
-; Supabase, the backend (SPECS §10). The anon key is public by design -- it
-; ships inside every APK, so keeping it out of git protects nothing. Row level
-; security in supabase/schema.sql is the actual guard. The service_role key is
-; a different matter entirely and must never appear here.
-;
-; Lakbayin's own project (supabase/README.md). Empty: the game runs offline.
-; The environment wins over these, so a dev run can point at another project:
-;   SUPABASE_URL=... SUPABASE_ANON_KEY=... godot --path game
-supabase/url="https://yvklwmtsvjgppnmtlede.supabase.co"
-supabase/anon_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2a2x3bXRzdmpncHBubXRsZWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2Nzk1MDMsImV4cCI6MjEwODI1NTUwM30.O88SPs7aUAS4KjX8F2lIBST23W9jgfYoPPkG9aHsIns"
+; HTTPS endpoint published by the named tunnel. Local tests override it with
+; LAKBAYIN_SERVER_URL=http://127.0.0.1:8000
+server/url="https://server.lakbayin.space"

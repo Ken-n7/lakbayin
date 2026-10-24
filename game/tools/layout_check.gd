@@ -16,7 +16,7 @@ const SIZES := [Vector2(640, 360), Vector2(800, 360)]
 var CANVAS := Vector2(640, 360)
 ## Splash and team are settled; the match is the HUD's (checked against the DEV
 ## tab below).
-const SCREENS := ["login", "register", "reset", "home", "hero", "results", "watch", "records"]
+const SCREENS := ["login", "register", "home", "hero", "results", "watch", "records"]
 
 var _bad := 0
 

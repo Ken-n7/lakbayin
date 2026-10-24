@@ -1,7 +1,6 @@
 extends Control
 
-## Email + Username + Password + Role, per SPECS §2. Anyone may register as an
-## admin, no approval -- that is the client's stated rule, not an oversight.
+## Username/password registration; all accounts are players.
 
 const FORM_W := 290.0
 ## Username and Role share a row; Role gets the wider half, because
@@ -10,7 +9,6 @@ const MIN_PASSWORD := 8
 
 var main: Control
 
-var _email: LineEdit
 var _user: LineEdit
 var _pass: LineEdit
 var _msg: Label
@@ -22,9 +20,8 @@ func setup(_data: Dictionary) -> void:
 	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 	var box := Ui.auth_layout(self, "Create Account", 320)
 
-	# Three rows: Email, Username, Password. Everyone is a player -- there is
+	# Username and password. Everyone is a player -- there is
 	# no teacher role to pick.
-	_email = Ui.field(box, "Email", "you@example.com", false, FORM_W)
 	_user = Ui.field(box, "Username", "3-20 letters", false, FORM_W)
 	_pass = Ui.password_field(box, "Password", "at least %d characters" % MIN_PASSWORD, FORM_W)
 
@@ -35,7 +32,6 @@ func setup(_data: Dictionary) -> void:
 
 	# Enter walks the form and the last field registers -- the button is under
 	# the soft keyboard on a phone.
-	_email.text_submitted.connect(func(_t: String) -> void: _user.grab_focus())
 	_user.text_submitted.connect(func(_t: String) -> void: _pass.grab_focus())
 	_pass.text_submitted.connect(func(_t: String) -> void: _submit())
 
@@ -59,9 +55,6 @@ func setup(_data: Dictionary) -> void:
 ## round trip the classroom's connection does not need to make.
 func _submit() -> void:
 	var user := _user.text.strip_edges()
-	if _email.text.strip_edges().is_empty():
-		_err("Enter your email.")
-		return
 	if not RegEx.create_from_string("^[A-Za-z0-9_-]{3,20}$").search(user):
 		_err("Username: 3-20 letters, digits, _ or - only.")
 		return
@@ -71,7 +64,7 @@ func _submit() -> void:
 
 	_go.disabled = true
 	_go.text = "Registering..."
-	var err: String = await Net.sign_up(_email.text, user, _pass.text, "player")
+	var err: String = await Net.sign_up("", user, _pass.text, "player")
 	_go.disabled = false
 	_go.text = "Register"
 	if err != "":

@@ -38,6 +38,7 @@ func _ready() -> void:
 	var s := screen()
 	check("Practice opens the match screen", s.get_script().resource_path == "res://scripts/AdventureScreen.gd")
 	check("it opens on the aerial view", s._frozen)
+	check("Practice starts with a fifteen-minute clock", Game.duration_seconds == 900.0 and s.hud._time.text == "15:00")
 	s.skip_intro()
 	await frames()
 	var play: Match = s.play
@@ -91,6 +92,9 @@ func _ready() -> void:
 	check("they list all ten words, all deposited", words.size() == 10
 		and words.all(func(w: Dictionary) -> bool: return w.state == "deposited"))
 	check("with their Baybayin", words.all(func(w: Dictionary) -> bool: return str(w.modern) != ""))
+	var labels: Array = r.find_children("*", "Label", true, false).map(func(l: Label) -> String: return l.text)
+	check("results display Filipino and Baybayin without English meanings", words.all(func(w: Dictionary) -> bool:
+		return labels.has(str(w.word)) and labels.has(str(w.modern)) and not labels.has(str(w.meaning))))
 
 	# Time up with a word still carried: lost.
 	main.open("adventure", {"practice": true})

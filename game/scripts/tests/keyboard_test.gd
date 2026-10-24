@@ -11,7 +11,6 @@ extends TestCase
 ## through: the join code (signed in), the reset's second step.
 var SCREENS := [
 	["login", "login", Callable()], ["register", "register", Callable()],
-	["reset, step 1", "reset", Callable()], ["reset, step 2", "reset", _reset_step2],
 	["team name (offline)", "team", Callable()], ["join code", "room", _join_code],
 ]
 const KEYBOARDS := [0.5, 0.6, 0.7]      # share of the screen's height
@@ -80,10 +79,6 @@ func _ready() -> void:
 	main.fake_keyboard = -1.0
 	completed = true
 	finish("KEYBOARD")
-
-
-func _reset_step2(screen: Control) -> void:
-	screen.call("_show_step", 2)
 
 
 func _join_code(screen: Control) -> void:

@@ -1,0 +1,16 @@
+[Unit]
+Description=Lakbayin account and game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Workspace/games/levelup-entry
+ExecStart=%h/Workspace/games/levelup-entry/server/run.sh
+Restart=always
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

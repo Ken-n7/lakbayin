@@ -29,9 +29,9 @@ var hud: AdventureHud
 ## The match: its words, who has answered what, the deposits.
 var play := Match.new()
 
-## Practice: 10 monks for 6 minutes, as a match would be.
+## Practice: 10 monks for 15 minutes, as a match would be.
 const PRACTICE_MONKS := 10
-const PRACTICE_S := 360
+const PRACTICE_S := 900
 ## How near a monk (or the Monastery) you -- or a teammate -- must come for the
 ## team's minimap to show it: about a screen's width.
 const SEE_R := 260.0
@@ -357,16 +357,18 @@ func _refresh_busy() -> void:
 ## every SAMPLE_S, sent as one bundle every BUNDLE_S on the match's snapshot
 ## channel (a snapshot of one: there is no teacher to gather them) -- or to the
 ## movement relay, sample by sample, when one is up. Peers plays it back.
-const SAMPLE_S := 0.1
-## ponytail: players x players deliveries -- a second apart keeps 3 v 3 near
-## 30 a second on Supabase's free tier; run the relay for anything bigger.
-const BUNDLE_S := 1.0
-const BUNDLE_OVERLAP_S := 0.3
+const SAMPLE_S := 0.05
+## Direct updates can be fast in a small room. Share a conservative project
+## message budget across active rooms instead of forcing every match to 1 Hz.
+const BUNDLE_S := 0.1
+const DIRECT_EVENTS_S := 60.0
+const BUNDLE_OVERLAP_S := 0.15
 const STILL_EVERY_S := 3.0
 var _path: Array = []
 var _sample_clock := 0.0
 var _bundle_clock := 0.0
 var _moved_since_send := false
+var _sample_was_moving := false
 var _conn := "good"
 var _conn_clock := 0.0
 
@@ -381,10 +383,16 @@ func _share_position(delta: float) -> void:
 		_sample_clock = maxf(_sample_clock + SAMPLE_S, 0.0)
 		var x := roundi(player.position.x)
 		var y := roundi(player.position.y)
-		if not _path.is_empty() and (int(_path[-1][1]) != x or int(_path[-1][2]) != y):
+		var moved := not _path.is_empty() and (int(_path[-1][1]) != x or int(_path[-1][2]) != y)
+		# Send the first position and the stop too. Otherwise a hero can keep
+		# walking until the next three-second idle heartbeat arrives.
+		if _path.is_empty() or moved or _sample_was_moving:
 			_moved_since_send = true
+		_sample_was_moving = moved
 		_path.append([now, x, y])
-	var every := BUNDLE_S * (2.0 if _conn == "weak" else 1.0)
+	var members := (_peers.get("_roster") as Dictionary).size() + 1 if is_instance_valid(_peers) else 6
+	var every: float = Net.movement_interval() if Net.has_method("movement_interval") else direct_interval(Net.realtime().online, play.session_id, members)
+	every *= 2.0 if _conn == "weak" else 1.0
 	while _path.size() > 1 and now - float(_path[0][0]) > every + BUNDLE_OVERLAP_S:
 		_path.pop_front()
 	if relay.up:
@@ -399,18 +407,42 @@ func _share_position(delta: float) -> void:
 		return
 	if _path.is_empty():
 		return
-	_bundle_clock = 0.0
-	_moved_since_send = false
-	var xs: Array = []
-	var ys: Array = []
-	for q: Array in _path:
-		xs.append(q[1])
-		ys.append(q[2])
-	Net.realtime().send_position(Realtime.snap_topic(play.session_id), {
+	var sent := Net.realtime().send_position(Realtime.snap_topic(play.session_id), {
 		"sid": play.session_id,
-		"p": [{"id": Net.user_id, "hero": Game.hero_id,
-			"p": {"t": snappedf(float(_path[0][0]), 0.01), "dt": SAMPLE_S, "x": xs, "y": ys}}],
+		"p": [{"id": Net.user_id, "hero": Game.hero_id, "cadence": every,
+			# Real timestamps survive frame hitches; uniform dt invented times
+			# for late samples and added delay on a busy laptop.
+			"p": _path.duplicate(true)}],
 	}, "snap")
+	if sent:
+		_bundle_clock = 0.0
+		_moved_since_send = false
+
+
+## Includes sends and deliveries, plus viewers. Presence only changes the
+## traffic budget; authenticated membership still controls channel access.
+static func direct_interval(online: Dictionary, session: String, members: int) -> float:
+	var players := {}
+	var viewers := {}
+	for connections: Variant in online.values():
+		if not connections is Array:
+			continue
+		for meta: Variant in connections:
+			if not meta is Dictionary:
+				continue
+			var sid := str(meta.get("sid", ""))
+			if sid == "":
+				continue
+			if meta.get("where") == "map":
+				players[sid] = int(players.get(sid, 0)) + 1
+			elif meta.get("where") == "watch":
+				viewers[sid] = int(viewers.get(sid, 0)) + 1
+	players[session] = maxi(maxi(members, 2), int(players.get(session, 0)))
+	var deliveries := 0.0
+	for sid: String in players:
+		var n := int(players[sid])
+		deliveries += n * (n + int(viewers.get(sid, 0)))
+	return maxf(BUNDLE_S, ceilf(deliveries / DIRECT_EVENTS_S / SAMPLE_S) * SAMPLE_S)
 
 
 var _relay_clock := 0.0

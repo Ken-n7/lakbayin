@@ -28,3 +28,7 @@ Thumbs.db
 build/shots/
 build/*.apk
 build/*.idsig
+
+# Self-hosted server accounts, sessions, checkpoints and isolated dependencies.
+server/data/
+server/.venv/

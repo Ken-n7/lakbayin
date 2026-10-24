@@ -32,6 +32,24 @@ func _build() -> void:
 			return
 		teams = got.teams
 		players = got.players
+		# Spellings are revealed only once the server ends the match. Reload
+		# answers too: the end event may precede the last deposit row.
+		var final_words := await Monks.words_of(str(result.session_id))
+		var final_answers := await Net.rest(HTTPClient.METHOD_GET,
+			"/rest/v1/monk_answers?session_id=eq." + str(result.session_id))
+		var my_membership := await Teams.membership(str(result.session_id))
+		if not is_inside_tree():
+			return
+		var learned: Array = []
+		for w: Dictionary in final_words:
+			var state := "missed"
+			for a: Dictionary in (final_answers.data if final_answers.data is Array else []):
+				if a.get("team_id") == my_membership.get("team_id") and int(a.get("monk", -1)) == int(w.monk):
+					state = "deposited" if a.get("deposited_at") != null else "lost"
+			learned.append({"word": w.get("word", ""), "modern": w.get("modern", ""), "state": state})
+		if not learned.is_empty():
+			result["words"] = learned
+
 	var box := Ui.screen_panel(self, Vector2(600, 330), "")
 	box.add_theme_constant_override("separation", 6)
 	var head := CenterContainer.new()
@@ -100,12 +118,6 @@ func _build() -> void:
 		glyphs.add_theme_font_override("font", Art.baybayin())
 		glyphs.custom_minimum_size = Vector2(96, 0)
 		line.add_child(glyphs)
-		var meaning := Art.label(str(w.meaning), Pal.SMALL, Pal.INK_MUTED)
-		meaning.clip_text = true
-		meaning.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		meaning.custom_minimum_size = Vector2(70, 0)
-		meaning.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		line.add_child(meaning)
 		words.add_child(line)
 
 	var buttons := HBoxContainer.new()

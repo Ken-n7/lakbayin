@@ -33,7 +33,7 @@ static func profile_suffix() -> String:
 
 
 var adventure_active := false
-var duration_seconds := 600.0
+var duration_seconds := 900.0
 ## Seconds left, read off a deadline rather than counted down frame by frame.
 ## Adding up frame deltas ran slow wherever frames stall -- a phone in the
 ## background, a window out of focus -- so every phone showed a different
@@ -136,7 +136,7 @@ static func http_date(v: String) -> int:
 ## that joins late or sleeps still agrees with the room.
 func apply_session(row: Dictionary) -> void:
 	var state := str(row.get("state", ""))
-	duration_seconds = float(int(row.get("duration_s", 600)))
+	duration_seconds = float(int(row.get("duration_s", 900)))
 	match state:
 		"running":
 			var ends := Time.get_unix_time_from_datetime_string(str(row.get("ends_at", "")))

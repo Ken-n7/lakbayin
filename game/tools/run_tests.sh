@@ -13,6 +13,7 @@ LIMIT=${TEST_TIMEOUT:-240}
 # The suites are offline by design but expect a backend to be configured (the
 # sign-in screens, the admin's bank line): a dead address, never a real project.
 export SUPABASE_URL=https://offline.invalid SUPABASE_ANON_KEY=test-anon-key
+export LAKBAYIN_SERVER_URL=https://offline.invalid
 fail=0
 
 run() {                                     # run <name> <godot args...>

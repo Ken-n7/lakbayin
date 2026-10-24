@@ -157,12 +157,13 @@ func _join_pos(topic: String) -> void:
 
 
 ## A position ("pos"), or the teacher's snapshot ("snap"), to one of those
-## channels. Dropped while it is not up, like any broadcast: the next one is a
-## moment away.
-func send_position(topic: String, payload: Dictionary, event := "pos") -> void:
+## channels. False while its private channel is joining, so the sender keeps
+## its initial position / stop pending instead of waiting for an idle tick.
+func send_position(topic: String, payload: Dictionary, event := "pos") -> bool:
 	if _state != WebSocketPeer.STATE_OPEN or not _pos_live.has(topic):
-		return
+		return false
 	_send(topic, "broadcast", {"type": "broadcast", "event": event, "payload": payload})
+	return true
 
 
 func open_socket() -> void:

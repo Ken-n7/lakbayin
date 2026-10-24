@@ -116,10 +116,11 @@ func _run() -> void:
 	# is offline by design: it asserts the gate, then steps over it.
 	check("a fresh launch asks you to sign in", _script_of(_screen(), "res://scripts/LoginScreen.gd"))
 	check("login offers a way to register", _find_button(_screen(), "Create Account") != null)
-	check("login offers recovery", _find_button(_screen(), "Forgot Password?") != null)
+	check("login has no email recovery", _find_button(_screen(), "Forgot Password?") == null)
 	_main_scene.call("open", "register")
 	await _wait(3)
 	check("registering asks for no role", _find_label(_screen(), "Role") == null)
+	check("registering asks for no email", _find_label(_screen(), "Email") == null)
 	_main_scene.call("open", "home")
 	await _wait(3)
 	check("home is the title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))

@@ -1,0 +1,16 @@
+[Unit]
+Description=Lakbayin persistent Cloudflare Tunnel
+After=network-online.target lakbayin.service
+Wants=network-online.target lakbayin.service
+ConditionPathExists=%h/.cloudflared/lakbayin.yml
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/cloudflared tunnel --no-autoupdate --config %h/.cloudflared/lakbayin.yml run
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

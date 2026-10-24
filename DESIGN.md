@@ -89,8 +89,7 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
   deposited), or when the **clock runs out**.
 - When it ends, everyone sees an **aerial view** of the whole map, then the
   results screen.
-- Default clock: **6 minutes**. Default monk count: **10**. Tune both after the
-  first playtest.
+- Match clock: **15 minutes**. Default monk count: **10**.
 
 ### 3.5 Winning and ranking
 
@@ -118,6 +117,7 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 ### 3.6 Learning moment
 The results screen lists **every word of the match with its Baybayin
 spelling**, marking which ones your team got right, got wrong, or missed.
+English meanings are not shown.
 
 ---
 
@@ -187,7 +187,7 @@ spelling**, marking which ones your team got right, got wrong, or missed.
 - **Filters:** native words only; no *r*; no *f, v, z, c, j, q, x*; no
   particles or words with unusual spellings (*ng*, *mga*).
 - Each entry has the word, its generated Baybayin spelling (§4.2) and its
-  English meaning (for the results screen).
+  English meaning as source metadata; results show Filipino and Baybayin only.
 - Each match picks its words at random from the list, so no two matches are
   alike.
 
@@ -322,7 +322,7 @@ recorded as draws and award no global wins. Practice stays offline.
 | History | **My Matches** |
 | Leaderboard | Global player board |
 | Session seed → identical board on every phone | Seed for the procedural world |
-| Sign-in, hero select, settings, credits, movement, multiplayer, movement relay, tiebreak | As is |
+| Hero select, settings, credits, movement, multiplayer, tiebreak | Kept; username-only auth and WebSocket transport now self-hosted |
 
 ---
 
@@ -330,12 +330,31 @@ recorded as draws and award no global wins. Practice stays offline.
 
 ### 10.1 Stack
 - **Client:** Godot 4.6, GDScript. Android APK and Windows build.
-- **Backend:** Supabase: Postgres, Auth, Realtime. Its own project, separate
-  from any other.
-- **Movement relay:** a headless Godot server behind a Cloudflare tunnel
-  (`tools/relay/run.sh`). Optional at 3 v 3: without it each phone broadcasts
-  its own position once a second, about 30 messages a second per match, inside
-  Supabase's free tier. Run it at the event when several matches play at once.
+- **Backend:** self-hosted FastAPI + SQLite on the user's server, published
+  to the public Internet at `https://server.lakbayin.space` through a named
+  Cloudflare Tunnel. Registration stays at Namecheap; Cloudflare handles DNS
+  and transport. The named tunnel is live; public HTTPS auth and WSS gameplay
+  have been verified with two Godot clients.
+- **Accounts:** username and password only; no email, confirmation or password
+  reset. Argon2id hashes protect passwords. Random 256-bit opaque sessions are
+  stored hashed on the server, expire after 30 days and are revoked on logout.
+  The app stores its session separately from the former provider's sessions.
+- **Realtime:** authenticated WebSockets through the same server and tunnel;
+  movement is sampled/sent every 50 ms, with heartbeat/reconnect and scoped
+  room access. No shared hosted-provider message budget or separate relay is
+  needed. Movement remains client simulated; the server binds each packet to
+  its authenticated player. World collision and proximity are not independently
+  simulated on the Python server.
+- **Persistence:** SQLite transactions checkpoint rosters, words, lockouts,
+  carried/deposited answers, timers, outcomes and records. A restart retains
+  these and the original absolute deadline; it does not pause the match clock.
+  Transient positions/presence reconnect; positions are not checkpointed.
+- **Runtime:** one server worker owns live sockets. Loopback HTTP/WS is used
+  for local tests; public clients use HTTPS/WSS. Enabled systemd user services
+  restart the server and tunnel automatically; user lingering is enabled,
+  allowing startup before login. No Supabase runtime access is needed.
+  Former SQL remains archived for reference; existing remote accounts and
+  history are not imported or deleted. Players create new local accounts.
 
 ### 10.2 The server is authoritative
 The phone never decides an outcome. The server:
@@ -410,6 +429,8 @@ videos.
 | Question | Decision |
 |---|---|
 | Name | **Lakbayin**: *lakbay* (journey) as a verb, "to travel or explore a place", ending in *-bayin* like Baybayin. Explore the world, write in Baybayin. No game or app found using it. |
+| Match clock | **15 minutes**, including Practice |
+| Results words | Filipino word and Baybayin spelling; no English meaning |
 | Points per word | 1 per deposited word |
 | Match end | Ends for everyone when a team finishes |
 | Team size | 3 v 3 by default; one setting allows 1 v 1 through 5 v 5, with 1 v 1 for two-phone playtests |
@@ -421,8 +442,8 @@ videos.
 | Git history | Rewritten: the old documents are removed from every commit |
 
 ## 14. Open questions
-1. **Balance after the full playtest:** keep or adjust the 6-minute clock and
-   10 monks.
+1. **Balance after the full playtest:** review the 15-minute clock and
+   10 monks with human players.
 2. **Word-list review:** confirm spellings and meanings before recording.
 
 The title screen, package id (`com.lakbayin.game`), and Baybayin tagline are

@@ -111,7 +111,7 @@ One row, `match_config`, edited in the Table Editor or SQL Editor:
 |---|---|---|
 | `team_size` | 3 | players a side (1-5; use 1 for a two-phone playtest) |
 | `search_s` | 90 | how long a player waits for a full lobby |
-| `duration_s` | 360 | the match clock |
+| `duration_s` | 900 | the 15-minute match clock |
 | `monk_count` | 10 | monks (words) per match |
 
 For a two-phone playtest, re-run `schema.sql`, then `words.sql`, and set:
