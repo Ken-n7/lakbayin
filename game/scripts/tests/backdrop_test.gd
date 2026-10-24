@@ -71,13 +71,12 @@ func _ready() -> void:
 	check("the same composition every launch", str(again.get("_motes")) == str(ms))
 	again.queue_free()
 
-	# The pack's plain rocks, a different set on each island.
-	var carved := Backdrop.CARVINGS.map(func(c: Array) -> String: return c[0])
-	var found := carved.filter(func(c: String) -> bool:
-		var spr := main.backdrop.find_child(c, true, false) as Sprite2D
-		return spr != null and spr.texture != null and not spr.texture.resource_path.contains("/math/"))
-	check("every rock is in the scene, plain", found.size() == carved.size() or not Backdrop.SHOW_CARVINGS,
-		str(found))
+	# Everything stands wholly on its own ground: no rock in the surf, no
+	# tree off the coast or on a cliff, no two props in one place.
+	var bad := misplaced(main.backdrop, main.backdrop.grid.land, main.backdrop.grid)
+	check("every prop stands on its own ground", bad.is_empty(), str(bad))
+	check("a raised plateau with cliffs and a ramp, as on the match's maps",
+		not main.backdrop.grid.cliff.is_empty() and not main.backdrop.grid.stairs.is_empty())
 
 	main.open("home")
 	await frames(3)
@@ -86,6 +85,8 @@ func _ready() -> void:
 	# Both scenes tell the current game's story: a neutral Monastery and monks,
 	# without the old castles, towers, barracks or combat units.
 	var home: Control = main.current
+	bad = misplaced(home, home.get("_land"))
+	check("and so does everything on Home's island", bad.is_empty(), str(bad))
 	for scene: Node in [main.backdrop, home]:
 		var monastery := scene.find_child("Monastery", true, false) as Sprite2D
 		check("%s has the neutral Purple Monastery" % scene.name,
@@ -113,6 +114,54 @@ func _ready() -> void:
 	check("and plain rocks", home_rocks.size() == 3, str(home_rocks))
 	completed = true
 	finish("BACKDROP")
+
+
+## Props off their ground: under a prop's base, each cell is land of the
+## base's level and no cliff or ramp; water rocks have no land under them;
+## no two props' bases overlap; walkers keep to flat ground. `land` alone
+## for a scene with no levels (Home).
+static func misplaced(b: Node, land: Dictionary, g: MapGrid = null) -> Array[String]:
+	var out: Array[String] = []
+	if g == null:
+		g = MapGrid.new()
+		g.land = land
+	var cell := func(p: Vector2) -> Vector2i: return Vector2i(floori(p.x / Backdrop.TILE), floori(p.y / Backdrop.TILE))
+	var bases: Array = []
+	for n: Node in b.find_children("*", "", true, false):
+		if not (n is Node2D) or not (n.has_meta("prop") or n.has_meta("at_sea") or n.has_meta("walk")):
+			continue
+		var at: Vector2 = (n as Node2D).position
+		var w := 20.0
+		if n is Sprite2D:
+			w = (n as Sprite2D).texture.get_width() * absf((n as Sprite2D).scale.x)
+		elif n is AnimatedSprite2D:
+			var s := n as AnimatedSprite2D
+			w = s.sprite_frames.get_frame_texture(s.animation, 0).get_width() * absf(s.scale.x)
+		# The foot of the art, not its canopy or eaves.
+		var half := w * 0.3
+		var cells := {}
+		var pts: Array[Vector2] = [at + Vector2(-half, -2), at + Vector2(half, -2), at + Vector2(0, -2)]
+		if n.has_meta("walk"):
+			pts = []
+			var ends: Array = n.get_meta("walk")
+			for k in 9:
+				pts.append((ends[0] as Vector2).lerp(ends[1], k / 8.0))
+		for p in pts:
+			cells[cell.call(p)] = true
+		var level := int(g.height.get(cell.call(at + Vector2(0, -2)), -1))
+		for c: Vector2i in cells:
+			if n.has_meta("at_sea"):
+				if g.land.has(c):
+					out.append("%s on land at %s" % [n.name, c])
+			elif not g.land.has(c) or g.cliff.has(c) or g.stairs.has(c) or int(g.height.get(c, -1)) != level:
+				out.append("%s off its ground at %s" % [n.name, c])
+		if n.has_meta("prop"):
+			var box := Rect2(at.x - half, at.y - 10.0, half * 2.0, 12.0)
+			for o: Array in bases:
+				if (o[1] as Rect2).intersects(box):
+					out.append("%s on top of %s" % [n.name, o[0]])
+			bases.append([n.name, box])
+	return out
 
 
 func _source(texture: Texture2D) -> String:

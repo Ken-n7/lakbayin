@@ -9,7 +9,7 @@ extends Control
 ##
 ## A monastery, village clearings and forest islands from the same Tiny Swords
 ## art as the match. Monks carry decorative Baybayin glyphs, adventurers walk
-## between the houses, sheep graze, and clouds cross the archipelago. This is
+## between the houses, and clouds cross the archipelago. This is
 ## a fixed menu composition, independent of the procedural match generator.
 ##
 ## A dark wash sits over it all: the scene is atmosphere, and the parchment
@@ -20,32 +20,71 @@ const W := 44                      # cells: wider than any screen, for the pan
 const H := 13
 const WATER := "res://assets/terrain/tileset/Water Background color.png"
 const GRASS := "res://assets/terrain/tileset/Tilemap_color1.png"
-const TREES := ["res://assets/terrain/decorations/Tree1.png",
-		"res://assets/terrain/decorations/Tree2.png",
-		"res://assets/terrain/decorations/Tree3.png"]
 ## One full sweep across and back, in seconds. Slow enough to be felt rather
 ## than watched: a moving background that pulls the eye is a distraction.
 const PAN_S := 70.0
 const WASH := 0.38                 # the dark wash over the scene
-## Baybayin drifting over the sea and ordinary rocks along the shore.
+## Baybayin drifting over the sea.
 const SHOW_MOTES := true
-const SHOW_CARVINGS := true
-## [piece, cell x, cell y, scale]: plain rocks placed on each island.
-const CARVINGS := [
-	["blue_a", 6.4, 10.2, 1.2], ["blue_b", 8.7, 8.3, 1.0], ["blue_c", 4.4, 9.9, 1.1],
-	["yellow_a", 20.6, 9.9, 1.25], ["yellow_b", 21.7, 8.1, 1.0],
-	["red_a", 37.6, 6.8, 1.15], ["red_b", 34.4, 9.1, 1.0], ["red_c", 37.4, 10.9, 1.0],
-	["red_d", 35.8, 10.6, 0.9],
-]
+const DECO := "res://assets/terrain/decorations/%s.png"
+const BUILDINGS := "res://assets/buildings/%s.png"
 
-## Island: centre and radii in cells.
-const ISLANDS := [
-	{"c": Vector2(7.5, 6.8), "r": Vector2(5.6, 3.9)},
-	{"c": Vector2(21.5, 6.2), "r": Vector2(5.2, 3.7)},
-	{"c": Vector2(35.5, 7.0), "r": Vector2(5.8, 3.8)},
+## The three islands, drawn: . sea, # ground, ^ raised ground (level 1).
+## Cliffs fall under each plateau's south edge, as on the match's maps. The
+## Monastery's isle, the village round its pond, the wooded plateau.
+const MAP := [
+	"............................................",
+	"............................................",
+	"....######..........######.........######...",
+	"..##########.......########.....##########..",
+	".###^^^^^^^##.....##########...###^^^^^^###.",
+	".###^^^^^^^###....##########...###^^^^^^###.",
+	".###^^^^^^^###....####...###...###^^^^^^###.",
+	".#############....###.....##...############.",
+	".#############....####...###...############.",
+	"..############.....#########....###########.",
+	"..##########.......########......########...",
+	"....#####............####..........####.....",
+	"............................................",
 ]
+## The ramp up each plateau: [the plateau cell at its bottom corner, side],
+## side -1 for a ramp to its left (WorldGen._ramp_fits's geometry).
+const RAMPS := [[Vector2i(10, 6), 1], [Vector2i(34, 6), -1]]
+
+## [art, cell x, cell y (the base), scale]. Everything stands wholly on its
+## own ground: backdrop_test.gd holds each one to it.
+const PROPS := [
+	# The Monastery on its plateau; the village below it.
+	[BUILDINGS % "Purple_Monastery", 7.5, 6.85, 0.5],
+	[BUILDINGS % "Blue_House1", 3.4, 9.8, 0.42],
+	[BUILDINGS % "Red_House1", 8.4, 9.9, 0.42],
+	# The village round the pond.
+	[BUILDINGS % "Blue_House2", 19.6, 5.9, 0.45],
+	[BUILDINGS % "Red_House2", 26.2, 10.4, 0.45],
+	# Houses under the wooded plateau.
+	[BUILDINGS % "Blue_House3", 35.0, 9.8, 0.42],
+	[BUILDINGS % "Red_House3", 39.4, 9.6, 0.42],
+	[DECO % "Rock4", 2.2, 7.6, 0.5],
+	[DECO % "Rock2", 3.0, 3.8, 0.45],
+	[DECO % "Rock1", 25.2, 4.2, 0.45],
+	[DECO % "Rock3", 20.2, 4.6, 0.5],
+	[DECO % "Rock2", 41.4, 8.6, 0.5],
+	[DECO % "Rock4", 32.0, 4.6, 0.45],
+]
+## [tree, cell x, base y]: Tree1-4, swaying.
+const TREES := [
+	[1, 2.2, 5.6], [3, 9.9, 5.2],
+	[4, 21.0, 3.8], [1, 26.2, 5.6], [2, 20.6, 9.6],
+	[1, 35.2, 5.4], [2, 38.4, 4.8], [3, 41.6, 6.0],
+]
+const BUSHES := [[1, 12.4, 4.6], [3, 10.6, 10.4], [2, 23.4, 5.0], [4, 20.4, 8.4],
+	[1, 37.2, 9.0], [3, 41.0, 4.4]]
+## Water rocks, out at sea between the islands.
+const WATER_ROCKS := [["01", 15.6, 10.8], ["02", 29.4, 2.4], ["03", 0.8, 2.4], ["04", 43.0, 11.6],
+	["02", 15.2, 2.8], ["03", 29.6, 9.6]]
 
 var _world: Node2D
+var grid: MapGrid
 var _clouds: Clouds
 var _motes: MathMotes
 var _land := {}
@@ -104,95 +143,81 @@ func _build_ground() -> void:
 	for y in H:
 		for x in W:
 			water.set_cell(Vector2i(x, y), 0, Vector2i(0, 0))
-	for y in H:
-		for x in W:
-			for isl: Dictionary in ISLANDS:
-				var n: Vector2 = (Vector2(x + 0.5, y + 0.5) - isl.c) / isl.r
-				var ang := atan2(n.y, n.x)
-				if n.length() < 0.92 + 0.08 * sin(ang * 3.0 + isl.c.x) + 0.04 * cos(ang * 5.0):
-					_land[Vector2i(x, y)] = true
-	# Water, then the surf breaking on every shore, then the land over it --
-	# the pack's own layer order (its tilemap guide).
 	water.z_index = -2
-	Art.shore_foam(_world, _land, TILE).z_index = -1
+	_land = shape()
 	var grass: TileMapLayer = Art.terrain_layer(GRASS, int(TILE))
 	_world.add_child(grass)
 	for cell: Vector2i in _land:
 		grass.set_cell(cell, 0, Art.autotile(
 				_land.has(cell + Vector2i(-1, 0)), _land.has(cell + Vector2i(1, 0)),
 				_land.has(cell + Vector2i(0, -1)), _land.has(cell + Vector2i(0, 1))))
-	# Sheep ask the world where the grass is (see Wander.gd).
-	_world.set_meta("grass", grass)
-	_world.set_meta("tile", TILE)
+	# The raised ground, its cliffs, ramps, shadows and the surf on every
+	# shore, painted as the match paints them (MapBuilder.paint_levels).
+	grid = MapGrid.new()
+	grid.land = _land
+	for c: Vector2i in _land:
+		grid.height[c] = 1 if MAP[c.y][c.x] == "^" else 0
+	for r: Array in RAMPS:
+		var side: int = r[1]
+		grid.lay_ramp(r[0] + Vector2i(side, -1), 0, side)
+	grid.lay_cliffs()
+	MapBuilder.new(_world, grid).paint_levels()
 
 
-## A neutral Monastery, mixed village houses, and woodland on the outer islands.
+## The islands' cells, from the drawing.
+static func shape() -> Dictionary:
+	var land := {}
+	for y in H:
+		for x in W:
+			if MAP[y][x] != ".":
+				land[Vector2i(x, y)] = true
+	return land
+
+
+## A neutral Monastery on its plateau, mixed village houses, woods and rocks.
 func _build_islands() -> void:
-	var b := "res://assets/buildings/"
-	var place := [
-		[b + "Purple_Monastery.png", 7.5, 6.8, 0.5],
-		[b + "Blue_House1.png", 4.4, 8.4, 0.45],
-		[b + "Red_House1.png", 10.2, 8.8, 0.45],
-		[b + "Blue_House2.png", 19.4, 6.7, 0.5],
-		[b + "Red_House2.png", 23.5, 7.9, 0.5],
-		[b + "Blue_House3.png", 34.2, 7.0, 0.45],
-		[b + "Red_House3.png", 38.2, 8.5, 0.45],
-	]
-	for p: Array in place:
-		var building := Art.sprite(_world, Art.cell(p[0], 0, 0), _at(p[1], p[2]), p[3])
-		if str(p[0]).ends_with("Purple_Monastery.png"):
-			building.name = "Monastery"
-	var trees := [[3.0, 5.8], [5.2, 4.4], [11.6, 5.4], [9.4, 9.2], [17.2, 5.2],
-		[19.8, 4.0], [25.6, 5.0], [23.4, 9.0], [31.0, 5.8], [33.6, 4.6], [39.8, 5.8], [37.2, 9.4]]
-	for i in trees.size():
-		var t := Art.anim_sprite(_world, TREES[i % TREES.size()], _at(trees[i][0], trees[i][1]),
-				0.42, 3.0, 1.0 if i % 2 == 0 else -1.0)
+	for p: Array in PROPS:
+		var spr := Art.sprite(_world, Art.tex(p[0]), _at(p[1], p[2]), p[3])
+		spr.name = "Monastery" if str(p[0]).ends_with("Purple_Monastery.png") \
+				else str(p[0]).get_file().get_basename()
+		spr.set_meta("prop", true)
+	for i in TREES.size():
+		var tr: Array = TREES[i]
+		var t := Art.anim_sprite(_world, DECO % ("Tree%d" % tr[0]), _at(tr[1], tr[2]),
+				0.4, 3.0, 1.0 if i % 2 == 0 else -1.0)
 		t.frame = i % 6          # out of step, or the whole wood sways as one
-	if SHOW_CARVINGS:
-		for c: Array in CARVINGS:
-			var spr := Art.sprite(_world, Art.tex(MapCfg.plain_rock(c[0])), _at(c[1], c[2]), c[3])
-			spr.name = c[0]
-	for r in [["Rock2", 13.6, 6.0], ["Rock4", 27.4, 7.2], ["Rock1", 41.0, 7.6]]:
-		Art.sprite(_world, Art.tex("res://assets/terrain/decorations/%s.png" % r[0]),
-				_at(r[1], r[2]), 1.2)
-	for r in [["Water Rocks_01", 14.8, 10.6], ["Water Rocks_02", 28.6, 2.4],
-			["Water Rocks_03", 1.4, 2.6], ["Water Rocks_04", 42.4, 11.2]]:
-		Art.anim_sprite(_world, "res://assets/terrain/decorations/%s.png" % r[0],
-				_at(r[1], r[2]), 0.5, 4.0, 1.0, 16)
+		t.name = "Tree%d_%d" % [tr[0], i]
+		t.set_meta("prop", true)
+	for i in BUSHES.size():
+		var b: Array = BUSHES[i]
+		var bush := Art.anim_sprite(_world, DECO % ("Bush%d" % b[0]), _at(b[1], b[2]),
+				0.32, 6.0, 1.0 if i % 2 == 0 else -1.0, 8)
+		bush.set_meta("prop", true)
+		bush.name = "Bush%d" % i
+	for r: Array in WATER_ROCKS:
+		var rock := Art.anim_sprite(_world, DECO % ("Water Rocks_%s" % r[0]), _at(r[1], r[2]),
+				0.5, 4.0, 1.0, 16)
+		rock.set_meta("at_sea", true)
 
 
-## Peaceful island life: teachers of the script, travellers, and grazing sheep.
+## Peaceful island life: teachers of the script and travellers.
 func _build_life() -> void:
-	for s in [[6.0, 9.0], [20.4, 8.6], [36.8, 9.2], [9.8, 5.2]]:
-		_world.add_child(_sheep(_at(s[0], s[1])))
 	for i in 3:
 		var monk := Monk.new()
 		monk.index = i + 2
 		monk.name = "GuideMonk%d" % i
-		monk.position = _at([9.2, 21.5, 36.0][i], [7.4, 8.5, 8.4][i])
+		monk.position = _at([12.4, 26.6, 32.0][i], [9.0, 8.0, 9.0][i])
+		monk.set_meta("prop", true)
 		_world.add_child(monk)
-	_walker(Game.hero_id, _at(5.0, 9.8), _at(9.0, 9.8), 5.0)
-	_walker(14, _at(18.6, 9.6), _at(23.6, 9.6), 5.6)
-	_walker(7, _at(33.2, 10.0), _at(38.0, 10.0), 5.2)
-
-
-func _sheep(at: Vector2) -> Node2D:
-	var sheep := Node2D.new()
-	var spr := AnimatedSprite2D.new()
-	spr.sprite_frames = Art.anim_spriteframes({
-		"idle": [MapCfg.SHEEP_IDLE, MapCfg.SHEEP_IDLE_FPS, true],
-		"walk": [MapCfg.SHEEP_WALK, MapCfg.SHEEP_WALK_FPS, true],
-	})
-	spr.scale = Vector2(MapCfg.SHEEP_SCALE, MapCfg.SHEEP_SCALE)
-	sheep.add_child(spr)
-	sheep.position = at
-	sheep.set_script(preload("res://scripts/Wander.gd"))
-	return sheep
+	_walker(Game.hero_id, _at(3.0, 10.6), _at(10.0, 10.6), 6.0)
+	_walker(14, _at(19.8, 10.5), _at(24.6, 10.5), 4.6)
+	_walker(7, _at(34.0, 10.5), _at(39.0, 10.5), 5.0)
 
 
 ## Walks from `a` to `b` and back for ever, turning at each end.
 func _walker(hero_id: int, a: Vector2, b: Vector2, secs: float) -> void:
 	var walker := AnimatedSprite2D.new()
+	walker.set_meta("walk", [a, b])
 	walker.sprite_frames = Art.walk_frames(Game.hero_sheet(hero_id), 6.0)
 	walker.scale = Vector2(1.6, 1.6)
 	walker.offset = Vector2(0, -10)

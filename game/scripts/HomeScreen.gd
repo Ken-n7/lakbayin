@@ -24,8 +24,6 @@ const W := 27          # 27 x 32 = 864: covers 800, which is what `keep_height`
                        # gives a 20:9 phone. At 21 the right edge of the screen
                        # showed the clear colour past the water.
 const H := 12          # 12 x 32 = 384, over-covers 360
-const ISLE := Vector2(13.2, 6.2)    # island centre, in cells
-const ISLE_R := Vector2(6.0, 3.9)   # island radii, in cells
 const ONLINE_EVERY := 20.0  # s; the server counts a player online for 60
 const ONLINE_DOT := Color("7bd860")
 const PLATE_TEXT_W := 104  # the name/record column: "999 wins  ·  100%" fits
@@ -138,14 +136,26 @@ func _position_scene() -> void:
 	_world.position.x = maxf(size.x - Pal.CANVAS.x, 0.0) * 0.5
 
 
-## Ellipse biased right of centre with an angular wobble, so the island body
-## clears the menu column and the shoreline is not a perfect oval. Kept small
-## enough that open water frames it on all four sides.
+## The island, drawn: right of centre so it clears the menu column, open
+## water framing it on all four sides, and ground under every prop.
+const ISLAND := [
+	"...........................",
+	"...........................",
+	"............###............",
+	"..........#######..........",
+	".........##########........",
+	"........###########........",
+	".......#############.......",
+	".......############........",
+	".......############........",
+	"........###########........",
+	"..........######...........",
+	"...........................",
+]
+
+
 func _is_land(c: Vector2i) -> bool:
-	var nx := (c.x + 0.5 - ISLE.x) / ISLE_R.x
-	var ny := (c.y + 0.5 - ISLE.y) / ISLE_R.y
-	var ang := atan2(ny, nx)
-	return sqrt(nx * nx + ny * ny) < 0.93 + 0.08 * sin(ang * 2.0 + 3.4) + 0.05 * cos(ang * 4.0 + 1.2)
+	return ISLAND[c.y][c.x] == "#"
 
 
 func _at(cx: float, cy: float) -> Vector2:
@@ -156,26 +166,32 @@ func _build_props() -> void:
 	# A village clearing: the place the journey leads back to.
 	var monastery := Art.sprite(_world, Art.cell(MONASTERY, 0, 0), _at(13.3, 6.0), 0.5)
 	monastery.name = "Monastery"
+	monastery.set_meta("prop", true)
 	for spec in [["Blue_House1", 9.5, 7.6], ["Red_House1", 17.1, 7.5]]:
 		var house := Art.sprite(_world, Art.cell("res://assets/buildings/%s.png" % spec[0], 0, 0),
 			_at(spec[1], spec[2]), 0.45)
 		house.name = str(spec[0])
+		house.set_meta("prop", true)
 	for spec in [[8.6, 5.8, 1.0], [17.6, 5.6, -1.0], [9.1, 9.1, 1.0], [17.3, 9.4, 1.0]]:
 		var tree := Art.anim_sprite(_world, TREE, _at(spec[0], spec[1]), 0.42, 3.0, spec[2])
 		tree.frame = int(abs(tree.position.x)) % 8
+		tree.set_meta("prop", true)
 	for i in 2:
 		var monk := Monk.new()
 		monk.name = "GuideMonk%d" % i
 		monk.index = i
 		monk.position = _at(11.0 if i == 0 else 16.0, 8.7 if i == 0 else 8.5)
+		monk.set_meta("prop", true)
 		_world.add_child(monk)
 	for spec in [["Bush1", 10.0, 5.6], ["Bush3", 15.1, 5.2], ["Bush2", 16.0, 9.7]]:
 		var bush := Art.anim_sprite(_world, "res://assets/terrain/decorations/%s.png" % spec[0],
 			_at(spec[1], spec[2]), 0.45, 3.0)
 		Art.sit_on_art(bush)
-	for c in [["blue_b", 10.4, 9.8, 0.85], ["yellow_a", 8.4, 7.0, 0.8], ["red_c", 16.2, 10.0, 0.8]]:
+		bush.set_meta("prop", true)
+	for c in [["blue_b", 10.4, 9.8, 0.85], ["yellow_a", 8.4, 7.0, 0.8], ["red_c", 17.6, 9.9, 0.8]]:
 		var rock := Art.sprite(_world, Art.tex(MapCfg.plain_rock(c[0])), _at(c[1], c[2]), c[3])
 		rock.name = c[0]
+		rock.set_meta("prop", true)
 
 
 ## One adventurer exploring the clearing in front of the Monastery. A looping tween
@@ -183,6 +199,7 @@ func _build_props() -> void:
 func _build_hero() -> void:
 	var hero := Node2D.new()
 	hero.position = _at(12.0, 9.1)
+	hero.set_meta("walk", [_at(12.0, 9.1), _at(14.7, 9.1)])
 	_world.add_child(hero)
 
 	var shade := Sprite2D.new()

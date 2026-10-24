@@ -259,7 +259,10 @@ English meanings are not shown.
 - Menus and backdrop: the floating maths symbols become Baybayin glyphs.
 - **Menu scenery:** Home is a Monastery village with two houses,
   black monks with decorative Baybayin, and the selected adventurer. The
-  shared backdrop slowly pans across monastery, village and forest islands.
+  shared backdrop slowly pans across three drawn islands: the Monastery on a
+  plateau, a village round a pond, and a wooded plateau. The plateaus have
+  cliffs and ramps painted as on the match's maps. Every prop on both scenes
+  stands wholly on its own ground (`backdrop_test.gd`).
   Both use existing Tiny Swords / Super Retro World art; obsolete castles,
   towers, barracks, archery buildings and combat units are absent. These are
   fixed decorative scenes, separate from procedural match generation.
