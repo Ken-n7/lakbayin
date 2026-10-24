@@ -40,7 +40,7 @@ func _build_offline() -> void:
 func _build_code() -> void:
 	_background()
 	_music("town")
-	var box := Ui.auth_layout(self, "Custom Room", 300)
+	var box := Ui.auth_layout(self, "Custom Room", 300, go_back)
 	_make = Ui.button("Create Room", 260, Ui.H, Ui.RED)
 	_make.pressed.connect(_create)
 	Ui.centre_row(box, _make)
@@ -74,7 +74,6 @@ func _build_code() -> void:
 	_go = Ui.button("Join", 260, Ui.H, Ui.BLUE)
 	_go.pressed.connect(_enter)
 	Ui.centre_row(box, _go)
-	Ui.centre_row(box, Ui.back_button(go_back))
 
 
 func _create() -> void:

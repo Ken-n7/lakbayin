@@ -113,7 +113,7 @@ func _build_code() -> void:
 	# The sign-in screens' layout: the game's name on the scene, the form
 	# beside it -- this is the third form a student meets, and it should look
 	# like the other two.
-	var box := Ui.auth_layout(self, "Join Adventure", 300)
+	var box := Ui.auth_layout(self, "Join Adventure", 300, go_back)
 	# No teacher needed: the server finds the match and picks the teams.
 	_find_btn = Ui.button("Find Match", 260, Ui.H, Ui.RED)
 	_find_btn.pressed.connect(_find)
@@ -122,7 +122,6 @@ func _build_code() -> void:
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_msg.custom_minimum_size = Vector2(260, 0)
 	box.add_child(_msg)
-	Ui.centre_row(box, Ui.back_button(go_back))
 
 
 ## Find Match: the server picks the match and the team (Teams.find_match).

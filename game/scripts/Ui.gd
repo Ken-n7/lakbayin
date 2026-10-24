@@ -549,6 +549,13 @@ static func stat_plank(icon: String, value: String, size := Pal.BODY) -> PanelCo
 ## big button competing with the real one. Returns the content box.
 static func back_panel(parent: Node, s: Vector2, title: String, on_back: Callable) -> VBoxContainer:
 	var box := screen_panel(parent, s, title)
+	_back_in_title(box, on_back)
+	return box
+
+
+## The orange arrow at the left of a panel's title, the title kept centred:
+## Back where every panel has it, not a button under the last control.
+static func _back_in_title(box: VBoxContainer, on_back: Callable) -> void:
 	var title_row := HBoxContainer.new()
 	var back := Button.new()
 	back.flat = true
@@ -569,7 +576,6 @@ static func back_panel(parent: Node, s: Vector2, title: String, on_back: Callabl
 	var balance := Control.new()                 # keeps the title centred
 	balance.custom_minimum_size = Vector2(40, 0)
 	title_row.add_child(balance)
-	return box
 
 
 ## The sign-in family's layout: the game's name on the left, standing on the
@@ -577,7 +583,8 @@ static func back_panel(parent: Node, s: Vector2, title: String, on_back: Callabl
 ## phone has width to spare and no height -- one tall centred form ran into
 ## the soft keyboard; two columns keep every form short. Returns the form's
 ## content box.
-static func auth_layout(parent: Node, title: String, form_w := 330.0) -> VBoxContainer:
+static func auth_layout(parent: Node, title: String, form_w := 330.0,
+		on_back := Callable()) -> VBoxContainer:
 	var split := HBoxContainer.new()
 	split.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	split.offset_left = 20.0
@@ -608,6 +615,8 @@ static func auth_layout(parent: Node, title: String, form_w := 330.0) -> VBoxCon
 	split.add_child(centre)
 	var box := pc.get_child(0) as VBoxContainer
 	box.add_theme_constant_override("separation", 5)
+	if on_back.is_valid():
+		_back_in_title(box, on_back)
 	return box
 
 
