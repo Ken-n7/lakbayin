@@ -346,7 +346,8 @@ func _draw_lobby() -> void:
 
 ## One team as a box to tap: its name, how many, and who -- the same list the
 ## teacher sees. Tapping it puts this player's name in it. Yours is marked
-## YOU in words as well as in red, never by colour alone.
+## YOU in words as well as in gold, never by colour alone. (Not red: red is
+## a team, and "you" in red read as "you are on Red".)
 func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	var id: String = t.id
 	var mine := id == _mine
@@ -368,7 +369,7 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 		face.bg_color = Pal.PARCHMENT if st != "hover" else Pal.PARCHMENT.lightened(0.25)
 		if st == "pressed":
 			face.bg_color = Pal.PARCHMENT.darkened(0.1)
-		face.border_color = Pal.WRONG if mine else (Pal.WOOD if st != "hover" else Pal.TITLE)
+		face.border_color = Pal.AMBER if mine else (Pal.WOOD if st != "hover" else Pal.TITLE)
 		face.set_border_width_all(3 if mine else 2)
 		face.set_corner_radius_all(3)
 		box.add_theme_stylebox_override(st, face)
@@ -386,7 +387,7 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(title)
 	var count := Art.label("%d joined" % members.size(), Pal.SMALL,
-			Pal.WRONG if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+			Pal.BRONZE if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(count)
 	# You first, so your own name is never the one cut off.
@@ -408,7 +409,7 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 		var who: Dictionary = ordered[i]
 		var me: bool = who.profile_id == Net.user_id
 		var line := Art.label(("★ " if me else "• ") + str(who.username), Pal.SMALL,
-				Pal.WRONG if me else Pal.INK, HORIZONTAL_ALIGNMENT_LEFT)
+				Pal.BRONZE if me else Pal.INK, HORIZONTAL_ALIGNMENT_LEFT)
 		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		col.add_child(line)
 	if ordered.size() > SHOW_NAMES:
@@ -423,7 +424,7 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	# What tapping does, on the box itself.
 	var foot := Art.label("YOU" if mine else "Rivals" if _matchmade() else "Locked" if locked else "Tap to join",
 			Pal.SMALL,
-			Pal.WRONG if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+			Pal.BRONZE if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(foot)
 	if not box.disabled:

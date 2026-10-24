@@ -92,7 +92,7 @@ func _build() -> void:
 			var me := str(p.profile_id) == Net.user_id
 			list.add_child(Art.label("%d.  %s%s   %d%s" % [_place(players, i), "★ " if me else "", p.username,
 				p.deposited, ("   ·  %s" % Ui.mmss(int(p.reached_s))) if float(p.reached_s) >= 0.0 else ""],
-				Pal.SMALL, Pal.WRONG if me else Peers.TEAM_COLOURS[clampi(int(p.team), 0, 1)].darkened(0.3)))
+				Pal.SMALL, Pal.BRONZE if me else Peers.TEAM_COLOURS[clampi(int(p.team), 0, 1)].darkened(0.3)))
 
 	# Right: every word, its Baybayin, and how your team did with it.
 	var right := VBoxContainer.new()
