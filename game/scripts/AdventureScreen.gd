@@ -741,11 +741,12 @@ func _minimap_points() -> Dictionary:
 			monks.append([world.monks[i].position, "ours"])
 		elif _seen.has(i):
 			monks.append([world.monks[i].position, "seen"])
-	var mates: Array[Vector2] = []
+	var mates: Array = []
 	if _peers != null and is_instance_valid(_peers) and _my_team_id != "":
-		mates = _peers.positions_of(_my_team_id)
-	return {"me": player.position, "mates": mates, "monks": monks,
-		"mate_colour": Peers.TEAM_COLOURS[play.team],
+		for spr in _peers.heroes_of(_my_team_id):
+			mates.append([spr.get_parent().position, spr])
+	return {"me": [player.position, player.get_node("Spr")], "mates": mates, "monks": monks,
+		"mate_colour": Peers.TEAM_COLOURS[play.team], "team_art": MapWorld.TEAM_COLOURS[play.team],
 		"monastery": world.door() if _monastery_seen else null}
 
 

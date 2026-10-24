@@ -402,8 +402,20 @@ func _stop(done: int) -> Vector2:
 func positions_of(team_id: String) -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	for id: String in _markers:
-		if str((_roster.get(id, {}) as Dictionary).get("team_id", "")) == team_id:
+		# Not one yet unheard from: its marker waits at the Monastery's door,
+		# and team vision would "find" the Monastery from it.
+		if _is_live(id) and str((_roster.get(id, {}) as Dictionary).get("team_id", "")) == team_id:
 			out.append((_markers[id] as Node2D).position)
+	return out
+
+
+## `team_id`'s players' heroes as drawn ("Spr"), for the minimap to draw
+## them as they stand and face.
+func heroes_of(team_id: String) -> Array[AnimatedSprite2D]:
+	var out: Array[AnimatedSprite2D] = []
+	for id: String in _markers:
+		if _is_live(id) and str((_roster.get(id, {}) as Dictionary).get("team_id", "")) == team_id:
+			out.append((_markers[id] as Node2D).get_node("Spr"))
 	return out
 
 

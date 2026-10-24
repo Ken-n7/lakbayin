@@ -482,8 +482,15 @@ class Minimap extends Control:
 	const SIZE := Vector2(132, 74)
 	const EVERY_S := 0.2
 	var land: Texture2D = null
-	## {me, mates: [Vector2], mate_colour, monks: [[Vector2, state]], monastery}
-	## in world px; a monk's state is "seen" or "ours"; monastery null till seen.
+	## {me: [Vector2, hero sprite], mates: [[Vector2, hero sprite]], mate_colour,
+	## team_art, monks: [[Vector2, state]], monastery} in world px; a monk's
+	## state is "seen" or "ours"; monastery null till seen. Everyone is drawn
+	## as they look on the map, small: a monk in black till your team answers
+	## him, then in its colours on a ring of them; a hero as they stand and
+	## face, on a ring in the team's colour -- yours white.
+	const MONK_ART := "res://assets/units/%s/Monk/Idle.png"
+	const MONK_H := 6.0
+	const HERO_H := 8.0
 	var source: Callable
 	var rim := Color("986050")
 	## The world px the picture covers (the whole world until the aerial view
@@ -534,11 +541,36 @@ class Minimap extends Control:
 			draw_texture_rect(tex, Rect2(c - Vector2(w * 0.5, h), Vector2(w, h)), false)
 		var col: Color = _pts.get("mate_colour", Color.WHITE)
 		for m: Array in _pts.get("monks", []):
-			var c := _at(m[0])
-			draw_circle(c, 2.6, Pal.SHADOW)
-			draw_circle(c, 2.0, col if m[1] == "ours" else Color(0.85, 0.85, 0.85))
-		for p: Vector2 in _pts.get("mates", []):
-			draw_circle(_at(p), 2.2, col)
+			var ours: bool = m[1] == "ours"
+			if ours:
+				_ring(_at(m[0]), col)
+			var art := MONK_ART % (str(_pts.get("team_art", "Black")) if ours else "Black")
+			_figure(Art.cell(art, 0, 0), _at(m[0]), MONK_H, false)
+		for m: Array in _pts.get("mates", []):
+			_hero(m, col)
 		if _pts.has("me"):
-			draw_circle(_at(_pts.me), 3.2, Pal.SHADOW)
-			draw_circle(_at(_pts.me), 2.4, Color.WHITE)
+			_hero(_pts.me, Color.WHITE)
+
+	func _hero(m: Array, ring: Color) -> void:
+		var spr: AnimatedSprite2D = m[1]
+		if not is_instance_valid(spr) or spr.sprite_frames == null \
+				or not spr.sprite_frames.has_animation(spr.animation):
+			return
+		var feet := _at(m[0])
+		_ring(feet, ring)
+		_figure(spr.sprite_frames.get_frame_texture(spr.animation, spr.frame), feet, HERO_H, spr.flip_h)
+
+	## A ring on the ground round `feet`, seen from the side.
+	func _ring(feet: Vector2, col: Color) -> void:
+		draw_set_transform(feet, 0.0, Vector2(1.0, 0.45))
+		draw_circle(Vector2.ZERO, 3.6, Color(col, 0.5))
+		draw_arc(Vector2.ZERO, 3.6, 0.0, TAU, 16, col, 1.0)
+		draw_set_transform(Vector2.ZERO)
+
+	## `tex` standing on `feet`, `h` tall.
+	func _figure(tex: Texture2D, feet: Vector2, h: float, flip: bool) -> void:
+		var sz := tex.get_size() * (h / tex.get_size().y)
+		var r := Rect2(feet - Vector2(sz.x * 0.5, sz.y), sz)
+		if flip:
+			r = Rect2(r.position + Vector2(r.size.x, 0), Vector2(-r.size.x, r.size.y))
+		draw_texture_rect(tex, r, false)

@@ -202,8 +202,10 @@ func _room_flow() -> void:
 			get_tree().quit(1)
 			return
 		screen.call("skip_intro")
-		# Walk, so a spectator has movement to see.
-		Input.action_press("move_right" if index % 2 == 1 else "move_left")
+		# Walk, so a spectator has movement to see -- each of a team's players
+		# a different way, so they are apart on the minimap too.
+		var way: String = ["move_right", "move_left", "move_down", "move_up", "move_down", "move_up"][(index - 1) % 6]
+		Input.action_press(way)
 		await _wait(3.0)
 		await _shot("match")
 		# The minimap with everything found: every monk seen, the Monastery
@@ -216,7 +218,7 @@ func _room_flow() -> void:
 			await _wait(2.0)
 			await _shot("match_minimap")
 		await _wait(10.0)
-		Input.action_release("move_right" if index % 2 == 1 else "move_left")
+		Input.action_release(way)
 		if index == 1:
 			for i in screen.play.words.size():
 				await Monks.answer(screen.play.session_id, i, _spelling(screen.play.words[i]))
