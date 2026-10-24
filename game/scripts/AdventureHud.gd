@@ -96,25 +96,28 @@ func build() -> void:
 	for l in [prompt, hint_bar]:
 		Art.shadow(l)
 
-	# The map in the corner, under the clock (Minimap below).
+	# The map in the top-left corner, where the name plate was (Minimap below).
+	# Its rim is your team's colour: with the plate gone, that is what says
+	# which side you are on.
 	minimap = Minimap.new()
 	minimap.name = "Minimap"
-	minimap.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	minimap.offset_left = -Minimap.SIZE.x - 8.0
-	minimap.offset_right = -8.0
-	minimap.offset_top = 48.0
-	minimap.offset_bottom = 48.0 + Minimap.SIZE.y
+	minimap.rim = Peers.TEAM_COLOURS[adv.play.team]
+	minimap.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	minimap.offset_left = 10.0
+	minimap.offset_right = 10.0 + Minimap.SIZE.x
+	minimap.offset_top = 8.0
+	minimap.offset_bottom = 8.0 + Minimap.SIZE.y
 	hud_layer.add_child(minimap)
 
 	# The line, when it is bad -- a game's red signal bars, in words. Under the
-	# minimap, on the right.
+	# plates, on the right.
 	_conn_label = Art.label("", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_RIGHT)
 	_conn_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_conn_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_conn_label.offset_left = -330.0
 	_conn_label.offset_right = -10.0
-	_conn_label.offset_top = 52.0 + Minimap.SIZE.y
-	_conn_label.offset_bottom = 76.0 + Minimap.SIZE.y
+	_conn_label.offset_top = 48.0
+	_conn_label.offset_bottom = 72.0
 	_conn_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_conn_label.visible = false
 	var conn_plate := StyleBoxFlat.new()
@@ -162,33 +165,12 @@ func _build_top_bar() -> void:
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(bar)
 
-	# Left: who is playing, the hero they picked, and their team.
-	var who := _plate(4)
-	var who_row := HBoxContainer.new()
-	who_row.add_theme_constant_override("separation", 6)
-	who.add_child(who_row)
-	var face := TextureRect.new()
-	face.texture = Art.grid(Game.hero_sheet(Game.hero_id), 3, 4)[1]   # facing out, standing
-	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	face.custom_minimum_size = Vector2(22, 26)
-	face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	who_row.add_child(face)
-	# Name and team on one line: the plank's slot holds one, and two stacked
-	# ran over its top and bottom edges.
-	var me := Net.username if Net.signed_in() else (Game.player_name if Game.player_name != "" else "You")
+	# Left: room for the minimap, which sits over this end of the bar.
 	var m: Match = adv.play
-	var team: String = "Practice" if m.practice else str(Match.TEAMS[m.team])
-	var name_l := Art.label(me, Pal.SMALL, Pal.CREAM)
-	name_l.clip_text = true
-	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name_l.custom_minimum_size = Vector2(72, 0)
-	name_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	who_row.add_child(name_l)
-	var team_l := Art.label(team, Pal.SMALL, Peers.TEAM_COLOURS[m.team].lightened(0.25))
-	team_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	who_row.add_child(team_l)
-	bar.add_child(who)
+	var room := Control.new()
+	room.custom_minimum_size = Vector2(Minimap.SIZE.x + 8.0, 0)
+	room.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(room)
 
 	# Centre: the score on a ribbon -- the one number everybody watches.
 	var mid := CenterContainer.new()
@@ -213,13 +195,15 @@ func _build_top_bar() -> void:
 	_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	clock.add_child(_time)
 	bar.add_child(clock)
-	# Practice has nothing at stake, so a way out on screen (a match has none:
-	# go_back says so). Last on the bar, away from the name a thumb rests near.
-	if m.practice:
-		var leave := Ui.back_button(adv.go_back, 70, "Leave")
-		leave.name = "Leave"
-		leave.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		bar.add_child(leave)
+	# Settings, last on the bar: volumes, and Leave in Practice.
+	var gear := Ui.button("", 38, BAR_H - 6, Ui.SMALL)
+	gear.name = "Settings"
+	gear.tooltip_text = "Settings"
+	gear.icon = Ui.icon("gear")
+	gear.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gear.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	gear.pressed.connect(adv.open_settings)
+	bar.add_child(gear)
 
 
 ## The score and what is carried, from the match.
@@ -501,6 +485,7 @@ class Minimap extends Control:
 	## {me, mates: [Vector2], mate_colour, monks: [[Vector2, state]], monastery}
 	## in world px; a monk's state is "seen" or "ours"; monastery null till seen.
 	var source: Callable
+	var rim := Color("986050")
 	var _t := 0.0
 	var _pts := {}
 
@@ -530,9 +515,9 @@ class Minimap extends Control:
 				p.y / (MapCfg.WORLD_H * MapCfg.TILE) * SIZE.y)
 
 	func _draw() -> void:
-		# The pack's edge: a navy outline round a wooden rim.
+		# The pack's edge: a navy outline round a rim in your team's colour.
 		draw_rect(Rect2(Vector2(-4, -4), SIZE + Vector2(8, 8)), Color("101828"))
-		draw_rect(Rect2(Vector2(-3, -3), SIZE + Vector2(6, 6)), Color("986050"))
+		draw_rect(Rect2(Vector2(-3, -3), SIZE + Vector2(6, 6)), rim)
 		draw_rect(Rect2(Vector2(-1, -1), SIZE + Vector2(2, 2)), Color("101828"))
 		if land != null:
 			draw_texture_rect(land, Rect2(Vector2.ZERO, SIZE), false)

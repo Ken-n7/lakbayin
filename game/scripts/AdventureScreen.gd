@@ -796,6 +796,37 @@ func _open_monk(i: int) -> void:
 	_publish_activity(i)
 
 
+## The match's Settings: Music and Sounds, and in Practice a way out. A real
+## match has no Leave -- it ends when a team finishes or the clock runs out.
+func open_settings() -> void:
+	if _overlay != null and is_instance_valid(_overlay):
+		return
+	var d := Control.new()
+	d.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	Ui.dim(d)
+	var box := Ui.back_panel(d, Vector2(312, 0), "Settings", d.queue_free)
+	box.add_theme_constant_override("separation", 8)
+	Ui.section(box, "Audio")
+	Ui.volume_rows(box, main.music)
+	if play.practice:
+		var leave := Ui.button("Leave Practice", 280, Ui.H, Ui.SMALL_RED)
+		leave.pressed.connect(go_back)
+		Ui.centre_row(box, leave)
+	else:
+		var why := Art.label("The match ends when a team finishes or the clock runs out.",
+				Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		why.custom_minimum_size = Vector2(280, 0)
+		box.add_child(why)
+	_overlay = d
+	end_look()
+	_press = {}
+	hud.close_dev()
+	hud.set_pad(false)
+	d.tree_exited.connect(_on_overlay_gone)
+	hud.ui_layer.add_child(d)
+
+
 func _on_overlay_gone() -> void:
 	_overlay = null
 	_publish_activity(-1)
