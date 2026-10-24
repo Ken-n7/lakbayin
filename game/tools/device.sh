@@ -37,9 +37,11 @@ release)
 	# environment, never from export_presets.cfg: that file is committed, and
 	# a signing key in git is a signing key everyone has. Losing this key
 	# means never updating the app on a phone that already has it.
-	KS="${NUMX_KEYSTORE:-$HOME/.local/share/numxventure/release.keystore}"
+	# Lakbayin's own key (made 2026-10-24), not NumXventure's: a different
+	# app, and the client's key stays the client's. Back both files up.
+	KS="${LAKBAYIN_KEYSTORE:-$HOME/.local/share/lakbayin/release.keystore}"
 	PASSFILE="$KS.pass"
-	[ -f "$PASSFILE" ] || { echo "no $PASSFILE -- see SPECS §8 Release signing"; exit 1; }
+	[ -f "$PASSFILE" ] || { echo "no $PASSFILE (alias=..., password=... lines)"; exit 1; }
 	GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$KS" \
 	GODOT_ANDROID_KEYSTORE_RELEASE_USER="$(grep ^alias= "$PASSFILE" | cut -d= -f2)" \
 	GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$(grep ^password= "$PASSFILE" | cut -d= -f2)" \
