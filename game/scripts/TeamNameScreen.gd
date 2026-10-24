@@ -52,6 +52,11 @@ var _poll_count := 0
 var _queue := {}
 var _queue_at := 0.0
 var _entering := false
+## Find Match's queue: the waiting clock, its heading, and the player slots.
+var _queue_clock: Label
+var _queue_title: Label
+var _queue_slots: HBoxContainer
+var _queue_cancel: Button
 
 
 func setup(data: Dictionary) -> void:
@@ -195,6 +200,9 @@ func _open_lobby(session: Dictionary, quiet: bool, version: int) -> void:
 
 # --- Online: the lobby ------------------------------------------------------
 func _build_lobby() -> void:
+	if _matchmade():
+		_build_queue()
+		return
 	_background()
 	_music("battle")
 	var box := Ui.screen_panel(self, LOBBY, "Your Match" if _matchmade() else "Pick Your Team")
@@ -289,11 +297,11 @@ func _draw_lobby() -> void:
 	var team_name := _lobby.name_of(_mine)
 	var tone := Pal.INK
 	if _matchmade():
-		_steps.text = "Matchmaking"
 		_status.text = _match_status()
 		if str(_session.get("state", "")) == "running" and _mine != "" and not _entering:
 			_entering = true
-			_to_map.call_deferred()
+			# "Match found!" for a moment, as a MOBA queue pops, then the map.
+			get_tree().create_timer(FOUND_HOLD_S).timeout.connect(_to_map)
 	elif _mine == "":
 		_status.text = "Tap a team to join it."
 		_steps.text = "▶ 1  Pick a team      2  Ready!"
@@ -315,8 +323,11 @@ func _draw_lobby() -> void:
 
 
 ## The sides themselves: a card per team, and a room's Spectators bar.
-## RoomScreen draws its own (a MOBA-style lobby).
+## RoomScreen draws its own (a MOBA-style lobby); Find Match, its queue.
 func _draw_sides(locked: bool) -> void:
+	if _matchmade():
+		_draw_queue()
+		return
 	for c in _cards.get_children():
 		_cards.remove_child(c)
 		c.queue_free()
@@ -626,6 +637,120 @@ func _leave() -> void:
 
 
 # --- A match ----------------------------------------------------------------
+const FOUND_HOLD_S := 1.5
+
+
+## Find Match as a MOBA queue: how long you have waited, big; a slot per
+## player the match needs, filled with heroes as they arrive; Cancel.
+## Teams are not shown -- the server picks them when the match is full.
+func _build_queue() -> void:
+	_background()
+	_music("battle")
+	var box := Ui.screen_panel(self, Vector2(420, 0))
+	box.add_theme_constant_override("separation", 6)
+	_steps = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	box.add_child(_steps)
+	_queue_title = Art.title(Art.label("Finding a match", Pal.H1, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER))
+	box.add_child(_queue_title)
+	_queue_clock = Art.title(Art.label("0:00", 40, Pal.BRONZE, HORIZONTAL_ALIGNMENT_CENTER))
+	box.add_child(_queue_clock)
+	_queue_slots = HBoxContainer.new()
+	_queue_slots.alignment = BoxContainer.ALIGNMENT_CENTER
+	_queue_slots.add_theme_constant_override("separation", 6)
+	box.add_child(_queue_slots)
+	_banner = PanelContainer.new()
+	_status = Art.label("", Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.custom_minimum_size = Vector2(360, 0)
+	_banner.add_child(_status)
+	var banner_row := CenterContainer.new()
+	banner_row.add_child(_banner)
+	box.add_child(banner_row)
+	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
+	_msg.visible = false
+	box.add_child(_msg)
+	_queue_cancel = Ui.button("Cancel", 160, Ui.H, Ui.SMALL)
+	_queue_cancel.pressed.connect(_leave)
+	Ui.centre_row(box, _queue_cancel)
+	# The shared lobby code expects these; a queue has no cards or Ready.
+	_cards = GridContainer.new()
+	_cards.visible = false
+	box.add_child(_cards)
+	_go = Ui.button("", 1, 1)
+	_go.visible = false
+	box.add_child(_go)
+	var rt: Realtime = Net.realtime()
+	if not rt.presence_changed.is_connected(_draw_lobby):
+		rt.presence_changed.connect(_draw_lobby)
+	_draw_lobby()
+
+
+func _draw_queue() -> void:
+	if not is_instance_valid(_queue_slots):
+		return
+	for c in _queue_slots.get_children():
+		_queue_slots.remove_child(c)
+		c.queue_free()
+	var found := str(_session.get("state", "")) == "running"
+	var size := int(_session.get("team_size", 1))
+	var needed := maxi(int(_queue.get("needed", size * 2)), _lobby.players.size())
+	# You first, then the others as they came.
+	var ids: Array = _lobby.players.keys()
+	ids.sort_custom(func(a: String, b: String) -> bool: return a == Net.user_id and b != Net.user_id)
+	for i in needed:
+		var slot := PanelContainer.new()
+		slot.custom_minimum_size = Vector2(36, 42)
+		slot.add_theme_stylebox_override("panel", Ui.frame(Ui.SLOT, Ui.ART_K, Vector2.ZERO,
+				Color.WHITE if i < ids.size() else Color(1, 1, 1, 0.45)))
+		if i < ids.size():
+			slot.add_child(_portrait(_hero_of(str(ids[i]))))
+		else:
+			var q := Art.label("?", Pal.H2, Color(Pal.INK_MUTED, 0.6), HORIZONTAL_ALIGNMENT_CENTER)
+			q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			slot.add_child(q)
+		_queue_slots.add_child(slot)
+	_steps.text = "Matchmaking  ·  %d v %d" % [size, size]
+	_queue_title.text = "Match found!" if found else "Finding a match"
+	_queue_cancel.visible = not found      # past the start there is no way out
+	_queue_title.add_theme_color_override("font_color", Pal.CORRECT if found else Pal.TITLE)
+	_tick_queue_clock()
+
+
+## The time waited, as a MOBA queue counts it; "Get ready" once found.
+func _tick_queue_clock() -> void:
+	if not is_instance_valid(_queue_clock):
+		return
+	if str(_session.get("state", "")) == "running":
+		_queue_clock.text = "Get ready"
+		return
+	var waited := int(_queue.get("waited_s", 0)) + int(Time.get_ticks_msec() / 1000.0 - _queue_at) \
+		if not _queue.is_empty() else 0
+	_queue_clock.text = "%d:%02d" % [waited / 60, waited % 60]
+
+
+## A hero standing, facing out; a shadow of one while their hero is unknown.
+func _portrait(hero: int) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = Art.grid(Game.hero_sheet(maxi(hero, 1)), 3, 4)[1]
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	t.custom_minimum_size = Vector2(18, 22)
+	if hero <= 0:
+		t.modulate = Color(0, 0, 0, 0.3)
+	return t
+
+
+## The hero a member tracks in presence, or 0.
+func _hero_of(pid: String) -> int:
+	for meta: Variant in Net.realtime().online.get(pid, []):
+		# Another phone's word for it: only a hero that exists is drawn.
+		var h := int((meta as Dictionary).get("hero", 0)) if meta is Dictionary else 0
+		if h >= 1 and h <= Game.HERO_COUNT:
+			return h
+	return 0
+
+
+
 func _matchmade() -> bool:
 	return bool(_session.get("matchmade", false))
 
@@ -654,6 +779,7 @@ func _process(delta: float) -> void:
 		return
 	_poll_clock = 1.0
 	_status.text = _match_status()
+	_tick_queue_clock()
 	_poll_count += 1
 	if _polling or _poll_count % 2 == 1:
 		return

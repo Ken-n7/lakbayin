@@ -73,7 +73,7 @@ func _ready() -> void:
 	main.open("team")
 	await _wait(0.5)
 	main.current.call("_find")
-	await _wait(2.0)
+	await _wait(0.9)
 	await _shot("finding")
 	if OS.get_environment("FLOW_DEBUG") != "":
 		for i in 40:

@@ -314,28 +314,6 @@ func _slot_more(n: int) -> Control:
 	return l
 
 
-## A hero standing, facing out; a shadow of one while their hero is unknown.
-func _portrait(hero: int) -> TextureRect:
-	var t := TextureRect.new()
-	t.texture = Art.grid(Game.hero_sheet(maxi(hero, 1)), 3, 4)[1]
-	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	t.custom_minimum_size = Vector2(18, 22)
-	if hero <= 0:
-		t.modulate = Color(0, 0, 0, 0.3)
-	return t
-
-
-## The hero a member tracks in presence, or 0.
-func _hero_of(pid: String) -> int:
-	for meta: Variant in Net.realtime().online.get(pid, []):
-		# Another phone's word for it: only a hero that exists is drawn.
-		var h := int((meta as Dictionary).get("hero", 0)) if meta is Dictionary else 0
-		if h >= 1 and h <= Game.HERO_COUNT:
-			return h
-	return 0
-
-
 ## The Spectators strip: who watches, and the way to join them.
 func _spectators(locked: bool) -> Control:
 	var mine := _mine == Lobby.SPECTATE
