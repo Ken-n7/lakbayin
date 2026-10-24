@@ -415,9 +415,12 @@ The phone never decides an outcome. The server:
 - decides finishing, the end of the match and the ranking
 - checks where the heroes are (2026-10-24): it builds each match's map
   itself, by running the game's own generator headless
-  (`game/tools/map_export.gd`), and drops any movement off the ground or
-  faster than a hero walks (with slack for a bad link: dropped, not
-  punished). An answer or a deposit says where the hero stands; it is
+  (`game/tools/map_export.gd`), and follows every hero through it: a
+  movement packet is dropped (not punished) if it leaves the ground, changes
+  level anywhere but a ramp, or spends more distance than the hero has --
+  a budget that refills at 5% over walking speed and holds 2 s of walking,
+  for a bad link's bunched packets. A rejoined app's hero may start again at
+  their spawn; a restarted server takes each hero's next position as given. An answer or a deposit says where the hero stands; it is
   refused unless that is within reach of the monk or the door, on ground,
   and where the hero's walk could have brought them
 

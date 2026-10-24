@@ -3,7 +3,8 @@ extends Node
 ## A match's map as the server checks positions against it: the world every
 ## phone builds from the session's seed (WorldGen), as JSON on one line --
 ## monks, the Monastery's door, the spawns, which cells a hero may stand in,
-## and the reach and speed a hero has. The server runs this once per match.
+## each cell's level and the ramps between them, and the reach and speed a
+## hero has. The server runs this once per match.
 ##
 ##   godot --headless --path game res://tools/map_export.tscn -- <session id> <monks>
 
@@ -26,10 +27,22 @@ func _ready() -> void:
 	for i in walk.size():
 		if walk[i] == 0:
 			walk[i] = 48                             # "0"
+	# Each cell's level, a digit ("-" the sea), and the ramps: where a hero
+	# may change level (MapGrid.cell_ok, which the server follows).
+	var height := PackedByteArray()
+	height.resize(WorldGen.W * WorldGen.H)
+	height.fill(45)                                  # "-"
+	for c: Vector2i in gen.height:
+		height[c.y * WorldGen.W + c.x] = 48 + int(gen.height[c])
+	var stairs: Array = []
+	for c: Vector2i in gen._g.stairs:
+		var st: Dictionary = gen._g.stairs[c]
+		stairs.append([c.x, c.y, int(st.low), bool(st.top)])
 	var at := func(p: Vector2) -> Array: return [p.x, p.y]
 	print(JSON.stringify({
 		"monks": gen.monks.map(at), "door": at.call(gen.door), "spawns": gen.spawns.map(at),
 		"w": WorldGen.W, "h": WorldGen.H, "tile": MapCfg.TILE, "walk": walk.get_string_from_ascii(),
+		"height": height.get_string_from_ascii(), "stairs": stairs,
 		"reach": MapCfg.INTERACT_RADIUS, "speed": MapCfg.PLAYER_SPEED,
 	}))
 	get_tree().quit(0)

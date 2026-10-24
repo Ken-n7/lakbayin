@@ -57,8 +57,13 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   machine needs Godot 4.6 and an imported `game/` (`godot --headless --path
   game --import` on a fresh checkout). If the map cannot be built the match
   goes on unchecked and the journal says `map for <sid> failed`.
-- Movement off the ground or too fast is dropped (`movement dropped: ...` in
-  the journal); answers and deposits need `p_at` by the monk / door.
+- Movement off the ground, up a cliff (levels are followed, ramps only) or
+  over the distance budget (5% over walking speed, 2 s banked) is dropped
+  (`movement dropped: ...` in the journal); answers and deposits need `p_at`
+  by the monk / door. `server/tests/test_server.py` replays the game's own
+  movement on real maps (`game/tools/walk_export.gd`) and needs every step
+  accepted: change the client's movement rules and that test says if the
+  server's copy (`cell_ok`, `level_at` in app.py) no longer agrees.
 - Test servers (`flow_shots.py`, `server/tests/run_godot.py`) set
   `LAKBAYIN_GODOT=` because their bots answer from anywhere;
   `FLOW_CHECKS=1 FLOW_SCENARIO=room FLOW_CLIENTS=3` runs a bot that walks

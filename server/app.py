@@ -47,11 +47,20 @@ SPECTATOR_DELAY_S = float(os.environ.get("LAKBAYIN_SPECTATOR_DELAY_S", 60))
 # (game/tools/map_export.gd). Empty turns the checks off -- for test servers
 # whose bots answer from anywhere, never for one players use.
 GODOT = os.environ.get("LAKBAYIN_GODOT", "godot")
-# A hero may cover this much more than PLAYER_SPEED says, and this long more
-# than the time since their last position: packets bunch up on a bad link.
-SPEED_SLACK = 1.25
-LAG_S = 1.5
+# A hero walks PLAYER_SPEED. Each has a budget of distance that refills at a
+# hair over that and holds BURST_S of walking -- packets bunch up on a bad
+# link -- and every step spends it: a speed hack drains it in seconds.
+SPEED_SLACK = 1.05
+BURST_S = 2.0
 PX_SLACK = 32.0
+# How finely a move is walked through, cell by cell, for the level rules.
+STEP_PX = 8.0
+# A rejoined hero starts again at their spawn: a jump there is no teleport.
+SPAWN_PX = 12.0
+# A server that restarts mid-match does not know where anyone is: it takes
+# each hero's next position as it comes. In the first seconds of a match
+# everyone is at their spawn.
+FRESH_S = 15.0
 # Reach is the client's INTERACT_RADIUS, from a hero who stopped a hair late.
 REACH_SLACK = 16.0
 
@@ -252,15 +261,65 @@ def make_session(state, who, custom):
 
 
 # --- Positions ----------------------------------------------------------------
+# A hero is followed through the match's map (game/tools/map_export.gd) with
+# the game's own rules (MapGrid.cell_ok, level_at): on ground, changing level
+# only on a ramp, never faster than they walk.
+def cell_of(mp, x, y):
+    return math.floor(x / mp["tile"]), math.floor(y / mp["tile"])
+
+
+def walkable(mp, c):
+    return 0 <= c[0] < mp["w"] and 0 <= c[1] < mp["h"] and mp["walk"][c[1] * mp["w"] + c[0]] == "1"
+
+
 def standable(mp, x, y):
     """A hero's feet may be at (x, y): a land cell, no cliff face."""
-    cx, cy = math.floor(x / mp["tile"]), math.floor(y / mp["tile"])
-    return 0 <= cx < mp["w"] and 0 <= cy < mp["h"] and mp["walk"][cy * mp["w"] + cx] == "1"
+    return walkable(mp, cell_of(mp, x, y))
 
 
-def reachable(mp, frm, at, dt):
-    """From `frm`, `dt` seconds ago, could a hero be at `at` by now?"""
-    return math.dist(frm, at) <= mp["speed"] * SPEED_SLACK * (max(dt, 0.0) + LAG_S) + PX_SLACK
+def height_of(mp, c):
+    if "height" not in mp:
+        return 0
+    h = mp["height"][c[1] * mp["w"] + c[0]] if walkable(mp, c) else "-"
+    return -1 if h == "-" else int(h)
+
+
+def stair_low(mp, c):
+    if "_stairs" not in mp:
+        mp["_stairs"] = {(x, y): low for x, y, low, _top in mp.get("stairs", [])}
+    return mp["_stairs"].get(c, -1)
+
+
+def cell_ok(mp, c, level, low):
+    """MapGrid.cell_ok: may a hero at `level`, on a ramp of lower level `low`
+    (-1 off one), step into cell `c`?"""
+    if not walkable(mp, c):
+        return False
+    st = stair_low(mp, c)
+    if st >= 0:
+        return level in (st, st + 1) or low == st or (low >= 0 and low + 1 == st)
+    h = height_of(mp, c)
+    return h in (low, low + 1) if low >= 0 else h == level
+
+
+def level_at(mp, c, was):
+    st = stair_low(mp, c)
+    return min(max(was, st), st + 1) if st >= 0 else height_of(mp, c)
+
+
+def walk_line(mp, frm, to, level):
+    """The level a hero ends on walking straight from `frm` to `to`, or None
+    if the way crosses a cliff, the sea, or a level's edge off a ramp."""
+    n = max(1, math.ceil(math.dist(frm, to) / STEP_PX))
+    prev = cell_of(mp, *frm)
+    for i in range(1, n + 1):
+        c = cell_of(mp, frm[0] + (to[0] - frm[0]) * i / n, frm[1] + (to[1] - frm[1]) * i / n)
+        if c != prev:
+            if not cell_ok(mp, c, level, stair_low(mp, prev)):
+                return None
+            level = level_at(mp, c, level)
+            prev = c
+    return level
 
 
 def point(v):
@@ -269,21 +328,60 @@ def point(v):
     return (float(v[0]), float(v[1])) if ok else None
 
 
-def anchor(s, who, mp, where):
-    """Where `who` last was, and when: their last accepted position, else
-    their team's spawn at the start of the match."""
-    if (s["id"], who) in where:
-        return where[(s["id"], who)]
-    team = [t["id"] for t in s["teams"]].index(s["members"][who]["team_id"])
-    return (*mp["spawns"][team], s["deadline"] - s["duration_s"])
+def cap(mp):
+    return mp["speed"] * SPEED_SLACK * BURST_S
+
+
+def spawn_of(s, who, mp):
+    return tuple(mp["spawns"][[t["id"] for t in s["teams"]].index(s["members"][who]["team_id"])])
+
+
+def hero(s, who, mp, where, now):
+    """Where `who` is as far as the server knows -- {x, y, level, t (their
+    clock), budget, at} with the budget refilled to now -- or None after a
+    restart, when nobody is known."""
+    st = where.get((s["id"], who))
+    if st is None:
+        if now - (s["deadline"] - s["duration_s"]) > FRESH_S:
+            return None
+        x, y = spawn_of(s, who, mp)
+        st = {"x": x, "y": y, "level": level_at(mp, cell_of(mp, x, y), 0), "t": -math.inf, "budget": cap(mp), "at": now}
+    budget = min(cap(mp), st["budget"] + mp["speed"] * SPEED_SLACK * (now - st["at"]))
+    return {**st, "budget": budget, "at": now}
 
 
 def moved_ok(s, who, mp, where, points, now):
-    """A movement packet a hero could have walked: every point on ground a
-    hero stands on, none further from where they last were than they could
-    have got since."""
-    x, y, t = anchor(s, who, mp, where)
-    return all(standable(mp, p[1], p[2]) and reachable(mp, (x, y), (p[1], p[2]), now - t) for p in points)
+    """A movement packet a hero could have walked, from where they were: on
+    ground, levels changed only on ramps, within their budget. Taken as
+    where they are if so; nothing changes if not."""
+    st = hero(s, who, mp, where, now)
+    if st is None:                                   # a restart: start from here
+        if not all(standable(mp, p[1], p[2]) for p in points):
+            return False
+        x, y = points[-1][1], points[-1][2]
+        where[(s["id"], who)] = {"x": x, "y": y, "level": level_at(mp, cell_of(mp, x, y), 0), "t": points[-1][0], "budget": cap(mp), "at": now}
+        return True
+    # A packet repeats the end of the last one; the hero's clock says which
+    # points are new. A clock far behind is a restarted app: all are new.
+    x, y, level, budget = st["x"], st["y"], st["level"], st["budget"]
+    fresh = [p for p in points if p[0] > st["t"]]
+    if not fresh and points[-1][0] < st["t"] - 1.0:
+        fresh = points
+        # Rejoined: their hero starts again at their spawn. Only then -- a
+        # walk past the spawn must not top the budget up.
+        home = spawn_of(s, who, mp)
+        if math.dist((fresh[0][1], fresh[0][2]), home) <= SPAWN_PX:
+            x, y, level, budget = *home, level_at(mp, cell_of(mp, *home), 0), cap(mp)
+    if not fresh:
+        return True
+    for _t, px, py in fresh:
+        budget -= math.dist((x, y), (px, py))
+        level = walk_line(mp, (x, y), (px, py), level) if budget >= 0 and standable(mp, px, py) else None
+        if level is None:
+            return False
+        x, y = px, py
+    where[(s["id"], who)] = {**st, "x": x, "y": y, "level": level, "t": fresh[-1][0], "budget": budget}
+    return True
 
 
 def placed_ok(s, who, mp, where, name, body, now):
@@ -293,9 +391,9 @@ def placed_ok(s, who, mp, where, name, body, now):
     require(at, "Where are you standing?", 400)
     target = mp["door"] if name == "deposit" else mp["monks"][body["p_monk"]] if type(body.get("p_monk")) is int and 0 <= body["p_monk"] < len(mp["monks"]) else None
     require(target, "Invalid monk", 400)
-    require(math.dist(at, target) <= mp["reach"] + REACH_SLACK, "Walk up to it first", 403)
-    x, y, t = anchor(s, who, mp, where)
-    require(standable(mp, *at) and reachable(mp, (x, y), at, now - t), "Walk up to it first", 403)
+    require(math.dist(at, target) <= mp["reach"] + REACH_SLACK and standable(mp, *at), "Walk up to it first", 403)
+    st = hero(s, who, mp, where, now)
+    require(st is None or math.dist(at, (st["x"], st["y"])) <= st["budget"] + PX_SLACK, "Walk up to it first", 403)
 
 
 def snapshot(store, s):
@@ -907,16 +1005,15 @@ def create_app(db_path=None):
                         require(isinstance(paths, list) and len(paths) == 1 and isinstance(paths[0], dict) and paths[0].get("id") == peer["who"] and not data.get("r"), "Cannot move another player")
                         points = paths[0].get("p", [])
                         require(isinstance(points, list) and 1 <= len(points) <= 80 and all(isinstance(p, list) and len(p) == 3 and all(type(v) in (int, float) and math.isfinite(v) and abs(v) < 1e12 for v in p) for p in points), "Invalid movement", 400)
-                        # Off the ground, or faster than a hero walks: not
-                        # passed on, not taken as where they are. Dropped,
-                        # not punished -- a bad link bunches honest packets.
+                        # Off the ground, up a cliff, or faster than a hero
+                        # walks: not passed on, not taken as where they are.
+                        # Dropped, not punished -- a bad link bunches packets.
                         mp = await map_of(s)
                         if mp:
                             now = time.time()
                             if not moved_ok(s, peer["who"], mp, where, points, now):
                                 print(f"movement dropped: {peer['who']} in {sid}", flush=True)
                                 continue
-                            where[(sid, peer["who"])] = (points[-1][1], points[-1][2], now)
                     else:
                         # Lobby broadcasts only ring a reload; DB rows remain authoritative.
                         require(topic == TOPIC and kind == "row", "Unsupported broadcast")

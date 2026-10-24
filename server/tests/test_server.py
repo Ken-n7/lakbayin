@@ -1,6 +1,9 @@
 import json
+import math
 from pathlib import Path
 import shutil
+import subprocess
+import os
 import tempfile
 import time
 import unittest
@@ -154,14 +157,22 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rpc(2,'find_match').status_code,409)
         self.assertEqual(self.request(2,'POST','/rest/v1/members',{'session_id':mine,'profile_id':ids[2]}).status_code,409)
 
-    def fake_map(self, sid):
-        """A 40x40-cell map, all ground but one cell; monk 0 by Bughaw's
-        spawn, the rest far away; the door near too."""
-        walk=['1']*1600; walk[3*40+3]='0'
-        mp={'tile':32,'w':40,'h':40,'walk':''.join(walk),'reach':42,'speed':150,
-            'spawns':[[16,16],[1260,1260]],'door':[100,160],
-            'monks':[[48,48]]+[[1200,1200]]*9}
-        self.app.state.maps[sid]=mp
+    def fake_map(self, sid=None, spawn=(16,16)):
+        """40x40 cells of ground; a plateau (1) at x 20-29, y 5-14 with its
+        cliff along y 15, a ramp up its east side at x 30, rows 12-14; one
+        more cliff cell at (3,3). Monk 0 by the spawn, the rest far off."""
+        w=40; walk=['1']*1600; height=['0']*1600
+        for y in range(5,15):
+            for x in range(20,30):
+                height[y*w+x]='1'
+        for x in range(20,30):
+            walk[15*w+x]='0'
+        walk[3*w+3]='0'
+        mp={'tile':32,'w':w,'h':40,'walk':''.join(walk),'height':''.join(height),
+            'stairs':[[30,12,0,True],[30,13,0,True],[30,14,0,False]],'reach':42,'speed':150,
+            'spawns':[list(spawn),[1260,1260]],'door':[100,160],'monks':[[48,48]]+[[1200,1200]]*9}
+        if sid:
+            self.app.state.maps[sid]=mp
         return mp
 
     def test_positions_are_checked(self):
@@ -182,14 +193,96 @@ class ServerTest(unittest.TestCase):
             self.join_ws(one,0,topic); self.join_ws(mate,2,topic)
             one.send_json(snap([[1,20,20],[1.1,40,20]]))
             self.assertEqual(mate.receive_json()['payload']['payload']['p'][0]['p'][-1],[1.1,40,20])
-            self.assertEqual(self.app.state.where[(sid,me)][:2],(40,20))
+            here=self.app.state.where[(sid,me)]
+            self.assertEqual((here['x'],here['y']),(40,20))
             one.send_json(snap([[2,1200,1200]]))            # a teleport
-            one.send_json(snap([[2,112,112]]))              # a cliff face (cell 3,3)
-            one.send_json(snap([[2,60,20]]))                # a step
-            self.assertEqual(mate.receive_json()['payload']['payload']['p'][0]['p'][-1],[2,60,20])
-            self.assertEqual(self.app.state.where[(sid,me)][:2],(60,20))
+            one.send_json(snap([[2.1,112,112]]))            # a cliff face (cell 3,3)
+            one.send_json(snap([[2.2,60,20]]))              # a step
+            self.assertEqual(mate.receive_json()['payload']['payload']['p'][0]['p'][-1],[2.2,60,20])
             one.send_json({'topic':topic,'event':'heartbeat','payload':{},'ref':'hb'})
             self.assertEqual(one.receive_json()['event'],'phx_reply')   # dropped, not thrown out
+
+    def test_walks_are_followed(self):
+        """moved_ok on a clock of the test's own: levels, speed, lag, rejoins."""
+        T=1000.0
+        mp=self.fake_map(spawn=(976,560))                   # Bughaw starts below the ramp
+        s={'id':'S','teams':[{'id':'A'},{'id':'B'}],'members':{'u':{'team_id':'A'}},'deadline':T+900,'duration_s':900}
+        where={}
+        def walk(frm,to,t0,now0,speed=150,every=0.25,lag=0.05,bunch=0.0):
+            """Packets of 0.05 s samples walking frm->to at `speed`, sent every
+            `every` s (each repeating the last 0.15 s), arriving `lag` late --
+            the first `bunch` s of them all at once; [accepted], t, now."""
+            n=max(1,int(math.dist(frm,to)/(speed*0.05)))
+            pts=[[t0+i*0.05,frm[0]+(to[0]-frm[0])*i/n,frm[1]+(to[1]-frm[1])*i/n] for i in range(1,n+1)]
+            out=[]; k=0; per=int(every/0.05)
+            while k<len(pts):
+                batch=pts[max(0,k-3):k+per]; k+=per
+                at=max(batch[-1][0],t0+bunch)
+                out.append(appmod.moved_ok(s,'u',mp,where,batch,now0+at-t0+lag))
+            return out, pts[-1][0], now0+pts[-1][0]-t0+lag
+        foot=(976,560); top=(976,400); onto=(944,400)
+        # Up the ramp onto the plateau, and around on it: all of it walked.
+        ok,t,now=walk(foot,top,0.0,T)
+        self.assertTrue(all(ok)); ok2,t,now=walk(top,onto,t,now); self.assertTrue(all(ok2))
+        self.assertEqual(where[('S','u')]['level'],1)
+        ok3,t,now=walk(onto,(700,250),t,now); self.assertTrue(all(ok3))
+        # Off the plateau's west edge: no ramp there.
+        self.assertFalse(all(walk((700,250),(600,250),t,now)[0]))
+        # Up the cliff from the ground below it: refused.
+        where.clear()
+        ok,t,now=walk(foot,(800,560),0.0,T); self.assertTrue(all(ok))
+        self.assertFalse(all(walk((800,560),(800,400),t,now)[0]))
+        # Round the ramp to the plateau's east side, then in over its edge: refused.
+        where.clear()
+        ok,t,now=walk(foot,(1100,560),0.0,T); ok2,t,now=walk((1100,560),(1100,300),t,now)
+        self.assertTrue(all(ok+ok2))
+        self.assertFalse(all(walk((1100,300),(900,300),t,now)[0]))
+        # Speed: a long walk at walking pace is all taken; a sustained 15%
+        # boost runs dry (in about 20 s); two seconds of packets bunched by
+        # lag are fine.
+        legs=[(foot,(976,1250)),((976,1250),(100,1250)),((100,1250),(100,600)),((100,600),(900,600))]*2
+        for speed,honest in ((150,True),(172.5,False)):
+            where.clear(); t,now,got=0.0,T,[]
+            for a,b in legs:
+                ok,t,now=walk(a,b,t,now,speed=speed); got+=ok
+            self.assertEqual(all(got),honest,speed)
+            if not honest:
+                self.assertTrue(all(got[:40]),'not straight away')
+        where.clear()
+        ok,t,now=walk(foot,(976,1100),0.0,T,bunch=2.0)
+        self.assertTrue(all(ok))
+        # A rejoined app: its clock starts again, its hero at the spawn.
+        where.clear()
+        ok,t,now=walk(foot,(976,1200),0.0,T)
+        self.assertTrue(appmod.moved_ok(s,'u',mp,where,[[0.5,976,560],[0.6,976,575]],now+3))
+        # A restarted server, a minute in: whoever turns up, wherever they are on ground.
+        self.assertTrue(appmod.moved_ok(s,'u',mp,{},[[90,300,300]],T+60))
+        self.assertFalse(appmod.moved_ok(s,'u',mp,{},[[90,112,112]],T+60))
+
+    @unittest.skipUnless(shutil.which('godot'), 'needs Godot')
+    def test_honest_walks_on_real_maps_are_all_taken(self):
+        """The game's own movement (tools/walk_export) from the spawn to every
+        monk and the door on four generated maps, replayed as the phone sends
+        it: the server follows every step, ramps and all."""
+        sessions=['walk-a','walk-b','walk-c','walk-d']
+        env={**os.environ,'LAKBAYIN_SERVER_URL':'https://offline.invalid','SUPABASE_URL':'https://offline.invalid'}
+        run=lambda tool,*args: [json.loads(l) for l in subprocess.run(['godot','--headless','--path',str(appmod.ROOT/'game'),
+            f'res://tools/{tool}.tscn','--',*args],capture_output=True,text=True,env=env,timeout=300).stdout.splitlines() if l.startswith('{')]
+        climbed=0
+        for got in run('walk_export',*sessions):
+            mp=run('map_export',got['session'],'10')[0]
+            T=1000.0
+            s={'id':got['session'],'teams':[{'id':'A'},{'id':'B'}],'members':{'u':{'team_id':'A'}},'deadline':T+900,'duration_s':900}
+            for walk in got['walks']:
+                self.assertTrue(walk['reached'],(got['session'],walk['to']))
+                where={}; top=0; pts=walk['samples']
+                for k in range(0,len(pts),5):
+                    batch=pts[max(0,k-3):k+5]
+                    ok=appmod.moved_ok(s,'u',mp,where,batch,T+batch[-1][0]+0.05)
+                    self.assertTrue(ok,(got['session'],walk['to'],batch[-1],where.get((s['id'],'u'))))
+                    top=max(top,where[(s['id'],'u')]['level'])
+                climbed+=top>0
+        self.assertGreater(climbed,3,'walks that went up a ramp')
 
     @unittest.skipUnless(shutil.which('godot'), 'needs Godot')
     def test_the_real_map_is_built_and_checked(self):

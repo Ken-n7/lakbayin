@@ -316,11 +316,16 @@ func _shot(name: String) -> void:
 ## the Monastery and deposits. Prints each result for flow_shots.py's log.
 func _honest(screen: Control) -> void:
 	var grid: MapGrid = screen.grid
-	var near := 0
+	# The nearest monk up on a plateau if there is one: the walk takes a ramp.
+	var near := -1
+	var up := false
 	for i in screen.world.monks.size():
-		if screen.world.monks[i].position.distance_to(screen.player.position) \
-				< screen.world.monks[near].position.distance_to(screen.player.position):
+		var high: bool = grid.level_at(screen.world.monks[i].position, 0) > 0
+		if near < 0 or (high and not up) or (high == up and screen.world.monks[i].position.distance_to(screen.player.position)
+				< screen.world.monks[near].position.distance_to(screen.player.position)):
 			near = i
+			up = high
+	print("honest target on level %d" % grid.level_at(screen.world.monks[near].position, 0))
 	print("honest walk to monk %d: %s" % [near, await _walk(screen, screen.world.monks[near].position + Vector2(0, 26))])
 	print("honest answer: ", await screen.play.answer(near, _spelling(screen.play.words[near]), screen.player.position))
 	var far: int = (near + 5) % screen.world.monks.size()
@@ -349,17 +354,29 @@ func _walk(screen: Control, to: Vector2) -> String:
 	points.append(to)
 	var keys := ["move_left", "move_right", "move_up", "move_down"]
 	var t := 0.0
-	for p in points:
-		while screen.player.position.distance_to(p) > 6.0 and t < 90.0:
-			var d: Vector2 = p - screen.player.position
-			for k in keys:
-				Input.action_release(k)
-			if absf(d.x) > 3.0:
-				Input.action_press("move_right" if d.x > 0 else "move_left")
-			if absf(d.y) > 3.0:
-				Input.action_press("move_down" if d.y > 0 else "move_up")
-			await get_tree().process_frame
-			t += get_process_delta_time()
+	var next := 1
+	var other := false               # held against something: the other key
+	var was: Vector2 = screen.player.position
+	while t < 90.0 and next < points.size() + 1:
+		var last := next >= points.size() - 1
+		var aim: Vector2 = points[mini(next, points.size() - 1)]
+		if not last and MapGrid.cell_at(screen.player.position) == MapGrid.cell_at(aim):
+			next += 1
+			continue
+		if last and screen.player.position.distance_to(aim) < 4.0:
+			break
+		var d: Vector2 = aim - screen.player.position
+		for k in keys:
+			Input.action_release(k)
+		# One key at a time: on a ramp straight up or down follows its slope.
+		if (absf(d.x) > absf(d.y)) != other and absf(d.x) > 1.0:
+			Input.action_press("move_right" if d.x > 0 else "move_left")
+		else:
+			Input.action_press("move_down" if d.y > 0 else "move_up")
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		other = screen.player.position == was and not other
+		was = screen.player.position
 	for k in keys:
 		Input.action_release(k)
 	await _wait(0.5)
