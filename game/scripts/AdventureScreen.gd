@@ -241,8 +241,7 @@ func _aerial_zoom() -> float:
 
 # --- Online -------------------------------------------------------------------
 ## The socket: the session (the end), the members (who is here), the answers
-## (a teammate's greys a monk out); positions on the snapshot channel, and the
-## movement relay when one runs.
+## (a teammate's greys a monk out); positions on the snapshot channel.
 func _go_live() -> void:
 	var sid := play.session_id
 	var rt: Realtime = Net.realtime()
@@ -259,10 +258,6 @@ func _go_live() -> void:
 		rt.presence_changed.connect(_refresh_busy)
 	_publish_activity(-1)
 	rt.watch_positions([Realtime.snap_topic(sid)])
-	var relay := Net.relay()
-	if not relay.snap.is_connected(_on_relay_snap):
-		relay.snap.connect(_on_relay_snap)
-	relay.join(sid, "player", Game.hero_id)
 	_refresh_peers()
 
 
@@ -360,14 +355,10 @@ func _refresh_busy() -> void:
 
 
 ## Where this hero is, for everybody else's board: the path walked, sampled
-## every SAMPLE_S, sent as one bundle every BUNDLE_S on the match's snapshot
-## channel (a snapshot of one: there is no teacher to gather them) -- or to the
-## movement relay, sample by sample, when one is up. Peers plays it back.
+## every SAMPLE_S, sent as one bundle every Net.movement_interval() on the
+## match's snapshot channel. Peers plays it back.
 const SAMPLE_S := 0.05
-## Direct updates can be fast in a small room. Share a conservative project
-## message budget across active rooms instead of forcing every match to 1 Hz.
 const BUNDLE_S := 0.1
-const DIRECT_EVENTS_S := 60.0
 const BUNDLE_OVERLAP_S := 0.15
 const STILL_EVERY_S := 3.0
 var _path: Array = []
@@ -382,7 +373,6 @@ var _conn_clock := 0.0
 func _share_position(delta: float) -> void:
 	if play.practice or player == null:
 		return
-	var relay := Net.relay()
 	var now := Time.get_ticks_msec() / 1000.0
 	_sample_clock -= delta
 	if _sample_clock <= 0.0:
@@ -396,18 +386,9 @@ func _share_position(delta: float) -> void:
 			_moved_since_send = true
 		_sample_was_moving = moved
 		_path.append([now, x, y])
-	var members := (_peers.get("_roster") as Dictionary).size() + 1 if is_instance_valid(_peers) else 6
-	var every: float = Net.movement_interval() if Net.has_method("movement_interval") else direct_interval(Net.realtime().online, play.session_id, members)
-	every *= 2.0 if _conn == "weak" else 1.0
+	var every := Net.movement_interval() * (2.0 if _conn == "weak" else 1.0)
 	while _path.size() > 1 and now - float(_path[0][0]) > every + BUNDLE_OVERLAP_S:
 		_path.pop_front()
-	if relay.up:
-		_share_relay(delta, now, relay)
-		# Event viewers receive snapshots without joining the movement relay.
-		if not WatchFeed.has_viewers(Net.realtime().online, play.session_id):
-			_bundle_clock = 0.0
-			_moved_since_send = false
-			return
 	_bundle_clock += delta
 	if not ((_moved_since_send and _bundle_clock >= every) or _bundle_clock >= STILL_EVERY_S):
 		return
@@ -423,63 +404,6 @@ func _share_position(delta: float) -> void:
 	if sent:
 		_bundle_clock = 0.0
 		_moved_since_send = false
-
-
-## Includes sends and deliveries, plus viewers. Presence only changes the
-## traffic budget; authenticated membership still controls channel access.
-static func direct_interval(online: Dictionary, session: String, members: int) -> float:
-	var players := {}
-	var viewers := {}
-	for connections: Variant in online.values():
-		if not connections is Array:
-			continue
-		for meta: Variant in connections:
-			if not meta is Dictionary:
-				continue
-			var sid := str(meta.get("sid", ""))
-			if sid == "":
-				continue
-			if meta.get("where") == "map":
-				players[sid] = int(players.get(sid, 0)) + 1
-			elif meta.get("where") == "watch":
-				viewers[sid] = int(viewers.get(sid, 0)) + 1
-	players[session] = maxi(maxi(members, 2), int(players.get(session, 0)))
-	var deliveries := 0.0
-	for sid: String in players:
-		var n := int(players[sid])
-		deliveries += n * (n + int(viewers.get(sid, 0)))
-	return maxf(BUNDLE_S, ceilf(deliveries / DIRECT_EVENTS_S / SAMPLE_S) * SAMPLE_S)
-
-
-var _relay_clock := 0.0
-var _relay_since := 0.0
-var _relay_last := Vector2i(-32768, -32768)
-var _relay_moving := false
-
-
-## The relay's rate: a sample whenever the hero is somewhere new, one more
-## where they stop, and every STILL_EVERY_S standing.
-func _share_relay(delta: float, now: float, relay: RelayLink) -> void:
-	var step := 1.0 / float(maxi(relay.hz, 1))
-	_relay_clock -= delta
-	_relay_since += delta
-	if _relay_clock > 0.0:
-		return
-	_relay_clock = maxf(_relay_clock + step, 0.0)
-	var at := Vector2i(roundi(player.position.x), roundi(player.position.y))
-	var moved := at != _relay_last
-	if moved or _relay_moving or _relay_since >= STILL_EVERY_S:
-		relay.send_sample(now, at.x, at.y)
-		_relay_moving = moved
-		_relay_last = at
-		_relay_since = 0.0
-
-
-func _on_relay_snap(entries: Array) -> void:
-	if _peers == null or not is_instance_valid(_peers):
-		return
-	for e: Dictionary in entries:
-		_peers.move(str(e.get("id", "")), e)
 
 
 func _on_position(event: String, data: Dictionary) -> void:
@@ -1071,7 +995,6 @@ func finish(reason: String) -> void:
 	Sfx.play("victory_gate" if won == play.team else ("time_up" if reason == "time" else "ended"))
 	hud.set_prompt(head)
 	if not play.practice:
-		Net.relay().leave()
 		Net.realtime().watch_positions([])
 		Net.realtime().untrack()
 		Game.joined_session = ""

@@ -6,8 +6,8 @@ extends RefCounted
 ## Two ways in: Find Match, where the server deals the teams, or a custom
 ## room's CODE: the host makes the room and reads out the four characters,
 ## friends type them, then each picks a side and may switch until the host
-## presses Start -- after that sides are locked (the server enforces it; see
-## `team_rules` in `supabase/schema.sql`).
+## presses Start -- after that sides are locked (the server enforces it:
+## server/app.py, write_rows).
 
 const SESSIONS := "/rest/v1/sessions"
 const TEAMS := "/rest/v1/teams"
@@ -143,11 +143,9 @@ static func enter(code: String) -> Dictionary:
 		if mine.is_empty():
 			return {"error": "That room has already started.", "session": {}}
 		return found
-	# Insert if missing, keep if there: one request, not look-then-add.
-	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST,
-		MEMBERS + "?on_conflict=session_id,profile_id",
-		{"session_id": sid, "profile_id": Net.user_id},
-		"resolution=ignore-duplicates")
+	# Insert if missing, keep if there: the server makes a member once.
+	var made: Dictionary = await Net.rest(HTTPClient.METHOD_POST, MEMBERS,
+		{"session_id": sid, "profile_id": Net.user_id})
 	if made.error != "":
 		return {"error": made.error, "session": {}}
 	# Only a row that was actually inserted comes back, so an empty answer

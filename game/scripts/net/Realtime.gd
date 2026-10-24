@@ -1,12 +1,12 @@
 class_name Realtime
 extends Node
 
-## Supabase Realtime over `WebSocketPeer`. There is no Godot SDK, so this
-## speaks the Phoenix channel protocol directly: connect, join a topic with a
-## `postgres_changes` config, heartbeat, and decode what comes back.
+## The server's realtime socket over `WebSocketPeer`, in the Phoenix channel
+## protocol (server/app.py, /realtime/v1/websocket): connect, join a topic
+## with a `postgres_changes` config, heartbeat, and decode what comes back.
 ##
-## This is the one connection the session needs -- the admin's pause and the
-## live leaderboard both ride on it.
+## This is the one connection a match needs: row changes, who is online
+## (presence) and the heroes' positions all ride on it.
 ##
 ## Not an autoload: `Net.realtime()` makes it on first use and keeps it as a
 ## child, so a signed-out client holds no socket open.
@@ -55,7 +55,7 @@ static func logging() -> bool:
 	return log_traffic or OS.get_environment("RT_DEBUG") != ""
 
 
-## For NetReport: times the socket opened and closed, and when it first
+## For the dev panel's Network tab: times the socket opened and closed, and when it first
 ## opened (seconds since the app started; -1 not yet).
 var opens := 0
 var closes := 0
@@ -86,7 +86,7 @@ var _joined := false
 ## True once the server confirms the stream, not merely the join.
 var live := false
 ## Who is connected right now: user id -> every connection's announcement
-## from `track()` ({sid, where, name}), one per device. Supabase keeps this
+## from `track()` ({sid, where, name}), one per device. The server keeps this
 ## list and drops a phone from it by itself when its connection goes, which is
 ## the point -- nothing here has to notice a phone dying. Ask `where_is()`.
 var online := {}
@@ -106,13 +106,10 @@ const PRESENCE_GRACE_S := 5.0
 ## What this phone announces, re-sent after every (re)join.
 var _tracked := {}
 ## Position channels, beside the main topic: topic -> the ref of its join.
-## Heroes' positions are most of the traffic, and Supabase's free tier counts
-## every message delivered: on the one shared topic a class of 30 walking was
-## cut off ("Too many messages per second", MERGE_CHECKLIST "Server load").
-## So positions go through the teacher, battle-royale style (PosHub): each
-## phone sends on a channel of its own that only the teacher joins, and the
-## teacher sends everyone one snapshot of all of them. Broadcast only -- no
-## presence, no table changes.
+## Heroes' positions, the most of the traffic, go on a match's own snapshot
+## channel (snap_topic): each hero's path, which the server checks (moved_ok)
+## and passes to the match's players, and a minute late to its spectators.
+## Broadcast only -- no presence, no table changes.
 var _pos_topics := {}
 var _pos_live := {}
 
@@ -179,7 +176,7 @@ func open_socket() -> void:
 	if _down_at < 0.0:
 		_down_at = Time.get_ticks_msec() / 1000.0
 	var url := Net.url.replace("https://", "wss://").replace("http://", "ws://") \
-		+ "/realtime/v1/websocket?apikey=" + Net.anon_key + "&vsn=1.0.0"
+		+ "/realtime/v1/websocket?vsn=1.0.0"
 	_dialing = true
 	var at := await Dial.address(Dial.host_of(Net.url))
 	_dialing = false

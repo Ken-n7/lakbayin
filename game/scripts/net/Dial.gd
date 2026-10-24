@@ -6,14 +6,14 @@ extends RefCounted
 ## Godot tries a name's addresses one at a time, IPv6 first, and waits on each
 ## until the phone gives up -- 31s on Android -- before the next. On a network
 ## whose IPv6 is broken that is every request: found on a phone on a home WiFi
-## (DNS64, 2026-10-08) where Supabase's two IPv6 addresses never answered and
+## (DNS64, 2026-10-08) where a server's two IPv6 addresses never answered and
 ## its IPv4 ones did in 50ms. Every HTTP call hit its 12s timeout, the session
 ## could not be restored, and Realtime opened after 61s.
 ##
 ## So: dial every address at once, keep the first to answer. "" when Godot's
 ## own first choice is that one (the usual case -- nothing changes); otherwise
 ## the IPv4 address to connect to instead, with the name still used for the
-## certificate and the Host header (Supabase._call, PinnedSocket).
+## certificate and the Host header (Backend._call, PinnedSocket).
 
 const RACE_S := 4.0
 ## How much longer the first address gets once another has answered.
@@ -23,7 +23,8 @@ const GRACE_S := 0.3
 ## a request that cannot get through forgets, and the next one dials again.
 static var _picked := {}
 static var _dialing := {}
-## host -> what the last dial saw: {addrs, pick, ms, resolve_ms}. For NetReport.
+## host -> what the last dial saw: {addrs, pick, ms, resolve_ms}. For the dev
+## panel's Network tab.
 static var last := {}
 ## Take the pinned IPv4 path even where nothing is broken: the dev panel's
 ## "Force IPv4" switch, and `NUMX_DIAL=v4` for scripts.

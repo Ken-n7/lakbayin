@@ -1,5 +1,5 @@
 extends TestCase
-## Realtime and relay regressions that do not need a match on screen; all
+## Realtime regressions that do not need a match on screen; all
 ## services stay local/offline.
 
 class Student extends "res://scripts/TeamNameScreen.gd":
@@ -37,9 +37,7 @@ class RoomPreview extends "res://scripts/RoomScreen.gd":
 func _ready() -> void:
 	backup_save()
 	var was_url := Net.url
-	var was_key := Net.anon_key
 	Net.url = "http://127.0.0.1:1"
-	Net.anon_key = "test"
 	Net.access_token = "test"
 	Net.user_id = "alice"
 	_private_movement()
@@ -52,9 +50,7 @@ func _ready() -> void:
 	await _records_view()
 	_account_change()
 	Net.realtime().close_socket()
-	Net.relay().leave()
 	Net.url = was_url
-	Net.anon_key = was_key
 	Net.access_token = ""
 	Net.user_id = ""
 	Game.abandon_adventure()
@@ -153,17 +149,10 @@ func _lobby_reconnect() -> void:
 
 
 func _account_change() -> void:
-	var link := Net.relay()
-	link.join("s1", "player")
-	link.set("_ticket", "alice-ticket")
-	link.set("_ticket_of", "s1|player")
-	link.set("_ticket_user", "alice")
-	link.set("_ticket_at", Time.get_ticks_msec() / 1000.0)
+	Net.username = "alice"
 	Net.sign_out()
-	Net.user_id = "bob"
-	Net.access_token = "bob-token"
-	link.join("s1", "player")
-	check("logout discards the previous player's relay ticket", link.get("_ticket") == "" and link.get("_ticket_user") == "")
+	check("logout forgets the previous player", Net.access_token == "" and Net.user_id == ""
+		and Net.username == "" and not FileAccess.file_exists(Net.SESSION_PATH))
 
 
 func _monk_activity() -> void:
@@ -223,20 +212,10 @@ func _monk_activity() -> void:
 	rt.set("_ws", direct)
 	rt.set("_state", WebSocketPeer.STATE_OPEN)
 	rt.set("_pos_live", {Realtime.snap_topic("s1"): true})
-	var relay := Net.relay()
-	var fast := Socket.new()
-	relay.set("_ws", fast)
-	relay.set("_role", "player")
-	relay.up = true
 	rt.online.clear()
 	adv._share_position(3.0)
-	check("relay players avoid duplicate direct broadcasts without viewers", direct.messages.is_empty() and fast.samples > 0)
-	rt.online = {"viewer": [{"sid": "s1", "where": "watch"}]}
-	adv._share_position(3.0)
-	check("relay players also deliver positions to event viewers", direct.messages.size() == 1
+	check("positions go out on the match's own channel", direct.messages.size() == 1
 		and direct.messages[0].event == "broadcast")
-	relay.set("_ws", null)
-	relay.up = false
 	rt.set("_ws", previous_socket)
 	rt.set("_state", previous_state)
 	rt.close_socket()
@@ -374,15 +353,6 @@ func _records_view() -> void:
 
 
 func _direct_movement() -> void:
-	var script := preload("res://scripts/AdventureScreen.gd")
-	check("1v1 movement can publish every 100ms", is_equal_approx(script.direct_interval({}, "s1", 2), 0.1))
-	check("3v3 movement respects the shared traffic budget", is_equal_approx(script.direct_interval({}, "s1", 6), 0.6))
-	var online := {"a":[{"sid":"s1","where":"map"}],"b":[{"sid":"s1","where":"map"}],
-		"c":[{"sid":"s2","where":"map"}],"d":[{"sid":"s2","where":"map"}],
-		"e":[{"sid":"s3","where":"map"}],"f":[{"sid":"s3","where":"map"}]}
-	check("simultaneous rooms share the direct message budget", is_equal_approx(script.direct_interval(online, "s1", 2), 0.2))
-	online = {"watchers":[{"sid":"s1","where":"watch"},{"sid":"s1","where":"watch"}],"bad":false}
-	check("viewer deliveries are included in the budget", is_equal_approx(script.direct_interval(online,"s1",2),0.15))
 	check("fast direct updates get a shorter playback buffer", is_equal_approx(Peers.direct_buffer({"cadence":0.1}),0.15))
 	check("old senders keep a compatible playback buffer", Peers.direct_buffer({}) == Peers.LAG_START)
 	check("malformed cadence cannot set unbounded delay", Peers.direct_buffer({"cadence":INF}) == Peers.LAG_START
@@ -421,7 +391,7 @@ func _direct_movement() -> void:
 	adv._share_position(0.1)
 	check("a movement stop is sent before the idle heartbeat", socket.messages.size()==1)
 	var packet: Dictionary=socket.messages[0].payload.payload.p[0]
-	check("direct packets carry timestamped paths and cadence", packet.p is Array and is_equal_approx(float(packet.cadence),Net.movement_interval() if Net.has_method("movement_interval") else 0.1)
+	check("direct packets carry timestamped paths and cadence", packet.p is Array and is_equal_approx(float(packet.cadence),Net.movement_interval())
 		and packet.p[-1][1]==packet.p[-2][1])
 	socket.messages.clear()
 	adv._share_position(0.1)

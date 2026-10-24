@@ -143,7 +143,7 @@ class Store:
 
     def profile(self, who):
         row = self.db.execute("select id,username from users where id=?", (who,)).fetchone()
-        return {**dict(row), "role": "player"} if row else {}
+        return dict(row) if row else {}
 
     def session(self, who):
         token = secrets.token_urlsafe(32)
@@ -538,10 +538,6 @@ def rpc(store, state, who, name, body, place=None):
 def read_rows(store, state, who, table, params):
     if table == "profiles":
         return [store.profile(who)]
-    if table == "session_relays":
-        return []
-    if table == "relay":
-        return [{"id": 1, "url": None, "hz": 20}]
     if table == "match_config":
         return [state["config"]]
     sid = params.get("session_id", params.get("id", "")).removeprefix("eq.")
@@ -718,8 +714,7 @@ def create_app(db_path=None):
             "--", s["id"], str(len(s["words"])), stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             # Offline: the game's autoloads must not sign in or dial anyone.
-            env={**os.environ, "LAKBAYIN_SERVER_URL": "https://offline.invalid",
-                 "SUPABASE_URL": "https://offline.invalid", "SUPABASE_ANON_KEY": "offline"})
+            env={**os.environ, "LAKBAYIN_SERVER_URL": "https://offline.invalid"})
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), 60)
         except asyncio.TimeoutError:

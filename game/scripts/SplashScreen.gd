@@ -88,7 +88,7 @@ func skip() -> void:
 	# the tools' own file, and a screenshot tool should not open signed in as it.
 	# No line is not "signed out": wait here and try again, rather than show a
 	# signed-in student the Sign In form (where signing in would fail too).
-	if (not Net.signed_in() or Net.role == "") and Game.profile_suffix() != "-tools":
+	if (not Net.signed_in() or Net.username == "") and Game.profile_suffix() != "-tools":
 		var tries := 0
 		var err: String = await Net.restore_session()
 		while err == Net.NO_CONNECTION:
@@ -104,7 +104,7 @@ func skip() -> void:
 			err = await Net.restore_session()
 	if not is_inside_tree():
 		return
-	if not Net.signed_in() or Net.role == "":
+	if not Net.signed_in() or Net.username == "":
 		main.open("login")
 	else:
 		main.open("home")

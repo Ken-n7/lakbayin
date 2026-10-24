@@ -5,7 +5,7 @@ extends RefCounted
 ## naming the server by its host name -- for a network where Godot's own
 ## WebSocketPeer would wait a minute on dead addresses first (see Dial).
 ## WebSocketPeer cannot do this itself: given an address it sends that as
-## the Host, and Supabase's front door (Cloudflare) turns it away.
+## the Host, and the server's front door (Cloudflare) turns it away.
 ##
 ## Only what Realtime uses of a WebSocketPeer, with the same names and the
 ## same WebSocketPeer.STATE_* values, so Realtime takes either.

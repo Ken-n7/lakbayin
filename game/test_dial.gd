@@ -25,8 +25,8 @@ func _run() -> void:
 
 
 func _choice() -> void:
-	assert(Dial.host_of("https://abc.supabase.co") == "abc.supabase.co")
-	assert(Dial.host_of("wss://abc.supabase.co:8443/realtime/v1?x=1") == "abc.supabase.co")
+	assert(Dial.host_of("https://server.lakbayin.space") == "server.lakbayin.space")
+	assert(Dial.host_of("wss://server.lakbayin.space:8443/realtime/v1?x=1") == "server.lakbayin.space")
 	assert(Dial.host_of("http://127.0.0.1:4000") == "127.0.0.1")
 	var all := ["64:ff9b::6812:260a", "64:ff9b::ac40:95f6", "104.18.38.10", "172.64.149.246"]
 	assert(Dial.choose(all, "64:ff9b::6812:260a") == "", "the first answers: connect by name")

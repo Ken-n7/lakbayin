@@ -266,7 +266,7 @@ class ServerTest(unittest.TestCase):
         monk and the door on four generated maps, replayed as the phone sends
         it: the server follows every step, ramps and all."""
         sessions=['walk-a','walk-b','walk-c','walk-d']
-        env={**os.environ,'LAKBAYIN_SERVER_URL':'https://offline.invalid','SUPABASE_URL':'https://offline.invalid'}
+        env={**os.environ,'LAKBAYIN_SERVER_URL':'https://offline.invalid'}
         run=lambda tool,*args: [json.loads(l) for l in subprocess.run(['godot','--headless','--path',str(appmod.ROOT/'game'),
             f'res://tools/{tool}.tscn','--',*args],capture_output=True,text=True,env=env,timeout=300).stdout.splitlines() if l.startswith('{')]
         climbed=0

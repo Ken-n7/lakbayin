@@ -224,8 +224,8 @@ func _run() -> void:
 	check("a real code has none", Teams.bad_chars("K7QM") == "")
 	# The game's alphabet and the server's must be one string, or the game
 	# would refuse codes the server hands out.
-	var schema := FileAccess.get_file_as_string(
-		ProjectSettings.globalize_path("res://") + "../supabase/schema.sql")
-	check("the code alphabet matches session_code() in schema.sql",
-		schema.contains("abc text := '%s';" % Teams.CODE_CHARS))
+	var server := FileAccess.get_file_as_string(
+		ProjectSettings.globalize_path("res://") + "../server/app.py")
+	check("the code alphabet matches the server's CODES",
+		server.contains('CODES = "%s"' % Teams.CODE_CHARS))
 	completed = true

@@ -30,7 +30,7 @@ boot_splash/show_image=false
 
 Game="*res://scripts/Game.gd"
 ; Authoritative self-hosted backend.
-Net="*res://scripts/net/SelfHosted.gd"
+Net="*res://scripts/net/Backend.gd"
 
 [display]
 

@@ -76,7 +76,7 @@ func _submit() -> void:
 
 	_go.disabled = true
 	_go.text = "Registering..."
-	var err: String = await Net.sign_up("", user, _pass.text, "player")
+	var err: String = await Net.sign_up(user, _pass.text)
 	_go.disabled = false
 	_go.text = "Register"
 	if err != "":

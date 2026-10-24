@@ -45,7 +45,7 @@ var time_left := 0.0:
 		_deadline = now() + v
 var _deadline := 0.0
 ## Server time minus this device's clock, from the `Date` on every reply (see
-## Supabase.gd). Phones disagree by seconds to minutes; a deadline read against
+## Backend.gd). Phones disagree by seconds to minutes; a deadline read against
 ## each one's own clock gave each a different countdown.
 var clock_offset := 0.0
 ## The aerial view before the start holds Practice's clock. Unpausing starts

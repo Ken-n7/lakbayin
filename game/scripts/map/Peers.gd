@@ -48,24 +48,6 @@ const LAG_MAX := 1.3
 const LAG_GROW := 0.15
 const LAG_SHRINK := 0.05
 const LAG_SETTLE_S := 5.0
-## Through the movement relay (RelayLink: data marked `fast`, a sample every
-## 1/10-1/20s with nothing between it and here but the network) the buffer
-## only has to cover the network's jitter, not a third of a second of
-## waiting. A player's data counts as fast for FAST_HOLD_S after the last
-## fast sample, so a phone that drops back to the hub path changes over once,
-## not on every snapshot. Tuned against the relay load tests (SPECS), then on
-## two phones (2026-10-09): mobile data's hiccups kept ~0.3s of buffer, half
-## the delay seen. So a message up to FAST_DRY_S late does not grow it -- the
-## hero walks on along their last step meanwhile (CARRY_S) and glides back
-## onto the real path if they turned (GLIDE_PX_S) -- and FAST_SETTLE_S calm
-## takes it down a step.
-const FAST_LAG_START := 0.15
-const FAST_LAG_MIN := 0.1
-const FAST_LAG_MAX := 0.8
-const FAST_LAG_GROW := 0.1
-const FAST_HOLD_S := 2.0
-const FAST_DRY_S := 0.1
-const FAST_SETTLE_S := 2.0
 ## A correction never moves a hero faster than this, three times walking pace:
 ## walking itself, catching up included, is never held back.
 const GLIDE_PX_S := 3.0 * MapCfg.PLAYER_SPEED
@@ -103,7 +85,7 @@ func set_team_order(team_ids: Array) -> void:
 
 
 func _init() -> void:
-	add_to_group("peers")          # NetReport reads the playback buffer
+	add_to_group("peers")          # the dev panel's Network tab reads the playback buffer
 	# Y-sorted with everything else, so a hero behind a tower is behind it.
 	y_sort_enabled = true
 
@@ -195,23 +177,14 @@ func move(id: String, data: Dictionary) -> void:
 	while pts.size() > 2 and float(pts[-1][0]) - float(pts[0][0]) > KEEP_S:
 		pts.pop_front()
 	got["pts"] = pts
-	if bool(data.get("fast", false)):
-		got["fast_at"] = now
-	var fast := now - float(got.get("fast_at", -INF)) < FAST_HOLD_S
 	var base := direct_buffer(data)
 	var previous := float(got.get("direct_base", base))
 	got["direct_base"] = base
-	if not fast and got.has("lag") and not is_equal_approx(previous, base):
+	if got.has("lag") and not is_equal_approx(previous, base):
 		got["lag"] = clampf(float(got.lag) + base - previous, base, LAG_MAX)
-	if got.has("lag") and bool(got.get("fast", false)) != fast:
-		# On or off the relay: its own buffer, and the trip learnt afresh --
-		# the other path's fastest is no guide to this one's.
-		got["lag"] = FAST_LAG_START if fast else base
-		got.erase("offset")
-	got["fast"] = fast
 	got["offset"] = minf(float(got.get("offset", INF)), now - float(incoming[-1][0]))
 	if not got.has("lag"):
-		got["lag"] = FAST_LAG_START if fast else base
+		got["lag"] = base
 		got["settled"] = now
 		got["dry"] = false
 		got["face"] = "down"
@@ -295,7 +268,6 @@ func _process(delta: float) -> void:
 ## `lag` behind, and where that puts them on their path.
 static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 	var pts: Array = got.pts
-	var fast := bool(got.get("fast", false))
 	var newest := float(pts[-1][0])
 	var target: float = now - float(got.offset) - float(got.lag)
 	# First sight, or back after a long gap: start where it should be.
@@ -307,23 +279,21 @@ static func _play(got: Dictionary, now: float, delta: float) -> Dictionary:
 	var walking := _speed_at(pts, newest) > STILL_PX_S
 	# Out of path while walking: carry on CARRY_S, then wait for more. Standing,
 	# the clock keeps running -- they are not moving, so nothing is guessed --
-	# or a relay hero, sent only every few seconds while still, would start
-	# their next walk seconds in the past and take ages to catch up.
+	# or a hero, sent only every few seconds while still, would start their
+	# next walk seconds in the past and take ages to catch up.
 	if walking and next > newest + CARRY_S:
 		next = newest + CARRY_S
 	# Out of path while they were walking: their line is slower than allowed
-	# for. A little more buffer from now on -- once per running dry. Relay
-	# data has FAST_DRY_S of grace, walked on along the last step.
-	if next > newest + (FAST_DRY_S if fast else 0.0) and walking:
+	# for. A little more buffer from now on -- once per running dry.
+	if next > newest and walking:
 		if not bool(got.dry):
 			got["dry"] = true
-			got["lag"] = minf(float(got.lag) + (FAST_LAG_GROW if fast else LAG_GROW),
-				FAST_LAG_MAX if fast else LAG_MAX)
+			got["lag"] = minf(float(got.lag) + LAG_GROW, LAG_MAX)
 			got["settled"] = now
 	elif next <= newest:
 		got["dry"] = false
-	var least := FAST_LAG_MIN if fast else float(got.get("direct_base", LAG_MIN))
-	if now - float(got.settled) > (FAST_SETTLE_S if fast else LAG_SETTLE_S) and float(got.lag) > least:
+	var least := float(got.get("direct_base", LAG_MIN))
+	if now - float(got.settled) > LAG_SETTLE_S and float(got.lag) > least:
 		got["lag"] = maxf(float(got.lag) - LAG_SHRINK, least)
 		got["settled"] = now
 	got["play"] = next

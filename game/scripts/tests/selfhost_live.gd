@@ -35,7 +35,6 @@ func _process(delta:float) -> void:
 		var file:=FileAccess.open(output_dir.path_join("client-%d.json"%index),FileAccess.WRITE)
 		file.store_string(JSON.stringify(output))
 		Net.realtime().close_socket()
-		Net.relay().leave()
 		get_tree().quit(0 if seen and moved else 1)
 		return
 	if not screen.get_script().resource_path.ends_with("AdventureScreen.gd") or screen.get("hud")==null:return

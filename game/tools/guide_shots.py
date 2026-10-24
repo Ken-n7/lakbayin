@@ -21,8 +21,7 @@ CROPS = {
 }
 
 with tempfile.TemporaryDirectory() as tmp:
-    env = {**os.environ, 'SUPABASE_URL': 'https://offline.invalid', 'SUPABASE_ANON_KEY': 'x',
-           'LAKBAYIN_SERVER_URL': 'https://offline.invalid'}
+    env = {**os.environ, 'LAKBAYIN_SERVER_URL': 'https://offline.invalid'}
     subprocess.run(['godot', '--path', str(GAME), 'res://tools/guide_moments.tscn', '--', tmp],
                    env=env, check=True, timeout=180)
     OUT.mkdir(parents=True, exist_ok=True)

@@ -36,8 +36,7 @@ var _net := DevNetTools.new()
 var _clock := 0.0
 
 ## Remembered on this device (SAVE): the last tab on each kind of screen (the
-## map, the rest), the phone reports. The other
-## switches are for one test and reset with the app.
+## map, the rest). The switches are for one test and reset with the app.
 static var last_tabs := {}
 
 
@@ -230,12 +229,10 @@ func _screens() -> Control:
 		Net.sign_out()
 		main.open("login")))
 	col.add_child(DevUi.heading("This build"))
-	var relay: RelayLink = Net.get("_relay")
-	col.add_child(DevUi.note("v%s debug · profile %s · %s · relay %s" % [
+	col.add_child(DevUi.note("v%s debug · profile %s · %s" % [
 		ProjectSettings.get_setting("application/config/version", "?"),
 		Game.profile_suffix().trim_prefix("-") if Game.profile_suffix() != "" else "default",
-		Dial.host_of(Net.url) if Net.configured() else "offline",
-		relay.host if is_instance_valid(relay) and relay.host != "" else "none yet"], 9))
+		Dial.host_of(Net.url) if Net.configured() else "offline"], 9))
 	col.add_child(DevUi.note("Flags, env vars and tools: game/DEVTOOLS.md", 9))
 	return col
 
@@ -256,11 +253,9 @@ func _load() -> void:
 		return
 	var tabs: Variant = cfg.get_value("dev", "tabs", {})
 	last_tabs = tabs if tabs is Dictionary else {}
-	NetReport.enabled = bool(cfg.get_value("dev", "reports", NetReport.enabled))
 
 
 static func save_switches() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("dev", "tabs", last_tabs)
-	cfg.set_value("dev", "reports", NetReport.enabled)
 	cfg.save(SAVE)
