@@ -14,7 +14,7 @@ var _offset := 0.0
 var _status: Label
 var _time: Label
 var _totals: Array[Label] = []
-var _lists: Array[VBoxContainer] = []
+var _lists: Array[GridContainer] = []   # each side's Player / Carry / Deposited table
 var _map_box: SubViewportContainer
 var _map_view: SubViewport
 var _camera: Camera2D
@@ -25,7 +25,10 @@ var _roster := {}
 ## A room's own spectator (Lobby.SPECTATE), not a visitor with the code.
 var _spectator := false
 var _stats: PanelContainer   # the players' lists and the legend, behind Stats
-var _heads: Array[Label] = []  # each side's name and totals, over its list
+var _heads: Array[Label] = []  # each side's totals, under its name
+const STATS_SIDE_W := 286.0
+const STATS_HEAD_H := 64.0     # a side's name and totals
+const STATS_ROW_H := 30.0
 ## When the delayed feed reaches the start (local clock), while it has not.
 var _starts_at := 0.0
 ## The aerial view: where it looks and how near. `_fit` shows the whole world;
@@ -147,7 +150,7 @@ func _build_ui() -> void:
 	plate.border_color = Color(Pal.CREAM, 0.35)
 	plate.set_border_width_all(1)
 	plate.set_corner_radius_all(6)
-	plate.set_content_margin_all(10)
+	plate.set_content_margin_all(18)
 	_stats.add_theme_stylebox_override("panel", plate)
 	_stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stats.visible = false
@@ -157,12 +160,9 @@ func _build_ui() -> void:
 	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(centre)
 	centre.add_child(_stats)
-	var inside := VBoxContainer.new()
-	inside.add_theme_constant_override("separation", 6)
-	_stats.add_child(inside)
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 0)
-	inside.add_child(columns)
+	_stats.add_child(columns)
 	for i in 2:
 		if i == 1:
 			var line := ColorRect.new()          # the split between the sides
@@ -170,21 +170,28 @@ func _build_ui() -> void:
 			line.custom_minimum_size = Vector2(1, 0)
 			columns.add_child(line)
 		var side := VBoxContainer.new()
-		side.custom_minimum_size = Vector2(230, 0)
-		side.add_theme_constant_override("separation", 2)
+		side.custom_minimum_size = Vector2(STATS_SIDE_W, 0)
+		side.add_theme_constant_override("separation", 4)
 		columns.add_child(side)
-		var head := Art.title(Art.label(Match.TEAMS[i], Pal.H2, Peers.TEAM_COLOURS[i].lightened(0.35),
+		var head := Art.title(Art.label(Match.TEAMS[i], Pal.H1, Peers.TEAM_COLOURS[i].lightened(0.35),
 			HORIZONTAL_ALIGNMENT_CENTER))
 		Art.shadow(head)
 		side.add_child(head)
-		_heads.append(head)
-		var list := VBoxContainer.new()
-		list.add_theme_constant_override("separation", 1)
-		side.add_child(list)
-		_lists.append(list)
-	var legend := Art.label("Each monk: Blue's mark left, Red's right · ring = carried · solid = deposited",
-		Pal.TINY, Color(Pal.CREAM, 0.8), HORIZONTAL_ALIGNMENT_CENTER)
-	inside.add_child(legend)
+		var totals := Art.label("", Pal.SMALL, Color(Pal.CREAM, 0.85), HORIZONTAL_ALIGNMENT_CENTER)
+		side.add_child(totals)
+		_heads.append(totals)
+		# Player, carried, deposited: a table, so the numbers line up.
+		var grid := GridContainer.new()
+		grid.columns = 3
+		grid.add_theme_constant_override("h_separation", 10)
+		grid.add_theme_constant_override("v_separation", 6)
+		var pad := MarginContainer.new()
+		pad.add_theme_constant_override("margin_left", 14)
+		pad.add_theme_constant_override("margin_right", 14)
+		pad.add_theme_constant_override("margin_top", 6)
+		pad.add_child(grid)
+		side.add_child(pad)
+		_lists.append(grid)
 
 	resized.connect(_frame_map)
 	_map_box.gui_input.connect(_on_map_input)
@@ -255,20 +262,39 @@ func _apply(snapshot: Dictionary) -> void:
 			continue
 		var t: Dictionary = teams[i]
 		_totals[i].text = "%s %d · carry %d" % [t.name, int(t.deposited), int(t.carried)]
-		_heads[i].text = "%s  ·  %d deposited  ·  %d carried" % [t.name, int(t.deposited), int(t.carried)]
+		_heads[i].text = "%d deposited  ·  %d carried" % [int(t.deposited), int(t.carried)]
+		for h: String in ["Player", "Carry", "Deposited"]:
+			_lists[i].add_child(_cell(h, Color(Pal.CREAM, 0.6), h == "Player", Pal.SMALL))
 		for p: Dictionary in players:
 			if str(p.get("team_id", "")) != str(t.id):
 				continue
-			var label := Art.label("%s  ·  carry %d  ·  deposited %d" % [p.username, int(p.carried), int(p.deposited)],
-				Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-			label.clip_text = true
-			label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-			_lists[i].add_child(label)
+			_lists[i].add_child(_cell(str(p.username), Pal.CREAM, true))
+			_lists[i].add_child(_cell(str(int(p.carried)), Pal.CREAM, false))
+			_lists[i].add_child(_cell(str(int(p.deposited)), Pal.CREAM, false))
+	# One size for the match: as tall as the bigger side needs, so the board
+	# does not jump about, and never cramped.
+	var most := 1
+	for i in teams.size():
+		most = maxi(most, players.filter(func(p: Dictionary) -> bool:
+			return str(p.get("team_id", "")) == str(teams[i].id)).size())
+	_stats.custom_minimum_size = Vector2(STATS_SIDE_W * 2 + 1, STATS_HEAD_H + STATS_ROW_H * (most + 1)) \
+		+ Vector2(36, 36)
 	_pins.world = world
 	_pins.peers = peers
 	_pins.snapshot = data
 	_starts_at = Time.get_unix_time_from_system() + float(data.get("starts_in", 0))
 	_update_clock()
+
+
+## One cell of a side's table: the name left, the numbers centred.
+func _cell(text: String, colour: Color, name: bool, size := Pal.BODY) -> Label:
+	var l := Art.label(text, size, colour,
+		HORIZONTAL_ALIGNMENT_LEFT if name else HORIZONTAL_ALIGNMENT_CENTER)
+	l.custom_minimum_size = Vector2(110 if name else 64, STATS_ROW_H - 6)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	return l
 
 
 func _frame_map() -> void:

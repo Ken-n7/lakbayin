@@ -18,6 +18,7 @@ const PANEL := Vector2(360, 230)
 const LOBBY := Vector2(600, 330)
 ## A team box: its name, its count, and a line per player on it.
 const CARD := Vector2(132, 64)
+const ROOM_CARD_W := 180.0   # a room's two sides, wider than matchmaking's cards
 ## One line in a card, measured: a 20px label and the column's 1px gap. At 18
 ## a full team of 5 cut the card's last line ("Tap to join") in half.
 const NAME_LINE := 21.0
@@ -347,9 +348,16 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	# fit a 360px screen: then a card is its name, its count and one line of
 	# names, and the banner below says to tap one.
 	var compact := _lobby.teams.size() > 3
+	# A room's card says its count in the title, and above three a side (5 v 5)
+	# lists names on one line: room for the Spectators bar under it.
+	var room := not _matchmade()
+	if room and most > 3:
+		compact = true
 	# Every line, and the column's 4px inset top and bottom.
-	box.custom_minimum_size = Vector2(CARD.x,
-			NAME_LINE * (3 if compact else most + 3) + 8)
+	# A room has two sides only, so its cards are wider; at 5 a side their
+	# names wrap onto up to three lines instead of being cut off.
+	var lines := (4 if room else 3) if compact else most + (2 if room else 3)
+	box.custom_minimum_size = Vector2(ROOM_CARD_W if room else CARD.x, NAME_LINE * lines + 8)
 	box.focus_mode = Control.FOCUS_NONE
 	box.disabled = mine or locked
 	Ui.click(box)
@@ -365,13 +373,15 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	col.offset_bottom = -4.0
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(col)
-	var title := Art.label(str(t.name), Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
+	var title := Art.label("%s · %d" % [t.name, members.size()] if room else str(t.name),
+			Pal.LABEL, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(title)
-	var count := Art.label("%d joined" % members.size(), Pal.SMALL,
-			Pal.BRONZE if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(count)
+	if not room:
+		var count := Art.label("%d joined" % members.size(), Pal.SMALL,
+				Pal.BRONZE if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+		count.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(count)
 	# You first, so your own name is never the one cut off.
 	var ordered := members.filter(func(w: Dictionary) -> bool: return w.profile_id == Net.user_id) \
 		+ members.filter(func(w: Dictionary) -> bool: return w.profile_id != Net.user_id)
@@ -382,6 +392,10 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 				Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 		names.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		names.clip_text = true
+		if room:
+			names.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			names.max_lines_visible = 3
+			names.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		names.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		col.add_child(names)
 		if not box.disabled:
@@ -432,34 +446,24 @@ func _card_face(box: Button, mine: bool) -> void:
 func _spectator_box(locked: bool) -> Control:
 	var mine := _mine == Lobby.SPECTATE
 	var box := Button.new()
-	box.custom_minimum_size = Vector2(CARD.x * 2 + 10, NAME_LINE * 2 + 8)
+	box.custom_minimum_size = Vector2(ROOM_CARD_W * 2 + 10, NAME_LINE + 10)
 	box.focus_mode = Control.FOCUS_NONE
 	box.disabled = mine or locked
-	box.tooltip_text = "" if box.disabled else "Watch instead of playing"
+	box.tooltip_text = "" if box.disabled else "Watch from above instead of playing"
 	Ui.click(box)
 	_card_face(box, mine)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 1)
-	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	col.offset_left = 8.0
-	col.offset_top = 4.0
-	col.offset_right = -8.0
-	col.offset_bottom = -4.0
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(col)
-	var title := Art.label("Spectators — watch from above, never play", Pal.LABEL, Pal.TITLE,
-			HORIZONTAL_ALIGNMENT_CENTER)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(title)
+	# One line: what it is, who is in it, and what a tap does.
 	var who := _lobby.members_of(Lobby.SPECTATE).map(func(w: Dictionary) -> String:
 		return ("★ " if w.profile_id == Net.user_id else "") + str(w.username))
-	var foot := "YOU" if mine else "Locked" if locked else "Tap to watch instead"
-	var line := Art.label(("%s  ·  %s" % [", ".join(who), foot]) if not who.is_empty() else foot,
-			Pal.SMALL, Pal.BRONZE if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	var foot := "YOU" if mine else "Locked" if locked else "tap to watch instead"
+	var line := Art.label("Spectators  ·  %s" % ("%s  ·  %s" % [", ".join(who), foot] if not who.is_empty() else foot),
+			Pal.SMALL, Pal.BRONZE if mine else Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	line.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	line.clip_text = true
 	line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(line)
+	box.add_child(line)
 	if not box.disabled:
 		box.pressed.connect(func() -> void: _pick(Lobby.SPECTATE))
 	return box

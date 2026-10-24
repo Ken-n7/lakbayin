@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix='lakbayin-flow-') as tmp:
                 if c.get('/health').is_success: break
             except httpx.ConnectError: pass
             time.sleep(.05)
-        names = ['Malaya', 'Dalisay', 'Tala'][:int(os.environ.get('FLOW_CLIENTS', '2'))]
+        names = ['Malaya', 'Dalisay', 'Tala', 'Bayani', 'Ligaya', 'Mayumi', 'Amihan', 'Dakila', 'Hiraya', 'Kalinaw', 'Liwayway'][:int(os.environ.get('FLOW_CLIENTS', '2'))]
         accounts = []
         for n in names:
             pw = secrets.token_urlsafe(18)
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='lakbayin-flow-') as tmp:
                                   'res://tools/flow_shots.tscn', '--', f'--player={i}', f'--out={OUT}',
                                   f'--profile=flow-{i}'], cwd=ROOT, env=env, stdout=o, stderr=o)
             clients.append((p, o))
-        codes = [p.wait(timeout=120) for p, _ in clients]
+        codes = [p.wait(timeout=240) for p, _ in clients]
         for i in range(len(names)):
             print(f'--- client {i} exit {codes[i]}')
             print('\n'.join(l for l in (OUT / f'godot-{i}.log').read_text().splitlines()

@@ -44,7 +44,7 @@ func _ready() -> void:
 	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	# FLOW_LIVE: redraw every frame -- nested views (Watch's map) only stay
 	# current that way. Costlier; fine for the room scenario.
-	if OS.get_environment("FLOW_LIVE") != "":
+	if OS.get_environment("FLOW_LIVE") != "" and (index == 0 or OS.get_environment("FLOW_LIVE") == "all"):
 		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(vp)
 	main = load("res://scenes/Main.tscn").instantiate()
@@ -147,9 +147,11 @@ func _room_flow() -> void:
 		main.current.call("_pick", Lobby.SPECTATE)
 		await _wait(1.5)
 		await _shot("room_host")
+		# Everyone else on a side: N players, alternating Blue and Red.
+		var want := int(OS.get_environment("FLOW_CLIENTS")) - 1
 		await _until(func() -> bool:
 			var l: Lobby = main.current.get("_lobby")
-			return l.members_of(l.teams[0].id).size() > 0 and l.members_of(l.teams[1].id).size() > 0, 40.0)
+			return l.members_of(l.teams[0].id).size() + l.members_of(l.teams[1].id).size() >= want, 90.0)
 		await _wait(2.0)
 		await _shot("room_full")
 		main.current.call("_start")
@@ -183,12 +185,12 @@ func _room_flow() -> void:
 			await _shot("spectator_end")
 	else:
 		await _until(func() -> bool: return FileAccess.file_exists(code_file), 40.0)
-		await _wait(float(index))
+		await _wait(float(index) * 0.7)
 		main.current.get("_code").text = FileAccess.get_file_as_string(code_file)
 		main.current.call("_enter")
 		await _until(func() -> bool: return main.current.get("_lobby").teams.size() == 2, 15.0)
 		await _wait(1.0)
-		main.current.call("_pick", main.current.get("_lobby").teams[index - 1].id)
+		main.current.call("_pick", main.current.get("_lobby").teams[(index - 1) % 2].id)
 		await _wait(2.0)
 		await _shot("room_player")
 		var screen := await _until_screen("AdventureScreen.gd", 60.0)
@@ -198,11 +200,11 @@ func _room_flow() -> void:
 			return
 		screen.call("skip_intro")
 		# Walk, so a spectator has movement to see.
-		Input.action_press("move_right" if index == 1 else "move_left")
+		Input.action_press("move_right" if index % 2 == 1 else "move_left")
 		await _wait(3.0)
 		await _shot("match")
 		await _wait(10.0)
-		Input.action_release("move_right" if index == 1 else "move_left")
+		Input.action_release("move_right" if index % 2 == 1 else "move_left")
 		if index == 1:
 			for i in screen.play.words.size():
 				await Monks.answer(screen.play.session_id, i, _spelling(screen.play.words[i]))

@@ -304,8 +304,10 @@ func _watch_view() -> void:
 	snapshot.session.state = "ended"
 	screen._apply(snapshot)
 	check("a finished spectator view stops showing an active countdown", screen.get("_time").text == "Final")
-	check("watch keeps individual carry and deposit counts visible", screen.get("_lists")[0].get_child_count() == 1
-		and str(screen.get("_lists")[0].get_child(0).text).contains("carry 1"))
+	# The Stats table: a heading row, then Player / Carry / Deposited per player.
+	var table: GridContainer = screen.get("_lists")[0]
+	check("watch keeps individual carry and deposit counts visible", table.get_child_count() == 6
+		and table.get_child(3).text == "Mate" and table.get_child(4).text == "1" and table.get_child(5).text == "1")
 	screen._on_position("snap", {"sid": "other", "p": [{"id": "mate", "x": 10, "y": 20}]})
 	screen._on_position("snap", {"sid": "", "p": [{"id": "stranger", "x": 10, "y": 20}]})
 	check("watch ignores foreign-session and non-roster movement", (screen.peers.get("_live") as Dictionary).is_empty())
