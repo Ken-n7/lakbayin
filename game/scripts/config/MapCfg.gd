@@ -14,6 +14,15 @@ const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
 ## past the world when the aerial view frames the whole height.
 const WATER_MARGIN := 20
 const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
+## Each level's grass, as the pack's guide suggests, so the heights read
+## apart: the ground, the plateaus, the hills on them.
+const LEVEL_COLORS := ["res://assets/terrain/tileset/Tilemap_color1.png",
+	"res://assets/terrain/tileset/Tilemap_color2.png",
+	"res://assets/terrain/tileset/Tilemap_color3.png"]
+## The guide's shadow under each raised level, one tile down.
+const SHADOW_SHEET := "res://assets/terrain/tileset/Shadow.png"
+const LEVEL_SHADOW_SCALE := 0.5      # the guide: three tiles of 64px, at our 0.5
+const LEVEL_SHADOW_ALPHA := 1.0
 
 ## The world, in cells. Much larger than the 640x360 canvas: finding the monks
 ## is half the game.

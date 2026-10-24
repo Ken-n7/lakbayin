@@ -5,7 +5,10 @@ extends Node
 ## each spawn. For checking the collision boxes against the art by eye.
 ## Windowed, like ui_shot:
 ##
-##   godot --path game res://tools/collision_shot.tscn -- <out.png> [seed]
+##   godot --path game res://tools/collision_shot.tscn -- <out.png> [seed | board]
+##
+## `board`: world_test's hand-drawn plateau and hill instead, painted, with a
+## hero and a tree on each level, to see the levels drawn and sorted.
 
 const K := 2
 
@@ -37,20 +40,25 @@ func _ready() -> void:
 	vp.size_2d_override_stretch = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(vp)
-	var world := MapWorld.new()
-	world.seed = int(args[1]) if args.size() > 1 else 1
-	vp.add_child(world)
-	world.build()
-	for c in world.cloud_bands:
-		c.visible = false
 	var hero: Node2D = load(MapCfg.HERO_SCENE).instantiate()
 	var box: RectangleShape2D = hero.get_node("Foot/Box").shape
 	var at: Vector2 = hero.get_node("Foot/Box").position
 	hero.free()
 	var o := Overlay.new()
-	o.grid = world.grid
-	for s in world.gen.spawns:
-		o.feet.append(Rect2(s + at - box.size * 0.5, box.size))
+	var world: Node2D
+	if args.size() > 1 and args[1] == "board":
+		world = _board(vp, o)
+	else:
+		var w := MapWorld.new()
+		w.seed = int(args[1]) if args.size() > 1 else 1
+		vp.add_child(w)
+		w.build()
+		for c in w.cloud_bands:
+			c.visible = false
+		o.grid = w.grid
+		for s in w.gen.spawns:
+			o.feet.append(Rect2(s + at - box.size * 0.5, box.size))
+		world = w
 	o.z_index = 100
 	world.add_child(o)
 	for i in 10:
@@ -58,4 +66,41 @@ func _ready() -> void:
 	await RenderingServer.frame_post_draw
 	vp.get_texture().get_image().save_png(out)
 	print("ok ", out)
+	# And as the player sees it.
+	o.visible = false
+	for i in 3:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	vp.get_texture().get_image().save_png(out.get_basename() + "_plain.png")
 	get_tree().quit(0)
+
+
+func _board(vp: SubViewport, o: Overlay) -> Node2D:
+	var world := Node2D.new()
+	world.y_sort_enabled = true
+	vp.add_child(world)
+	var grid: MapGrid = load("res://scripts/tests/world_test.gd").board()
+	var b := MapBuilder.new(world, grid)
+	b.build_terrain()
+	b.retile(grid.land.keys())
+	b.paint_levels()
+	o.grid = grid
+	var t := float(MapCfg.TILE)
+	# A hero on the ground under the cliff, on the plateau's rim over it, on
+	# the hill, on each ramp; trees under the cliff, on the rim, behind it.
+	for p in [Vector2(10.5, 11.6), Vector2(7.5, 9.9), Vector2(11.5, 6.9), Vector2(16.5, 9.5),
+			Vector2(13.5, 6.5), Vector2(5.5, 6.5)]:
+		var h: Node2D = load(MapCfg.HERO_SCENE).instantiate()
+		h.position = p * t
+		world.add_child(h)
+	var props := Node2D.new()
+	props.y_sort_enabled = true
+	world.add_child(props)
+	for d in [["Tree1", Vector2(8.5, 11.5)], ["Tree2", Vector2(13.5, 9.8)], ["Rock2", Vector2(10.5, 3.9)],
+			["Tree3", Vector2(11, 2.6)], ["Tree4", Vector2(3.5, 9.5)]]:
+		var prop: Node2D = load(MapCfg.PROP_SCENE % d[0]).instantiate()
+		prop.position = (d[1] as Vector2) * t
+		props.add_child(prop)
+	Decor.new(world, grid).solidify(props)
+	return world
+

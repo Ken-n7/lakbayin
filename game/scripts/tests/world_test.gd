@@ -133,7 +133,7 @@ func _ready() -> void:
 ## A board drawn by hand, 24x16 of ground: a plateau (1) at x 6-15, y 3-9,
 ## with a hill (2) on it at x 9-12, y 4-6; a ramp up the plateau's east side
 ## from the ground, another up the hill's from the plateau.
-func board() -> MapGrid:
+static func board() -> MapGrid:
 	var g := MapGrid.new()
 	for y in 16:
 		for x in 24:
