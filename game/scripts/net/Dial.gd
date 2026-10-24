@@ -47,7 +47,7 @@ static func address(host: String, port := 443) -> String:
 		# Tests: take the IPv4 path on a network where nothing is broken.
 		pick = _first_v4(all)
 	else:
-		pick = choose(all, await race(all, port, RACE_S))
+		pick = choose(all, await race(_reachable(all), port, RACE_S))
 	_picked[host] = pick
 	last[host] = {"addrs": all, "pick": pick, "ms": Time.get_ticks_msec() - t0, "resolve_ms": resolved_ms}
 	_dialing.erase(host)
@@ -127,6 +127,17 @@ static func race(addrs: Array, port: int, limit_s: float) -> String:
 	for t: Array in tries:
 		(t[1] as StreamPeerTCP).disconnect_from_host()
 	return winner
+
+
+## The addresses this device has a route to: no IPv6 ones unless it has an
+## internet IPv6 address of its own (2000::/3). Loopback, link-local (fe80::)
+## and a router's private ULA (fd..::) do not reach the internet. Dialing
+## from those fails at once, and Godot prints an ERROR for every address --
+## a laptop on IPv4-only WiFi filled its console with them.
+static func _reachable(all: Array) -> Array:
+	var v6 := Array(IP.get_local_addresses()).any(func(a: String) -> bool:
+		return ":" in a and a.length() > 0 and a[0] in "23")
+	return all if v6 else all.filter(func(a: Variant) -> bool: return _is_v4(str(a)))
 
 
 static func _resolve(host: String, tree: SceneTree) -> Array:

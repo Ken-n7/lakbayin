@@ -80,4 +80,4 @@ func _say(text: String) -> void:
 
 ## Back on the first screen is the way out of the app.
 func go_back() -> void:
-	get_tree().quit()
+	main.quit_game()

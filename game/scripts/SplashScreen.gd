@@ -111,4 +111,4 @@ func skip() -> void:
 
 
 func go_back() -> void:
-	get_tree().quit()
+	main.quit_game()

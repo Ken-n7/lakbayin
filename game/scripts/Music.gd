@@ -50,6 +50,11 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		p.volume_db = linear_to_db(0.0)
 		p.bus = BUS
+		# Let go of the song on the way out, or it outlives the engine at
+		# quit (Sfx's players do the same).
+		p.tree_exiting.connect(func() -> void:
+			p.stop()
+			p.stream = null)
 		add_child(p)
 		_players.append(p)
 	volume = load_setting("music", volume)

@@ -44,6 +44,8 @@ const OWN_SCENE := ["adventure", "home", "watch"]
 
 func _ready() -> void:
 	Art.apply_font_fallback()
+	# Closing the window goes through quit_game() too.
+	get_tree().auto_accept_quit = false
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	focus_mode = Control.FOCUS_ALL
 	backdrop = Backdrop.new()
@@ -193,12 +195,28 @@ func _process(_delta: float) -> void:
 ## `quit_on_go_back`), which mid-run throws away the adventure; screens that
 ## have somewhere to go back to say so with `go_back()`.
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		quit_game()
+		return
 	if what != NOTIFICATION_WM_GO_BACK_REQUEST:
 		return
 	if current != null and current.has_method("go_back"):
 		current.go_back()
 	else:
 		open("home")
+
+
+## Out of the app, the sound stopped first and a beat given for the audio
+## thread to let go of it: quit mid-song and the engine reports the song,
+## its playback and the last click as leaked.
+func quit_game() -> void:
+	for p: Node in find_children("*", "AudioStreamPlayer", true, false):
+		(p as AudioStreamPlayer).stop()
+		(p as AudioStreamPlayer).stream = null
+	# Time, not frames: a stopped playback fades out on the audio thread
+	# before it is let go, and frames can run far faster than that.
+	await get_tree().create_timer(0.15).timeout
+	get_tree().quit()
 
 
 ## Cheap fade between screens so pops and flashes are softer.

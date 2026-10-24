@@ -558,7 +558,7 @@ func _confirm_quit() -> void:
 	var stay := Ui.button("Stay", 110, Ui.H, Ui.SMALL)
 	stay.pressed.connect(dim.queue_free)
 	var quit := Ui.button("Quit", 110, Ui.H, Ui.SMALL_RED)
-	quit.pressed.connect(func() -> void: get_tree().quit())
+	quit.pressed.connect(func() -> void: main.quit_game())
 	row.add_child(stay)
 	row.add_child(quit)
 	box.add_child(row)
