@@ -37,6 +37,19 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 
 ## 3. State
 
+### Deferred: database backups (user chose to postpone, Oct 24)
+- `server/data/lakbayin.sqlite3` has **no automatic backup** and exists only
+  on this laptop. `python -m server.manage backup DEST` works when run by hand.
+- Agreed plan: a daily systemd user timer (03:00, `Persistent=true`) runs that
+  command into `~/Backups/lakbayin/` and keeps 14 days. It then uploads the
+  file to a private `lakbayin-backups` bucket in the old Supabase project
+  (`yvklwmtsvjgppnmtlede`) and keeps 30 days there.
+- The `service_role` key goes only in `~/.config/lakbayin/backup.env`
+  (mode 600), never in the repo; the user writes that file themselves.
+- Still to decide: encrypt backups with a passphrase before upload (they hold
+  password and token hashes). Free Supabase projects pause after about a week
+  without activity, so the script must log a clear error when uploads fail.
+
 ### Current: self-hosted server migration (Oct 24)
 - User changed architecture: all accounts, rules, state, records and realtime
   run on this machine, publicly reachable, not LAN-only. Username/password,
