@@ -13,7 +13,10 @@ with tempfile.TemporaryDirectory(prefix='lakbayin-flow-') as tmp:
     s = socket.socket(); s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]; s.close()
     url = f'http://127.0.0.1:{port}'
     env = {**os.environ, 'LAKBAYIN_DB': str(tmp / 'db.sqlite3'), 'LAKBAYIN_SERVER_URL': url,
-           'LAKBAYIN_TEST_INFO': str(tmp / 'info.json')}
+           'LAKBAYIN_TEST_INFO': str(tmp / 'info.json'),
+           # The bots answer monks from wherever they stand: no position checks,
+           # unless FLOW_CHECKS asks for them (the bot then walks).
+           'LAKBAYIN_GODOT': os.environ.get('LAKBAYIN_GODOT', 'godot') if os.environ.get('FLOW_CHECKS') else ''}
     log = open(OUT / 'server.log', 'w')
     server = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'server.app:create_app', '--factory',
                                '--host', '127.0.0.1', '--port', str(port)],

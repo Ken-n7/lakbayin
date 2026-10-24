@@ -413,6 +413,13 @@ The phone never decides an outcome. The server:
 - records which monks each team has answered
 - holds carried answers and records deposits, with their times
 - decides finishing, the end of the match and the ranking
+- checks where the heroes are (2026-10-24): it builds each match's map
+  itself, by running the game's own generator headless
+  (`game/tools/map_export.gd`), and drops any movement off the ground or
+  faster than a hero walks (with slack for a bad link: dropped, not
+  punished). An answer or a deposit says where the hero stands; it is
+  refused unless that is within reach of the monk or the door, on ground,
+  and where the hero's walk could have brought them
 
 ### 10.3 Data (sketch)
 

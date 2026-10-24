@@ -50,6 +50,22 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   password and token hashes). Free Supabase projects pause after about a week
   without activity, so the script must log a clear error when uploads fail.
 
+### Server checks positions (Oct 24)
+- The server runs **Godot** (`LAKBAYIN_GODOT`, else `godot` on PATH, else
+  `~/.local/bin/godot`, see `server/run.sh`) once per match on
+  `game/tools/map_export.tscn` to build that match's map, so the server
+  machine needs Godot 4.6 and an imported `game/` (`godot --headless --path
+  game --import` on a fresh checkout). If the map cannot be built the match
+  goes on unchecked and the journal says `map for <sid> failed`.
+- Movement off the ground or too fast is dropped (`movement dropped: ...` in
+  the journal); answers and deposits need `p_at` by the monk / door.
+- Test servers (`flow_shots.py`, `server/tests/run_godot.py`) set
+  `LAKBAYIN_GODOT=` because their bots answer from anywhere;
+  `FLOW_CHECKS=1 FLOW_SCENARIO=room FLOW_CLIENTS=3` runs a bot that walks
+  to a monk and the door for real with the checks on.
+- The dev panel's Answer Monk / teleport / fast walk are refused or dropped
+  by a checking server, as they should be.
+
 ### Current: self-hosted server migration (Oct 24)
 - User changed architecture: all accounts, rules, state, records and realtime
   run on this machine, publicly reachable, not LAN-only. Username/password,

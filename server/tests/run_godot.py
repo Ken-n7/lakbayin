@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='lakbayin-live-') as tmp:
     tmp=Path(tmp)
     sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close()
     url=f'http://127.0.0.1:{port}'
-    env={**os.environ,'LAKBAYIN_DB':str(tmp/'db.sqlite3'),'LAKBAYIN_SERVER_URL':url,'LAKBAYIN_TEST_INFO':str(tmp/'info.json'),'LAKBAYIN_TEST_OUTPUT':str(tmp)}
+    env={**os.environ,'LAKBAYIN_DB':str(tmp/'db.sqlite3'),'LAKBAYIN_SERVER_URL':url,'LAKBAYIN_TEST_INFO':str(tmp/'info.json'),'LAKBAYIN_TEST_OUTPUT':str(tmp),'LAKBAYIN_GODOT':''}  # bots answer from anywhere
     log=open(tmp/'server.log','w')
     server=subprocess.Popen([sys.executable,'-m','uvicorn','server.app:create_app','--factory','--host','127.0.0.1','--port',str(port),'--no-access-log'],cwd=ROOT,env=env,stdout=log,stderr=log)
     clients=[]

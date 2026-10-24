@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import time
 import unittest
@@ -12,6 +13,9 @@ from server.app import create_app, TOPIC
 
 class ServerTest(unittest.TestCase):
     def setUp(self):
+        # Position checks run Godot; the tests that want them say so.
+        self.addCleanup(setattr, appmod, 'GODOT', appmod.GODOT)
+        appmod.GODOT = ''
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / 'game.sqlite3'
         self.app = create_app(self.path)
@@ -149,6 +153,54 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rpc(2,'create_room').status_code,409)
         self.assertEqual(self.rpc(2,'find_match').status_code,409)
         self.assertEqual(self.request(2,'POST','/rest/v1/members',{'session_id':mine,'profile_id':ids[2]}).status_code,409)
+
+    def fake_map(self, sid):
+        """A 40x40-cell map, all ground but one cell; monk 0 by Bughaw's
+        spawn, the rest far away; the door near too."""
+        walk=['1']*1600; walk[3*40+3]='0'
+        mp={'tile':32,'w':40,'h':40,'walk':''.join(walk),'reach':42,'speed':150,
+            'spawns':[[16,16],[1260,1260]],'door':[100,160],
+            'monks':[[48,48]]+[[1200,1200]]*9}
+        self.app.state.maps[sid]=mp
+        return mp
+
+    def test_positions_are_checked(self):
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        self.fake_map(sid)
+        words=self.app.state.store.load()['sessions'][sid]['words']
+        answer=lambda n,i,at: self.rpc(n,'answer_monk',p_session=sid,p_monk=i,p_typed=words[i]['modern'],**({'p_at':at} if at else {}))
+        self.assertEqual(answer(0,0,None).status_code,400)
+        self.assertEqual(answer(0,0,[200,48]).status_code,403)       # a walk away, not by him
+        self.assertEqual(answer(0,1,[1200,1210]).status_code,403)    # by him, but no walk gets there yet
+        self.assertEqual(answer(0,0,[60,60]).json(),'correct')
+        self.assertEqual(self.rpc(0,'deposit',p_session=sid,p_at=[200,250]).status_code,403)
+        self.assertEqual(self.rpc(0,'deposit',p_session=sid,p_at=[100,150]).json(),1)
+        # Movement: walked, passed on; teleported or off the ground, dropped.
+        topic=TOPIC+':snap:'+sid; me=self.users[0]['user']['id']
+        snap=lambda pts: {'topic':topic,'event':'broadcast','payload':{'event':'snap','payload':{'sid':sid,'p':[{'id':me,'hero':1,'cadence':0.1,'p':pts}]}}}
+        with self.client.websocket_connect('/realtime/v1/websocket') as one, self.client.websocket_connect('/realtime/v1/websocket') as mate:
+            self.join_ws(one,0,topic); self.join_ws(mate,2,topic)
+            one.send_json(snap([[1,20,20],[1.1,40,20]]))
+            self.assertEqual(mate.receive_json()['payload']['payload']['p'][0]['p'][-1],[1.1,40,20])
+            self.assertEqual(self.app.state.where[(sid,me)][:2],(40,20))
+            one.send_json(snap([[2,1200,1200]]))            # a teleport
+            one.send_json(snap([[2,112,112]]))              # a cliff face (cell 3,3)
+            one.send_json(snap([[2,60,20]]))                # a step
+            self.assertEqual(mate.receive_json()['payload']['payload']['p'][0]['p'][-1],[2,60,20])
+            self.assertEqual(self.app.state.where[(sid,me)][:2],(60,20))
+            one.send_json({'topic':topic,'event':'heartbeat','payload':{},'ref':'hb'})
+            self.assertEqual(one.receive_json()['event'],'phx_reply')   # dropped, not thrown out
+
+    @unittest.skipUnless(shutil.which('godot'), 'needs Godot')
+    def test_the_real_map_is_built_and_checked(self):
+        appmod.GODOT='godot'
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        w=self.app.state.store.load()['sessions'][sid]['words'][0]
+        r=self.rpc(0,'answer_monk',p_session=sid,p_monk=0,p_typed=w['modern'])
+        self.assertEqual(r.status_code,400,r.text)     # the map came, so where you stand counts
+        mp=self.app.state.maps[sid].result()
+        self.assertEqual(len(mp['monks']),10)
+        self.assertTrue(appmod.standable(mp,*mp['spawns'][0]) and appmod.standable(mp,*mp['door']))
 
     def test_room_hints(self):
         s=self.room(); sid=s['id']

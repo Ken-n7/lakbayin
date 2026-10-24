@@ -851,7 +851,7 @@ func _try_deposit() -> void:
 
 func _open_monk(i: int) -> void:
 	var overlay: Control = preload("res://scripts/MonkOverlay.gd").new()
-	var check := func(typed: String) -> String: return await play.answer(i, typed)
+	var check := func(typed: String) -> String: return await play.answer(i, typed, player.position)
 	overlay.setup({"word": play.words[i], "monk": i, "labels": play.practice or _hints, "check": check})
 	overlay.activity_changed.connect(func(active: bool) -> void:
 		var monk := i if active else -1
@@ -912,7 +912,7 @@ func _on_overlay_gone() -> void:
 
 func _deposit() -> void:
 	var elapsed := Game.duration_seconds - Game.time_left
-	var got: Dictionary = await play.deposit(elapsed)
+	var got: Dictionary = await play.deposit(elapsed, player.position)
 	if not is_instance_valid(self):
 		return
 	if got.error != "":

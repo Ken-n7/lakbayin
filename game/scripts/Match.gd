@@ -140,8 +140,9 @@ func take_row(type: String, row: Dictionary, tell := true) -> void:
 
 # --- Playing ----------------------------------------------------------------
 ## Writes `typed` at monk `m`: "correct", "wrong", "locked", "taken" or
-## "error: ...". Practice decides here; online the server does.
-func answer(m: int, typed: String) -> String:
+## "error: ...". Practice decides here; online the server does, and checks
+## the hero at `at` is by the monk.
+func answer(m: int, typed: String, at := Vector2.INF) -> String:
 	if ours(m):
 		return "taken"
 	if practice:
@@ -150,7 +151,7 @@ func answer(m: int, typed: String) -> String:
 		answers[Vector2i(team, m)] = {"profile_id": _me(), "deposited": false}
 		changed.emit()
 		return "correct"
-	var result: String = await Monks.answer(session_id, m, typed)
+	var result: String = await Monks.answer(session_id, m, typed, at)
 	if result == "correct":
 		# The socket will say so too; shown at once rather than after it.
 		answers[Vector2i(team, m)] = {"profile_id": _me(), "deposited": false}
@@ -158,13 +159,14 @@ func answer(m: int, typed: String) -> String:
 	return result
 
 
-## Deposits everything carried, at `elapsed_s` into the match. {error, deposited}.
-func deposit(elapsed_s: float) -> Dictionary:
+## Deposits everything carried, at `elapsed_s` into the match, the hero at
+## `at` (the server checks it is the door). {error, deposited}.
+func deposit(elapsed_s: float, at := Vector2.INF) -> Dictionary:
 	var mine := carried()
 	if mine.is_empty():
 		return {"error": "", "deposited": 0}
 	if not practice:
-		var got: Dictionary = await Monks.deposit(session_id)
+		var got: Dictionary = await Monks.deposit(session_id, at)
 		if got.error != "":
 			return got
 	for m in mine:

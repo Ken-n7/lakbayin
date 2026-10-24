@@ -212,9 +212,13 @@ func _room_flow() -> void:
 		Input.action_press(way)
 		await _wait(3.0)
 		await _shot("match")
+		# FLOW_CHECKS: the server checks positions; walk there for real.
+		if index == 1 and OS.get_environment("FLOW_CHECKS") != "":
+			Input.action_release(way)
+			await _honest(screen)
 		# The minimap with everything found: every monk seen, the Monastery
 		# found, one monk answered by this team.
-		if index == 1:
+		elif index == 1:
 			await Monks.answer(screen.play.session_id, 0, _spelling(screen.play.words[0]))
 			for i in screen.world.monks.size():
 				screen.get("_seen")[i] = true
@@ -305,3 +309,60 @@ func _shot(name: String) -> void:
 	var path := out.path_join("p%d_%s.png" % [index, name])
 	vp.get_texture().get_image().save_png(path)
 	print("shot ", path)
+
+
+## Walks the hero to the nearest monk by the keys, as a player would, answers
+## him, tries a monk across the map (the server must refuse), then walks to
+## the Monastery and deposits. Prints each result for flow_shots.py's log.
+func _honest(screen: Control) -> void:
+	var grid: MapGrid = screen.grid
+	var near := 0
+	for i in screen.world.monks.size():
+		if screen.world.monks[i].position.distance_to(screen.player.position) \
+				< screen.world.monks[near].position.distance_to(screen.player.position):
+			near = i
+	print("honest walk to monk %d: %s" % [near, await _walk(screen, screen.world.monks[near].position + Vector2(0, 26))])
+	print("honest answer: ", await screen.play.answer(near, _spelling(screen.play.words[near]), screen.player.position))
+	var far: int = (near + 5) % screen.world.monks.size()
+	print("cheat answer from afar: ", await Monks.answer(screen.play.session_id, far, _spelling(screen.play.words[far]), screen.world.monks[far].position))
+	print("honest walk to door: %s" % await _walk(screen, screen.world.door()))
+	var got: Dictionary = await screen.play.deposit(10.0, screen.player.position)
+	print("honest deposit: ", got)
+	await _shot("honest")
+
+
+## Holds the keys toward each cell of the way to `to` in turn. "ok" or how far off.
+func _walk(screen: Control, to: Vector2) -> String:
+	var grid: MapGrid = screen.grid
+	# Round any cell the hero's feet do not fit in the middle of: a trunk
+	# that only clips a cell still stops a hero walking through it.
+	var walls := {}
+	for c: Vector2i in grid.land:
+		if not grid.stairs.has(c) and not grid.box_walkable(MapGrid.cell_mid(c), screen.hero_box,
+				int(grid.height.get(c, 0))):
+			walls[c] = true
+	var way: Array[Vector2i] = grid.route(MapGrid.cell_at(screen.player.position), screen.hero_level,
+		MapGrid.cell_at(to), walls)
+	var points: Array[Vector2] = []
+	for c in way:
+		points.append(MapGrid.cell_mid(c))
+	points.append(to)
+	var keys := ["move_left", "move_right", "move_up", "move_down"]
+	var t := 0.0
+	for p in points:
+		while screen.player.position.distance_to(p) > 6.0 and t < 90.0:
+			var d: Vector2 = p - screen.player.position
+			for k in keys:
+				Input.action_release(k)
+			if absf(d.x) > 3.0:
+				Input.action_press("move_right" if d.x > 0 else "move_left")
+			if absf(d.y) > 3.0:
+				Input.action_press("move_down" if d.y > 0 else "move_up")
+			await get_tree().process_frame
+			t += get_process_delta_time()
+	for k in keys:
+		Input.action_release(k)
+	await _wait(0.5)
+	return "ok" if screen.player.position.distance_to(to) < 12.0 else "stopped %.0fpx off at %s, %d steps" \
+		% [screen.player.position.distance_to(to), screen.player.position, way.size()]
+

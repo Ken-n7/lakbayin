@@ -42,6 +42,18 @@ TEAM_NAMES = ("Bughaw", "Pula")
 # LoL: 180 s, for 30-40 min games), so nobody watching can call positions to
 # a player. Scaled to a 15-minute match. Enforced here, not in the client.
 SPECTATOR_DELAY_S = float(os.environ.get("LAKBAYIN_SPECTATOR_DELAY_S", 60))
+# Positions are checked against the match's own map, which only the game's
+# generator can build: the server runs it headless once per match
+# (game/tools/map_export.gd). Empty turns the checks off -- for test servers
+# whose bots answer from anywhere, never for one players use.
+GODOT = os.environ.get("LAKBAYIN_GODOT", "godot")
+# A hero may cover this much more than PLAYER_SPEED says, and this long more
+# than the time since their last position: packets bunch up on a bad link.
+SPEED_SLACK = 1.25
+LAG_S = 1.5
+PX_SLACK = 32.0
+# Reach is the client's INTERACT_RADIUS, from a hero who stopped a hair late.
+REACH_SLACK = 16.0
 
 
 def stamp(value=None):
@@ -239,11 +251,58 @@ def make_session(state, who, custom):
     return s
 
 
+# --- Positions ----------------------------------------------------------------
+def standable(mp, x, y):
+    """A hero's feet may be at (x, y): a land cell, no cliff face."""
+    cx, cy = math.floor(x / mp["tile"]), math.floor(y / mp["tile"])
+    return 0 <= cx < mp["w"] and 0 <= cy < mp["h"] and mp["walk"][cy * mp["w"] + cx] == "1"
+
+
+def reachable(mp, frm, at, dt):
+    """From `frm`, `dt` seconds ago, could a hero be at `at` by now?"""
+    return math.dist(frm, at) <= mp["speed"] * SPEED_SLACK * (max(dt, 0.0) + LAG_S) + PX_SLACK
+
+
+def point(v):
+    """[x, y] as numbers, or None."""
+    ok = isinstance(v, list) and len(v) == 2 and all(type(n) in (int, float) and math.isfinite(n) for n in v)
+    return (float(v[0]), float(v[1])) if ok else None
+
+
+def anchor(s, who, mp, where):
+    """Where `who` last was, and when: their last accepted position, else
+    their team's spawn at the start of the match."""
+    if (s["id"], who) in where:
+        return where[(s["id"], who)]
+    team = [t["id"] for t in s["teams"]].index(s["members"][who]["team_id"])
+    return (*mp["spawns"][team], s["deadline"] - s["duration_s"])
+
+
+def moved_ok(s, who, mp, where, points, now):
+    """A movement packet a hero could have walked: every point on ground a
+    hero stands on, none further from where they last were than they could
+    have got since."""
+    x, y, t = anchor(s, who, mp, where)
+    return all(standable(mp, p[1], p[2]) and reachable(mp, (x, y), (p[1], p[2]), now - t) for p in points)
+
+
+def placed_ok(s, who, mp, where, name, body, now):
+    """The hero answering a monk, or depositing, stands within reach of him,
+    or of the door -- on ground, and where their walk could have brought them."""
+    at = point(body.get("p_at"))
+    require(at, "Where are you standing?", 400)
+    target = mp["door"] if name == "deposit" else mp["monks"][body["p_monk"]] if type(body.get("p_monk")) is int and 0 <= body["p_monk"] < len(mp["monks"]) else None
+    require(target, "Invalid monk", 400)
+    require(math.dist(at, target) <= mp["reach"] + REACH_SLACK, "Walk up to it first", 403)
+    x, y, t = anchor(s, who, mp, where)
+    require(standable(mp, *at) and reachable(mp, (x, y), at, now - t), "Walk up to it first", 403)
+
+
 def snapshot(store, s):
     return {"session": {**public_session(s), "server_now": stamp()}, "monks": len(s["words"]), "teams": standings(s), "players": player_standings(store, s), "answers": [{**a, "deposited": a["deposited_at"] is not None} for a in s["answers"]]}
 
 
-def rpc(store, state, who, name, body):
+def rpc(store, state, who, name, body, place=None):
     sessions = state["sessions"]
     if name in ("my_matches", "player_board", "my_summary"):
         history, board = [], {}
@@ -347,6 +406,8 @@ def rpc(store, state, who, name, body):
         return None
     require(s["state"] == "running" and m["team_id"], "Match is not running")
     require(m["team_id"] != SPECTATE, "Spectators only watch")
+    if place and name in ("answer_monk", "deposit"):
+        place(s, who, name, body)
     if name == "answer_monk":
         index = body.get("p_monk")
         require(type(index) is int and 0 <= index < len(s["words"]), "Invalid monk", 400)
@@ -538,6 +599,45 @@ def create_app(db_path=None):
     attempts = defaultdict(deque)
     # sid -> [(time, snapshot)] while a match runs: the delayed feed's past.
     history = defaultdict(deque)
+    # sid -> the match's map (a task while map_export runs); (sid, who) ->
+    # (x, y, server time) of their last accepted position. Memory only: a
+    # restart starts each hero from their next packet.
+    maps, where = {}, {}
+
+    async def build_map(s):
+        proc = await asyncio.create_subprocess_exec(
+            GODOT, "--headless", "--path", str(ROOT / "game"), "res://tools/map_export.tscn",
+            "--", s["id"], str(len(s["words"])), stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            # Offline: the game's autoloads must not sign in or dial anyone.
+            env={**os.environ, "LAKBAYIN_SERVER_URL": "https://offline.invalid",
+                 "SUPABASE_URL": "https://offline.invalid", "SUPABASE_ANON_KEY": "offline"})
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), 60)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise
+        line = next(l for l in reversed(out.decode().splitlines()) if l.startswith("{"))
+        mp = json.loads(line)
+        require(len(mp["walk"]) == mp["w"] * mp["h"] and len(mp["monks"]) == len(s["words"]), "Bad map", 500)
+        return mp
+
+    async def map_of(s):
+        """The match's map, built once; None with the checks off or if the
+        generator failed (logged) -- a broken checker must not stop a match."""
+        if s is None or s["state"] != "running":
+            return None
+        if isinstance(maps.get(s["id"]), dict):
+            return maps[s["id"]]
+        if not GODOT:
+            return None
+        if s["id"] not in maps:
+            maps[s["id"]] = asyncio.ensure_future(build_map(s))
+        try:
+            return await asyncio.shield(maps[s["id"]])
+        except Exception as e:
+            print(f"map for {s['id']} failed: {e!r}", flush=True)
+            return None
 
     def record(before, state):
         now = time.time()
@@ -605,6 +705,13 @@ def create_app(db_path=None):
                 raise
             if state != before:
                 await hub.changes(before, state)
+                for sid, s in state["sessions"].items():
+                    if s["state"] == "running" and before["sessions"].get(sid, {}).get("state") != "running":
+                        asyncio.ensure_future(map_of(s))
+                for sid in [k for k in maps if k not in state["sessions"]]:
+                    maps.pop(sid, None)
+                    for key in [k for k in where if k[0] == sid]:
+                        del where[key]
             return result
 
     async def ticker():
@@ -628,6 +735,8 @@ def create_app(db_path=None):
 
     app = FastAPI(title="Lakbayin server", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.store = store
+    app.state.maps = maps         # tests put a map in by hand
+    app.state.where = where
 
     @app.exception_handler(HTTPException)
     async def error(request, exc):
@@ -714,9 +823,14 @@ def create_app(db_path=None):
         require(len(raw) <= 16384, "Request too large", 413)
         body = json.loads(raw) if raw else {}
         require(isinstance(body, dict), "Invalid request", 400)
+        place = None
+        if path in ("rpc/answer_monk", "rpc/deposit") and isinstance(body.get("p_session"), str):
+            mp = await map_of(store.load()["sessions"].get(body["p_session"]))
+            if mp:
+                place = lambda s, w, name, b: placed_ok(s, w, mp, where, name, b, time.time())
         def operation(state):
             if path.startswith("rpc/"):
-                return rpc(store, state, who, path[4:], body)
+                return rpc(store, state, who, path[4:], body, place)
             if request.method == "GET":
                 return read_rows(store, state, who, path, request.query_params)
             return write_rows(state, who, request.method, path, request.query_params, body)
@@ -793,6 +907,16 @@ def create_app(db_path=None):
                         require(isinstance(paths, list) and len(paths) == 1 and isinstance(paths[0], dict) and paths[0].get("id") == peer["who"] and not data.get("r"), "Cannot move another player")
                         points = paths[0].get("p", [])
                         require(isinstance(points, list) and 1 <= len(points) <= 80 and all(isinstance(p, list) and len(p) == 3 and all(type(v) in (int, float) and math.isfinite(v) and abs(v) < 1e12 for v in p) for p in points), "Invalid movement", 400)
+                        # Off the ground, or faster than a hero walks: not
+                        # passed on, not taken as where they are. Dropped,
+                        # not punished -- a bad link bunches honest packets.
+                        mp = await map_of(s)
+                        if mp:
+                            now = time.time()
+                            if not moved_ok(s, peer["who"], mp, where, points, now):
+                                print(f"movement dropped: {peer['who']} in {sid}", flush=True)
+                                continue
+                            where[(sid, peer["who"])] = (points[-1][1], points[-1][2], now)
                     else:
                         # Lobby broadcasts only ring a reload; DB rows remain authoritative.
                         require(topic == TOPIC and kind == "row", "Unsupported broadcast")
