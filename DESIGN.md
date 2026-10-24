@@ -295,8 +295,14 @@ English meanings are not shown.
 - Viewers never join a team or submit answers, deposits, or movement. Each
   monk has separate Blue/Red markers: an outline is carried, a fill deposited.
 - The event screen keeps the final result visible until the viewer leaves.
-- The view can be moved: drag to pan; scroll, pinch or **+ / −** to zoom,
-  from the whole island to about five times closer.
+- MOBA-style: the aerial map fills the screen with the scores, clock, Stats
+  and Leave over it. Players show as their own heroes at the map's scale
+  with their names. **Stats** opens a centred see-through panel, Blue left
+  and Red right. Drag to pan; scroll or pinch to zoom.
+- **60-second spectator delay** (server-side, as MOBAs do, scaled to a
+  15-minute match): spectators see scores, monks, movement and the result a
+  minute late, and get no live match data, so nobody can call positions to
+  a player. Before the delayed view reaches the start it counts down.
 
 ---
 
