@@ -206,6 +206,15 @@ func _room_flow() -> void:
 		Input.action_press("move_right" if index % 2 == 1 else "move_left")
 		await _wait(3.0)
 		await _shot("match")
+		# The minimap with everything found: every monk seen, the Monastery
+		# found, one monk answered by this team.
+		if index == 1:
+			await Monks.answer(screen.play.session_id, 0, _spelling(screen.play.words[0]))
+			for i in screen.world.monks.size():
+				screen.get("_seen")[i] = true
+			screen.set("_monastery_seen", true)
+			await _wait(2.0)
+			await _shot("match_minimap")
 		await _wait(10.0)
 		Input.action_release("move_right" if index % 2 == 1 else "move_left")
 		if index == 1:
