@@ -189,14 +189,6 @@ func _build_top_bar() -> void:
 	team_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	who_row.add_child(team_l)
 	bar.add_child(who)
-	# Practice has nothing at stake, so a way out on screen (a match has none:
-	# go_back says so).
-	if m.practice:
-		var leave := Ui.button("Leave", 70, BAR_H - 6, Ui.SMALL)
-		leave.name = "Leave"
-		leave.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		leave.pressed.connect(adv.go_back)
-		bar.add_child(leave)
 
 	# Centre: the score on a ribbon -- the one number everybody watches.
 	var mid := CenterContainer.new()
@@ -221,6 +213,13 @@ func _build_top_bar() -> void:
 	_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	clock.add_child(_time)
 	bar.add_child(clock)
+	# Practice has nothing at stake, so a way out on screen (a match has none:
+	# go_back says so). Last on the bar, away from the name a thumb rests near.
+	if m.practice:
+		var leave := Ui.back_button(adv.go_back, 70, "Leave")
+		leave.name = "Leave"
+		leave.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bar.add_child(leave)
 
 
 ## The score and what is carried, from the match.

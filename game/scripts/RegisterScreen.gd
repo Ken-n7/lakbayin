@@ -43,7 +43,7 @@ func setup(_data: Dictionary) -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 6)
 	row.add_child(Art.label("Already have an account?", Pal.SMALL, Pal.INK_MUTED))
-	var back := Ui.link("Sign In")
+	var back := Ui.button("Sign In", 110, Ui.H, Ui.SMALL)
 	back.pressed.connect(go_back)
 	row.add_child(back)
 	box.add_child(row)

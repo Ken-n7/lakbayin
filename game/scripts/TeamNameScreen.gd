@@ -142,9 +142,7 @@ func _build_code() -> void:
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_msg.custom_minimum_size = Vector2(260, 0)
 	box.add_child(_msg)
-	var back := Ui.link("Back")
-	back.pressed.connect(go_back)
-	Ui.centre_row(box, back)
+	Ui.centre_row(box, Ui.back_button(go_back))
 
 
 ## Find Match: the server picks the match and the team (Teams.find_match).
@@ -627,9 +625,7 @@ func _process(delta: float) -> void:
 
 # --- Shared -----------------------------------------------------------------
 func _back_button(box: Control) -> void:
-	var back := Ui.button("Back", 300, Ui.H, Ui.SMALL)
-	back.pressed.connect(go_back)
-	Ui.centre_row(box, back)
+	Ui.centre_row(box, Ui.back_button(go_back, 300))
 
 
 func _say(text: String, col: Color) -> void:

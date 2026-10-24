@@ -86,6 +86,30 @@ static func button(text: String, w: float, h: float, kind := BLUE) -> Button:
 	return b
 
 
+## The one Back: a paper button with the pack's orange arrow. (There were
+## three -- a text link, a plain button and a bare ← -- for the same move.)
+static func back_button(on_back: Callable, w := float(W_MED), text := "Back") -> Button:
+	var b := button(text, w, H, SMALL)
+	b.icon = icon("back")
+	b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_constant_override("h_separation", 6)
+	b.pressed.connect(on_back)
+	return b
+
+
+## Two or more buttons as tabs: the open one wears the primary's gold-trimmed
+## paper. (Disabling it, as before, read as "unavailable", not "you are here".)
+static func tabs(buttons: Array) -> void:
+	var group := ButtonGroup.new()
+	for b: Button in buttons:
+		b.toggle_mode = true
+		b.button_group = group
+		b.add_theme_stylebox_override("pressed", face(KINDS[RED][0][0]))
+		b.add_theme_stylebox_override("hover_pressed", face(KINDS[RED][0][0]))
+		b.add_theme_color_override("font_pressed_color", KINDS[RED][2])
+		b.add_theme_color_override("font_hover_pressed_color", KINDS[RED][2])
+
+
 ## A pack icon by name, for `Button.icon` (see ICON).
 static func icon(name: String) -> Texture2D:
 	return Art.tex("res://assets/ui/Icon_%02d.png" % ICON[name])
@@ -481,9 +505,15 @@ static func stat_plank(icon: String, value: String, size := Pal.BODY) -> PanelCo
 static func back_panel(parent: Node, s: Vector2, title: String, on_back: Callable) -> VBoxContainer:
 	var box := screen_panel(parent, s, title)
 	var title_row := HBoxContainer.new()
-	var back := glyph("←", 24, Pal.TITLE)
+	var back := Button.new()
+	back.flat = true
+	back.focus_mode = Control.FOCUS_NONE
+	back.icon = icon("back")
+	back.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	back.add_theme_constant_override("icon_max_width", int(64 * ART_K))
 	back.custom_minimum_size = Vector2(40, 30)
 	back.tooltip_text = "Back"
+	click(back)
 	back.pressed.connect(on_back)
 	title_row.add_child(back)
 	var head: Control = box.get_child(0)         # the panel's own title label

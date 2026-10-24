@@ -81,8 +81,7 @@ func _build() -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 12)
-	var back := Ui.button("Back", Ui.W_MED, Ui.H, Ui.SMALL)
-	back.pressed.connect(func() -> void: main.open("home"))
+	var back := Ui.back_button(func() -> void: main.open("home"))
 	row.add_child(back)
 	var start := Ui.button("Set", 240, Ui.H, Ui.RED)
 	start.pressed.connect(_save_hero)

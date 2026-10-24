@@ -144,7 +144,8 @@ func _build() -> void:
 ## [banner text, ribbon row]: who won, or that time ran out.
 func _title(teams: Array) -> Array:
 	if bool(result.get("practice", true)):
-		var all := int(result.get("my_deposits", 0)) >= int(result.get("monks", 0))
+		var monks := int(result.get("monks", 0))
+		var all := monks > 0 and int(result.get("my_deposits", 0)) >= monks
 		return ["Every word deposited!" if all else "Time's up!", Ui.RIBBON_YELLOW if all else Ui.RIBBON_RED]
 	if teams.is_empty():
 		return ["Match over", Ui.RIBBON_GREY]

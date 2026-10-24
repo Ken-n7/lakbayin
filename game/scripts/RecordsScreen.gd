@@ -21,6 +21,7 @@ func setup(_options: Dictionary) -> void:
 	_history = Ui.button("My Matches", 180, Ui.H, Ui.SMALL)
 	_board = Ui.button("Global Players", 180, Ui.H, Ui.SMALL)
 	Ui.centre_row(box, _history).add_child(_board)
+	Ui.tabs([_history, _board])
 	_history.pressed.connect(func() -> void: _select("my_matches"))
 	_board.pressed.connect(func() -> void: _select("player_board"))
 	_message = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
@@ -66,8 +67,8 @@ func _select(tab: String) -> void:
 func _load() -> void:
 	_version += 1
 	var version := _version
-	_history.disabled = _tab == "my_matches"
-	_board.disabled = _tab == "player_board"
+	_history.set_pressed_no_signal(_tab == "my_matches")
+	_board.set_pressed_no_signal(_tab == "player_board")
 	_previous.disabled = true
 	_next.disabled = true
 	for child in _list.get_children():

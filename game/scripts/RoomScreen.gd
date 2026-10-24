@@ -76,9 +76,7 @@ func _build_code() -> void:
 		if not _joining:
 			main.open("watch", {"code": _code.text}))
 	Ui.centre_row(box, _go).add_child(watch)
-	var back := Ui.link("Back")
-	back.pressed.connect(go_back)
-	Ui.centre_row(box, back)
+	Ui.centre_row(box, Ui.back_button(go_back))
 
 
 func _create() -> void:

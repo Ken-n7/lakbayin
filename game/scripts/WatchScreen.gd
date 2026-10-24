@@ -27,16 +27,16 @@ func setup(options: Dictionary) -> void:
 	_code = Teams.clean_code(str(options.get("code", "")))
 	_build_ui()
 	if not Net.signed_in():
-		_status.text = "Sign in to watch a match."
+		_unavailable("Sign in to watch a match.")
 		return
 	if _code.length() != 4 or Teams.bad_chars(_code) != "":
-		_status.text = "Enter a live room's four-character code."
+		_unavailable("Enter a live room's four-character code.")
 		return
 	var got := await WatchFeed.enter(_code)
 	if not is_inside_tree():
 		return
 	if got.error != "":
-		_status.text = str(got.error).capitalize()
+		_unavailable(str(got.error).capitalize())
 		return
 	session_id = str(got.data)
 	var rt := Net.realtime()
@@ -45,6 +45,19 @@ func setup(options: Dictionary) -> void:
 	rt.watch_positions([Realtime.snap_topic(session_id)])
 	rt.position.connect(_on_position)
 	await _poll()
+
+
+## Nothing to watch: the reason on a panel and a way back, instead of the
+## empty match chrome around it.
+func _unavailable(why: String) -> void:
+	for c in get_children():
+		if c is not ColorRect:
+			c.visible = false
+	var box := Ui.screen_panel(self, Vector2(320, 0), "Watch")
+	var l := Art.label(why, Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(l)
+	Ui.centre_row(box, Ui.back_button(go_back, 280))
 
 
 func _build_ui() -> void:
