@@ -283,29 +283,8 @@ func _draw_lobby() -> void:
 		return
 	_session = _lobby.session
 	_mine = _lobby.team_of(Net.user_id)
-	for c in _cards.get_children():
-		_cards.remove_child(c)
-		c.queue_free()
 	var locked := str(_session.get("state", "")) != "lobby" or _matchmade()
-	# Two, three in a row; four as two by two; five and six as rows of three.
-	var n := _lobby.teams.size()
-	_cards.columns = maxi(1, 2 if n == 4 else mini(n, 3))
-	# Every box the same height, so a team with more players does not read
-	# as the "bigger" choice.
-	# A room's cards leave a line for its Spectators bar underneath.
-	var most := 2 if _matchmade() else 1
-	for t: Dictionary in _lobby.teams:
-		most = maxi(most, mini(_lobby.members_of(t.id).size(), SHOW_NAMES + 1))
-	for t: Dictionary in _lobby.teams:
-		# Locked: only somebody with no team (never picked, or theirs was
-		# removed) may still pick. The server holds the same line.
-		_cards.add_child(_team_box(t, locked and _mine != "", most))
-	if is_instance_valid(_spect_slot):
-		for c in _spect_slot.get_children():
-			_spect_slot.remove_child(c)
-			c.queue_free()
-		if not _matchmade():
-			_spect_slot.add_child(_spectator_box(locked and _mine != ""))
+	_draw_sides(locked)
 
 	var team_name := _lobby.name_of(_mine)
 	var tone := Pal.INK
@@ -333,6 +312,34 @@ func _draw_lobby() -> void:
 	_banner.add_theme_stylebox_override("panel", face)
 	Game.team_name = team_name
 	_go.disabled = _mine == ""
+
+
+## The sides themselves: a card per team, and a room's Spectators bar.
+## RoomScreen draws its own (a MOBA-style lobby).
+func _draw_sides(locked: bool) -> void:
+	for c in _cards.get_children():
+		_cards.remove_child(c)
+		c.queue_free()
+	# Two, three in a row; four as two by two; five and six as rows of three.
+	var n := _lobby.teams.size()
+	_cards.columns = maxi(1, 2 if n == 4 else mini(n, 3))
+	# Every box the same height, so a team with more players does not read
+	# as the "bigger" choice.
+	# A room's cards leave a line for its Spectators bar underneath.
+	var most := 2 if _matchmade() else 1
+	for t: Dictionary in _lobby.teams:
+		most = maxi(most, mini(_lobby.members_of(t.id).size(), SHOW_NAMES + 1))
+	for t: Dictionary in _lobby.teams:
+		# Locked: only somebody with no team (never picked, or theirs was
+		# removed) may still pick. The server holds the same line.
+		_cards.add_child(_team_box(t, locked and _mine != "", most))
+	if is_instance_valid(_spect_slot):
+		for c in _spect_slot.get_children():
+			_spect_slot.remove_child(c)
+			c.queue_free()
+		if not _matchmade():
+			_spect_slot.add_child(_spectator_box(locked and _mine != ""))
+
 
 
 ## One team as a box to tap: its name, how many, and who -- the same list the
@@ -505,7 +512,8 @@ func _watch() -> void:
 	if not rt.broadcast.is_connected(_on_hint):
 		rt.broadcast.connect(_on_hint)
 	# On the teacher's list as here, in the lobby.
-	rt.track({"sid": sid, "where": "lobby", "name": Net.username})
+	# The hero rides along, so a room's lobby can show everyone's portrait.
+	rt.track({"sid": sid, "where": "lobby", "name": Net.username, "hero": Game.hero_id})
 	rt.watch("sessions", "id=eq." + sid)
 	rt.watch("teams", "session_id=eq." + sid)
 	rt.watch("members", "session_id=eq." + sid)

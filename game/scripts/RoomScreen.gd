@@ -129,25 +129,245 @@ func _enter(quiet := false) -> void:
 	await _open_lobby(got.session, quiet, version)
 
 
+## A MOBA custom-match lobby in the game's paper kit: the two sides face
+## each other in columns of slots under their ribbons, each slot a player's
+## hero and name or an open place to tap into; spectators on a strip below;
+## the host's controls along the bottom.
 func _build_lobby() -> void:
-	super._build_lobby()
-	# The one button on the right is the host's Start, not Ready: everyone's
-	# map opens when the room starts.
-	_go.pressed.disconnect(_to_map)
-	_go.pressed.connect(_start)
-	_go.text = "Start"
-	_go.custom_minimum_size.x = 112
-	var row := _go.get_parent()
+	_background()
+	_music("battle")
+	var box := Ui.screen_panel(self, Vector2(612, 0))
+	box.add_theme_constant_override("separation", 5)
+
+	# Header: the code to read out, the room's name, and the head count.
+	var head := HBoxContainer.new()
+	var code := Ui.stat_plank("", "Code  %s" % str(_lobby.session.get("code", Game.joined_code)), Pal.SMALL)
+	code.custom_minimum_size.x = 120
+	head.add_child(code)
+	var title := Art.title(Art.label("Custom Room", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER))
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title)
+	_steps = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
+	_steps.custom_minimum_size = Vector2(120, 0)
+	_steps.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	head.add_child(_steps)
+	box.add_child(head)
+
+	# The sides: left column, VS, right column (drawn by _draw_sides).
+	_cards = GridContainer.new()
+	_cards.columns = 3
+	_cards.add_theme_constant_override("h_separation", 8)
+	var sides := CenterContainer.new()
+	sides.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sides.add_child(_cards)
+	box.add_child(sides)
+	_spect_slot = CenterContainer.new()
+	box.add_child(_spect_slot)
+
+	_banner = PanelContainer.new()
+	_status = Art.label("", Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.custom_minimum_size = Vector2(540, 0)
+	_banner.add_child(_status)
+	var banner_row := CenterContainer.new()
+	banner_row.add_child(_banner)
+	box.add_child(banner_row)
+	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
+	_msg.visible = false
+	box.add_child(_msg)
+
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	var leave := Ui.button("Leave", Ui.W_MED, Ui.H, Ui.SMALL)
+	leave.pressed.connect(_leave)
+	row.add_child(leave)
 	_shuffle = Ui.button("Shuffle", 90, Ui.H, Ui.SMALL)
 	_shuffle.pressed.connect(_shuffle_players)
 	row.add_child(_shuffle)
-	row.move_child(_shuffle, 1)
 	_move = Ui.button("Move Player", 118, Ui.H, Ui.SMALL)
 	_move.pressed.connect(_move_dialog)
 	row.add_child(_move)
-	row.move_child(_move, 2)
+	# The host's Start: everyone's map opens when the room starts.
+	_go = Ui.button("Start", 112, Ui.H, Ui.RED)
+	_go.pressed.connect(_start)
+	row.add_child(_go)
+	box.add_child(row)
+
+	# Portraits come with presence (each phone tracks its hero).
+	var rt: Realtime = Net.realtime()
+	if not rt.presence_changed.is_connected(_draw_lobby):
+		rt.presence_changed.connect(_draw_lobby)
 	_room_clock = 0.0
 	_draw_lobby()
+
+
+const SIDE_W := 252.0
+const SLOT_H := 27.0
+const SLOTS_MIN := 3        # 3 v 3 shows three places a side, filled or open
+const SLOTS_MAX := 5        # past five a side, the last slot says "+N more"
+
+
+func _draw_sides(locked: bool) -> void:
+	for c in _cards.get_children():
+		_cards.remove_child(c)
+		c.queue_free()
+	var most := 0
+	for t: Dictionary in _lobby.teams:
+		most = maxi(most, _lobby.members_of(t.id).size())
+	var slots := clampi(most, SLOTS_MIN, SLOTS_MAX)
+	for i in _lobby.teams.size():
+		if i == 1:
+			var vs := Art.title(Art.label("VS", Pal.H1, Pal.BRONZE, HORIZONTAL_ALIGNMENT_CENTER))
+			vs.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			_cards.add_child(vs)
+		_cards.add_child(_side(i, _lobby.teams[i], slots, locked))
+	for c in _spect_slot.get_children():
+		_spect_slot.remove_child(c)
+		c.queue_free()
+	_spect_slot.add_child(_spectators(locked))
+
+
+## One side: its ribbon, then a slot per place.
+func _side(index: int, t: Dictionary, slots: int, locked: bool) -> Control:
+	var col := VBoxContainer.new()
+	col.custom_minimum_size.x = SIDE_W
+	col.add_theme_constant_override("separation", 3)
+	var members := _lobby.members_of(t.id)
+	var ribbon := Ui.ribbon(Ui.RIBBON_BLUE if index == 0 else Ui.RIBBON_RED,
+			"%s  %d" % [t.name, members.size()], 24.0, Pal.LABEL)
+	var r := CenterContainer.new()
+	r.add_child(ribbon)
+	col.add_child(r)
+	var host := str(_session.get("admin_id", ""))
+	# The host first, then you, then the rest by name.
+	members.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return [a.profile_id != host, a.profile_id != Net.user_id, a.username] \
+			< [b.profile_id != host, b.profile_id != Net.user_id, b.username])
+	var can_join: bool = not locked and _mine != str(t.id)
+	for i in slots:
+		if i == slots - 1 and members.size() > slots:
+			col.add_child(_slot_more(members.size() - i))
+		elif i < members.size():
+			col.add_child(_slot_player(members[i], host))
+		else:
+			col.add_child(_slot_open(str(t.id), can_join))
+	return col
+
+
+## A taken place: the hero, the name, Host / YOU.
+func _slot_player(who: Dictionary, host: String) -> Control:
+	var me: bool = who.profile_id == Net.user_id
+	var slot := PanelContainer.new()
+	slot.custom_minimum_size = Vector2(SIDE_W, SLOT_H)
+	# Yours wears the gold-trimmed paper, as a picked thing does everywhere.
+	slot.add_theme_stylebox_override("panel", Ui.face(
+			"res://assets/ui/SpecialPaper.png" if me else "res://assets/ui/RegularPaper.png",
+			Color.WHITE if me else Ui._TAN))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	slot.add_child(row)
+	row.add_child(_portrait(_hero_of(str(who.profile_id))))
+	var name := Art.label(str(who.username), Pal.SMALL, Pal.GOLD if me else Pal.INK)
+	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name.clip_text = true
+	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	row.add_child(name)
+	var tags: Array[String] = []
+	if who.profile_id == host:
+		tags.append("Host")
+	if me:
+		tags.append("YOU")
+	if not tags.is_empty():
+		var tag := Art.label(" · ".join(tags), Pal.SMALL, Pal.GOLD if me else Pal.BRONZE,
+				HORIZONTAL_ALIGNMENT_RIGHT)
+		tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(tag)
+	return slot
+
+
+## An empty place: faint paper, and the way in if this player may take it.
+func _slot_open(team_id: String, can_join: bool) -> Control:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(SIDE_W, SLOT_H)
+	b.focus_mode = Control.FOCUS_NONE
+	b.text = "Open  —  tap to join" if can_join else "Open"
+	b.add_theme_font_size_override("font_size", Pal.SMALL)
+	for st in ["normal", "disabled", "focus"]:
+		b.add_theme_stylebox_override(st, Ui.face(Ui.PAPER, Color(1, 1, 1, 0.4)))
+	b.add_theme_stylebox_override("hover", Ui.face(Ui.PAPER, Color(1, 1, 1, 0.7)))
+	b.add_theme_stylebox_override("pressed", Ui.face(Ui.PAPER, Color(0.8, 0.8, 0.8, 0.7)))
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
+		b.add_theme_color_override(c, Pal.INK_MUTED)
+	b.disabled = not can_join
+	if can_join:
+		Ui.click(b)
+		b.pressed.connect(func() -> void: _pick(team_id))
+	return b
+
+
+func _slot_more(n: int) -> Control:
+	var l := Art.label("+%d more" % n, Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	l.custom_minimum_size = Vector2(SIDE_W, SLOT_H)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return l
+
+
+## A hero standing, facing out; a shadow of one while their hero is unknown.
+func _portrait(hero: int) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = Art.grid(Game.hero_sheet(maxi(hero, 1)), 3, 4)[1]
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	t.custom_minimum_size = Vector2(18, 22)
+	if hero <= 0:
+		t.modulate = Color(0, 0, 0, 0.3)
+	return t
+
+
+## The hero a member tracks in presence, or 0.
+func _hero_of(pid: String) -> int:
+	for meta: Variant in Net.realtime().online.get(pid, []):
+		# Another phone's word for it: only a hero that exists is drawn.
+		var h := int((meta as Dictionary).get("hero", 0)) if meta is Dictionary else 0
+		if h >= 1 and h <= Game.HERO_COUNT:
+			return h
+	return 0
+
+
+## The Spectators strip: who watches, and the way to join them.
+func _spectators(locked: bool) -> Control:
+	var mine := _mine == Lobby.SPECTATE
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(SIDE_W * 2 + 48, SLOT_H)
+	b.focus_mode = Control.FOCUS_NONE
+	b.disabled = mine or locked
+	var host := str(_session.get("admin_id", ""))
+	var who := _lobby.members_of(Lobby.SPECTATE).map(func(w: Dictionary) -> String:
+		var tags := ([] as Array[String])
+		if w.profile_id == host:
+			tags.append("host")
+		if w.profile_id == Net.user_id:
+			tags.append("you")
+		return str(w.username) + (" (%s)" % ", ".join(tags) if not tags.is_empty() else ""))
+	var foot := "" if mine or locked else "  ·  tap to watch instead"
+	b.text = "Spectators:  %s%s" % [", ".join(who) if not who.is_empty() else "none", foot]
+	b.clip_text = true
+	b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	b.add_theme_font_size_override("font_size", Pal.SMALL)
+	var tint := Color.WHITE if mine else Ui._TAN
+	var art := "res://assets/ui/SpecialPaper.png" if mine else Ui.PAPER
+	for st in ["normal", "disabled", "focus"]:
+		b.add_theme_stylebox_override(st, Ui.face(art, tint))
+	b.add_theme_stylebox_override("hover", Ui.face(art, tint * Color(1.1, 1.1, 1.1)))
+	b.add_theme_stylebox_override("pressed", Ui.face(art, tint * Color(0.8, 0.8, 0.8)))
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
+		b.add_theme_color_override(c, Pal.GOLD if mine else Pal.INK)
+	if not b.disabled:
+		Ui.click(b)
+		b.pressed.connect(func() -> void: _pick(Lobby.SPECTATE))
+	return b
 
 
 func _draw_lobby() -> void:
@@ -163,8 +383,10 @@ func _draw_lobby() -> void:
 	var ready := _lobby.members_of("").is_empty()
 	for t: Dictionary in _lobby.teams:
 		ready = ready and not _lobby.members_of(t.id).is_empty()
-	# The code is already on the header's left; the middle says who may join.
-	_steps.text = "Pick a side, or spectate"
+	var playing := 0
+	for t: Dictionary in _lobby.teams:
+		playing += _lobby.members_of(t.id).size()
+	_steps.text = "%d playing" % playing
 	if started:
 		_status.text = "The room has started — go!"
 		if _mine != "" and not _entering:
