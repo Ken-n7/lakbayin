@@ -206,36 +206,59 @@ func _build_header() -> void:
 		return
 	# Room for Log Out at the right, when the header carries it.
 	var edge := INSET + (0.0 if _logout_in_settings() else 86.0)
-	# One line, right-aligned: the player's gems | their name, their character.
-	var head := HBoxContainer.new()
-	head.alignment = BoxContainer.ALIGNMENT_END
-	head.add_theme_constant_override("separation", 6)
-	head.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	head.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	head.offset_right = -edge
-	head.offset_top = INSET
-	head.offset_bottom = INSET + 30
-	head.mouse_filter = Control.MOUSE_FILTER_PASS
-	add_child(head)
-
-	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD, HORIZONTAL_ALIGNMENT_RIGHT)
-	who.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	Art.shadow(who, Pal.SHADOW, 2, 0)
-	head.add_child(who)
-
-	# The chosen character stands beside the name, per the mockup's header.
-	var wrap := Control.new()
-	wrap.custom_minimum_size = Vector2(28, 28)
-	wrap.clip_contents = true
-	wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var face := AnimatedSprite2D.new()
-	face.sprite_frames = Art.walk_frames(Game.hero_sheet(Game.hero_id), 1.0)
-	face.animation = "right"
-	face.scale = Vector2(1.4, 1.4)
-	# Centred on the text's line (measured): at y 20 it sat 5px under it.
-	face.position = Vector2(14, 13)
-	wrap.add_child(face)
-	head.add_child(wrap)
+	# A MOBA client's profile plate: the hero in a slot, the name, and the
+	# record under it. Tapping it opens Player Records.
+	var plate := PanelContainer.new()
+	plate.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	plate.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	plate.offset_right = -edge
+	plate.offset_top = INSET
+	var face := Ui.face("res://assets/ui/SpecialPaper.png")
+	face.content_margin_left = 6
+	face.content_margin_right = 12
+	face.content_margin_top = 4
+	face.content_margin_bottom = 4
+	plate.add_theme_stylebox_override("panel", face)
+	add_child(plate)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.add_child(row)
+	# A Panel, not a PanelContainer: the slot's drawn border is wider than
+	# the slot, so as a container it left the hero no room at all.
+	var slot := Panel.new()
+	slot.add_theme_stylebox_override("panel", Ui.frame(Ui.SLOT))
+	slot.custom_minimum_size = Vector2(34, 40)
+	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var face_tex := TextureRect.new()
+	face_tex.texture = Art.grid(Game.hero_sheet(Game.hero_id), 3, 4)[1]
+	face_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	face_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	face_tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		face_tex.set_offset(side, 4.0 if side in [SIDE_LEFT, SIDE_TOP] else -4.0)
+	slot.add_child(face_tex)
+	row.add_child(slot)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(col)
+	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD)
+	who.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(who)
+	var rec := Art.label("", Pal.SMALL, Pal.CREAM)
+	rec.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(rec)
+	_fill_record(rec)
+	# The whole plate is one tap target, laid over what it shows.
+	var tap := Button.new()
+	tap.flat = true
+	tap.focus_mode = Control.FOCUS_NONE
+	tap.tooltip_text = "Player Records"
+	Ui.click(tap)
+	tap.pressed.connect(func() -> void: main.open("records"))
+	plate.add_child(tap)
 
 	if _logout_in_settings():
 		return
@@ -252,6 +275,16 @@ func _build_header() -> void:
 
 
 ## A room, after a character if there is none yet.
+## The plate's record line: wins and win rate over every completed game.
+func _fill_record(rec: Label) -> void:
+	var got := await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/my_summary", {})
+	if not is_instance_valid(rec) or got.error != "" or not (got.data is Dictionary):
+		return
+	var played := int(got.data.get("played", 0))
+	var wins := int(got.data.get("wins", 0))
+	rec.text = ("%d wins  ·  %d%%" % [wins, roundi(100.0 * wins / played)]) if played > 0 else "No games yet"
+
+
 func _open_room() -> void:
 	main.open("room" if Game.player_name != "" else "hero",
 		{} if Game.player_name != "" else {"then": "room"})
