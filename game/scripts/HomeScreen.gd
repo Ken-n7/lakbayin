@@ -282,7 +282,8 @@ func _fill_record(rec: Label) -> void:
 		return
 	var played := int(got.data.get("played", 0))
 	var wins := int(got.data.get("wins", 0))
-	rec.text = ("%d wins  ·  %d%%" % [wins, roundi(100.0 * wins / played)]) if played > 0 else "No games yet"
+	rec.text = ("%d %s  ·  %d%%" % [wins, "win" if wins == 1 else "wins", roundi(100.0 * wins / played)]) \
+		if played > 0 else "No games yet"
 
 
 func _open_room() -> void:

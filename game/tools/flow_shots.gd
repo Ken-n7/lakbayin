@@ -209,9 +209,24 @@ func _room_flow() -> void:
 			for i in screen.play.words.size():
 				await Monks.answer(screen.play.session_id, i, _spelling(screen.play.words[i]))
 			await Monks.deposit(screen.play.session_id)
-		await _until_screen("ResultsScreen.gd", 40.0)
+		var res := await _until_screen("ResultsScreen.gd", 40.0)
 		await _wait(2.0)
 		await _shot("results")
+		if res != null and index == 1:
+			for b: Button in res.find_children("*", "Button", true, false):
+				if b.text == "Words":
+					b.pressed.emit()
+			await _wait(0.5)
+			await _shot("results_words")
+			main.open("records")
+			await _wait(2.5)
+			await _shot("records")
+			main.current.call("_select", "player_board")
+			await _wait(2.0)
+			await _shot("records_board")
+			main.open("home")
+			await _wait(2.5)
+			await _shot("home_after")
 	Net.realtime().close_socket()
 	get_tree().quit(0)
 
