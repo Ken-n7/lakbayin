@@ -59,13 +59,13 @@ func _tagline() -> String:
 ## makes room for Quit.
 func _entries() -> Array:
 	return [
-		["Find Match", "", Ui.SMALL_RED, {}, "play"],
+		["Find Match", "", Ui.RED, {}, "play"],
 		# Friends by a code, any number a side (RoomScreen).
-		["Custom Room", _open_room, Ui.SMALL, {}, "hero"],
+		["Custom Room", _open_room, Ui.SMALL, {}, "swords"],
 		# Alone, offline, with the keypad's Latin labels: learning the script.
-		["Practice", "adventure", Ui.SMALL, {"practice": true}, "book"],
+		["Practice", "adventure", Ui.SMALL, {"practice": true}, "shield"],
 		["Settings", _open_settings, Ui.SMALL, {}, "gear"],
-		["Quit", _confirm_quit, Ui.SMALL, {}, "exit"],
+		["Quit", _confirm_quit, Ui.SMALL, {}, "close"],
 	]
 
 
@@ -323,7 +323,7 @@ func _build_menu() -> void:
 		b.clip_text = true
 		# Solid white pixel icons (tools/make_icons.py), at the left edge.
 		if spec.size() > 4 and str(spec[4]) != "":
-			b.icon = Art.tex(ICONS % spec[4])
+			b.icon = Ui.icon(spec[4])
 			b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			b.add_theme_constant_override("h_separation", 6)
 		var route: Variant = spec[1]
@@ -368,12 +368,12 @@ func _open_settings() -> void:
 	sounds.drag_ended.connect(func(_changed: bool) -> void: Sfx.play("button"))
 
 	Ui.section(box, "Account")
-	var hero := _account_button(box, "Change Character", "hero", Ui.SMALL)
+	var hero := _account_button(box, "Change Character", "swords", Ui.SMALL)
 	hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
-	var records := _account_button(box, "Player Records", "book", Ui.SMALL)
+	var records := _account_button(box, "Player Records", "coin", Ui.SMALL)
 	records.pressed.connect(func() -> void: main.open("records"))
 	# Credits shares Log Out's row, so the panel keeps its height.
-	var credits := _account_button(box, "Credits", "book", Ui.SMALL)
+	var credits := _account_button(box, "Credits", "info", Ui.SMALL)
 	credits.custom_minimum_size.x = 137
 	credits.pressed.connect(_open_credits)
 	var out := Ui.button("Log Out", 137, Ui.H, Ui.SMALL_RED)
@@ -413,7 +413,7 @@ func _open_credits() -> void:
 ## An Account row: a full-width button, its icon at the left like the menu's.
 func _account_button(box: Control, text: String, icon: String, kind: int) -> Button:
 	var b := Ui.button(text, 280, Ui.H, kind)
-	b.icon = Art.tex(ICONS % icon)
+	b.icon = Ui.icon(icon)
 	b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_constant_override("h_separation", 6)
 	Ui.centre_row(box, b)

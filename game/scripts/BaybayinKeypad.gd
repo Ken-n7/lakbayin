@@ -28,7 +28,7 @@ func _ready() -> void:
 
 func _key(glyph: String, latin: String) -> Button:
 	var back := glyph == Baybayin.BACKSPACE
-	var b := Ui.button("", KEY.x, KEY.y, Ui.SMALL_RED if back else Ui.SMALL)
+	var b := Ui.button("", KEY.x, KEY.y, Ui.SMALL_RED if back else Ui.KEY)
 	b.name = "Key_" + (latin if latin != "" else "back")
 	b.tooltip_text = latin
 	Ui.quiet(b)
@@ -39,12 +39,12 @@ func _key(glyph: String, latin: String) -> Button:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# A mark is shown on a dotted circle, the way type specimens show them.
 	var face := ("◌" + glyph) if Baybayin.MARKS.has(glyph) else glyph
-	var g := Art.label(face, GLYPH_SIZE, Pal.WHITE_STRONG, HORIZONTAL_ALIGNMENT_CENTER)
+	var g := Art.label(face, GLYPH_SIZE, Pal.CREAM if back else Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	g.add_theme_font_override("font", Art.baybayin())
 	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(g)
 	if labels and latin != "":
-		var l := Art.label(latin, Art.MIN_FONT, Pal.WHITE_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+		var l := Art.label(latin, Art.MIN_FONT, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		col.add_child(l)
 	b.add_child(col)

@@ -20,7 +20,11 @@ func _ready() -> void:
 	var wanted: Array = args.slice(1) if args.size() > 1 else DEFAULT
 
 	var vp := SubViewport.new()
-	vp.size = Vector2i(640, 360)
+	# Drawn at 3x, as a 1080p-tall phone shows the 640x360 canvas: pack art
+	# is placed at a third of its size and only looks right at that scale.
+	vp.size = Vector2i(1920, 1080)
+	vp.size_2d_override = Vector2i(640, 360)
+	vp.size_2d_override_stretch = true
 	vp.transparent_bg = false
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	vp.handle_input_locally = false

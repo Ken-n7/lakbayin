@@ -3,15 +3,32 @@ extends RefCounted
 
 ## Small helpers to compose the HUD and menu screens from the pack's UI assets.
 
-enum { BLUE, RED, SMALL, SMALL_RED }
+## Buttons are cut from the pack the way its own preview uses it: paper for
+## ordinary buttons and the keypad, the dark gold-trimmed paper for the one
+## main action on a screen, and the pack's red square button for a warning.
+## The names are the old ones, kept so no screen had to change:
+## RED is the primary action, BLUE / SMALL / KEY paper, SMALL_RED a warning.
+enum { BLUE, RED, SMALL, SMALL_RED, KEY }
 
-## Per kind: base texture, pressed texture, font size.
+const _PAPER := ["res://assets/ui/RegularPaper.png", ""]
+## A paper button is toned down a step, so it still stands off a paper panel.
+const _TAN := Color(0.86, 0.78, 0.64)
+## Per kind: [art, pressed art or "" to darken], font size, text colour, tone.
 const KINDS := [
-	["res://assets/ui/BigBlueButton_Regular.png", "res://assets/ui/BigBlueButton_Pressed.png", 17],
-	["res://assets/ui/BigRedButton_Regular.png", "res://assets/ui/BigRedButton_Pressed.png", 17],
-	["res://assets/ui/SmallBlueSquareButton_Regular.png", "res://assets/ui/SmallBlueSquareButton_Pressed.png", 14],
-	["res://assets/ui/SmallRedSquareButton_Regular.png", "res://assets/ui/SmallRedSquareButton_Pressed.png", 14],
+	[_PAPER, 17, Pal.INK, _TAN],
+	[["res://assets/ui/SpecialPaper.png", ""], 17, Pal.GOLD, Color.WHITE],
+	[_PAPER, 14, Pal.INK, _TAN],
+	[["res://assets/ui/SmallRedSquareButton_Regular.png",
+			"res://assets/ui/SmallRedSquareButton_Pressed.png"], 14, Pal.WHITE_STRONG, Color.WHITE],
+	[_PAPER, 14, Pal.INK, Color.WHITE],
 ]
+## One scale for every piece of pack art in the UI. The pack is drawn for 64px
+## tiles; the canvas is 640x360 and a phone shows it ~3x, so a third of the art
+## lands one art pixel per screen pixel and every outline is the same width.
+const ART_K := 1.0 / 3.0
+## The pack's own icons (assets/ui/Icon_NN.png), by what they mean here.
+const ICON := {"play": 7, "swords": 5, "shield": 6, "gear": 10, "close": 9,
+	"back": 8, "info": 11, "music": 12, "coin": 3}
 const PAPER := "res://assets/ui/RegularPaper.png"
 ## The gem, everywhere gems are counted: the client's blue diamond, glinting
 ## now and then (an AnimatedTexture, so it animates wherever an image goes).
@@ -27,38 +44,59 @@ const W_WIDE := 186
 const W_MED := 120
 const W_TINY := 70
 
-## How a button's nine-patch is sliced -- the same three numbers at all four
-## states, so a button never changes shape when it is pressed or disabled.
-const BTN_SLICE := Vector2(8, 1)
-const BTN_K := 0.22
+## Text padding inside a button. The art's borders are drawn, but text may
+## sit over them: a 32px button has no room for borders *and* padding.
+const BTN_PAD := Vector2(10, 1)
 
 
 static func button(text: String, w: float, h: float, kind := BLUE) -> Button:
-	var normal: String = KINDS[kind][0]
-	var down: String = KINDS[kind][1]
+	var art: Array = KINDS[kind][0]
+	var ink: Color = KINDS[kind][2]
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(w, h)
 	b.focus_mode = Control.FOCUS_ALL
-	b.add_theme_stylebox_override("normal", Art.panel(normal, BTN_SLICE, BTN_K))
-	b.add_theme_stylebox_override("pressed", Art.panel(down, BTN_SLICE, BTN_K))
-	b.add_theme_stylebox_override("hover", Art.panel(normal, BTN_SLICE, BTN_K))
+	var tone: Color = KINDS[kind][3]
+	b.add_theme_stylebox_override("normal", face(art[0], tone))
+	b.add_theme_stylebox_override("hover", face(art[0], tone * Color(1.1, 1.1, 1.1)))
+	# Paper has no pressed art: the press darkens it instead.
+	b.add_theme_stylebox_override("pressed",
+			face(art[1]) if art[1] != "" else face(art[0], tone * Color(0.8, 0.8, 0.8)))
+	b.add_theme_stylebox_override("disabled", face(art[0], tone * Color(0.62, 0.62, 0.66, 0.85)))
 	var ring := StyleBoxFlat.new()
 	ring.bg_color = Color.TRANSPARENT
-	ring.border_color = Pal.CREAM
+	ring.border_color = Pal.GOLD
 	ring.set_border_width_all(2)
+	ring.set_corner_radius_all(3)
 	b.add_theme_stylebox_override("focus", ring)
-	# Without this the engine's flat grey box shows through for Hint-after-use.
-	var off := Art.panel(normal, BTN_SLICE, BTN_K)
-	off.modulate_color = Color(0.62, 0.62, 0.66, 0.85)
-	b.add_theme_stylebox_override("disabled", off)
-	b.add_theme_color_override("font_disabled_color", Pal.WHITE_FAINT)
-	b.add_theme_color_override("font_color", Pal.WHITE_STRONG)
-	b.add_theme_color_override("font_hover_color", Pal.WHITE)
-	b.add_theme_color_override("font_pressed_color", Pal.WHITE)
-	b.add_theme_font_size_override("font_size", maxi(int(KINDS[kind][2]), Art.MIN_FONT))
+	b.add_theme_color_override("font_disabled_color", Color(ink, 0.45))
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(state, ink)
+	b.add_theme_font_size_override("font_size", maxi(int(KINDS[kind][1]), Art.MIN_FONT))
+	# Pack icons are 64px art: same third as the frames.
+	b.add_theme_constant_override("icon_max_width", int(64 * ART_K))
 	click(b)
 	return b
+
+
+## A pack icon by name, for `Button.icon` (see ICON).
+static func icon(name: String) -> Texture2D:
+	return Art.tex("res://assets/ui/Icon_%02d.png" % ICON[name])
+
+
+## A nine-slice of pack art at ART_K, tinted by `tint`.
+static func face(path: String, tint := Color.WHITE) -> PixelBox:
+	var np := Art.ninepatch(path)
+	var sb := PixelBox.new()
+	sb.texture = np.texture
+	sb.margins = np.margins
+	sb.k = ART_K
+	sb.modulate = tint
+	sb.content_margin_left = BTN_PAD.x
+	sb.content_margin_right = BTN_PAD.x
+	sb.content_margin_top = BTN_PAD.y
+	sb.content_margin_bottom = BTN_PAD.y
+	return sb
 
 
 ## The button sound, on press -- unless the button is `quiet()`: one whose
