@@ -486,6 +486,9 @@ class Minimap extends Control:
 	## in world px; a monk's state is "seen" or "ours"; monastery null till seen.
 	var source: Callable
 	var rim := Color("986050")
+	## The world px the picture covers (the whole world until the aerial view
+	## replaces the plain island).
+	var area := Rect2(Vector2.ZERO, Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE)
 	var _t := 0.0
 	var _pts := {}
 
@@ -511,8 +514,7 @@ class Minimap extends Control:
 		queue_redraw()
 
 	func _at(p: Vector2) -> Vector2:
-		return Vector2(p.x / (MapCfg.WORLD_W * MapCfg.TILE) * SIZE.x,
-				p.y / (MapCfg.WORLD_H * MapCfg.TILE) * SIZE.y)
+		return (p - area.position) / area.size * SIZE
 
 	func _draw() -> void:
 		# The pack's edge: a navy outline round a rim in your team's colour.
@@ -524,9 +526,12 @@ class Minimap extends Control:
 		if _pts.is_empty():
 			return
 		if _pts.get("monastery") != null:
+			# Found: the building itself, small, standing on its door.
+			var tex := Art.cell(MapWorld.MONASTERY, 0, 0)
+			var h := 16.0
+			var w := h * tex.region.size.x / tex.region.size.y
 			var c := _at(_pts.monastery)
-			draw_rect(Rect2(c - Vector2(4, 5), Vector2(8, 8)), Color("8e5cc9"))
-			draw_rect(Rect2(c - Vector2(4, 5), Vector2(8, 8)), Pal.CREAM, false, 1.0)
+			draw_texture_rect(tex, Rect2(c - Vector2(w * 0.5, h), Vector2(w, h)), false)
 		var col: Color = _pts.get("mate_colour", Color.WHITE)
 		for m: Array in _pts.get("monks", []):
 			var c := _at(m[0])

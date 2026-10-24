@@ -91,6 +91,7 @@ func _build_monastery() -> void:
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Art.shadow(l)
 	l.z_index = 5
+	l.name = "MonasteryLabel"
 	add_child(l)
 
 
@@ -139,6 +140,15 @@ func _build_props() -> void:
 
 
 ## Where each team starts.
+## What the aerial minimap must not give away: the Monastery and its sign
+## (shown once found), the monks (dots once seen), and the clouds.
+func minimap_hidden() -> Array[Node]:
+	var out: Array[Node] = [get_node("Monastery"), get_node("MonasteryLabel")]
+	out.append_array(monks)
+	out.append_array(cloud_bands)
+	return out
+
+
 func spawn_of(team: int) -> Vector2:
 	return gen.spawns[clampi(team, 0, 1)]
 

@@ -144,6 +144,7 @@ func _build() -> void:
 	hud.minimap.set_land(world.gen.land)
 	hud.minimap.source = _minimap_points
 	_spawn_player()
+	_bake_minimap.call_deferred()
 	for band in world.cloud_bands:
 		band.keep_clear = [player]
 	Game.time_changed.connect(hud.on_time)
@@ -661,6 +662,77 @@ func _look_for_monks(delta: float) -> void:
 		for e in eyes:
 			if e.distance_to(world.door()) < SEE_R:
 				_monastery_seen = true
+
+
+## The minimap's picture: the real map from overhead, rendered once through a
+## second camera on the same world. What it must not show (minimap_hidden,
+## the player) is moved to visibility layer 2, which only the board's own
+## view draws. Rendered at half size, then scaled down smoothly to 3x the
+## minimap -- one art pixel per screen pixel on a phone. Headless (tests) it
+## gets no image and the plain island from set_land stays.
+const MINIMAP_LAYER := 2
+
+
+func _bake_minimap() -> void:
+	var hide: Array[Node] = world.minimap_hidden()
+	hide.append(player)
+	if _peers != null:
+		hide.append(_peers)
+	for n in hide:
+		_on_layer(n, MINIMAP_LAYER)
+	# The island and a little sea, not the whole world: most of it is water,
+	# and the props should read.
+	var area := _minimap_area()
+	var vp := SubViewport.new()
+	vp.world_2d = world.get_world_2d()
+	vp.size = Vector2i(area.size / 2.0)
+	vp.canvas_cull_mask = 1
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	var cam := Camera2D.new()
+	cam.anchor_mode = Camera2D.ANCHOR_MODE_FIXED_TOP_LEFT
+	cam.position = area.position
+	cam.zoom = Vector2(0.5, 0.5)
+	vp.add_child(cam)
+	add_child(vp)
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := vp.get_texture().get_image() if is_instance_valid(vp) else null
+	vp.queue_free()
+	if img == null or img.is_empty() or hud == null:
+		return
+	img.resize(int(AdventureHud.Minimap.SIZE.x * 3), int(AdventureHud.Minimap.SIZE.y * 3),
+			Image.INTERPOLATE_LANCZOS)
+	hud.minimap.land = ImageTexture.create_from_image(img)
+	hud.minimap.area = area
+	hud.minimap.queue_redraw()
+
+
+## The land's bounds plus two cells of sea, widened to the minimap's shape
+## and kept inside the world, in world px.
+func _minimap_area() -> Rect2:
+	var lo := Vector2i(MapCfg.WORLD_W, MapCfg.WORLD_H)
+	var hi := Vector2i.ZERO
+	for c: Vector2i in world.gen.land:
+		lo = lo.min(c)
+		hi = hi.max(c)
+	var world_px := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE
+	var r := Rect2(Vector2(lo - Vector2i(2, 2)) * MapCfg.TILE, Vector2(hi - lo + Vector2i(5, 5)) * MapCfg.TILE)
+	var shape := AdventureHud.Minimap.SIZE.x / AdventureHud.Minimap.SIZE.y
+	if r.size.x / r.size.y < shape:
+		r = r.grow_individual((r.size.y * shape - r.size.x) / 2.0, 0, (r.size.y * shape - r.size.x) / 2.0, 0)
+	else:
+		r = r.grow_individual(0, (r.size.x / shape - r.size.y) / 2.0, 0, (r.size.x / shape - r.size.y) / 2.0)
+	r.size = r.size.min(world_px)
+	r.position = r.position.clamp(Vector2.ZERO, world_px - r.size)
+	return r
+
+
+## `n` and everything under it drawn only by views whose cull mask has `bit`.
+func _on_layer(n: Node, layer: int) -> void:
+	if n is CanvasItem:
+		(n as CanvasItem).visibility_layer = 1 << (layer - 1)
+	for c in n.get_children():
+		_on_layer(c, layer)
 
 
 func _minimap_points() -> Dictionary:
