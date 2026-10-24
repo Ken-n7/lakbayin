@@ -26,6 +26,8 @@ const W := 27          # 27 x 32 = 864: covers 800, which is what `keep_height`
 const H := 12          # 12 x 32 = 384, over-covers 360
 const ISLE := Vector2(13.2, 6.2)    # island centre, in cells
 const ISLE_R := Vector2(6.0, 3.9)   # island radii, in cells
+const ONLINE_EVERY := 20.0  # s; the server counts a player online for 60
+const ONLINE_DOT := Color("7bd860")
 
 var main: Control
 
@@ -41,6 +43,7 @@ func setup(_data: Dictionary) -> void:
 	_build_menu()
 	_build_header()
 	_build_footer()
+	_build_online()
 
 
 # --- What a subclass changes ------------------------------------------------
@@ -521,3 +524,55 @@ func _build_footer() -> void:
 	ver.offset_top = -(INSET + 16)
 	ver.offset_bottom = -INSET
 	add_child(ver)
+
+
+## A MOBA lobby's "players online", over the version in the corner: who is
+## signed in right now, and how many of them are in a match. Signed in only
+## -- offline there is no one to count.
+func _build_online() -> void:
+	if not Net.signed_in():
+		return
+	var pill := PanelContainer.new()
+	pill.name = "Online"
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(Pal.BG, 0.72)
+	bg.set_corner_radius_all(4)
+	bg.content_margin_left = 8
+	bg.content_margin_right = 8
+	bg.content_margin_top = 3
+	bg.content_margin_bottom = 3
+	pill.add_theme_stylebox_override("panel", bg)
+	pill.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	pill.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	pill.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	pill.offset_right = -INSET
+	pill.offset_bottom = -(INSET + 18)
+	pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pill.visible = false   # until the first count is in
+	add_child(pill)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	pill.add_child(row)
+	var dot := ColorRect.new()
+	dot.color = ONLINE_DOT
+	dot.custom_minimum_size = Vector2(6, 6)
+	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(dot)
+	var text := Art.label("", Pal.SMALL, Pal.CREAM)
+	row.add_child(text)
+	var tick := Timer.new()
+	tick.wait_time = ONLINE_EVERY
+	tick.autostart = true
+	tick.timeout.connect(_fill_online.bind(pill, text))
+	add_child(tick)
+	_fill_online(pill, text)
+
+
+func _fill_online(pill: Control, text: Label) -> void:
+	var got := await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/players_online", {})
+	if not is_instance_valid(text) or got.error != "" or not (got.data is Dictionary):
+		return
+	var online := int(got.data.get("online", 0))
+	var playing := int(got.data.get("playing", 0))
+	text.text = "%d online" % online + ("  ·  %d in a match" % playing if playing > 0 else "")
+	pill.visible = true

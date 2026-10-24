@@ -63,6 +63,9 @@ SPAWN_PX = 12.0
 FRESH_S = 15.0
 # Reach is the client's INTERACT_RADIUS, from a hero who stopped a hair late.
 REACH_SLACK = 16.0
+# "Online" on Home: signed in and heard from this recently. Home asks every
+# 20 s, lobbies every 3 s, a match's socket every few seconds.
+ONLINE_S = 60.0
 
 
 def stamp(value=None):
@@ -701,6 +704,14 @@ def create_app(db_path=None):
     # (x, y, server time) of their last accepted position. Memory only: a
     # restart starts each hero from their next packet.
     maps, where = {}, {}
+    # who -> when they last called in. Memory only: a restart counts afresh.
+    active = {}
+
+    def online(now):
+        for who in [w for w, t in active.items() if t < now - ONLINE_S]:
+            del active[who]
+        playing = {w for s in store.load()["sessions"].values() if s["state"] == "running" for w in s["members"] if plays(s, w)}
+        return {"online": len(active), "playing": len(playing & active.keys())}
 
     async def build_map(s):
         proc = await asyncio.create_subprocess_exec(
@@ -917,6 +928,9 @@ def create_app(db_path=None):
     @app.api_route("/rest/v1/{path:path}", methods=["GET", "POST", "PATCH", "DELETE", "PUT"])
     async def rest(path: str, request: Request):
         who = store.user(bearer(request))["id"]
+        active[who] = time.time()
+        if path == "rpc/players_online":
+            return online(time.time())
         raw = await request.body()
         require(len(raw) <= 16384, "Request too large", 413)
         body = json.loads(raw) if raw else {}
@@ -971,6 +985,7 @@ def create_app(db_path=None):
                     continue
                 require(peer["who"], "Authenticate first", 401)
                 store.user(peer["token"])
+                active[peer["who"]] = time.time()
                 if event == "heartbeat":
                     await hub.send(ws, topic, "phx_reply", {"status": "ok", "response": {}}, ref)
                 elif event == "phx_leave":

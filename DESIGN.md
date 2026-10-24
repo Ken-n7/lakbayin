@@ -263,6 +263,9 @@ English meanings are not shown.
   Both use existing Tiny Swords / Super Retro World art; obsolete castles,
   towers, barracks, archery buildings and combat units are absent. These are
   fixed decorative scenes, separate from procedural match generation.
+- **Players online:** signed in, Home's bottom-right corner shows how many
+  players are online (heard from in the last 60 s) and how many of them are
+  in a match, refreshed every 20 s (`players_online`).
 
 ---
 
