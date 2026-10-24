@@ -26,14 +26,33 @@ func _ready() -> void:
 	plate.add_theme_stylebox_override("panel", Ui.face("res://assets/ui/SpecialPaper.png"))
 	plate.size = Vector2(SIZE)
 	vp.add_child(plate)
-	var word := Art.label(TITLE, 39, Pal.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
-	# The font's line box holds room for marks above and below each line;
-	# the two lines' own marks need much less.
-	word.add_theme_constant_override("line_spacing", -16)
-	word.add_theme_font_override("font", Art.baybayin())
-	word.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	plate.add_child(word)
+	# A title's pop, from the one font in layers: a hard drop shadow, a thick
+	# ink outline, then the gold with a darker lip below and a cream glint
+	# above, each a pixel off -- a bevel.
+	var stack := Control.new()
+	plate.add_child(stack)
+	for layer: Array in [[Pal.INK, Vector2(0, 3), 8], [Pal.INK, Vector2.ZERO, 8],
+			[Pal.GOLD_DIM, Vector2(0, 1), 0], [Pal.CREAM, Vector2(0, -1), 0], [Pal.GOLD, Vector2.ZERO, 0]]:
+		stack.add_child(_word(layer[0], layer[1], layer[2]))
 	for i in 10:
 		await get_tree().process_frame
 	vp.get_texture().get_image().save_png(args[0])
 	get_tree().quit(0)
+
+
+func _word(colour: Color, shift: Vector2, outline: int) -> Label:
+	var word := Art.label(TITLE, 39, colour, HORIZONTAL_ALIGNMENT_CENTER)
+	word.add_theme_font_override("font", Art.baybayin())
+	# The font's line box holds room for marks above and below each line;
+	# the two lines' own marks need much less.
+	word.add_theme_constant_override("line_spacing", -16)
+	word.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	word.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	word.offset_left = shift.x
+	word.offset_right = shift.x
+	word.offset_top = shift.y
+	word.offset_bottom = shift.y
+	if outline > 0:
+		word.add_theme_color_override("font_outline_color", colour)
+		word.add_theme_constant_override("outline_size", outline)
+	return word
