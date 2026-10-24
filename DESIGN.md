@@ -90,6 +90,16 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 - When it ends, everyone sees an **aerial view** of the whole map, then the
   results screen.
 - Match clock: **15 minutes**. Default monk count: **10**.
+- **No leaving an online match.** The match's Settings (⚙, top right) holds
+  only Music and Sounds; **Leave Practice** appears in Practice alone.
+
+### 3.4a The match screen
+- Top bar: the **minimap** top-left (its rim in your team's colour, which is
+  how the screen says your side), the score ribbon, Carry, the clock, ⚙.
+- The minimap is an **aerial picture of the island** -- land, trees, houses,
+  rocks -- rendered once at the start. The **Monastery** and the **monks**
+  are not in it: a monk appears as a dot once anyone on your team has seen
+  it, and the Monastery as a small building once your team has found it.
 
 ### 3.5 Winning and ranking
 
@@ -256,8 +266,13 @@ English meanings are not shown.
 - **Join Room:** type the code to land in the lobby.
 - Players pick sides and may switch until Start. The host may **Move Player**
   or **Shuffle** everyone into balanced sides. Both controls lock at Start.
-- **Only the host starts**, once both sides have a player. Any number a
-  side, uneven too (1 v 3 is fine).
+- **Spectators:** anyone in the room, the host included, may pick the
+  **Spectators** bar instead of a side. A spectator never plays: no hero, no
+  answers or deposits, no results or records. At Start they get the Watch
+  view (§6.4). Nobody switches between playing and spectating after Start;
+  Shuffle leaves spectators where they are.
+- **Only the host starts**, once both sides have a player (spectators do not
+  count). Any number a side, uneven too (1 v 3 is fine).
 - If the host leaves the lobby, hosting passes to the next player. Lobby
   phones check in every 3 s; 30 s silence removes a disconnected member,
   transferring hosting to the oldest active member when necessary. Running
@@ -278,6 +293,8 @@ English meanings are not shown.
 - Viewers never join a team or submit answers, deposits, or movement. Each
   monk has separate Blue/Red markers: an outline is carried, a fill deposited.
 - The event screen keeps the final result visible until the viewer leaves.
+- The view can be moved: drag to pan; scroll, pinch or **+ / −** to zoom,
+  from the whole island to about five times closer.
 
 ---
 
@@ -292,7 +309,7 @@ English meanings are not shown.
 There is no team leaderboard: matchmade teams are random, so an all-time team
 board means nothing.
 
-Open **Settings → Player Records**, or **My Matches** after an online match.
+Open **Player Records** on Home, or **My Matches** after an online match.
 Records show 20 entries per page. Only games that actually started and ended
 (or reached their deadline) count; abandoned lobbies do not. Exact ties are
 recorded as draws and award no global wins. Practice stays offline.

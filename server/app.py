@@ -32,6 +32,9 @@ WORDS = json.loads((ROOT / "game/data/words.json").read_text())
 HASHER = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 DUMMY = HASHER.hash(secrets.token_hex(24))
 CODES = "ACDEFHJKMNPQRTUWXY23456789"
+# A custom room's third side: a member whose team is this watches the match
+# from above and never plays -- no answers, no results, no records.
+SPECTATE = "spectate"
 
 
 def stamp(value=None):
@@ -148,9 +151,11 @@ def standings(s):
     return out
 
 
-def player_standings(store, s):
+def player_standings(store, s, spectators=False):
     out = []
     for who, m in s["members"].items():
+        if m["team_id"] == SPECTATE and not spectators:
+            continue
         aa = [a for a in s["answers"] if a["profile_id"] == who]
         dd = [a for a in aa if a["deposited_at"] is not None]
         out.append({**m, "username": store.profile(who)["username"], "deposited": len(dd), "carried": len(aa) - len(dd), "reached_at": max((a["deposited_at"] for a in dd), default=None)})
@@ -257,7 +262,7 @@ def rpc(store, state, who, name, body):
         code = str(body.get("p_code", "")).upper()
         s = next((s for s in reversed(list(sessions.values())) if s["code"] == code and s["custom"] and s["state"] != "ended"), None)
         require(s, "No live room with that code", 404)
-        require(not member(s, who), "Players cannot watch their own match")
+        require(not member(s, who) or member(s, who)["team_id"] == SPECTATE, "Players cannot watch their own match")
         s["watchers"][who] = time.time() + 30
         return s["id"]
     s = find(store, state, body.get("p_session"))
@@ -279,7 +284,7 @@ def rpc(store, state, who, name, body):
         m["seen"] = time.time()
         if name == "poll_room":
             require(s["custom"], "Not a custom room")
-            return {"member": True, "session": public_session(s), "roster": player_standings(store, s)}
+            return {"member": True, "session": public_session(s), "roster": player_standings(store, s, spectators=True)}
         return {"session": public_session(s), "queued": True, "waited_s": int(time.time() - m["joined"]), "search_s": s["search_s"], "players": len(s["members"]), "needed": s["team_size"] * 2}
     if name in ("leave_match", "leave_room"):
         if s["state"] == "lobby":
@@ -295,12 +300,13 @@ def rpc(store, state, who, name, body):
             require(target and body.get("p_team") in [t["id"] for t in s["teams"]], "Invalid member or side", 400)
             target["team_id"] = body["p_team"]
         else:
-            players = list(s["members"].values())
+            players = [m for m in s["members"].values() if m["team_id"] != SPECTATE]
             random.SystemRandom().shuffle(players)
             for i, player in enumerate(players):
                 player["team_id"] = s["teams"][i % 2]["id"]
         return None
     require(s["state"] == "running" and m["team_id"], "Match is not running")
+    require(m["team_id"] != SPECTATE, "Spectators only watch")
     if name == "answer_monk":
         index = body.get("p_monk")
         require(type(index) is int and 0 <= index < len(s["words"]), "Invalid monk", 400)
@@ -390,7 +396,7 @@ def write_rows(state, who, method, table, params, body):
         add_member(s, who)
     elif method == "PATCH":
         require(s["state"] == "lobby" and member(s, who), "Cannot change sides now")
-        require(set(body) == {"team_id"} and body["team_id"] in [t["id"] for t in s["teams"]], "Invalid side", 400)
+        require(set(body) == {"team_id"} and body["team_id"] in [t["id"] for t in s["teams"]] + [SPECTATE], "Invalid side", 400)
         s["members"][who]["team_id"] = body["team_id"]
     else:
         raise HTTPException(405, "Unsupported method")

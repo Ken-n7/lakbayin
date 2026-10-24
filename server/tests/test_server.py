@@ -286,6 +286,28 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(roster[self.users[1]['user']['id']]['metas'][0]['name'],'bravo')
             self.assertEqual(set(b.receive_json()['payload']),set(roster))
 
+    def test_room_spectator_watches_never_plays(self):
+        s=self.room(); sid=s['id']; me=self.users[3]['user']['id']
+        self.assertEqual(self.request(3,'POST','/rest/v1/members',{'session_id':sid,'profile_id':me}).status_code,200)
+        self.assertEqual(self.request(3,'PATCH',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{me}',{'team_id':'spectate'}).status_code,200)
+        roster=self.rpc(3,'poll_room',p_session=sid).json()['roster']
+        self.assertIn('spectate',[r['team_id'] for r in roster])
+        self.rpc(0,'shuffle_room',p_session=sid)
+        state=self.app.state.store.load()['sessions'][sid]
+        self.assertEqual(state['members'][me]['team_id'],'spectate')
+        self.assertEqual(self.rpc(0,'start_room',p_session=sid).status_code,200)
+        w=self.app.state.store.load()['sessions'][sid]['words'][0]
+        self.assertEqual(self.rpc(3,'answer_monk',p_session=sid,p_monk=0,p_typed=w['modern']).status_code,403)
+        self.assertEqual(self.rpc(3,'deposit',p_session=sid).status_code,403)
+        self.assertEqual(self.rpc(3,'watch_match',p_code=s['code']).json(),sid)
+        snap=self.rpc(3,'watch_snapshot',p_session=sid).json()
+        self.assertNotIn(me,[p['profile_id'] for p in snap['players']])
+        self.assertEqual(self.request(1,'PATCH',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{self.users[1]["user"]["id"]}',{'team_id':'spectate'}).status_code,403)
+        for i,w in enumerate(self.app.state.store.load()['sessions'][sid]['words']):
+            self.rpc(0,'answer_monk',p_session=sid,p_monk=i,p_typed=w['modern'])
+        self.rpc(0,'deposit',p_session=sid)
+        self.assertEqual(self.rpc(3,'my_matches').json(),[])
+
     def test_private_channel_denies_outsider(self):
         from starlette.websockets import WebSocketDisconnect
         s=self.room();sid=s['id']

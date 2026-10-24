@@ -22,6 +22,8 @@ extends RefCounted
 ## Every rule is the server's, and the map never acts on a broadcast.
 
 const EVENT := "row"
+## A custom room's third side (the server's SPECTATE): watches, never plays.
+const SPECTATE := "spectate"
 const RING_S := 1.0              # reloads a broadcast may cause, at most one this often
 
 var session := {}
@@ -165,6 +167,8 @@ func team_of(profile_id: String) -> String:
 
 
 func name_of(team_id: String) -> String:
+	if team_id == SPECTATE:
+		return "Spectators"
 	var at := _team_index(team_id)
 	return teams[at].name if at != -1 else ""
 

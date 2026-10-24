@@ -22,9 +22,20 @@ var _pins: Pins
 var _roster := {}
 
 
+## A room's own spectator (Lobby.SPECTATE), not a visitor with the code.
+var _spectator := false
+## The aerial view: where it looks and how near. `_fit` shows the whole world;
+## a spectator drags to move and pinches, scrolls or taps +/- to look closer.
+var _center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
+var _zoom := 0.0
+var _fit := 0.1
+const ZOOM_MAX := 5.0      # times the whole-world fit
+
+
 func setup(options: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_code = Teams.clean_code(str(options.get("code", "")))
+	_spectator = bool(options.get("spectator", false))
 	_build_ui()
 	if not Net.signed_in():
 		_unavailable("Sign in to watch a match.")
@@ -147,6 +158,21 @@ func _build_ui() -> void:
 	Art.shadow(legend)
 	add_child(legend)
 	resized.connect(_frame_map)
+	_map_box.gui_input.connect(_on_map_input)
+	# Touch has no wheel: + and - over the map's corner.
+	var zoom_row := HBoxContainer.new()
+	zoom_row.add_theme_constant_override("separation", 4)
+	zoom_row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	zoom_row.offset_left = -92
+	zoom_row.offset_right = -14
+	zoom_row.offset_top = -141
+	zoom_row.offset_bottom = -107
+	for step: Array in [["−", 1.0 / 1.4], ["+", 1.4]]:
+		var b := Ui.button(step[0], 36, Ui.H, Ui.SMALL)
+		b.add_theme_font_size_override("font_size", 20)
+		b.pressed.connect(func() -> void: _look(_center, _zoom * float(step[1])))
+		zoom_row.add_child(b)
+	add_child(zoom_row)
 
 
 func _process(delta: float) -> void:
@@ -232,11 +258,42 @@ func _frame_map() -> void:
 	if world == null:
 		return
 	var area := _map_box.size
-	var z := minf(area.x / float(MapCfg.WORLD_W * MapCfg.TILE), area.y / float(MapCfg.WORLD_H * MapCfg.TILE))
-	_camera.zoom = Vector2(z, z)
+	_fit = minf(area.x / float(MapCfg.WORLD_W * MapCfg.TILE), area.y / float(MapCfg.WORLD_H * MapCfg.TILE))
 	_pins.position = _map_box.position
 	_pins.size = area
-	_pins.zoom = z
+	_look(_center, _zoom if _zoom > 0.0 else _fit)
+
+
+## Drag to move the view; wheel or pinch to zoom.
+func _on_map_input(e: InputEvent) -> void:
+	if world == null:
+		return
+	if e is InputEventScreenDrag or (e is InputEventMouseMotion
+			and (e as InputEventMouseMotion).button_mask & MOUSE_BUTTON_MASK_LEFT):
+		_look(_center - e.relative / _zoom, _zoom)
+	elif e is InputEventMouseButton and (e as InputEventMouseButton).pressed:
+		var button := (e as InputEventMouseButton).button_index
+		if button == MOUSE_BUTTON_WHEEL_UP:
+			_look(_center, _zoom * 1.15)
+		elif button == MOUSE_BUTTON_WHEEL_DOWN:
+			_look(_center, _zoom / 1.15)
+	elif e is InputEventMagnifyGesture:
+		_look(_center, _zoom * (e as InputEventMagnifyGesture).factor)
+
+
+## Point the aerial view, kept on the world and between whole-world and close.
+func _look(center: Vector2, zoom: float) -> void:
+	if world == null:
+		return
+	_zoom = clampf(zoom, _fit, _fit * ZOOM_MAX)
+	var world_px := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE
+	var half := _map_box.size / _zoom / 2.0
+	_center = Vector2(clampf(center.x, minf(half.x, world_px.x / 2.0), maxf(world_px.x - half.x, world_px.x / 2.0)),
+			clampf(center.y, minf(half.y, world_px.y / 2.0), maxf(world_px.y - half.y, world_px.y / 2.0)))
+	_camera.zoom = Vector2(_zoom, _zoom)
+	_camera.position = _center
+	_pins.zoom = _zoom
+	_pins.center = _center
 	_pins.queue_redraw()
 
 
@@ -272,7 +329,16 @@ func _exit_tree() -> void:
 	WatchFeed.leave(session_id)
 
 
+## A visitor goes back to the code form. A room's spectator goes Home and
+## forgets the room -- the room screen would only send them back here; the
+## code and Watch bring them back while it runs.
 func go_back() -> void:
+	if _spectator:
+		Game.joined_code = ""
+		Game.joined_session = ""
+		Game.save_profile()
+		main.open("home")
+		return
 	main.open("room")
 
 
@@ -283,14 +349,19 @@ class Pins extends Control:
 	var peers: Peers
 	var snapshot := {}
 	var zoom := 0.1
+	var center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
 	func _at(point: Vector2) -> Vector2:
-		return size * 0.5 + (point - Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5) * zoom
+		return size * 0.5 + (point - center) * zoom
 	func _draw() -> void:
 		if world == null:
 			return
 		var teams: Array = snapshot.get("teams", [])
+		# Zoomed in, what is off the view is skipped, not drawn over the page.
+		var view := Rect2(Vector2.ZERO, size).grow(-2)
 		for i in world.monks.size():
 			var at := _at(world.monks[i].position)
+			if not view.has_point(at):
+				continue
 			for side in mini(2, teams.size()):
 				var pos := at + Vector2(-4 if side == 0 else 4, -5)
 				var state := WatchFeed.monk_state(snapshot, str(teams[side].id), i)
@@ -307,7 +378,7 @@ class Pins extends Control:
 				var marker: Node2D = peers.get("_markers")[id]
 				# Unknown / stale positions aren't fabricated at the Monastery.
 				marker.visible = peers._is_live(id)
-				if marker.visible:
+				if marker.visible and view.has_point(_at(marker.position)):
 					var at := _at(marker.position)
 					var row: Dictionary = peers.get("_roster").get(id, {})
 					draw_circle(at, 4, Pal.SHADOW)

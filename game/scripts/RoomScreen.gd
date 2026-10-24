@@ -166,14 +166,19 @@ func _draw_lobby() -> void:
 	var ready := _lobby.members_of("").is_empty()
 	for t: Dictionary in _lobby.teams:
 		ready = ready and not _lobby.members_of(t.id).is_empty()
-	_steps.text = "Room code  %s" % str(_session.get("code", ""))
+	# The code is already on the header's left; the middle says who may join.
+	_steps.text = "Pick a side, or spectate"
 	if started:
 		_status.text = "The room has started — go!"
 		if _mine != "" and not _entering:
 			_entering = true
 			_to_map.call_deferred()
 	elif _mine == "":
-		_status.text = "Tap a side to join it."
+		_status.text = "Tap a side to join it, or Spectators to watch."
+	elif _mine == Lobby.SPECTATE:
+		_status.text = ("You host and spectate. Press Start when everyone is in." if hosting and ready
+			else "You host and spectate. Both sides need a player to start." if hosting
+			else "You're spectating — you'll watch from above. Waiting for %s to start." % host_name)
 	elif hosting:
 		_status.text = ("You host, on %s. Press Start when everyone is in." if ready
 			else "You host, on %s. Both sides need a player to start.") % team_name

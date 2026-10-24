@@ -26,21 +26,21 @@ with tempfile.TemporaryDirectory(prefix='lakbayin-flow-') as tmp:
                 if c.get('/health').is_success: break
             except httpx.ConnectError: pass
             time.sleep(.05)
-        names = ['Malaya', 'Dalisay']
+        names = ['Malaya', 'Dalisay', 'Tala'][:int(os.environ.get('FLOW_CLIENTS', '2'))]
         accounts = []
         for n in names:
             pw = secrets.token_urlsafe(18)
             c.post('/auth/register', json={'username': n, 'password': pw}).raise_for_status()
             accounts.append({'username': n, 'password': pw})
         (tmp / 'info.json').write_text(json.dumps({'accounts': accounts}))
-        for i in range(2):
+        for i in range(len(names)):
             o = open(OUT / f'godot-{i}.log', 'w')
             p = subprocess.Popen(['godot', '--path', 'game', '--resolution', '960x540',
                                   'res://tools/flow_shots.tscn', '--', f'--player={i}', f'--out={OUT}',
                                   f'--profile=flow-{i}'], cwd=ROOT, env=env, stdout=o, stderr=o)
             clients.append((p, o))
         codes = [p.wait(timeout=120) for p, _ in clients]
-        for i in range(2):
+        for i in range(len(names)):
             print(f'--- client {i} exit {codes[i]}')
             print('\n'.join(l for l in (OUT / f'godot-{i}.log').read_text().splitlines()
                             if 'shot' in l or 'ERROR' in l)[-3000:])

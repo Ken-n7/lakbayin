@@ -49,6 +49,9 @@ func _ready() -> void:
 	main.open("home")
 	await _wait(1.5)
 	await _shot("home")
+	if OS.get_environment("FLOW_SCENARIO") == "room":
+		await _room_flow()
+		return
 
 	# Player 0 queues alone first, so the waiting lobby can be seen.
 	await _wait(1.0 if index == 0 else float(OS.get_environment("FLOW_JOIN_DELAY") if OS.get_environment("FLOW_JOIN_DELAY") != "" else "6"))
@@ -112,6 +115,75 @@ func _ready() -> void:
 	await _shot("results" if results != null else "no_results")
 	Net.realtime().close_socket()
 	get_tree().quit(0)
+
+
+## FLOW_SCENARIO=room, three clients: 0 creates a room and spectates, 1 and 2
+## join by code onto Blue and Red, 0 starts, 1 finishes the match.
+func _room_flow() -> void:
+	var code_file := out.path_join("room_code.txt")
+	main.open("room")
+	await _wait(1.0)
+	if index == 0:
+		main.current.call("_create")
+		var lobby := await _until(func() -> bool: return str(main.current.get("_session").get("code", "")) != "", 15.0)
+		var code := str(main.current.get("_session").get("code", ""))
+		FileAccess.open(code_file, FileAccess.WRITE).store_string(code)
+		await _wait(1.0)
+		main.current.call("_pick", Lobby.SPECTATE)
+		await _wait(1.5)
+		await _shot("room_host")
+		await _until(func() -> bool:
+			var l: Lobby = main.current.get("_lobby")
+			return l.members_of(l.teams[0].id).size() > 0 and l.members_of(l.teams[1].id).size() > 0, 40.0)
+		await _wait(2.0)
+		await _shot("room_full")
+		main.current.call("_start")
+		var watch := await _until_screen("WatchScreen.gd", 20.0)
+		await _wait(4.0)
+		await _shot("spectator" if watch != null else "spectator_missing")
+		if watch != null:
+			watch.call("_look", watch.get("world").door(), float(watch.get("_fit")) * 3.0)
+			await _wait(1.5)
+			await _shot("spectator_zoom")
+			await _wait(25.0)
+			await _shot("spectator_end")
+	else:
+		await _until(func() -> bool: return FileAccess.file_exists(code_file), 40.0)
+		await _wait(float(index))
+		main.current.get("_code").text = FileAccess.get_file_as_string(code_file)
+		main.current.call("_enter")
+		await _until(func() -> bool: return main.current.get("_lobby").teams.size() == 2, 15.0)
+		await _wait(1.0)
+		main.current.call("_pick", main.current.get("_lobby").teams[index - 1].id)
+		await _wait(2.0)
+		await _shot("room_player")
+		var screen := await _until_screen("AdventureScreen.gd", 60.0)
+		if screen == null:
+			await _shot("stuck")
+			get_tree().quit(1)
+			return
+		screen.call("skip_intro")
+		await _wait(3.0)
+		await _shot("match")
+		if index == 1:
+			for i in screen.play.words.size():
+				await Monks.answer(screen.play.session_id, i, _spelling(screen.play.words[i]))
+			await Monks.deposit(screen.play.session_id)
+		await _until_screen("ResultsScreen.gd", 40.0)
+		await _wait(2.0)
+		await _shot("results")
+	Net.realtime().close_socket()
+	get_tree().quit(0)
+
+
+func _until(ok: Callable, timeout: float) -> bool:
+	var t := 0.0
+	while t < timeout:
+		if main.current != null and ok.call():
+			return true
+		await _wait(0.25)
+		t += 0.25
+	return false
 
 
 func _spelling(word: Dictionary) -> String:

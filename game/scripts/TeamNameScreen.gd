@@ -34,6 +34,7 @@ var _session := {}
 var _lobby := Lobby.new()
 var _mine := ""              # the team this player is on, "" for none yet
 var _cards: GridContainer
+var _spect_slot: CenterContainer   # a custom room's Spectators bar, under the cards
 var _status: Label
 var _steps: Label            # "1 Pick a team -> 2 Ready!", the current one lit
 var _banner: PanelContainer  # the status line's backing, coloured by state
@@ -227,10 +228,15 @@ func _build_lobby() -> void:
 	centre.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(centre)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 8)
+	centre.add_child(stack)
 	_cards = GridContainer.new()
 	_cards.add_theme_constant_override("h_separation", 10)
 	_cards.add_theme_constant_override("v_separation", 8)
-	centre.add_child(_cards)
+	stack.add_child(_cards)
+	_spect_slot = CenterContainer.new()
+	stack.add_child(_spect_slot)
 
 	_banner = PanelContainer.new()
 	_status = Art.label("", Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
@@ -287,13 +293,20 @@ func _draw_lobby() -> void:
 	_cards.columns = maxi(1, 2 if n == 4 else mini(n, 3))
 	# Every box the same height, so a team with more players does not read
 	# as the "bigger" choice.
-	var most := 2
+	# A room's cards leave a line for its Spectators bar underneath.
+	var most := 2 if _matchmade() else 1
 	for t: Dictionary in _lobby.teams:
 		most = maxi(most, mini(_lobby.members_of(t.id).size(), SHOW_NAMES + 1))
 	for t: Dictionary in _lobby.teams:
 		# Locked: only somebody with no team (never picked, or theirs was
 		# removed) may still pick. The server holds the same line.
 		_cards.add_child(_team_box(t, locked and _mine != "", most))
+	if is_instance_valid(_spect_slot):
+		for c in _spect_slot.get_children():
+			_spect_slot.remove_child(c)
+			c.queue_free()
+		if not _matchmade():
+			_spect_slot.add_child(_spectator_box(locked and _mine != ""))
 
 	var team_name := _lobby.name_of(_mine)
 	var tone := Pal.INK
@@ -343,15 +356,7 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	box.disabled = mine or locked
 	Ui.click(box)
 	box.tooltip_text = "" if box.disabled else "Join " + str(t.name)
-	for st in ["normal", "hover", "pressed", "disabled", "focus"]:
-		var face := StyleBoxFlat.new()
-		face.bg_color = Pal.PARCHMENT if st != "hover" else Pal.PARCHMENT.lightened(0.25)
-		if st == "pressed":
-			face.bg_color = Pal.PARCHMENT.darkened(0.1)
-		face.border_color = Pal.AMBER if mine else (Pal.WOOD if st != "hover" else Pal.TITLE)
-		face.set_border_width_all(3 if mine else 2)
-		face.set_corner_radius_all(3)
-		box.add_theme_stylebox_override(st, face)
+	_card_face(box, mine)
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 1)
@@ -408,6 +413,57 @@ func _team_box(t: Dictionary, locked: bool, most: int) -> Control:
 	col.add_child(foot)
 	if not box.disabled:
 		box.pressed.connect(func() -> void: _pick(id))
+	return box
+
+
+## A team card's face: parchment, a gold edge when it is yours.
+func _card_face(box: Button, mine: bool) -> void:
+	for st in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var face := StyleBoxFlat.new()
+		face.bg_color = Pal.PARCHMENT if st != "hover" else Pal.PARCHMENT.lightened(0.25)
+		if st == "pressed":
+			face.bg_color = Pal.PARCHMENT.darkened(0.1)
+		face.border_color = Pal.AMBER if mine else (Pal.WOOD if st != "hover" else Pal.TITLE)
+		face.set_border_width_all(3 if mine else 2)
+		face.set_corner_radius_all(3)
+		box.add_theme_stylebox_override(st, face)
+
+
+## A custom room's Spectators: a wide bar under the two sides. Anyone may
+## watch instead of playing -- from above, the whole map, never a hero.
+func _spectator_box(locked: bool) -> Control:
+	var mine := _mine == Lobby.SPECTATE
+	var box := Button.new()
+	box.custom_minimum_size = Vector2(CARD.x * 2 + 10, NAME_LINE * 2 + 8)
+	box.focus_mode = Control.FOCUS_NONE
+	box.disabled = mine or locked
+	box.tooltip_text = "" if box.disabled else "Watch instead of playing"
+	Ui.click(box)
+	_card_face(box, mine)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.offset_left = 8.0
+	col.offset_top = 4.0
+	col.offset_right = -8.0
+	col.offset_bottom = -4.0
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(col)
+	var title := Art.label("Spectators — watch from above, never play", Pal.LABEL, Pal.TITLE,
+			HORIZONTAL_ALIGNMENT_CENTER)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(title)
+	var who := _lobby.members_of(Lobby.SPECTATE).map(func(w: Dictionary) -> String:
+		return ("★ " if w.profile_id == Net.user_id else "") + str(w.username))
+	var foot := "YOU" if mine else "Locked" if locked else "Tap to watch instead"
+	var line := Art.label(("%s  ·  %s" % [", ".join(who), foot]) if not who.is_empty() else foot,
+			Pal.SMALL, Pal.BRONZE if mine else Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	line.clip_text = true
+	line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(line)
+	if not box.disabled:
+		box.pressed.connect(func() -> void: _pick(Lobby.SPECTATE))
 	return box
 
 
@@ -508,6 +564,10 @@ func _on_hint(event: String, data: Dictionary) -> void:
 
 func _to_map() -> void:
 	if _mine == "":
+		return
+	# A spectator never gets a hero: the room's aerial view instead.
+	if _mine == Lobby.SPECTATE:
+		main.open("watch", {"code": str(_session.get("code", "")), "spectator": true})
 		return
 	Game.save_profile()
 	Game.begin_adventure(int(Game.duration_seconds))
