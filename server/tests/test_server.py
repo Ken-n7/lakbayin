@@ -298,11 +298,11 @@ class ServerTest(unittest.TestCase):
 
     def test_players_online(self):
         self.assertEqual(self.client.post('/rest/v1/rpc/players_online',json={}).status_code,401)
-        self.assertEqual(self.rpc(0,'players_online').json(),{'online':1,'playing':0})
+        self.assertEqual(self.rpc(0,'players_online').json(),{'online':1})
         s=self.room(); self.rpc(0,'start_room',p_session=s['id'])
-        self.assertEqual(self.rpc(1,'players_online').json(),{'online':3,'playing':3})
+        self.assertEqual(self.rpc(1,'players_online').json(),{'online':3})
         with unittest.mock.patch.object(appmod.time,'time',return_value=time.time()+appmod.ONLINE_S+1):
-            self.assertEqual(self.rpc(2,'players_online').json(),{'online':1,'playing':1})
+            self.assertEqual(self.rpc(2,'players_online').json(),{'online':1})
 
     def test_room_hints(self):
         s=self.room(); sid=s['id']

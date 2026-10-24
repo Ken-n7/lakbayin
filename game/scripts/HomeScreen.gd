@@ -28,6 +28,11 @@ const ISLE := Vector2(13.2, 6.2)    # island centre, in cells
 const ISLE_R := Vector2(6.0, 3.9)   # island radii, in cells
 const ONLINE_EVERY := 20.0  # s; the server counts a player online for 60
 const ONLINE_DOT := Color("7bd860")
+const PLATE_TEXT_W := 104  # the name/record column: "999 wins  ·  100%" fits
+
+## The plate's record line from the last visit, shown while it is asked
+## again -- an empty line that filled in made the plate jump every visit.
+static var _records := {}   # username -> record line
 
 var main: Control
 
@@ -261,12 +266,13 @@ func _build_header() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 0)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.custom_minimum_size.x = PLATE_TEXT_W
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(col)
 	var who := Art.label(Net.username, Pal.LABEL, Pal.GOLD)
 	who.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(who)
-	var rec := Art.label("", Pal.SMALL, Pal.CREAM)
+	var rec := Art.label(_records.get(Net.username, " "), Pal.SMALL, Pal.CREAM)
 	rec.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(rec)
 	_fill_record(rec)
@@ -301,8 +307,10 @@ func _fill_record(rec: Label) -> void:
 		return
 	var played := int(got.data.get("played", 0))
 	var wins := int(got.data.get("wins", 0))
-	rec.text = ("%d %s  ·  %d%%" % [wins, "win" if wins == 1 else "wins", roundi(100.0 * wins / played)]) \
+	var line := ("%d %s  ·  %d%%" % [wins, "win" if wins == 1 else "wins", roundi(100.0 * wins / played)]) \
 		if played > 0 else "No games yet"
+	_records[Net.username] = line
+	rec.text = line
 
 
 func _open_room() -> void:
@@ -526,53 +534,41 @@ func _build_footer() -> void:
 	add_child(ver)
 
 
-## A MOBA lobby's "players online", over the version in the corner: who is
-## signed in right now, and how many of them are in a match. Signed in only
-## -- offline there is no one to count.
+## "● 12 online" under the version, in the corner's gutter: there, not
+## loud. The version keeps its place. Signed in only -- offline there is no
+## one to count.
 func _build_online() -> void:
 	if not Net.signed_in():
 		return
-	var pill := PanelContainer.new()
-	pill.name = "Online"
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(Pal.BG, 0.72)
-	bg.set_corner_radius_all(4)
-	bg.content_margin_left = 8
-	bg.content_margin_right = 8
-	bg.content_margin_top = 3
-	bg.content_margin_bottom = 3
-	pill.add_theme_stylebox_override("panel", bg)
-	pill.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	pill.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	pill.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	pill.offset_right = -INSET
-	pill.offset_bottom = -(INSET + 18)
-	pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pill.visible = false   # until the first count is in
-	add_child(pill)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	pill.add_child(row)
-	var dot := ColorRect.new()
-	dot.color = ONLINE_DOT
-	dot.custom_minimum_size = Vector2(6, 6)
+	row.name = "Online"
+	row.add_theme_constant_override("separation", 4)
+	row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	row.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	row.offset_right = -INSET
+	row.offset_top = -INSET
+	row.offset_bottom = -INSET + 13
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.visible = false   # until the first count is in
+	add_child(row)
+	var dot := Control.new()
+	dot.custom_minimum_size = Vector2(5, 5)
 	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	dot.draw.connect(func() -> void: dot.draw_circle(Vector2(2.5, 2.5), 2.5, ONLINE_DOT))
 	row.add_child(dot)
-	var text := Art.label("", Pal.SMALL, Pal.CREAM)
+	var text := Art.label("", 10, Color(1, 1, 1, 0.5))
 	row.add_child(text)
 	var tick := Timer.new()
 	tick.wait_time = ONLINE_EVERY
 	tick.autostart = true
-	tick.timeout.connect(_fill_online.bind(pill, text))
+	tick.timeout.connect(_fill_online.bind(row, text))
 	add_child(tick)
-	_fill_online(pill, text)
+	_fill_online(row, text)
 
 
-func _fill_online(pill: Control, text: Label) -> void:
+func _fill_online(row: Control, text: Label) -> void:
 	var got := await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/players_online", {})
 	if not is_instance_valid(text) or got.error != "" or not (got.data is Dictionary):
 		return
-	var online := int(got.data.get("online", 0))
-	var playing := int(got.data.get("playing", 0))
-	text.text = "%d online" % online + ("  ·  %d in a match" % playing if playing > 0 else "")
-	pill.visible = true
+	text.text = "%d online" % int(got.data.get("online", 0))
+	row.visible = true

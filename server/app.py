@@ -710,8 +710,7 @@ def create_app(db_path=None):
     def online(now):
         for who in [w for w, t in active.items() if t < now - ONLINE_S]:
             del active[who]
-        playing = {w for s in store.load()["sessions"].values() if s["state"] == "running" for w in s["members"] if plays(s, w)}
-        return {"online": len(active), "playing": len(playing & active.keys())}
+        return {"online": len(active)}
 
     async def build_map(s):
         proc = await asyncio.create_subprocess_exec(
