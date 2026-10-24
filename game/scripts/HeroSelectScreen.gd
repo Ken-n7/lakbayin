@@ -12,6 +12,7 @@ var _preview: AnimatedSprite2D
 var _hero_buttons: Dictionary = {}
 var _hero_id := 1
 var _hero_label: Label
+const PREVIEW_K := 6.0      # the hero drawn this many times its art
 
 
 func setup(data: Dictionary) -> void:
@@ -28,9 +29,8 @@ func _build() -> void:
 	var outer := Ui.back_panel(self, Vector2(600, 330), "Choose Your Adventurer", go_back)
 	outer.add_theme_constant_override("separation", 6)
 
-	# The heading over the preview, and under it the preview and the grid
-	# side by side, level at the top (client).
-	outer.add_child(Art.title(Art.label("Choose your hero", Pal.H2, Pal.TITLE)))
+	# A MOBA pick: the chosen hero large on the left with its name and Lock
+	# In under it, every hero to choose from on the right.
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 14)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -38,12 +38,15 @@ func _build() -> void:
 
 	# Left: the preview on a little patch of ground, and which one it is.
 	var left := VBoxContainer.new()
-	left.custom_minimum_size = Vector2(190, 0)
-	left.add_theme_constant_override("separation", 4)
+	left.custom_minimum_size = Vector2(210, 0)
+	left.add_theme_constant_override("separation", 6)
 	body.add_child(left)
 	left.add_child(_preview_stage())
-	_hero_label = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	_hero_label = Art.title(Art.label("", Pal.H2, Pal.TITLE, HORIZONTAL_ALIGNMENT_CENTER))
 	left.add_child(_hero_label)
+	var lock := Ui.button("Lock In", 200, Ui.H + 4, Ui.RED)
+	lock.pressed.connect(_save_hero)
+	Ui.centre_row(left, lock)
 
 	# Right: all 32, six across at a size a thumb can pick from.
 	var right := VBoxContainer.new()
@@ -77,11 +80,6 @@ func _build() -> void:
 		_hero_buttons[id] = b
 		grid.add_child(b)
 
-	# Back is the title's arrow; the one thing to do here, alone.
-	var start := Ui.button("Set", 240, Ui.H, Ui.RED)
-	start.pressed.connect(_save_hero)
-	Ui.centre_row(outer, start)
-
 	_pick_hero(Game.hero_id)
 
 
@@ -91,25 +89,25 @@ func _build() -> void:
 func _preview_stage() -> Control:
 	var stage := PanelContainer.new()
 	stage.add_theme_stylebox_override("panel", Ui.frame(Ui.SLOT))
-	stage.custom_minimum_size = Vector2(190, 132)
+	stage.custom_minimum_size = Vector2(210, 170)
 	var wrap := Control.new()
 	wrap.clip_contents = true
 	stage.add_child(wrap)
 	var shade := Sprite2D.new()
 	shade.texture = Art.tex("res://assets/terrain/tileset/Shadow.png")
-	shade.scale = Vector2(0.55, 0.4)
+	shade.scale = Vector2(0.7, 0.5)
 	shade.modulate.a = 0.5
 	wrap.add_child(shade)
 	_preview = AnimatedSprite2D.new()
-	_preview.scale = Vector2(4, 4)
+	_preview.scale = Vector2(PREVIEW_K, PREVIEW_K)
 	_preview.offset = Vector2(0, -10)      # feet on the ground
 	wrap.add_child(_preview)
 	# Centred on the room the slot's border leaves, not on fixed numbers: the
-	# 20px-tall frame drawn x4 stands 40px above and below its middle.
+	# 20px-tall frame drawn x PREVIEW_K stands 10 x PREVIEW_K above and below.
 	wrap.resized.connect(func() -> void:
 		var mid := wrap.size / 2.0
-		_preview.position = mid + Vector2(0, 40)
-		shade.position = mid + Vector2(0, 38))
+		_preview.position = mid + Vector2(0, 10 * PREVIEW_K)
+		shade.position = mid + Vector2(0, 10 * PREVIEW_K - 2))
 	var turn := stage.create_tween().set_loops()
 	for facing in ["down", "right", "up", "left"]:
 		turn.tween_callback(func() -> void:

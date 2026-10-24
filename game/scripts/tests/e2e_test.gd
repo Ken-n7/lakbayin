@@ -144,7 +144,7 @@ func _run() -> void:
 	for id in [1, Game.HERO_COUNT]:
 		check("adventurer #%d present" % id, _find_button_tooltip(hero, "Adventurer #%d" % id) != null)
 	_find_button_tooltip(hero, "Adventurer #12").pressed.emit()
-	_click(hero, "Set")
+	_click(hero, "Lock In")
 	await _wait(3)
 	check("hero 12 kept", Game.hero_id == 12, str(Game.hero_id))
 	# Signed out, Find Match asks for an account; Home's Practice is the
