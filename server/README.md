@@ -89,7 +89,15 @@ journalctl --user -u lakbayin-tunnel.service -f
 ```
 
 Use **one worker**. Live sockets belong to one process; multiple workers need
-a shared broker first. Match state is persisted transactionally, including
+a shared broker first. The live checkpoint is kept parsed in memory
+(reloaded only when another connection such as `manage.py` commits), and
+finished matches move to the `matches` table ten minutes after they end, so
+per-request cost tracks live matches rather than history. Live updates go
+through a per-socket queue; a client 256 messages behind is disconnected
+instead of delaying everyone.
+
+Sign-in/registration allow 200 attempts a minute per address (a classroom
+shares one) and 10 failed logins a minute per address and username. Match state is persisted transactionally, including
 words, rosters, carry, deposits, lockouts and absolute match deadlines. A
 server restart preserves progress; clocks continue during downtime. Positions
 and typing/presence are transient and reconnect, not checkpointed. Movement

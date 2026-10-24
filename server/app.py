@@ -67,16 +67,39 @@ class Store:
           create table if not exists tokens (
             hash text primary key, user_id text not null references users(id), expires real not null);
           create table if not exists checkpoint (id integer primary key check(id=1), data text not null);
+          create table if not exists matches (id text primary key, data text not null);
         """)
         self.db.execute("insert or ignore into checkpoint values(1,?)", (json.dumps({"sessions": {}, "config": {"id": 1, "team_size": 1, "duration_s": 900, "monks": 10, "search_s": 90}}),))
         self.db.commit()
+        self.cache, self.version = None, None
 
     def load(self):
-        return json.loads(self.db.execute("select data from checkpoint where id=1").fetchone()[0])
+        # The parsed checkpoint stays in memory; data_version only changes when
+        # another connection (manage.py, a test) commits, so reparse just then.
+        # Callers must not mutate the result outside commit().
+        version = self.db.execute("pragma data_version").fetchone()[0]
+        if self.cache is None or version != self.version:
+            self.cache = json.loads(self.db.execute("select data from checkpoint where id=1").fetchone()[0])
+            self.version = version
+        return self.cache
 
     def save(self, state):
         self.db.execute("update checkpoint set data=? where id=1", (json.dumps(state),))
         self.db.commit()
+        self.cache = state
+
+    def archive(self, s):
+        # Joins the caller's open transaction; save() commits both together.
+        self.db.execute("insert or replace into matches values(?,?)", (s["id"], json.dumps(s)))
+
+    def archived(self, sid):
+        row = self.db.execute("select data from matches where id=?", (sid,)).fetchone() if isinstance(sid, str) else None
+        return json.loads(row[0]) if row else None
+
+    def archives(self):
+        # ponytail: parses every finished match per Records request; keep a
+        # per-player results table if Records gets slow.
+        return (json.loads(d) for (d,) in self.db.execute("select data from matches"))
 
     def user(self, token):
         require(isinstance(token, str) and len(token) <= 512, "Sign in again", 401)
@@ -96,7 +119,12 @@ class Store:
 
 
 def public_session(s):
-    return {**{k: v for k, v in s.items() if k not in ("members", "teams", "words", "answers", "locks", "watchers", "deadline")}, "admin_id": s.get("owner_id")}
+    return {**{k: v for k, v in s.items() if k not in ("members", "teams", "words", "answers", "locks", "watchers", "deadline", "ended_ts")}, "admin_id": s.get("owner_id")}
+
+
+def find(store, state, sid):
+    """A live session, or a finished one already moved to the archive."""
+    return state["sessions"].get(sid) or store.archived(sid)
 
 
 def member(s, who):
@@ -185,7 +213,7 @@ def rpc(store, state, who, name, body):
     sessions = state["sessions"]
     if name in ("my_matches", "player_board"):
         history, board = [], {}
-        for s in sessions.values():
+        for s in [*sessions.values(), *store.archives()]:
             if s["state"] != "ended" or not s.get("starts_at"):
                 continue
             ranked = sorted(player_standings(store, s), key=rank_key)
@@ -228,7 +256,7 @@ def rpc(store, state, who, name, body):
         require(not member(s, who), "Players cannot watch their own match")
         s["watchers"][who] = time.time() + 30
         return s["id"]
-    s = sessions.get(body.get("p_session"))
+    s = find(store, state, body.get("p_session"))
     require(s, "No such session", 404)
     if name in ("watch_snapshot", "leave_watch"):
         require(s["watchers"].get(who, 0) > time.time(), "watch expired")
@@ -306,8 +334,10 @@ def read_rows(store, state, who, table, params):
         return [state["config"]]
     sid = params.get("session_id", params.get("id", "")).removeprefix("eq.")
     if table == "sessions":
-        rows = []
-        for s in reversed(list(state["sessions"].values())):
+        rows, pool = [], list(state["sessions"].values())
+        if sid and sid not in state["sessions"]:
+            pool += filter(None, [store.archived(sid)])
+        for s in reversed(pool):
             if sid and s["id"] != sid:
                 continue
             if "code" in params and s["code"] != params["code"].removeprefix("eq."):
@@ -322,7 +352,7 @@ def read_rows(store, state, who, table, params):
                 row["members"] = [{**m, "profiles": store.profile(pid)} for pid, m in s["members"].items()]
             rows.append(row)
         return rows
-    s = state["sessions"].get(sid)
+    s = find(store, state, sid)
     require(s, "No such session", 404)
     require(may_read(s, who), "Not a member or viewer")
     if table == "teams":
@@ -369,9 +399,30 @@ class Hub:
         self.peers = {}
 
     async def send(self, ws, topic, event, payload, ref=None):
+        # Queue only: callers may hold the commit lock, so one slow phone must
+        # never stall everyone. Each socket's writer() drains its own queue in
+        # order; a peer that falls 256 messages behind is dropped.
+        peer = self.peers.get(ws)
+        if peer is None:
+            return
         try:
-            await asyncio.wait_for(ws.send_json({"topic": topic, "event": event, "payload": payload, "ref": ref}), 2)
+            peer["out"].put_nowait({"topic": topic, "event": event, "payload": payload, "ref": ref})
+        except asyncio.QueueFull:
+            self.peers.pop(ws, None)
+            peer["writer"].cancel()
+            asyncio.create_task(self.close(ws))
+
+    async def close(self, ws):
+        try:
+            await asyncio.wait_for(ws.close(code=1013), 2)
         except (RuntimeError, OSError, WebSocketDisconnect, asyncio.TimeoutError):
+            pass
+
+    async def writer(self, ws, out):
+        try:
+            while True:
+                await ws.send_json(await out.get())
+        except (RuntimeError, OSError, WebSocketDisconnect):
             self.peers.pop(ws, None)
 
     async def presence(self):
@@ -425,14 +476,26 @@ def create_app(db_path=None):
     lock = asyncio.Lock()
     attempts = defaultdict(deque)
 
+    def limited(key, limit):
+        queue = attempts[key]
+        while queue and queue[0] < time.time() - 60:
+            queue.popleft()
+        return len(queue) >= limit
+
     async def commit(operation):
         async with lock:
             store.db.execute("begin immediate")
             try:
                 before = store.load()
                 state = copy.deepcopy(before)
-                for s in state["sessions"].values():
+                now = time.time()
+                for sid, s in list(state["sessions"].items()):
                     cleanup(s)
+                    # Finished matches leave the live checkpoint after 10
+                    # minutes (Results has fetched by then), so per-request
+                    # work stays proportional to live matches, not history.
+                    if s["state"] == "ended" and s.setdefault("ended_ts", now) < now - 600:
+                        store.archive(state["sessions"].pop(sid))
                 result = operation(state)
                 if state != before:
                     store.save(state)
@@ -449,6 +512,8 @@ def create_app(db_path=None):
         while True:
             await asyncio.sleep(1)
             await commit(lambda state: None)
+            for key in [k for k, q in attempts.items() if not q or q[-1] < time.time() - 60]:
+                del attempts[key]
 
     @asynccontextmanager
     async def lifespan(app):
@@ -488,20 +553,20 @@ def create_app(db_path=None):
     @app.post("/auth/register")
     @app.post("/auth/login")
     async def auth(request: Request):
-        # Trust only the direct peer; forwarded headers are configured by the
-        # loopback tunnel service, not arbitrary request headers.
-        key = request.client.host
-        queue = attempts[key]
-        now = time.time()
-        while queue and queue[0] < now - 60:
-            queue.popleft()
-        require(len(queue) < 20, "Too many attempts. Try again in a minute.", 429)
-        queue.append(now)
+        # client.host is the player's address: uvicorn takes it from the
+        # X-Forwarded-For that Cloudflare sets, trusting it only from loopback
+        # (the tunnel). A classroom shares one address, so the per-address cap
+        # is generous; guessing is capped per address and username.
+        ip = request.client.host
+        require(not limited(ip, 200), "Too many attempts. Try again in a minute.", 429)
+        attempts[ip].append(time.time())
         body = await request.json()
         require(isinstance(body, dict), "Invalid form", 400)
         username, password = body.get("username", ""), body.get("password", "")
         require(isinstance(username, str) and isinstance(password, str) and len(password) <= 256, "Invalid credentials", 400)
         username = username.strip()
+        guess = (ip, username.lower())
+        require(not limited(guess, 10), "Too many attempts. Try again in a minute.", 429)
         if request.url.path == "/auth/register":
             require(re.fullmatch(r"[A-Za-z0-9_-]{3,20}", username) and len(password) >= 8, "Username: 3–20 letters/digits/_/-. Password: 8–256 characters.", 400)
             hashed = await asyncio.to_thread(HASHER.hash, password)
@@ -518,6 +583,8 @@ def create_app(db_path=None):
                 valid = await asyncio.to_thread(HASHER.verify, row["password"] if row else DUMMY, password)
             except (VerificationError, InvalidHashError):
                 valid = False
+            if not (row and valid):
+                attempts[guess].append(time.time())
             require(row and valid, "Invalid login credentials", 401)
             who = row["id"]
         return store.session(who)
@@ -553,7 +620,8 @@ def create_app(db_path=None):
     @app.websocket("/realtime/v1/websocket")
     async def socket(ws: WebSocket):
         await ws.accept()
-        peer = {"who": "", "token": "", "topics": {}, "meta": {}, "ref": uid()}
+        out = asyncio.Queue(256)
+        peer = {"who": "", "token": "", "topics": {}, "meta": {}, "ref": uid(), "out": out, "writer": asyncio.create_task(hub.writer(ws, out))}
         hub.peers[ws] = peer
         count, window = 0, time.monotonic()
         try:
@@ -623,12 +691,14 @@ def create_app(db_path=None):
                         if other != ws and topic in target["topics"] and may_read(s, target["who"]):
                             await hub.send(other, topic, "broadcast", payload)
         except (WebSocketDisconnect, asyncio.TimeoutError, HTTPException, ValueError, TypeError, KeyError):
+            peer["writer"].cancel()  # no send may race the close
             try:
                 await ws.close(code=1008)
             except (RuntimeError, WebSocketDisconnect):
                 pass
         finally:
             hub.peers.pop(ws, None)
+            peer["writer"].cancel()
             await hub.presence()
 
     return app

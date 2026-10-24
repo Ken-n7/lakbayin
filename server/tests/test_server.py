@@ -215,6 +215,49 @@ class ServerTest(unittest.TestCase):
             self.client.post('/auth/login',json={'username':'nobody','password':'wrong'})
         self.assertEqual(self.client.post('/auth/login',json={'username':'nobody','password':'wrong'}).status_code,429)
 
+    def test_finished_matches_archive_and_stay_readable(self):
+        a=self.rpc(0,'find_match').json(); sid=self.rpc(1,'find_match').json()['id']
+        store=self.app.state.store
+        for i,w in enumerate(store.load()['sessions'][sid]['words']):
+            self.rpc(0,'answer_monk',p_session=sid,p_monk=i,p_typed=w['modern'])
+        self.rpc(0,'deposit',p_session=sid)
+        state=store.load(); state['sessions'][sid]['ended_ts']=time.time()-601; store.save(state)
+        self.rpc(0,'my_matches')  # any commit archives it
+        self.assertNotIn(sid,store.load()['sessions'])
+        self.assertEqual(self.request(1,'GET',f'/rest/v1/sessions?id=eq.{sid}').json()[0]['state'],'ended')
+        self.assertIn('modern',self.request(1,'GET',f'/rest/v1/session_words?session_id=eq.{sid}').json()[0]['words'])
+        self.assertEqual(self.rpc(1,'my_matches').json()[0]['result'],'loss')
+        self.assertEqual(self.rpc(0,'player_board').json()[0]['wins'],1)
+        self.assertEqual(self.request(3,'GET',f'/rest/v1/team_standings?session_id=eq.{sid}').status_code,403)
+
+    def test_outside_writer_is_seen(self):
+        from server.app import Store
+        other=Store(self.path); state=other.load(); state['config']['team_size']=3; other.save(state); other.db.close()
+        self.rpc(0,'find_match')
+        self.assertEqual(self.request(0,'GET','/rest/v1/match_config').json()[0]['team_size'],3)
+
+    def test_guessing_one_name_spares_classmates(self):
+        for _ in range(10):
+            self.assertEqual(self.client.post('/auth/login',json={'username':'alpha','password':'wrong'}).status_code,401)
+        self.assertEqual(self.client.post('/auth/login',json={'username':'alpha','password':'testing-password'}).status_code,429)
+        for name in ('bravo','charlie','delta')*8:  # 24 logins from one address
+            self.assertEqual(self.client.post('/auth/login',json={'username':name,'password':'testing-password'}).status_code,200)
+
+    def test_stalled_socket_never_blocks_sender(self):
+        import asyncio
+        from server.app import Hub
+        class Stuck:
+            async def send_json(self, msg): await asyncio.sleep(3600)
+            async def close(self, code): pass
+        async def go():
+            hub=Hub(self.app.state.store); ws=Stuck(); out=asyncio.Queue(256)
+            hub.peers[ws]={'out':out,'writer':asyncio.create_task(hub.writer(ws,out))}
+            t=time.monotonic()
+            for i in range(300): await hub.send(ws,TOPIC,'x',{})
+            self.assertLess(time.monotonic()-t,0.5)
+            self.assertNotIn(ws,hub.peers)  # overflow dropped the peer
+        asyncio.run(go())
+
     def test_private_channel_denies_outsider(self):
         from starlette.websockets import WebSocketDisconnect
         s=self.room();sid=s['id']
