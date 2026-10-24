@@ -58,6 +58,7 @@ func monk_on_screen(n: int) -> Vector2:
 ## and left of him, with room to walk left from there.
 func beside_monk(n: int, off: Vector2) -> Vector2:
 	var monk: Vector2 = _map.world.monks[n].position
+	var level: int = _map.grid.level_at(monk, 0)  # he may be up on a plateau
 	var want := monk + off
 	var best := want
 	var best_d := INF
@@ -67,7 +68,7 @@ func beside_monk(n: int, off: Vector2) -> Vector2:
 			continue
 		var room := true
 		for dx in [0.0, -16.0, -32.0]:
-			room = room and _map.grid.box_walkable(at + Vector2(dx, 0), _map.hero_box)
+			room = room and _map.grid.box_walkable(at + Vector2(dx, 0), _map.hero_box, level)
 		if room and at.distance_to(want) < best_d:
 			best_d = at.distance_to(want)
 			best = at

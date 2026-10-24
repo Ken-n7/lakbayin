@@ -47,7 +47,8 @@ func _ready() -> void:
 	check("the score reads 0 of 10", _score(s).contains("0 / 10"), _score(s))
 
 	stand_at_monk(s, 0)
-	check("the hero can stand beside a monk", s.grid.box_walkable(s.player.position, s.hero_box))
+	check("the hero can stand beside a monk", s.grid.box_walkable(s.player.position, s.hero_box,
+		s.grid.level_at(s.player.position, 0)))
 	s._update_interaction()
 	check("beside a monk, the prompt offers his word", s.hud.prompt.text.contains("write this monk's word"),
 		s.hud.prompt.text)
