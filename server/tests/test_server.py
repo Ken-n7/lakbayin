@@ -6,6 +6,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
+import server.app as appmod
 from server.app import create_app, TOPIC
 
 
@@ -138,6 +139,8 @@ class ServerTest(unittest.TestCase):
         self.assertFalse(self.rpc(0,'poll_room',p_session=sid).json()['member'])
 
     def test_websocket_movement_isolation_and_spoof(self):
+        self.addCleanup(setattr, appmod, 'SPECTATOR_DELAY_S', appmod.SPECTATOR_DELAY_S)
+        appmod.SPECTATOR_DELAY_S = 0.2   # a viewer's copy of movement comes late
         s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
         self.rpc(3,'watch_match',p_code=s['code'])
         topic=TOPIC+':snap:'+sid
@@ -307,6 +310,24 @@ class ServerTest(unittest.TestCase):
             self.rpc(0,'answer_monk',p_session=sid,p_monk=i,p_typed=w['modern'])
         self.rpc(0,'deposit',p_session=sid)
         self.assertEqual(self.rpc(3,'my_matches').json(),[])
+
+    def test_spectators_see_the_match_late(self):
+        self.addCleanup(setattr, appmod, 'SPECTATOR_DELAY_S', appmod.SPECTATOR_DELAY_S)
+        appmod.SPECTATOR_DELAY_S = 1.0
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        self.assertEqual(self.rpc(3,'watch_match',p_code=s['code']).json(),sid)
+        early=self.rpc(3,'watch_snapshot',p_session=sid).json()
+        self.assertEqual((early['session']['state'],early['delay_s']),('lobby',1.0))
+        self.assertGreater(early['starts_in'],0)
+        time.sleep(1.1)
+        w=self.app.state.store.load()['sessions'][sid]['words'][0]
+        self.assertEqual(self.rpc(1,'answer_monk',p_session=sid,p_monk=0,p_typed=w['modern']).json(),'correct')
+        now=self.rpc(3,'watch_snapshot',p_session=sid).json()
+        self.assertEqual((now['session']['state'],now['answers']),('running',[]))   # not yet
+        time.sleep(1.1)
+        self.assertEqual(len(self.rpc(3,'watch_snapshot',p_session=sid).json()['answers']),1)
+        # The live tables are the players' while it runs.
+        self.assertEqual(self.request(3,'GET',f'/rest/v1/monk_answers?session_id=eq.{sid}').status_code,403)
 
     def test_private_channel_denies_outsider(self):
         from starlette.websockets import WebSocketDisconnect

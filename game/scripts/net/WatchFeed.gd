@@ -36,7 +36,9 @@ static func time_left(session: Dictionary, now: float) -> int:
 	var end: Variant = session.get("ends_at")
 	if end == null:
 		return int(session.get("duration_s", 0))
-	return maxi(0, int(ceilf(stamp(str(end)) - now)))
+	# Never above the match's length: a delayed view before the start would
+	# otherwise count more than the whole clock.
+	return clampi(int(ceilf(stamp(str(end)) - now)), 0, int(session.get("duration_s", 900)))
 
 
 ## Timeout ties use the same deposits / reached-total rule as the results.

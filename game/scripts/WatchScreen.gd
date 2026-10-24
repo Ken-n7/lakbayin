@@ -25,6 +25,9 @@ var _roster := {}
 ## A room's own spectator (Lobby.SPECTATE), not a visitor with the code.
 var _spectator := false
 var _stats: PanelContainer   # the players' lists and the legend, behind Stats
+var _heads: Array[Label] = []  # each side's name and totals, over its list
+## When the delayed feed reaches the start (local clock), while it has not.
+var _starts_at := 0.0
 ## The aerial view: where it looks and how near. `_fit` shows the whole world;
 ## a spectator drags to move and pinches, scrolls or taps +/- to look closer.
 var _center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
@@ -136,53 +139,52 @@ func _build_ui() -> void:
 	Art.shadow(_status)
 	add_child(_status)
 
-	# Touch has no wheel: + and - in the corner.
-	var zoom_row := HBoxContainer.new()
-	zoom_row.add_theme_constant_override("separation", 4)
-	zoom_row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	zoom_row.offset_left = -92
-	zoom_row.offset_right = -10
-	zoom_row.offset_top = -44
-	zoom_row.offset_bottom = -10
-	for step: Array in [["−", 1.0 / 1.4], ["+", 1.4]]:
-		var b := Ui.button(step[0], 36, Ui.H, Ui.SMALL)
-		b.add_theme_font_size_override("font_size", 20)
-		b.pressed.connect(func() -> void: _look(_center, _zoom * float(step[1])))
-		zoom_row.add_child(b)
-	add_child(zoom_row)
-
-	# Stats: each team's players, carried and deposited, and what the monk
-	# marks mean -- on paper over the map's lower edge, closed until asked.
+	# Stats: centred over the map, Blue on the left and Red on the right, on a
+	# dark see-through plate -- the match still shows behind, the text reads.
 	_stats = PanelContainer.new()
-	_stats.add_theme_stylebox_override("panel", Ui.frame(Ui.PAPER, Ui.ART_K, Vector2(4, 0)))
-	_stats.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	_stats.offset_left = 10
-	_stats.offset_right = -100
-	_stats.offset_top = -126
-	_stats.offset_bottom = -8
+	var plate := StyleBoxFlat.new()
+	plate.bg_color = Color(0.06, 0.05, 0.09, 0.72)
+	plate.border_color = Color(Pal.CREAM, 0.35)
+	plate.set_border_width_all(1)
+	plate.set_corner_radius_all(6)
+	plate.set_content_margin_all(10)
+	_stats.add_theme_stylebox_override("panel", plate)
+	_stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stats.visible = false
-	add_child(_stats)
+	var centre := CenterContainer.new()
+	centre.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	centre.offset_top = 44
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(centre)
+	centre.add_child(_stats)
 	var inside := VBoxContainer.new()
-	inside.add_theme_constant_override("separation", 2)
+	inside.add_theme_constant_override("separation", 6)
 	_stats.add_child(inside)
 	var columns := HBoxContainer.new()
-	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns.add_theme_constant_override("separation", 12)
+	columns.add_theme_constant_override("separation", 0)
 	inside.add_child(columns)
 	for i in 2:
-		var scroll := ScrollContainer.new()
-		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		Ui.style_scroll(scroll)
-		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		columns.add_child(scroll)
-		DragScroll.attach(scroll)
+		if i == 1:
+			var line := ColorRect.new()          # the split between the sides
+			line.color = Color(Pal.CREAM, 0.25)
+			line.custom_minimum_size = Vector2(1, 0)
+			columns.add_child(line)
+		var side := VBoxContainer.new()
+		side.custom_minimum_size = Vector2(230, 0)
+		side.add_theme_constant_override("separation", 2)
+		columns.add_child(side)
+		var head := Art.title(Art.label(Match.TEAMS[i], Pal.H2, Peers.TEAM_COLOURS[i].lightened(0.35),
+			HORIZONTAL_ALIGNMENT_CENTER))
+		Art.shadow(head)
+		side.add_child(head)
+		_heads.append(head)
 		var list := VBoxContainer.new()
-		list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		list.add_theme_constant_override("separation", 0)
-		scroll.add_child(list)
+		list.add_theme_constant_override("separation", 1)
+		side.add_child(list)
 		_lists.append(list)
-	inside.add_child(Art.label("Monks: Blue left / Red right · ring = carried · solid = deposited",
-		Pal.TINY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+	var legend := Art.label("Each monk: Blue's mark left, Red's right · ring = carried · solid = deposited",
+		Pal.TINY, Color(Pal.CREAM, 0.8), HORIZONTAL_ALIGNMENT_CENTER)
+	inside.add_child(legend)
 
 	resized.connect(_frame_map)
 	_map_box.gui_input.connect(_on_map_input)
@@ -253,17 +255,19 @@ func _apply(snapshot: Dictionary) -> void:
 			continue
 		var t: Dictionary = teams[i]
 		_totals[i].text = "%s %d · carry %d" % [t.name, int(t.deposited), int(t.carried)]
+		_heads[i].text = "%s  ·  %d deposited  ·  %d carried" % [t.name, int(t.deposited), int(t.carried)]
 		for p: Dictionary in players:
 			if str(p.get("team_id", "")) != str(t.id):
 				continue
 			var label := Art.label("%s  ·  carry %d  ·  deposited %d" % [p.username, int(p.carried), int(p.deposited)],
-				Pal.SMALL, Peers.TEAM_COLOURS[i].darkened(0.4))
+				Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
 			label.clip_text = true
 			label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			_lists[i].add_child(label)
 	_pins.world = world
 	_pins.peers = peers
 	_pins.snapshot = data
+	_starts_at = Time.get_unix_time_from_system() + float(data.get("starts_in", 0))
 	_update_clock()
 
 
@@ -314,12 +318,17 @@ func _update_clock() -> void:
 	var session: Dictionary = data.get("session", {})
 	var sec := WatchFeed.time_left(session, Time.get_unix_time_from_system() + _offset)
 	_time.text = "Final" if str(session.get("state", "")) == "ended" else Ui.mmss(sec)
-	if str(session.get("state", "")) == "lobby":
+	var delay := int(data.get("delay_s", 0))
+	if str(session.get("state", "")) == "lobby" and data.has("starts_in"):
+		_status.text = "Spectator delay %ds · the match starts here in %ds" % [delay,
+			maxi(0, ceili(_starts_at - Time.get_unix_time_from_system()))]
+	elif str(session.get("state", "")) == "lobby":
 		_status.text = "Waiting for the host to start · scores count deposited words"
 	elif str(session.get("state", "")) == "ended" or sec == 0:
 		_status.text = WatchFeed.outcome(data)
 	else:
-		_status.text = "Live · scores count deposited words"
+		_status.text = ("%ds behind live · scores count deposited words" % delay if delay > 0
+			else "Live · scores count deposited words")
 
 
 func _on_position(event: String, snapshot: Dictionary) -> void:

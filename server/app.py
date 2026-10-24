@@ -35,6 +35,10 @@ CODES = "ACDEFHJKMNPQRTUWXY23456789"
 # A custom room's third side: a member whose team is this watches the match
 # from above and never plays -- no answers, no results, no records.
 SPECTATE = "spectate"
+# Spectators see the match this many seconds late, as in MOBAs (Dota 2: 120 s,
+# LoL: 180 s, for 30-40 min games), so nobody watching can call positions to
+# a player. Scaled to a 15-minute match. Enforced here, not in the client.
+SPECTATOR_DELAY_S = float(os.environ.get("LAKBAYIN_SPECTATOR_DELAY_S", 60))
 
 
 def stamp(value=None):
@@ -136,6 +140,12 @@ def find(store, state, sid):
 
 def member(s, who):
     return s["members"].get(who)
+
+
+def plays(s, who):
+    """A member on a side -- not a spectator, not a visitor with the code."""
+    m = s["members"].get(who)
+    return m is not None and m["team_id"] not in (None, SPECTATE)
 
 
 def may_read(s, who):
@@ -372,6 +382,10 @@ def read_rows(store, state, who, table, params):
     if table == "session_words":
         ended = s["state"] == "ended"
         return [{"monk": i, "words": {k: v for k, v in w.items() if ended or k not in ("modern", "traditional")}} for i, w in enumerate(s["words"])]
+    # Watching is the delayed feed (watch_snapshot); the live tables are the
+    # players' while the match is on.
+    if table in ("monk_answers", "team_standings", "player_standings"):
+        require(s["state"] != "running" or plays(s, who), "Spectators see the delayed feed")
     if table == "monk_answers":
         return s["answers"]
     if table == "team_standings":
@@ -449,7 +463,8 @@ class Hub:
                 continue
             sid = peer.get("meta", {}).get("sid")
             s = state["sessions"].get(sid)
-            people = groups.get(sid, {}) if s and may_read(s, peer["who"]) else {}
+            live = s and s["state"] == "running" and not plays(s, peer["who"])
+            people = groups.get(sid, {}) if s and may_read(s, peer["who"]) and not live else {}
             if peer.get("presence") != people:
                 peer["presence"] = people
                 await self.send(ws, TOPIC, "presence_state", people)
@@ -472,8 +487,9 @@ class Hub:
                 prev = next((b for b in old.get("answers", []) if (b["team_id"], b["monk"]) == (a["team_id"], a["monk"])), None)
                 if prev != a:
                     events.append(("monk_answers", "UPDATE" if prev else "INSERT", a))
+            during = s["state"] != "lobby" and old.get("state", "lobby") != "lobby"
             for ws, peer in list(self.peers.items()):
-                if not may_read(s, peer["who"]):
+                if not may_read(s, peer["who"]) or (during and not plays(s, peer["who"])):
                     continue
                 for table, kind, row in events:
                     for watch in peer["topics"].get(TOPIC, {}).get("postgres_changes", []):
@@ -488,6 +504,43 @@ def create_app(db_path=None):
     hub = Hub(store)
     lock = asyncio.Lock()
     attempts = defaultdict(deque)
+    # sid -> [(time, snapshot)] while a match runs: the delayed feed's past.
+    history = defaultdict(deque)
+
+    def record(before, state):
+        now = time.time()
+        for sid, s in state["sessions"].items():
+            if s["state"] != "lobby" and s != before["sessions"].get(sid):
+                history[sid].append((now, snapshot(store, s)))
+
+    def delayed(live):
+        """The watch snapshot as it was SPECTATOR_DELAY_S ago."""
+        session = live["session"]
+        if session["state"] == "lobby":
+            return live
+        past = history[session["id"]]
+        if not past:                 # e.g. after a server restart: start the clock now
+            past.append((time.time(), live))
+        cutoff = time.time() - SPECTATOR_DELAY_S
+        seen = [snap for t, snap in past if t <= cutoff]
+        if seen:
+            out = {**seen[-1], "delay_s": SPECTATOR_DELAY_S}
+        else:
+            # Not yet SPECTATOR_DELAY_S into it: the start, still to come here.
+            first_t, first = past[0]
+            out = copy.deepcopy(first)
+            out["session"].update(state="lobby", server_now=stamp(cutoff))
+            out.update(answers=[], delay_s=SPECTATOR_DELAY_S, starts_in=int(first_t - cutoff) + 1)
+        return out
+
+    def prune_history():
+        cutoff = time.time() - SPECTATOR_DELAY_S
+        for sid in list(history):
+            past = history[sid]
+            while len(past) > 1 and past[1][0] <= cutoff:
+                past.popleft()
+            if past and past[-1][0] < cutoff - 120:
+                del history[sid]
 
     def limited(key, limit):
         queue = attempts[key]
@@ -512,6 +565,7 @@ def create_app(db_path=None):
                 result = operation(state)
                 if state != before:
                     store.save(state)
+                    record(before, state)
                 else:
                     store.db.rollback()
             except Exception:
@@ -527,6 +581,7 @@ def create_app(db_path=None):
             await commit(lambda state: None)
             for key in [k for k, q in attempts.items() if not q or q[-1] < time.time() - 60]:
                 del attempts[key]
+            prune_history()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -632,7 +687,8 @@ def create_app(db_path=None):
             if request.method == "GET":
                 return read_rows(store, state, who, path, request.query_params)
             return write_rows(state, who, request.method, path, request.query_params, body)
-        return await commit(operation)
+        out = await commit(operation)
+        return delayed(out) if path == "rpc/watch_snapshot" else out
 
     @app.websocket("/realtime/v1/websocket")
     async def socket(ws: WebSocket):
@@ -707,7 +763,11 @@ def create_app(db_path=None):
                         require(topic == TOPIC and kind == "row", "Unsupported broadcast")
                     for other, target in list(hub.peers.items()):
                         if other != ws and topic in target["topics"] and may_read(s, target["who"]):
-                            await hub.send(other, topic, "broadcast", payload)
+                            if kind == "snap" and not plays(s, target["who"]):
+                                asyncio.get_running_loop().call_later(SPECTATOR_DELAY_S,
+                                    lambda o=other: asyncio.ensure_future(hub.send(o, topic, "broadcast", payload)))
+                            else:
+                                await hub.send(other, topic, "broadcast", payload)
         except (WebSocketDisconnect, asyncio.TimeoutError, HTTPException, ValueError, TypeError, KeyError):
             peer["writer"].cancel()  # no send may race the close
             try:
