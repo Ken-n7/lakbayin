@@ -234,6 +234,10 @@ English meanings are not shown.
     cell clear of any edge
   - no monk or door is in reach from another level
   - mirrored, ramps and all
+- **Ponds**: 1-2 a side, mirrored, dug in the ground before the levels rise:
+  at least 3x3 water, two cells of land round each, none near a spawn or in
+  the Monastery's middle, never cutting the island in two. Water the coast
+  noise shuts inside the land is filled; every lake is a pond on purpose.
 
 ### 5.2 Art — Tiny Swords (Pixel Frog)
 - **Used:** Monk (Idle), Pawn, Houses, **Monastery** (the "church"), terrain,

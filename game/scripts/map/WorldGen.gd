@@ -39,6 +39,17 @@ const CENTRE_GROUND := 6
 ## Islets smaller than this, in cells, are dropped.
 const MIN_ISLET := 16
 
+## Ponds: PONDS_MIN to PONDS_MAX a side, mirrored, dug in the ground before
+## any level rises -- an oval POND_R cells across, give or take, with a 3x3
+## core, two cells of ground round it, POND_GAP cells from another, none near
+## a spawn or on the Monastery's ground in the middle.
+const PONDS_MIN := 1
+const PONDS_MAX := 2
+const POND_R := Vector2(2.6, 2.0)
+const POND_GAP := 4
+const POND_FROM_SPAWN := 10
+const POND_FROM_AXIS := 7
+
 ## Plateaus where this noise is highest, over PLATEAU_SHARE of the island,
 ## read in blocks of 2x2 cells so their edges step two cells at a time: at
 ## least MIN_PLATEAU cells with a 5x5 core. On a plateau of BIG_PLATEAU cells or more, by HILL_CHANCE, a
@@ -142,6 +153,7 @@ func generate() -> void:
 	_rng.seed = seed
 	_make_land()
 	_place_spawns()
+	_dig_ponds()
 	for attempt in LEVEL_TRIES:
 		_raise(attempt)
 		_place_ramps()
@@ -191,7 +203,18 @@ func _make_land() -> void:
 				if d.x < HALF and _inside(d):
 					land[d] = true
 		_mirror_land()
-		reach = _flood(Vector2i(HALF - 1, H / 2), land)
+	# Water the noise shut inside the land goes: a lake it leaves is the wrong
+	# shape for the tiles as often as not. The ponds are dug on purpose.
+	var sea := {}
+	for y in H:
+		for x in W:
+			if not land.has(Vector2i(x, y)):
+				sea[Vector2i(x, y)] = true
+	var open := _flood(Vector2i.ZERO, sea)
+	for c: Vector2i in sea:
+		if not open.has(c):
+			land[c] = true
+	reach = _flood(Vector2i(HALF - 1, H / 2), land)
 	main = reach
 	# Islets too small to dress read as stray squares of grass: gone.
 	for c: Vector2i in _cells():
@@ -237,6 +260,66 @@ func _clean() -> void:
 				land.erase(c)
 		elif _inside(c) and int(l) + int(r) + int(u) + int(d) >= 3:
 			land[c] = true
+
+
+## The ponds: left half from the seed, mirrored. Each is cut from the main
+## island's ground and the island must stay in one piece without it.
+func _dig_ponds() -> void:
+	var spawn := MapGrid.cell_at(spawns[0])
+	var spots: Array[Vector2i] = []
+	for c: Vector2i in main:
+		if c.x < HALF - POND_FROM_AXIS and _dist(c, spawn) >= POND_FROM_SPAWN:
+			spots.append(c)
+	spots.sort()
+	_shuffle(spots)
+	var want := _rng.randi_range(PONDS_MIN, PONDS_MAX)
+	var dug: Array[Dictionary] = []
+	var wobble := _noise(seed + 6, 0.35)
+	for at in spots:
+		if dug.size() >= want:
+			break
+		var r := POND_R * _rng.randf_range(0.85, 1.25)
+		var pond := {}
+		for dy in range(-4, 5):
+			for dx in range(-4, 5):
+				var c := at + Vector2i(dx, dy)
+				var d := Vector2(dx / r.x, dy / r.y).length() + wobble.get_noise_2d(c.x, c.y) * 0.35
+				if d <= 1.0:
+					pond[c] = true
+		_thicken(pond)
+		if not _core(pond, 1) or not _pond_fits(pond, dug, spawn):
+			continue
+		var left := main.duplicate()
+		for c: Vector2i in pond:
+			left.erase(c)
+			left.erase(mirror_cell(c))
+		if _flood(Vector2i(HALF - 1, H / 2), left).size() != left.size():
+			continue                      # it would cut the island in two
+		dug.append(pond)
+		for c: Vector2i in pond:
+			for k in [c, mirror_cell(c)]:
+				land.erase(k)
+				main.erase(k)
+				islet_of.erase(k)
+				height.erase(k)
+
+
+## Every cell of `pond` on the main island's ground, two cells of it round
+## each, clear of the other ponds and the spawn's ground, left of the middle.
+func _pond_fits(pond: Dictionary, dug: Array[Dictionary], spawn: Vector2i) -> bool:
+	for c: Vector2i in pond:
+		if c.x >= HALF - POND_FROM_AXIS or _dist(c, spawn) < POND_FROM_SPAWN:
+			return false
+		for dy in range(-2, 3):
+			for dx in range(-2, 3):
+				if not main.has(c + Vector2i(dx, dy)):
+					return false
+		for o in dug:
+			for dy in range(-POND_GAP, POND_GAP + 1):
+				for dx in range(-POND_GAP, POND_GAP + 1):
+					if o.has(c + Vector2i(dx, dy)):
+						return false
+	return true
 
 
 # --- Levels -----------------------------------------------------------------
@@ -584,6 +667,11 @@ func _ramp_fits(c: Vector2i, low: int, side: int) -> bool:
 	for k in [mid + Vector2i.UP, mid, foot, mid + Vector2i(side, 0)]:
 		if not _open(k, low) or k.x > HALF - 3 or _dist(k, spawn) <= SPAWN_YARD + 1:
 			return false
+	# Not on the water's edge: a ramp's cells and its way off all dry ground.
+	for row in range(-1, 3):
+		for dx in range(-1, 2):
+			if not land.has(mid + Vector2i(dx, row)) or not land.has(foot + Vector2i(dx + side, 1)):
+				return false
 	if not (_open(foot + Vector2i.DOWN, low) or _open(foot + Vector2i(side, 0), low)):
 		return false
 	return int(height.get(c + Vector2i(0, 2), -1)) <= low and land.has(foot + Vector2i.DOWN)

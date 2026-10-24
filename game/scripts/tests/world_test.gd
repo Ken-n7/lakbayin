@@ -59,6 +59,7 @@ const RULES := [
 	"levels: the Monastery and its yard stand on one level, clear of edges",
 	"levels: no monk or door is in reach from another level",
 	"water rocks are drawn over open sea only: no land, no cliff under them",
+	"ponds: 1-2 a side, mirrored, each with a 3x3 core and two cells of land round it, none near a spawn",
 ]
 
 
@@ -167,6 +168,32 @@ func rules(w: MapWorld) -> Dictionary:
 				if gap < MapCfg.INTERACT_RADIUS and g.land.has(k) and not grid.cliff.has(k) \
 						and (lvl.call(k) != tl or grid.stairs.has(k)):
 					out[RULES[8]] = "%s from %s" % [t, k]
+	var sea := {}
+	for y in WorldGen.H:
+		for x in WorldGen.W:
+			if not g.land.has(Vector2i(x, y)):
+				sea[Vector2i(x, y)] = true
+	var open := WorldGen._flood(Vector2i.ZERO, sea)
+	var wet := {}
+	for c: Vector2i in sea:
+		if not open.has(c):
+			wet[c] = true
+	var ponds := WorldGen._parts(wet)
+	if ponds.size() < 2 or ponds.size() > 4:
+		out[RULES[10]] = "%d ponds" % ponds.size()
+	for pond: Dictionary in ponds:
+		var core := WorldGen._core(pond, 1)
+		for c: Vector2i in pond:
+			if not wet.has(WorldGen.mirror_cell(c)) or g.spawns.any(func(sp: Vector2) -> bool:
+					return MapGrid.cell_mid(c).distance_to(sp) < WorldGen.POND_FROM_SPAWN * MapCfg.TILE - MapCfg.TILE):
+				core = false
+			for dy in range(-2, 3):
+				for dx in range(-2, 3):
+					var k := c + Vector2i(dx, dy)
+					if not pond.has(k) and not g.land.has(k):
+						core = false
+		if not core:
+			out[RULES[10]] = "pond at %s" % pond.keys()[0]
 	for r: Dictionary in g.water_rocks:
 		for k in WorldGen._under(WorldGen.water_rock_box(r.v, r.at, r.flip)):
 			if g.land.has(k) or grid.cliff.has(k):
