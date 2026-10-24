@@ -35,6 +35,9 @@ CODES = "ACDEFHJKMNPQRTUWXY23456789"
 # A custom room's third side: a member whose team is this watches the match
 # from above and never plays -- no answers, no results, no records.
 SPECTATE = "spectate"
+# The two sides, in Filipino: Bughaw (blue, the native word over Spanish
+# "asul") and Pula (red). The client's Match.NAMES says the same.
+TEAM_NAMES = ("Bughaw", "Pula")
 # Spectators see the match this many seconds late, as in MOBAs (Dota 2: 120 s,
 # LoL: 180 s, for 30-40 min games), so nobody watching can call positions to
 # a player. Scaled to a 15-minute match. Enforced here, not in the client.
@@ -218,7 +221,7 @@ def make_session(state, who, custom):
     while any(s["code"] == code and s["state"] != "ended" for s in state["sessions"].values()):
         code = "".join(secrets.choice(CODES) for _ in range(4))
     sid = uid()
-    s = {"id": sid, "code": code, "owner_id": who, "custom": custom, "state": "lobby", "created_at": stamp(), "starts_at": None, "ends_at": None, "winner_team": None, "duration_s": cfg["duration_s"], "search_s": cfg["search_s"], "team_size": cfg["team_size"], "monk_count": cfg["monks"], "members": {}, "teams": [{"id": uid(), "session_id": sid, "name": n} for n in ("Blue", "Red")], "words": random.SystemRandom().sample(WORDS, cfg["monks"]), "answers": [], "locks": {}, "watchers": {}}
+    s = {"id": sid, "code": code, "owner_id": who, "custom": custom, "state": "lobby", "created_at": stamp(), "starts_at": None, "ends_at": None, "winner_team": None, "duration_s": cfg["duration_s"], "search_s": cfg["search_s"], "team_size": cfg["team_size"], "monk_count": cfg["monks"], "members": {}, "teams": [{"id": uid(), "session_id": sid, "name": n} for n in TEAM_NAMES], "words": random.SystemRandom().sample(WORDS, cfg["monks"]), "answers": [], "locks": {}, "watchers": {}}
     add_member(s, who, s["teams"][0]["id"])
     state["sessions"][sid] = s
     return s

@@ -213,7 +213,7 @@ func refresh() -> void:
 		_score_box.remove_child(c)
 		c.queue_free()
 	var text := ("%d / %d words" % [m.deposited(), m.monk_count()] if m.practice
-		else "Blue %d  –  %d Red" % [m.deposited(0), m.deposited(1)])
+		else "%s %d  –  %d %s" % [Match.NAMES[0], m.deposited(0), m.deposited(1), Match.NAMES[1]])
 	var rib := Ui.ribbon(Ui.RIBBON_BLUE if m.team == 0 else Ui.RIBBON_RED, text)
 	rib.name = "Score"
 	_score_box.add_child(rib)

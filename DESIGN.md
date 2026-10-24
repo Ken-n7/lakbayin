@@ -57,6 +57,8 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 ## 3. Match rules
 
 ### 3.1 Teams and fairness
+- The two sides are **Bughaw** (blue) and **Pula** (red) on screen; this
+  document says Blue and Red for the same sides.
 - **3 v 3** in matchmaking. Custom rooms allow any number a side, uneven too.
 - Both teams play the **same world**: the same monk positions, the **same words**,
   and the same Monastery.

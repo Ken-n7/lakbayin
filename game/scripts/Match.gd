@@ -13,7 +13,11 @@ extends RefCounted
 
 signal changed
 
+## The sides' colours: the art's names for them (Blue_House, a Red monk...).
 const TEAMS := ["Blue", "Red"]
+## What players read: the Filipino names. The server names a match's teams
+## the same (server/app.py), so lobby, results and records agree.
+const NAMES := ["Bughaw", "Pula"]
 
 var practice := true
 var session_id := ""

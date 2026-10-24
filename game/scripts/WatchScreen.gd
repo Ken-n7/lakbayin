@@ -113,7 +113,8 @@ func _build_ui() -> void:
 	Art.shadow(title)
 	bar.add_child(title)
 	for i in 2:
-		var l := Art.label("%s  0 + 0" % Match.TEAMS[i], Pal.SMALL, Peers.TEAM_COLOURS[i].lightened(0.3))
+		# The score alone, as a MOBA's top bar: carried counts are in Stats.
+		var l := Art.label("%s  0" % Match.NAMES[i], Pal.SMALL, Peers.TEAM_COLOURS[i].lightened(0.3))
 		l.custom_minimum_size.x = 100
 		l.clip_text = true
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -173,7 +174,7 @@ func _build_ui() -> void:
 		side.custom_minimum_size = Vector2(STATS_SIDE_W, 0)
 		side.add_theme_constant_override("separation", 4)
 		columns.add_child(side)
-		var head := Art.title(Art.label(Match.TEAMS[i], Pal.H1, Peers.TEAM_COLOURS[i].lightened(0.35),
+		var head := Art.title(Art.label(Match.NAMES[i], Pal.H1, Peers.TEAM_COLOURS[i].lightened(0.35),
 			HORIZONTAL_ALIGNMENT_CENTER))
 		Art.shadow(head)
 		side.add_child(head)
@@ -261,7 +262,7 @@ func _apply(snapshot: Dictionary) -> void:
 		if i >= teams.size():
 			continue
 		var t: Dictionary = teams[i]
-		_totals[i].text = "%s %d · carry %d" % [t.name, int(t.deposited), int(t.carried)]
+		_totals[i].text = "%s  %d" % [t.name, int(t.deposited)]
 		_heads[i].text = "%d deposited  ·  %d carried" % [int(t.deposited), int(t.carried)]
 		for h: String in ["Player", "Carry", "Deposited"]:
 			_lists[i].add_child(_cell(h, Color(Pal.CREAM, 0.6), h == "Player", Pal.SMALL))

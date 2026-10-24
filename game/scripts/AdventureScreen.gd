@@ -271,7 +271,7 @@ func _on_row(table: String, type: String, record: Dictionary) -> void:
 				play.take_row(type, record)
 				var now := play.deposited(1 - play.team)
 				if now > was:
-					hud.announce("%s deposited — %d of %d" % [Match.TEAMS[1 - play.team], now, play.monk_count()])
+					hud.announce("%s deposited — %d of %d" % [Match.NAMES[1 - play.team], now, play.monk_count()])
 		"members":
 			if str(record.get("session_id", "")) == play.session_id:
 				_refresh_peers()
@@ -1064,7 +1064,7 @@ func finish(reason: String) -> void:
 	var won := play.winner
 	var head := "Time!"
 	if reason == "finished" and won >= 0:
-		head = "You finished!" if play.practice else "%s wins!" % Match.TEAMS[won]
+		head = "You finished!" if play.practice else "%s wins!" % Match.NAMES[won]
 	Sfx.play("victory_gate" if won == play.team else ("time_up" if reason == "time" else "ended"))
 	hud.set_prompt(head)
 	if not play.practice:
