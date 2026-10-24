@@ -55,6 +55,8 @@ var _dev_aerial := false
 var hero_box := Rect2()
 ## The level the hero stands on: 0 the ground, 1 a plateau, 2 a hill on one.
 var hero_level := 0
+## The room's letter hints (RoomScreen): the Latin syllable under each key.
+var _hints := false
 var _hero_scale := MapCfg.UNIT_SCALE
 ## Team vision (DESIGN.md 3.2): monks someone on the team has come near.
 var _seen := {}
@@ -126,6 +128,7 @@ func _join_online() -> String:
 		return err
 	Game.begin_adventure(int(session.get("duration_s", PRACTICE_S)))
 	_session_row = session.duplicate()
+	_hints = bool(session.get("hints", false))
 	Game.apply_session(session)
 	_my_team_id = play.team_ids[play.team] if play.team < play.team_ids.size() else ""
 	return ""
@@ -849,7 +852,7 @@ func _try_deposit() -> void:
 func _open_monk(i: int) -> void:
 	var overlay: Control = preload("res://scripts/MonkOverlay.gd").new()
 	var check := func(typed: String) -> String: return await play.answer(i, typed)
-	overlay.setup({"word": play.words[i], "monk": i, "labels": play.practice, "check": check})
+	overlay.setup({"word": play.words[i], "monk": i, "labels": play.practice or _hints, "check": check})
 	overlay.activity_changed.connect(func(active: bool) -> void:
 		var monk := i if active else -1
 		if monk != _typing_monk:

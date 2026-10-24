@@ -14,6 +14,7 @@ var _code: LineEdit
 var _make: Button
 var _shuffle: Button
 var _move: Button
+var _hints: Button
 var _room_clock := 0.0
 var _room_polling := false
 var _room_operation := false
@@ -179,7 +180,7 @@ func _build_lobby() -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 12)
-	var leave := Ui.button("Leave", Ui.W_MED, Ui.H, Ui.SMALL)
+	var leave := Ui.button("Leave", 90, Ui.H, Ui.SMALL)
 	leave.pressed.connect(_leave)
 	row.add_child(leave)
 	_shuffle = Ui.button("Shuffle", 90, Ui.H, Ui.SMALL)
@@ -188,6 +189,12 @@ func _build_lobby() -> void:
 	_move = Ui.button("Move Player", 118, Ui.H, Ui.SMALL)
 	_move.pressed.connect(_move_dialog)
 	row.add_child(_move)
+	# Letter hints: the Latin syllable under each key, everyone's, in this
+	# room's match (Find Match never has them).
+	_hints = Ui.button("Hints: Off", 100, Ui.H, Ui.SMALL)
+	_hints.tooltip_text = "Show the Latin letters under each Baybayin key"
+	_hints.pressed.connect(_toggle_hints)
+	row.add_child(_hints)
 	# The host's Start: everyone's map opens when the room starts.
 	_go = Ui.button("Start", 112, Ui.H, Ui.RED)
 	_go.pressed.connect(_start)
@@ -382,9 +389,14 @@ func _draw_lobby() -> void:
 	else:
 		_status.text = "You're on %s — tap the other side to switch. Waiting for %s to start." \
 			% [team_name, host_name]
+	var hints := bool(_session.get("hints", false))
+	if hints and not hosting and not started:
+		_status.text += " Letter hints are on."
+	if is_instance_valid(_hints):
+		_hints.text = "Hints: On" if hints else "Hints: Off"
 	_go.visible = hosting and not started
 	_go.disabled = not ready or _room_operation
-	for control: Button in [_shuffle, _move]:
+	for control: Button in [_shuffle, _move, _hints]:
 		if is_instance_valid(control):
 			control.visible = hosting and not started
 			control.disabled = _room_operation
@@ -446,6 +458,24 @@ func _process(delta: float) -> void:
 				"team_id": str(player.team_id) if player.team_id != null else ""}
 	_say("", Pal.INK)
 	_draw_lobby()
+
+
+func _toggle_hints() -> void:
+	if _room_operation:
+		return
+	_room_operation = true
+	_draw_lobby()
+	var on := not bool(_session.get("hints", false))
+	var error := await Teams.set_room_hints(str(_session.id), on)
+	if not is_inside_tree():
+		return
+	_room_operation = false
+	if error != "":
+		_say(_sentence(error), Pal.WRONG)
+	else:
+		_session["hints"] = on           # the poll brings it to everyone else
+	_draw_lobby()
+	_reload_lobby()
 
 
 func _shuffle_players() -> void:

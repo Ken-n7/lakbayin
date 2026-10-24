@@ -257,6 +257,17 @@ func _room_controls() -> void:
 	room._build_lobby()
 	await get_tree().process_frame
 	check("room hosts see Move and Shuffle", room._move.visible and room._shuffle.visible)
+	check("room hosts see letter hints, off to begin with", room._hints.visible and room._hints.text == "Hints: Off")
+	room._lobby.session.hints = true
+	room._draw_lobby()
+	check("hints on reads On on the host's button", room._hints.text == "Hints: On")
+	room._lobby.session.admin_id = "mate"
+	room._draw_lobby()
+	check("the rest of the room is told hints are on, and cannot change them",
+		not room._hints.visible and room._status.text.ends_with("Letter hints are on."), room._status.text)
+	room._lobby.session.admin_id = Net.user_id
+	room._lobby.session.hints = false
+	room._draw_lobby()
 	room._move_dialog()
 	await get_tree().process_frame
 	check("Move opens a player and destination picker", room._move_panel.find_children("*", "OptionButton", true, false).size() == 2)
@@ -265,7 +276,8 @@ func _room_controls() -> void:
 	check("Back closes Move without leaving the room", not is_instance_valid(room._move_panel) and not room._lobby.session.is_empty())
 	room._lobby.session.admin_id = "mate"
 	room._draw_lobby()
-	check("room members cannot see host controls", not room._move.visible and not room._shuffle.visible and not room._go.visible)
+	check("room members cannot see host controls", not room._move.visible and not room._shuffle.visible
+		and not room._go.visible and not room._hints.visible)
 	room._lobby.session.admin_id = Net.user_id
 	room._lobby.session.state = "running"
 	room._entering = true

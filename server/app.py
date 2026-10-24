@@ -221,7 +221,7 @@ def make_session(state, who, custom):
     while any(s["code"] == code and s["state"] != "ended" for s in state["sessions"].values()):
         code = "".join(secrets.choice(CODES) for _ in range(4))
     sid = uid()
-    s = {"id": sid, "code": code, "owner_id": who, "custom": custom, "state": "lobby", "created_at": stamp(), "starts_at": None, "ends_at": None, "winner_team": None, "duration_s": cfg["duration_s"], "search_s": cfg["search_s"], "team_size": cfg["team_size"], "monk_count": cfg["monks"], "members": {}, "teams": [{"id": uid(), "session_id": sid, "name": n} for n in TEAM_NAMES], "words": random.SystemRandom().sample(WORDS, cfg["monks"]), "answers": [], "locks": {}, "watchers": {}}
+    s = {"id": sid, "code": code, "owner_id": who, "custom": custom, "state": "lobby", "created_at": stamp(), "starts_at": None, "ends_at": None, "winner_team": None, "duration_s": cfg["duration_s"], "search_s": cfg["search_s"], "team_size": cfg["team_size"], "monk_count": cfg["monks"], "hints": False, "members": {}, "teams": [{"id": uid(), "session_id": sid, "name": n} for n in TEAM_NAMES], "words": random.SystemRandom().sample(WORDS, cfg["monks"]), "answers": [], "locks": {}, "watchers": {}}
     add_member(s, who, s["teams"][0]["id"])
     state["sessions"][sid] = s
     return s
@@ -309,10 +309,14 @@ def rpc(store, state, who, name, body):
             del s["members"][who]
             cleanup(s)
         return None
-    if name in ("start_room", "move_room_member", "shuffle_room"):
+    if name in ("start_room", "move_room_member", "shuffle_room", "set_room_hints"):
         require(s["custom"] and s["owner_id"] == who and s["state"] == "lobby", "Only the host can change this lobby")
         if name == "start_room":
             start(s)
+        elif name == "set_room_hints":
+            # The Latin syllable under each key, for everyone in the room's match.
+            require(type(body.get("p_hints")) is bool, "Hints are on or off", 400)
+            s["hints"] = body["p_hints"]
         elif name == "move_room_member":
             target = s["members"].get(body.get("p_profile"))
             require(target and body.get("p_team") in [t["id"] for t in s["teams"]], "Invalid member or side", 400)

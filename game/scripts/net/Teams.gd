@@ -202,6 +202,14 @@ static func start_room(session_id: String) -> String:
 	return got.error
 
 
+## The host's letter hints: the Latin syllable under each key, for everyone
+## in the room's match. "" or why not.
+static func set_room_hints(session_id: String, on: bool) -> String:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/set_room_hints",
+		{"p_session": session_id, "p_hints": on})
+	return got.error
+
+
 ## Authoritative room heartbeat and roster; only members may check in.
 static func poll_room(session_id: String) -> Dictionary:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/poll_room",

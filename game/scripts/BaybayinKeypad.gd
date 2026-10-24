@@ -5,8 +5,9 @@ extends GridContainer
 ## Typing a mark after a consonant combines with it on screen by itself: the
 ## font shapes ᜊ + ᜒ into ᜊᜒ. A mark with nothing to sit on is refused.
 ##
-## `labels`: the Latin syllable under each glyph -- Practice only. In a match
-## the glyphs stand alone.
+## `labels`: the Latin syllable under each glyph -- in Practice, and in a
+## custom room whose host turned letter hints on. Otherwise the glyphs stand
+## alone.
 
 signal changed(text: String)
 

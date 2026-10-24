@@ -149,6 +149,10 @@ func _room_flow() -> void:
 		await _wait(1.0)
 		main.current.call("_pick", Lobby.SPECTATE)
 		await _wait(1.5)
+		# FLOW_HINTS: the host turns letter hints on.
+		if OS.get_environment("FLOW_HINTS") != "":
+			await main.current.call("_toggle_hints")
+			await _wait(1.0)
 		await _shot("room_host")
 		# Everyone else on a side: N players, alternating Blue and Red.
 		var want := int(OS.get_environment("FLOW_CLIENTS")) - 1
@@ -217,6 +221,11 @@ func _room_flow() -> void:
 			screen.set("_monastery_seen", true)
 			await _wait(2.0)
 			await _shot("match_minimap")
+			# A monk's answer pad, as the room set it: hints or none.
+			screen.call("_open_monk", 1)
+			await _wait(1.0)
+			await _shot("monk_pad")
+			(screen.get("_overlay") as Node).queue_free()
 		await _wait(10.0)
 		Input.action_release(way)
 		if index == 1:

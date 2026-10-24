@@ -121,6 +121,18 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rpc(2,'my_matches').json()[0]['deposited'],10)
         self.assertEqual(self.rpc(2,'player_board').json(),[])
 
+    def test_room_hints(self):
+        s=self.room(); sid=s['id']
+        row=lambda n: self.request(n,'GET',f'/rest/v1/sessions?id=eq.{sid}').json()[0]
+        self.assertFalse(row(0)['hints'])
+        self.assertEqual(self.rpc(1,'set_room_hints',p_session=sid,p_hints=True).status_code,403)
+        self.assertEqual(self.rpc(0,'set_room_hints',p_session=sid,p_hints='yes').status_code,400)
+        self.assertEqual(self.rpc(0,'set_room_hints',p_session=sid,p_hints=True).status_code,200)
+        self.assertTrue(self.rpc(1,'poll_room',p_session=sid).json()['session']['hints'])
+        self.assertEqual(self.rpc(0,'start_room',p_session=sid).status_code,200)
+        self.assertTrue(row(1)['hints'])
+        self.assertEqual(self.rpc(0,'set_room_hints',p_session=sid,p_hints=False).status_code,403)
+
     def test_room_permissions_cleanup_watch(self):
         s=self.room(); sid=s['id']
         self.assertEqual(self.rpc(0,'watch_match',p_code=s['code']).status_code,403)

@@ -287,6 +287,10 @@ English meanings are not shown.
 - **Join Room:** type the code to land in the lobby.
 - Players pick sides and may switch until Start. The host may **Move Player**
   or **Shuffle** everyone into balanced sides. Both controls lock at Start.
+- **Letter hints** (2026-10-24): the host may turn on the Latin syllable
+  under each Baybayin key (ᜊ "ba"), as Practice shows it, for everyone in the
+  room's match. Off by default; the rest of the room is told when it is on;
+  it locks at Start. Find Match never has hints.
 - **Spectators:** anyone in the room, the host included, may pick the
   **Spectators** bar instead of a side. A spectator never plays: no hero, no
   answers or deposits, no results or records. At Start they get the Watch
@@ -423,7 +427,8 @@ The phone never decides an outcome. The server:
 
 ### 10.4 Server calls (sketch)
 - `find_match()`, `poll_match(session)`, `leave_match(session)` — exist
-- `create_room()`, `join_room(code)`, `start_room(session)` — custom rooms
+- `create_room()`, `join_room(code)`, `start_room(session)`,
+  `set_room_hints(session, on)` — custom rooms
 - `answer(session, monk, typed)` → correct / wrong / locked
 - `deposit(session)` → this player's carried answers become deposited; may
   finish the team
