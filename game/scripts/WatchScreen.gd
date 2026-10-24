@@ -348,6 +348,8 @@ class Pins extends Control:
 	var peers: Peers
 	var snapshot := {}
 	var zoom := 0.1
+	## A hero's frame (16x20) drawn at this many canvas px per art px.
+	const HERO_SIZE := 1.5
 	var center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
 	func _at(point: Vector2) -> Vector2:
 		return size * 0.5 + (point - center) * zoom
@@ -373,12 +375,35 @@ class Pins extends Control:
 			var font := ThemeDB.fallback_font
 			draw_string(font, at + Vector2(-3, 12), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Pal.CREAM)
 		if peers != null:
+			var font := get_theme_default_font()
 			for id: String in peers.get("_markers"):
 				var marker: Node2D = peers.get("_markers")[id]
+				# The world's own hero is a few pixels at an aerial zoom: it is
+				# drawn here instead, at one readable size whatever the zoom.
+				marker.visible = false
 				# Unknown / stale positions aren't fabricated at the Monastery.
-				marker.visible = peers._is_live(id)
-				if marker.visible and view.has_point(_at(marker.position)):
-					var at := _at(marker.position)
-					var row: Dictionary = peers.get("_roster").get(id, {})
-					draw_circle(at, 4, Pal.SHADOW)
-					draw_circle(at, 2.8, peers.colour_of(str(row.get("team_id", ""))))
+				if not peers._is_live(id) or not view.has_point(_at(marker.position)):
+					continue
+				var at := _at(marker.position)
+				var row: Dictionary = peers.get("_roster").get(id, {})
+				var col: Color = peers.colour_of(str(row.get("team_id", "")))
+				# A ring in the team's colour under the feet...
+				draw_set_transform(at, 0.0, Vector2(1.0, 0.45))
+				draw_circle(Vector2.ZERO, 12.0, Color(col, 0.45))
+				draw_arc(Vector2.ZERO, 12.0, 0.0, TAU, 24, col, 2.0)
+				draw_set_transform(Vector2.ZERO)
+				# ...the hero as it walks, facing the way it goes...
+				var spr: AnimatedSprite2D = marker.get_node("Spr")
+				if spr.sprite_frames != null and spr.sprite_frames.has_animation(spr.animation):
+					var tex := spr.sprite_frames.get_frame_texture(spr.animation, spr.frame)
+					var sz := tex.get_size() * HERO_SIZE
+					var r := Rect2(at - Vector2(sz.x * 0.5, sz.y - 2.0), sz)
+					if spr.flip_h:
+						r = Rect2(r.position + Vector2(r.size.x, 0), Vector2(-r.size.x, r.size.y))
+					draw_texture_rect(tex, r, false)
+				# ...and the name under it.
+				var name := str(row.get("username", ""))
+				var w := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+				var at_name := at + Vector2(-w * 0.5, 15)
+				draw_string_outline(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 4, Color(0, 0, 0, 0.75))
+				draw_string(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col.lightened(0.45))

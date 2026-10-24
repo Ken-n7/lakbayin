@@ -136,6 +136,9 @@ func _ready() -> void:
 	check("full deflection reads full strength",
 			is_equal_approx(Input.get_action_strength("move_left"), 1.0),
 			str(Input.get_action_strength("move_left")))
+	# On the clock, as below: ten ~1ms headless frames walk about a pixel, the
+	# threshold itself -- this check failed on a fast full-suite run.
+	await wait_until(func() -> bool: return _map.player.position.x < start.x - 1.0, 1.0)
 	check("hero walks left", _map.player.position.x < start.x - 1.0,
 			"%s -> %s" % [start, _map.player.position])
 	touch(Vector2(34, 273), false)

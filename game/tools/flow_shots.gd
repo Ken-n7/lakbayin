@@ -42,6 +42,10 @@ func _ready() -> void:
 	# frame starved the frame rate, and Godot's HTTP advances once a frame --
 	# requests took seconds and the lobby dropped the slower client.
 	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	# FLOW_LIVE: redraw every frame -- nested views (Watch's map) only stay
+	# current that way. Costlier; fine for the room scenario.
+	if OS.get_environment("FLOW_LIVE") != "":
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(vp)
 	main = load("res://scenes/Main.tscn").instantiate()
 	vp.add_child(main)
@@ -150,10 +154,25 @@ func _room_flow() -> void:
 		await _shot("room_full")
 		main.current.call("_start")
 		var watch := await _until_screen("WatchScreen.gd", 20.0)
-		await _wait(4.0)
+		for i in 4:
+			if watch == null:
+				break
+			var pe: Node = watch.get("peers")
+			var live: Array = []
+			if pe != null:
+				for id: String in pe.get("_markers"):
+					if pe._is_live(id):
+						live.append("%s@%s" % [id.left(4), str(pe.get("_markers")[id].position.round())])
+			print("dbgwatch t=%d live=%s roster=%d" % [i, str(live), (watch.get("_roster") as Dictionary).size()])
+			await _wait(1.0)
 		await _shot("spectator" if watch != null else "spectator_missing")
 		if watch != null:
-			watch.call("_look", watch.get("world").door(), float(watch.get("_fit")) * 3.0)
+			# Close in on a walking player.
+			var pe: Node = watch.get("peers")
+			var aim: Vector2 = watch.get("world").door()
+			for id: String in pe.get("_markers"):
+				aim = pe.get("_markers")[id].position
+			watch.call("_look", aim, float(watch.get("_fit")) * 2.5)
 			await _wait(1.5)
 			await _shot("spectator_zoom")
 			await _wait(25.0)
@@ -174,8 +193,12 @@ func _room_flow() -> void:
 			get_tree().quit(1)
 			return
 		screen.call("skip_intro")
+		# Walk, so a spectator has movement to see.
+		Input.action_press("move_right" if index == 1 else "move_left")
 		await _wait(3.0)
 		await _shot("match")
+		await _wait(10.0)
+		Input.action_release("move_right" if index == 1 else "move_left")
 		if index == 1:
 			for i in screen.play.words.size():
 				await Monks.answer(screen.play.session_id, i, _spelling(screen.play.words[i]))
@@ -231,7 +254,8 @@ func _wait(s: float) -> void:
 
 
 func _shot(name: String) -> void:
-	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	if vp.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
+		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	var path := out.path_join("p%d_%s.png" % [index, name])

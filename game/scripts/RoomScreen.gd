@@ -46,8 +46,9 @@ func _build_code() -> void:
 	box.add_child(Art.label("or type a friend's room code",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	# The code as a code: four big spaced letters, the way it is read out.
-	# Not an example code: "K7QM" read as a room to join.
-	_code = Ui.line_edit("4-letter code", 200, 52, 32)
+	# Not an example code: "K7QM" read as a room to join. "Character", not
+	# "letter": codes mix in digits. Wide enough for the hint at code size.
+	_code = Ui.line_edit("4-character code", 256, 52, 32)
 	_code.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_code.max_length = 4
 	_code.add_theme_constant_override("minimum_character_width", 4)

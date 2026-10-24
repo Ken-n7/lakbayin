@@ -27,6 +27,7 @@ run() {                                     # run <name> <godot args...>
 		echo "FAIL  $name -- timed out after ${LIMIT}s"; fail=1
 	elif [[ $code -ne 0 ]]; then
 		echo "FAIL  $name -- exit $code  ${tail}"; fail=1
+		grep -E '^\s*FAIL ' "$log" | head -5   # which checks, not just how many
 	elif grep -q "SCRIPT ERROR" "$log"; then
 		echo "FAIL  $name -- SCRIPT ERROR during the run"
 		grep -A2 "SCRIPT ERROR" "$log" | head -6; fail=1
