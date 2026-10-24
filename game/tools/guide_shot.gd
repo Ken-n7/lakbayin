@@ -2,15 +2,17 @@ extends Node
 
 ## Every How to Play page as a picture, at 3x like a phone draws it:
 ##
-##   godot --path game res://tools/guide_shot.tscn -- <out dir>
+##   godot --path game res://tools/guide_shot.tscn -- <out dir> [wait s]
 ##
-## Pages that animate are shot mid-way, after `WAIT` seconds on each.
+## Pages that animate are shot mid-way, after `wait` seconds on each.
 
 const WAIT := 2.4
 
 
 func _ready() -> void:
-	var out: String = OS.get_cmdline_user_args()[0]
+	var args := OS.get_cmdline_user_args()
+	var out: String = args[0]
+	var wait := float(args[1]) if args.size() > 1 else WAIT
 	DirAccess.make_dir_recursive_absolute(out)
 	var vp := SubViewport.new()
 	vp.size = Vector2i(1920, 1080)
@@ -26,7 +28,7 @@ func _ready() -> void:
 	var next := guide.find_child("Next", true, false) as Button
 	var n := 1
 	while true:
-		await get_tree().create_timer(WAIT).timeout
+		await get_tree().create_timer(wait).timeout
 		vp.get_texture().get_image().save_png("%s/page%d.png" % [out, n])
 		if next.text != "Next":
 			break

@@ -317,8 +317,9 @@ English meanings are not shown.
 - 1 What is Baybayin (facts only: pre-colonial script; Spanish accounts
   around 1600 describe it in everyday use; the *Doctrina Christiana*, 1593).
   2 Letters say "a" (the keypad with sounds; tap any key). 3 Marks change the
-  sound (ᜊ → ᜊᜒ → ᜊᜓ → ᜊ᜔, animated). 4 Build a word (the keypad types
-  *bahay* itself). 5 Your turn (write *aso*; "Tama!"). 6 The match and
+  sound (ᜊ → ᜊᜒ → ᜊᜓ → ᜊ᜔ → ᜁᜊᜓᜈ᜔, animated: a letter with no vowel after
+  it takes the cross). 4 Build a word (the keypad types *bahay* itself).
+  5 Your turn (write *aso*, then *ibon*, ending in a consonant; "Tama!"). 6 The match and
   7 Play as a team: screenshots of the game itself
   (`assets/ui/guide/`, remade by `game/tools/guide_shots.py`).
 - Only the game's own art, fonts and screens; no generated images.

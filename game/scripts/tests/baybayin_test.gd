@@ -120,6 +120,16 @@ func _ready() -> void:
 	var tama: Array = guide.find_children("*", "Label", true, false).filter(
 		func(l: Node) -> bool: return (l as Label).text.begins_with("Tama!"))
 	check("writing aso there is praised", tama.size() == 1)
+	await get_tree().create_timer(1.8).timeout
+	var asks: Array = guide.find_children("*", "Label", true, false).filter(
+		func(l: Node) -> bool: return (l as Label).text.begins_with("Now ibon"))
+	check("then it asks for ibon, a word ending in a consonant", asks.size() == 1
+		and (pads[0] as BaybayinKeypad).text == "")
+	for g in ["ᜁ", "ᜊ", Baybayin.KUDLIT_U, "ᜈ", Baybayin.KRUS]:
+		(pads[0] as BaybayinKeypad).press(g)
+	var verdict := guide.find_child("Verdict", true, false) as Label
+	check("writing it, the cross and all, is praised", verdict != null and verdict.text == "Tama! That is ibon.",
+		verdict.text if verdict != null else "no verdict")
 	while next.text == "Next":
 		next.pressed.emit()
 	next.pressed.emit()

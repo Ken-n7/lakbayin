@@ -18,7 +18,14 @@ const SHOTS := "res://assets/ui/guide/%s.png"
 
 const WHAT := "ᜊᜌ᜔ᜊᜌᜒᜈ᜔"       # baybayin, in Baybayin
 const DEMO := ["ᜊ", "ᜑ", "ᜌ", "᜔"]  # bahay, a key at a time
-const TRY := "ᜀᜐᜓ"               # aso
+## Page 5's words, one after the other: one ending in a vowel, then one in
+## a consonant -- the cross, typed by the player.
+const TRIES := [
+	{"word": "aso", "modern": "ᜀᜐᜓ", "traditional": "ᜀᜐᜓ",
+		"ask": "Write aso (dog).", "hint": "Hint: ᜀ a, then ᜐ sa with the mark below: so."},
+	{"word": "ibon", "modern": "ᜁᜊᜓᜈ᜔", "traditional": "ᜁᜊᜓ",
+		"ask": "Now ibon (bird). It ends in n.", "hint": "Hint: ᜁ i, ᜊ ba with the mark below: bo, then ᜈ na with the cross: n."},
+]
 
 
 ## Opens over `parent`; `on_close` runs when it is closed, however.
@@ -120,23 +127,25 @@ static func _marks() -> Array:
 	keys.alignment = BoxContainer.ALIGNMENT_CENTER
 	keys.add_theme_constant_override("separation", 6)
 	col.add_child(keys)
-	var steps := [["ᜊ", "ba", "ᜊ"], ["ᜊᜒ", "bi / be", "ᜒ"], ["ᜊᜓ", "bu / bo", "ᜓ"], ["ᜊ᜔", "b", "᜔"]]
+	# The last step is a whole word: the cross on the n that ends ibon.
+	var steps := [["ᜊ", "ba", 0], ["ᜊᜒ", "bi / be", 1], ["ᜊᜓ", "bu / bo", 2], ["ᜊ᜔", "b", 3],
+		["ᜁᜊᜓᜈ᜔", "ibon: i · bo · n", 3]]
 	var lit: Array[Button] = []
-	for s: Array in steps:
-		lit.append(_key(keys, s[2]))
+	for g: String in ["ᜊ", "ᜒ", "ᜓ", "᜔"]:
+		lit.append(_key(keys, g))
 	var tw := col.create_tween().set_loops()
 	for i in steps.size():
 		tw.tween_callback(func() -> void:
 			big.text = steps[i][0]
 			sound.text = steps[i][1]
 			for k in lit.size():
-				lit[k].button_pressed = k == i)
+				lit[k].button_pressed = k == int(steps[i][2]))
 		tw.tween_interval(BEAT * 1.6)
 	return ["Marks Change the Sound", _two(col, [
-		"Mark above: the a becomes i or e.",
-		"Mark below: the a becomes u or o.",
+		"Above: the a becomes i or e.",
+		"Below: the a becomes u or o.",
 		"The cross: no vowel at all.",
-		"A mark always goes after its letter.",
+		"So a letter with no vowel after it takes the cross: the n of ibon, the k of bundok.",
 	])]
 
 
@@ -171,18 +180,35 @@ static func _build() -> Array:
 static func _turn() -> Array:
 	var pad := BaybayinKeypad.new()
 	var shown := _reading()
+	var ask := _line("")
+	var hint := _line("")
 	var verdict := Art.label("", Pal.BODY, Pal.GOLD_DIM)
+	verdict.name = "Verdict"
+	var at := [0, false]   # which word; written yet
+	var pose := func() -> void:
+		ask.text = TRIES[at[0]].ask
+		hint.text = TRIES[at[0]].hint
+		verdict.text = ""
+		at[1] = false
 	pad.changed.connect(func(_t: String) -> void:
 		_show(shown, pad.text)
-		var right := Baybayin.clean(pad.text) == TRY
-		verdict.text = "Tama! That is aso." if right else ""
-		if right:
-			Sfx.play("correct"))
-	var side := _side([
-		"Write aso (dog).",
-		"Hint: a · so. The vowel ᜀ, then ᜐ with the mark below.",
-	], shown)
-	side.add_child(verdict)
+		var want: Dictionary = TRIES[at[0]]
+		if at[1] or not Baybayin.matches(pad.text, want):
+			return
+		at[1] = true
+		verdict.text = "Tama! That is %s." % want.word
+		Sfx.play("correct")
+		if at[0] < TRIES.size() - 1:
+			var tw := pad.create_tween()
+			tw.tween_interval(1.6)
+			tw.tween_callback(func() -> void:
+				at[0] += 1
+				pad.clear()
+				pose.call()))
+	pose.call()
+	var side := _side([], shown)
+	for c: Control in [ask, hint, verdict]:
+		side.add_child(c)
 	var page := HBoxContainer.new()
 	page.add_theme_constant_override("separation", 14)
 	page.add_child(_centred(pad))
@@ -227,12 +253,16 @@ static func _side(lines: Array, extra: Control = null) -> VBoxContainer:
 	if extra != null:
 		side.add_child(extra)
 	for line: String in lines:
-		var l := Art.label(line, Pal.SMALL, Pal.INK)
-		l.add_theme_font_override("font", Art.mixed())   # Latin and Baybayin in one line
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l.custom_minimum_size.x = SIDE_W
-		side.add_child(l)
+		side.add_child(_line(line))
 	return side
+
+
+static func _line(text: String) -> Label:
+	var l := Art.label(text, Pal.SMALL, Pal.INK)
+	l.add_theme_font_override("font", Art.mixed())   # Latin and Baybayin in one line
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = SIDE_W
+	return l
 
 
 static func _centred(c: Control) -> CenterContainer:
