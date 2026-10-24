@@ -121,6 +121,35 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rpc(2,'my_matches').json()[0]['deposited'],10)
         self.assertEqual(self.rpc(2,'player_board').json(),[])
 
+    def test_bad_input_is_refused_not_a_crash(self):
+        s=self.room(); sid=s['id']
+        for bad in ([],{},1,None):
+            self.assertEqual(self.rpc(1,'poll_room',p_session=bad).status_code,400)
+            self.assertEqual(self.rpc(0,'move_room_member',p_session=sid,p_profile=bad,p_team='x').status_code,400)
+        for bad in ([],{},None,'3'):
+            self.assertEqual(self.rpc(1,'player_board',p_offset=bad).status_code,400)
+        self.assertEqual(self.client.post('/auth/restore',json=[]).status_code,401)
+        self.assertEqual(self.request(1,'POST','/rest/v1/members',{'session_id':[]}).status_code,404)
+
+    def test_one_game_at_a_time(self):
+        s=self.room(); sid=s['id']
+        ids=[u['user']['id'] for u in self.users]
+        live=lambda: self.app.state.store.load()['sessions']
+        # Queueing, or making a room, takes you out of the lobby you were in.
+        queue=self.rpc(1,'find_match').json()['id']
+        self.assertNotIn(ids[1],live()[sid]['members'])
+        mine=self.rpc(1,'create_room').json()['id']
+        self.assertEqual([k for k,v in live().items() if ids[1] in v['members']],[mine])
+        self.assertNotEqual(live().get(queue,{}).get('state'),'lobby')
+        # While you play a running match you cannot start another.
+        teams=live()[sid]['teams']
+        self.request(3,'POST','/rest/v1/members',{'session_id':sid,'profile_id':ids[3]})
+        self.request(3,'PATCH',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{ids[3]}',{'team_id':teams[1]['id']})
+        self.assertEqual(self.rpc(0,'start_room',p_session=sid).status_code,200)
+        self.assertEqual(self.rpc(2,'create_room').status_code,409)
+        self.assertEqual(self.rpc(2,'find_match').status_code,409)
+        self.assertEqual(self.request(2,'POST','/rest/v1/members',{'session_id':mine,'profile_id':ids[2]}).status_code,409)
+
     def test_room_hints(self):
         s=self.room(); sid=s['id']
         row=lambda n: self.request(n,'GET',f'/rest/v1/sessions?id=eq.{sid}').json()[0]
@@ -319,6 +348,15 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.rpc(3,'watch_match',p_code=s['code']).json(),sid)
         snap=self.rpc(3,'watch_snapshot',p_session=sid).json()
         self.assertNotIn(me,[p['profile_id'] for p in snap['players']])
+        # Nor do they put a hero on anyone's map: a member, but no player.
+        topic=TOPIC+':snap:'+sid
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:
+            self.join_ws(ws,3,topic)
+            data={'sid':sid,'p':[{'id':me,'hero':1,'cadence':0.05,'p':[[1,100,200]]}]}
+            ws.send_json({'topic':topic,'event':'broadcast','payload':{'event':'snap','payload':data}})
+            # Refused at once: a heartbeat behind it gets no reply.
+            ws.send_json({'topic':topic,'event':'heartbeat','payload':{},'ref':'hb'})
+            self.assertEqual(ws.receive()['type'],'websocket.close')
         self.assertEqual(self.request(1,'PATCH',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{self.users[1]["user"]["id"]}',{'team_id':'spectate'}).status_code,403)
         for i,w in enumerate(self.app.state.store.load()['sessions'][sid]['words']):
             self.rpc(0,'answer_monk',p_session=sid,p_monk=i,p_typed=w['modern'])

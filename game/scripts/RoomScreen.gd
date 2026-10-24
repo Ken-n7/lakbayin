@@ -106,6 +106,9 @@ func _enter(quiet := false) -> void:
 	if _code.text.strip_edges().is_empty():
 		_say("Enter the code.", Pal.WRONG)
 		return
+	if Teams.clean_code(_code.text).length() != 4:
+		_say("Room codes are 4 characters.", Pal.WRONG)
+		return
 	_go.disabled = true
 	_go.text = "Joining..."
 	_joining = true

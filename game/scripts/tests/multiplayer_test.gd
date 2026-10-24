@@ -246,6 +246,14 @@ func _monk_activity() -> void:
 
 
 func _room_controls() -> void:
+	var form := RoomPreview.new()
+	add_child(form)
+	form._build_code()
+	form._code.text = "K7Q"
+	form._enter()
+	check("a room code short of 4 characters is refused before asking the server",
+		form._msg.text == "Room codes are 4 characters." and not form._joining, form._msg.text)
+	form.queue_free()
 	var room := RoomPreview.new()
 	add_child(room)
 	room.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

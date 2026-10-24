@@ -211,6 +211,18 @@ def start(s):
     s.update(state="running", starts_at=stamp(), ends_at=stamp(time.time() + s["duration_s"]), deadline=time.time() + s["duration_s"])
 
 
+def one_game(sessions, who, keep=None):
+    """Before `who` joins a game: refused while they play in a running one;
+    out of any other lobby they were left waiting in."""
+    for s in list(sessions.values()):
+        if s["id"] == keep or not member(s, who):
+            continue
+        require(not (s["state"] == "running" and plays(s, who)), "Finish the match you're in first", 409)
+        if s["state"] == "lobby":
+            del s["members"][who]
+            cleanup(s)
+
+
 def add_member(s, who, team=None):
     s["members"].setdefault(who, {"session_id": s["id"], "profile_id": who, "team_id": team, "joined": time.time(), "seen": time.time()})
 
@@ -258,15 +270,19 @@ def rpc(store, state, who, name, body):
         if name == "player_board":
             for i, row in enumerate(rows):
                 row["place"] = next(j + 1 for j, q in enumerate(rows) if (q["wins"], q["deposited"]) == (row["wins"], row["deposited"]))
-        offset = max(0, min(int(body.get("p_offset", 0)), 100000))
+        offset = body.get("p_offset", 0)
+        require(type(offset) is int, "Invalid offset", 400)
+        offset = max(0, min(offset, 100000))
         return rows[offset:offset + 21]
     if name == "create_room":
+        one_game(sessions, who)
         return public_session(make_session(state, who, True))
     if name == "find_match":
         for s in sessions.values():
             if not s["custom"] and member(s, who) and s["state"] in ("lobby", "running"):
                 s["members"][who]["seen"] = time.time()
                 return public_session(s)
+        one_game(sessions, who)
         s = next((s for s in sessions.values() if not s["custom"] and s["state"] == "lobby" and len(s["members"]) < 2 * s["team_size"]), None)
         if s is None:
             s = make_session(state, who, False)
@@ -283,7 +299,8 @@ def rpc(store, state, who, name, body):
         require(not member(s, who) or member(s, who)["team_id"] == SPECTATE, "Players cannot watch their own match")
         s["watchers"][who] = time.time() + 30
         return s["id"]
-    s = find(store, state, body.get("p_session"))
+    require(isinstance(body.get("p_session"), str), "Invalid session", 400)
+    s = find(store, state, body["p_session"])
     require(s, "No such session", 404)
     if name in ("watch_snapshot", "leave_watch"):
         require(s["watchers"].get(who, 0) > time.time(), "watch expired")
@@ -318,7 +335,8 @@ def rpc(store, state, who, name, body):
             require(type(body.get("p_hints")) is bool, "Hints are on or off", 400)
             s["hints"] = body["p_hints"]
         elif name == "move_room_member":
-            target = s["members"].get(body.get("p_profile"))
+            require(isinstance(body.get("p_profile"), str), "Invalid member or side", 400)
+            target = s["members"].get(body["p_profile"])
             require(target and body.get("p_team") in [t["id"] for t in s["teams"]], "Invalid member or side", 400)
             target["team_id"] = body["p_team"]
         else:
@@ -410,6 +428,7 @@ def read_rows(store, state, who, table, params):
 def write_rows(state, who, method, table, params, body):
     require(table == "members", "Direct writes are disabled")
     sid = body.get("session_id") if method == "POST" else params.get("session_id", "").removeprefix("eq.")
+    require(isinstance(sid, str), "No custom room", 404)
     s = state["sessions"].get(sid)
     require(s and s["custom"], "No custom room", 404)
     target = body.get("profile_id", who) if method == "POST" else params.get("profile_id", "").removeprefix("eq.")
@@ -419,6 +438,7 @@ def write_rows(state, who, method, table, params, body):
         if member(s, who):
             return []
         require(s["state"] == "lobby" and len(s["members"]) < 10, "Room full or already started")
+        one_game(state["sessions"], who, keep=sid)
         add_member(s, who)
     elif method == "PATCH":
         require(s["state"] == "lobby" and member(s, who), "Cannot change sides now")
@@ -676,6 +696,7 @@ def create_app(db_path=None):
     @app.post("/auth/restore")
     async def restore(request: Request):
         body = await request.json()
+        require(isinstance(body, dict), "Sign in again", 401)
         token = body.get("refresh_token", "")
         who = store.user(token)["id"]
         return {"access_token": token, "refresh_token": token, "user": {"id": who}}
@@ -765,6 +786,8 @@ def create_app(db_path=None):
                     s = store.load()["sessions"].get(sid)
                     require(s and member(s, peer["who"]), "Spectators cannot publish")
                     if kind == "snap":
+                        # A spectator member is no hero on anyone's map.
+                        require(plays(s, peer["who"]), "Spectators cannot move")
                         require(s["state"] == "running" and topic == TOPIC + ":snap:" + sid, "Movement denied")
                         paths = data.get("p", [])
                         require(isinstance(paths, list) and len(paths) == 1 and isinstance(paths[0], dict) and paths[0].get("id") == peer["who"] and not data.get("r"), "Cannot move another player")

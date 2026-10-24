@@ -6,11 +6,13 @@ const FORM_W := 290.0
 ## Username and Role share a row; Role gets the wider half, because
 ## "Player (student)" is longer than any username hint needs.
 const MIN_PASSWORD := 8
+const MAX_PASSWORD := 256     # the server's limit
 
 var main: Control
 
 var _user: LineEdit
 var _pass: LineEdit
+var _again: LineEdit
 var _msg: Label
 var _go: Button
 
@@ -24,6 +26,12 @@ func setup(_data: Dictionary) -> void:
 	# no teacher role to pick.
 	_user = Ui.field(box, "Username", "3-20 letters", false, FORM_W)
 	_pass = Ui.password_field(box, "Password", "at least %d characters" % MIN_PASSWORD, FORM_W)
+	# Typed twice: there is no reset by email yet, so a typo here is an
+	# account nobody can sign in to.
+	_again = Ui.password_field(box, "Confirm Password", "type it again", FORM_W)
+	_user.max_length = 20
+	_pass.max_length = MAX_PASSWORD
+	_again.max_length = MAX_PASSWORD
 
 	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -33,7 +41,8 @@ func setup(_data: Dictionary) -> void:
 	# Enter walks the form and the last field registers -- the button is under
 	# the soft keyboard on a phone.
 	_user.text_submitted.connect(func(_t: String) -> void: _pass.grab_focus())
-	_pass.text_submitted.connect(func(_t: String) -> void: _submit())
+	_pass.text_submitted.connect(func(_t: String) -> void: _again.grab_focus())
+	_again.text_submitted.connect(func(_t: String) -> void: _submit())
 
 	_go = Ui.button("Register", FORM_W, Ui.H, Ui.RED)
 	Ui.centre_row(box, _go)
@@ -60,6 +69,9 @@ func _submit() -> void:
 		return
 	if _pass.text.length() < MIN_PASSWORD:
 		_err("Password must be at least %d characters." % MIN_PASSWORD)
+		return
+	if _again.text != _pass.text:
+		_err("The passwords do not match.")
 		return
 
 	_go.disabled = true

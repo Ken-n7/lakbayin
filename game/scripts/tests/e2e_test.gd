@@ -121,6 +121,13 @@ func _run() -> void:
 	await _wait(3)
 	check("registering asks for no role", _find_label(_screen(), "Role") == null)
 	check("registering asks for no email", _find_label(_screen(), "Email") == null)
+	var reg: Control = _screen()
+	reg._user.text = "newplayer"
+	reg._pass.text = "password1"
+	reg._again.text = "password2"
+	reg._submit()
+	check("registering refuses passwords that do not match", reg._msg.text == "The passwords do not match."
+		and not reg._go.disabled, reg._msg.text)
 	_main_scene.call("open", "home")
 	await _wait(3)
 	check("home is the title", _script_of(_screen(), "res://scripts/HomeScreen.gd"))
