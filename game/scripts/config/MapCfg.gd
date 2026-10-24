@@ -15,10 +15,11 @@ const TILEMAP_COLOR := "res://assets/terrain/tileset/Tilemap_color1.png"
 const WATER_MARGIN := 20
 const WATER_BG := "res://assets/terrain/tileset/Water Background color.png"
 ## Each level's grass, as the pack's guide suggests, so the heights read
-## apart: the ground, the plateaus, the hills on them.
+## apart: the ground, the plateaus, the hills on them -- cooler going up, a
+## step apart (the pack's olive, colour 2, is too near the ground's).
 const LEVEL_COLORS := ["res://assets/terrain/tileset/Tilemap_color1.png",
-	"res://assets/terrain/tileset/Tilemap_color2.png",
-	"res://assets/terrain/tileset/Tilemap_color3.png"]
+	"res://assets/terrain/tileset/Tilemap_color3.png",
+	"res://assets/terrain/tileset/Tilemap_color5.png"]
 ## The guide's shadow under each raised level, one tile down.
 const SHADOW_SHEET := "res://assets/terrain/tileset/Shadow.png"
 const LEVEL_SHADOW_SCALE := 0.5      # the guide: three tiles of 64px, at our 0.5

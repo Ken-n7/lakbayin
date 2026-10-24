@@ -51,6 +51,11 @@ func build() -> void:
 		grid.land[c] = true
 		grid.island_of[c] = int(gen.islet_of.get(c, 0))
 	builder.retile(gen.land.keys())
+	grid.height = gen.height
+	for r: Dictionary in gen.ramps:
+		grid.lay_ramp(r.top, r.low, r.side)
+	grid.lay_cliffs()
+	builder.paint_levels()
 	grid.trail = gen.trail
 	_build_monastery()
 	_build_houses()

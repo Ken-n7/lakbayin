@@ -27,6 +27,7 @@ var stairs := {}      # Vector2i -> {low, top, side, row}: a ramp's three cells
 
 # --- Boxes, in world px -----------------------------------------------------
 var solid: Array[Rect2] = []          # walls: buildings, boulders, guards
+var rails: Array[Rect2] = []          # the walls round each ramp's top, also in `solid`
 var station_rects: Array[Rect2] = []  # keep-outs the decor pass avoids
 var sign_rects: Array[Rect2] = []     # the station signboards, specifically
 
@@ -178,36 +179,82 @@ func _slip(here: Vector2, dy: float, box: Rect2, level: int, low: int) -> Vector
 
 
 ## Every cell reachable from `from` starting at `level`, walking as the hero
-## does: by level, up and down ramps, round walls (tested at cell middles).
+## does: by level, up and down ramps, round walls (`next_states`).
 ## `ground_only` never changes level -- the board as it is with no stairs.
 func flood(from: Vector2, level: int, ground_only := false) -> Dictionary:
+	var walls := wall_cells()
 	var start := cell_at(from)
 	var seen := {Vector3i(start.x, start.y, level): true}
 	var cells := {start: true}
 	var queue: Array[Vector3i] = [Vector3i(start.x, start.y, level)]
 	while not queue.is_empty():
-		var k: Vector3i = queue.pop_back()
-		var c := Vector2i(k.x, k.y)
-		var low := -1 if ground_only or not stairs.has(c) else int(stairs[c].low)
-		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-			var n: Vector2i = c + d
-			var p := cell_mid(n)
-			if not cell_ok(n, k.z, low):
-				continue
-			var blocked := false
-			for r in solid:
-				if r.has_point(p):
-					blocked = true
-					break
-			if blocked:
-				continue
-			var nl := k.z if ground_only else level_at(p, k.z)
-			var nk := Vector3i(n.x, n.y, nl)
-			if not seen.has(nk):
-				seen[nk] = true
-				cells[n] = true
-				queue.append(nk)
+		for n in next_states(queue.pop_back(), walls, ground_only):
+			if not seen.has(n):
+				seen[n] = true
+				cells[Vector2i(n.x, n.y)] = true
+				queue.append(n)
 	return cells
+
+
+## The shortest walk from cell `a` at `level` to cell `b`: its cells, both
+## ends included; empty if there is none.
+func route(a: Vector2i, level: int, b: Vector2i, walls := {}) -> Array[Vector2i]:
+	var start := Vector3i(a.x, a.y, level)
+	var from := {start: start}
+	var queue: Array[Vector3i] = [start]
+	var head := 0
+	var out: Array[Vector2i] = []
+	while head < queue.size():
+		var k := queue[head]
+		head += 1
+		if k.x == b.x and k.y == b.y:
+			while k != start:
+				out.append(Vector2i(k.x, k.y))
+				k = from[k]
+			out.append(a)
+			out.reverse()
+			return out
+		for n in next_states(k, walls):
+			if not from.has(n):
+				from[n] = k
+				queue.append(n)
+	return out
+
+
+## Where a walker in cell (k.x, k.y) at level k.z can step next, as
+## (cell, level): onto ground it may stand on (`cell_ok`) whose middle no wall
+## covers (`walls`, from `wall_cells`), across no ramp's rail.
+func next_states(k: Vector3i, walls: Dictionary, ground_only := false) -> Array[Vector3i]:
+	var out: Array[Vector3i] = []
+	var c := Vector2i(k.x, k.y)
+	var low := -1 if ground_only or not stairs.has(c) else int(stairs[c].low)
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var n: Vector2i = c + d
+		if walls.has(n) or not cell_ok(n, k.z, low):
+			continue
+		var edge := (cell_mid(c) + cell_mid(n)) * 0.5
+		var railed := false
+		for r in rails:
+			if r.has_point(edge):
+				railed = true
+		if railed:
+			continue
+		out.append(Vector3i(n.x, n.y, k.z if ground_only else level_at(cell_mid(n), k.z)))
+	return out
+
+
+## The cells whose middle a wall covers, laid onto cells once: testing every
+## wall at every step of a walk took minutes for a whole world.
+func wall_cells() -> Dictionary:
+	var out := {}
+	for r in solid:
+		var a := cell_at(r.position)
+		var b := cell_at(r.end)
+		for y in range(a.y, b.y + 1):
+			for x in range(a.x, b.x + 1):
+				if r.has_point(cell_mid(Vector2i(x, y))):
+					out[Vector2i(x, y)] = true
+	return out
 
 
 ## Can the hero stand at `pos`? `box` is their Foot box, relative to their
@@ -329,11 +376,25 @@ func keep_out(r: Rect2) -> void:
 func lay_ramp(top: Vector2i, low: int, side: int) -> void:
 	for row in 3:
 		stairs[top + Vector2i(0, row)] = {"low": low, "top": row < 2, "side": side, "row": row}
+	for r in _rails_of(top, side):
+		block(r)
+		rails.append(r)
+
+
+## The ramp laid at `top`, taken up again, rails and all.
+func unlay_ramp(top: Vector2i, side: int) -> void:
+	for row in 3:
+		stairs.erase(top + Vector2i(0, row))
+	for r in _rails_of(top, side):
+		solid.erase(r)
+		rails.erase(r)
+
+
+static func _rails_of(top: Vector2i, side: int) -> Array[Rect2]:
 	var t := float(MapCfg.TILE)
 	var at := Vector2(top) * t
 	var x := at.x if side < 0 else at.x + t
-	block(Rect2(at + Vector2(0, -2), Vector2(t, 4)))
-	block(Rect2(Vector2(x - 2, at.y), Vector2(4, t)))
+	return [Rect2(at + Vector2(0, -2), Vector2(t, 4)), Rect2(Vector2(x - 2, at.y), Vector2(4, t))]
 
 
 ## Under every south edge of every level, the cliff face -- in the cell below,

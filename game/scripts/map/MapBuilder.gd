@@ -69,6 +69,12 @@ func retile(cells: Array) -> void:
 ## Per level, as the pack's guide stacks them: a shadow layer, then the
 ## raised ground with its cliffs and ramps, each level in its own grass.
 func paint_levels() -> void:
+	# The guide's foam on every tile touching the sea: raised ground and the
+	# cliffs dropping into it have none of their own, as the ground's tiles do.
+	var surf := grid.land.duplicate()
+	for c: Vector2i in grid.cliff:
+		surf[c] = true
+	Art.shore_foam(world, surf, MapCfg.TILE).z_index = -1
 	var tex := Art.tex(MapCfg.SHADOW_SHEET)
 	for level in range(1, MapCfg.LEVEL_COLORS.size()):
 		var shade := Node2D.new()

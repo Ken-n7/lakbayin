@@ -219,6 +219,21 @@ English meanings are not shown.
   - monks are spread out, not clustered, with no monk inside a spawn area
 - The existing seed system (both phones build the same board from the session
   id) is kept. The hand-made fixed board and tower pool go.
+- **Levels** (2026-10-24), after the pack's tilemap guide: the ground (0),
+  plateaus (1) and, on big plateaus, hills (2), each in its own grass. Cliffs
+  under every south edge, into the sea where they meet it; the pack's ramps up
+  the sides. The Monastery stands on the ground or a central plateau, by the
+  seed; monks wherever the generator puts them. Rules the generator keeps
+  (`world_test` checks each):
+  - no part of a level is a cell wide, no two cells meet only at a corner
+  - a hill stands at least 3 cells inside its plateau
+  - every plateau and hill has a ramp; all of the island is walked to (ground
+    behind a plateau, which no south-facing ramp can climb to, joins it)
+  - nothing stands across a level's edge, on a cliff or beside a ramp: every
+    cell under a prop, bush, house, monk or the Monastery is one level, a
+    cell clear of any edge
+  - no monk or door is in reach from another level
+  - mirrored, ramps and all
 
 ### 5.2 Art — Tiny Swords (Pixel Frog)
 - **Used:** Monk (Idle), Pawn, Houses, **Monastery** (the "church"), terrain,

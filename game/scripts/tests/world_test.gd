@@ -22,43 +22,151 @@ func build(seed: int) -> MapWorld:
 	return w
 
 
-## Cells reachable from `at`, as the hero walks: land whose middle no wall
-## covers. The walls are laid onto cells once -- testing every wall at every
-## step of the flood (MapGrid.flood) took minutes for eight worlds.
+## Cells reachable from `at`, walking as the hero does: by level, up and down
+## ramps, round walls (MapGrid.flood).
 func reach(w: MapWorld, at: Vector2) -> Dictionary:
-	var blocked := {}
-	for r: Rect2 in w.grid.solid:
-		var a := MapGrid.cell_at(r.position)
-		var b := MapGrid.cell_at(r.end)
-		for y in range(a.y, b.y + 1):
-			for x in range(a.x, b.x + 1):
-				if r.has_point(MapGrid.cell_mid(Vector2i(x, y))):
-					blocked[Vector2i(x, y)] = true
-	var open := {}
-	for c: Vector2i in w.grid.land:
-		if not blocked.has(c):
-			open[c] = true
-	return WorldGen._flood(MapGrid.cell_at(at), open)
+	return w.grid.flood(at, 0)
 
 
-## Steps from `from` to the nearest reached cell within reach of `to`, by a
-## breadth-first walk over `cells`; -1 if none is.
-func steps(cells: Dictionary, from: Vector2, to: Vector2) -> int:
-	var start := MapGrid.cell_at(from)
+## Steps from `from` to the nearest cell within reach of `to`, walking as the
+## hero does; -1 if none is.
+func steps(w: MapWorld, walls: Dictionary, from: Vector2, to: Vector2) -> int:
+	var s := MapGrid.cell_at(from)
+	var start := Vector3i(s.x, s.y, 0)
 	var dist := {start: 0}
-	var queue: Array[Vector2i] = [start]
+	var queue: Array[Vector3i] = [start]
 	var head := 0
 	while head < queue.size():
-		var c := queue[head]
+		var k := queue[head]
 		head += 1
-		if MapGrid.cell_mid(c).distance_to(to) < MapCfg.INTERACT_RADIUS:
-			return int(dist[c])
-		for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-			var n: Vector2i = c + d
-			if cells.has(n) and not dist.has(n):
-				dist[n] = int(dist[c]) + 1
+		if MapGrid.cell_mid(Vector2i(k.x, k.y)).distance_to(to) < MapCfg.INTERACT_RADIUS:
+			return int(dist[k])
+		for n in w.grid.next_states(k, walls):
+			if not dist.has(n):
+				dist[n] = int(dist[k]) + 1
 				queue.append(n)
 	return -1
+
+
+const RULES := [
+	"levels: a fair share of every island is raised",
+	"levels: mirrored, ramps and all",
+	"levels: no part of a level is a cell wide, no two cells meet only at a corner",
+	"levels: every hill stands well inside its plateau",
+	"levels: every plateau and hill has a ramp up onto it",
+	"levels: every ramp's three cells stand on ground of its low level, its foot has ground to step onto",
+	"levels: no prop, bush, house or monk stands across a level's edge, on a cliff or by a ramp",
+	"levels: the Monastery and its yard stand on one level, clear of edges",
+	"levels: no monk or door is in reach from another level",
+]
+
+
+## Which RULES world `w` breaks, and where.
+func rules(w: MapWorld) -> Dictionary:
+	var g := w.gen
+	var grid := w.grid
+	var out := {}
+	var lvl := func(c: Vector2i) -> int: return int(g.height.get(c, -1))
+	var raised := 0
+	for c: Vector2i in g.main:
+		raised += int(lvl.call(c) > 0)
+	if raised < g.main.size() * WorldGen.MIN_RAISED:
+		out[RULES[0]] = "%d of %d" % [raised, g.main.size()]
+	for c: Vector2i in g.height:
+		if lvl.call(c) != lvl.call(WorldGen.mirror_cell(c)):
+			out[RULES[1]] = str(c)
+	for r: Dictionary in g.ramps:
+		var twin := false
+		for o: Dictionary in g.ramps:
+			twin = twin or (o.top == WorldGen.mirror_cell(r.top) and int(o.side) == -int(r.side) and o.low == r.low)
+		if not twin:
+			out[RULES[1]] = "ramp %s" % r
+	for level in [1, 2]:
+		var up := {}
+		for c: Vector2i in g.height:
+			if lvl.call(c) >= level:
+				up[c] = true
+		for c: Vector2i in up:
+			var l := up.has(c + Vector2i.LEFT)
+			var r := up.has(c + Vector2i.RIGHT)
+			var u := up.has(c + Vector2i.UP)
+			var d := up.has(c + Vector2i.DOWN)
+			var pinch := false
+			for dx in [-1, 1]:
+				for dy in [-1, 1]:
+					pinch = pinch or (up.has(c + Vector2i(dx, dy)) and not up.has(c + Vector2i(dx, 0)) and not up.has(c + Vector2i(0, dy)))
+			if not (l or r) or not (u or d) or pinch:
+				out[RULES[2]] = "level %d at %s" % [level, c]
+		for piece: Dictionary in WorldGen._parts(up):
+			var ramped := false
+			for r: Dictionary in g.ramps:
+				ramped = ramped or (int(r.low) == level - 1 and piece.has(r.top + Vector2i(-int(r.side), 1)))
+			if not ramped:
+				out[RULES[4]] = "level %d piece of %d at %s" % [level, piece.size(), piece.keys()[0]]
+	for c: Vector2i in g.height:
+		if lvl.call(c) == 2:
+			for dy in range(-2, 3):
+				for dx in range(-2, 3):
+					if lvl.call(c + Vector2i(dx, dy)) < 1:
+						out[RULES[3]] = str(c)
+	for r: Dictionary in g.ramps:
+		var ok := true
+		for row in 3:
+			var k: Vector2i = r.top + Vector2i(0, row)
+			ok = ok and lvl.call(k) == int(r.low) and not grid.cliff.has(k)
+		var foot: Vector2i = r.top + Vector2i(0, 2)
+		var off := false
+		for k in [foot + Vector2i.DOWN, foot + Vector2i(int(r.side), 0)]:
+			off = off or (lvl.call(k) == int(r.low) and not grid.cliff.has(k) and not grid.stairs.has(k))
+		if not ok or not off:
+			out[RULES[5]] = str(r)
+	# Things on the ground: every cell under them flat, of one level, a cell
+	# clear of any edge, cliff or ramp.
+	var flat := func(c: Vector2i, level: int) -> bool:
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var k := c + Vector2i(dx, dy)
+				if lvl.call(k) != level or grid.cliff.has(k) or grid.stairs.has(k):
+					return false
+		return true
+	var feet: Array = []                     # [box, what, the point it stands on]
+	for p: Dictionary in g.props:
+		for r: Rect2 in WorldGen._rects_at(p.name, p.at, p.flip):
+			feet.append([r, p.name, p.at])
+	for b: Dictionary in g.bushes:
+		feet.append([Rect2(b.at, Vector2.ZERO), "bush", b.at])
+	for h: Dictionary in g.houses:
+		# Its footprint, WorldGen.HOUSE_CELLS over the cells left and right of
+		# its base point; a hair inside, or each corner is the next cell's.
+		feet.append([Rect2(h.at - Vector2(MapCfg.TILE, MapCfg.TILE * 3), Vector2(MapCfg.TILE * 2, MapCfg.TILE * 3)).grow(-0.5), "house", h.at - Vector2(0, 1)])
+	for m in g.monks:
+		feet.append([Rect2(m + MapWorld.MONK_FEET.position, MapWorld.MONK_FEET.size), "monk", m])
+	for f: Array in feet:
+		var home := MapGrid.cell_at(f[2])
+		var level: int = lvl.call(home)
+		for c in WorldGen._under(f[0]) + [home]:
+			if not flat.call(c, level):
+				out[RULES[6]] = "%s at %s" % [f[1], f[2]]
+	var base := MapGrid.cell_at(g.monastery - Vector2(0, 1))
+	var mlevel: int = lvl.call(base)
+	for y in range(base.y - WorldGen.MONASTERY_CELLS.y + 1, base.y + WorldGen.DOOR_YARD + 1):
+		for x in range(WorldGen.HALF - 2, WorldGen.HALF + 2):
+			if not flat.call(Vector2i(x, y), mlevel):
+				out[RULES[7]] = str(Vector2i(x, y))
+	var targets: Array[Vector2] = [g.door]
+	targets.append_array(g.monks)
+	for t in targets:
+		var tl: int = lvl.call(MapGrid.cell_at(t))
+		var c := MapGrid.cell_at(t)
+		for dy in range(-3, 4):
+			for dx in range(-3, 4):
+				var k := c + Vector2i(dx, dy)
+				var near := Rect2(Vector2(k) * MapCfg.TILE, Vector2.ONE * MapCfg.TILE)
+				var gap := (near.get_center() - t).length() - MapCfg.TILE * 0.5
+				if gap < MapCfg.INTERACT_RADIUS and g.land.has(k) and not grid.cliff.has(k) \
+						and (lvl.call(k) != tl or grid.stairs.has(k)):
+					out[RULES[8]] = "%s from %s" % [t, k]
+	return out
 
 
 func _ready() -> void:
@@ -70,6 +178,9 @@ func _ready() -> void:
 	var all_fair := true
 	var all_mirror := true
 	var why := []
+	var bad := {}
+	var mon_levels := {}
+	var any_hill := false
 	for seed in SEEDS:
 		var t0 := Time.get_ticks_msec()
 		var w := build(seed)
@@ -87,21 +198,31 @@ func _ready() -> void:
 		if not mirrored:
 			all_mirror = false
 			why.append("seed %d not mirrored" % seed)
+		var walls := w.grid.wall_cells()
 		for team in 2:
-			var cells := reach(w, g.spawns[team])
 			var targets: Array[Vector2] = [g.door]
 			targets.append_array(g.monks)
 			for at in targets:
-				if steps(cells, g.spawns[team], at) < 0:
+				if steps(w, walls, g.spawns[team], at) < 0:
 					all_reach = false
 					why.append("seed %d team %d cannot reach %s" % [seed, team, at])
-		var blue := steps(reach(w, g.spawns[0]), g.spawns[0], g.door)
-		var red := steps(reach(w, g.spawns[1]), g.spawns[1], g.door)
+		var blue := steps(w, walls, g.spawns[0], g.door)
+		var red := steps(w, walls, g.spawns[1], g.door)
 		if blue != red or blue < 0:
 			all_fair = false
 			why.append("seed %d: door %d vs %d steps" % [seed, blue, red])
+		var broke := rules(w)
+		for rule: String in broke:
+			bad[rule] = (bad.get(rule, []) as Array) + ["seed %d: %s" % [seed, broke[rule]]]
+		mon_levels[int(g.height[MapGrid.cell_at(g.door)])] = true
+		any_hill = any_hill or g.height.values().has(2)
 		w.queue_free()
 		await frames()
+	for rule: String in RULES:
+		check(rule, not bad.has(rule), str(bad.get(rule, "")).left(600))
+	check("the Monastery stands on the ground in some worlds, up on a plateau in others",
+		mon_levels.has(0) and mon_levels.has(1), str(mon_levels))
+	check("some worlds have a hill on a plateau", any_hill)
 	check("every world has its 10 monks", all_monks, str(why))
 	check("every world is mirrored: land, spawns, monks, Monastery on the axis", all_mirror, str(why))
 	check("from both spawns, every monk and the Monastery's door can be walked to", all_reach, str(why))
