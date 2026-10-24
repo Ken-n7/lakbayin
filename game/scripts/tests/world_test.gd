@@ -58,6 +58,7 @@ const RULES := [
 	"levels: no prop, bush, house or monk stands across a level's edge, on a cliff or by a ramp",
 	"levels: the Monastery and its yard stand on one level, clear of edges",
 	"levels: no monk or door is in reach from another level",
+	"water rocks are drawn over open sea only: no land, no cliff under them",
 ]
 
 
@@ -166,6 +167,10 @@ func rules(w: MapWorld) -> Dictionary:
 				if gap < MapCfg.INTERACT_RADIUS and g.land.has(k) and not grid.cliff.has(k) \
 						and (lvl.call(k) != tl or grid.stairs.has(k)):
 					out[RULES[8]] = "%s from %s" % [t, k]
+	for r: Dictionary in g.water_rocks:
+		for k in WorldGen._under(WorldGen.water_rock_box(r.v, r.at, r.flip)):
+			if g.land.has(k) or grid.cliff.has(k):
+				out[RULES[9]] = "rock at %s over %s" % [r.at, k]
 	return out
 
 

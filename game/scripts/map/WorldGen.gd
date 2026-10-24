@@ -127,6 +127,7 @@ var _centre_row := 0              # where the Monastery is meant to go
 var _raised := false              # ...and whether up on a plateau
 var _used := {}                   # Vector3i(cell, low level): a ramp or its margin
 static var _feet := {}            # prop name -> its collision rects about its origin
+static var _rock_art := {}        # water rock variant -> its art's box about its point
 
 
 static func mirror_cell(c: Vector2i) -> Vector2i:
@@ -838,20 +839,13 @@ func _scatter_bushes() -> void:
 
 
 ## Rocks in the sea, a few cells off the coast and apart from each other.
+## Checked where they are drawn, not where they stand: the art sits well
+## above and either side of its point (`water_rock_box`), and every cell under
+## it, and round those, is open sea -- no land, no cliff.
 func _scatter_water_rocks() -> void:
 	var spots: Array[Vector2i] = []
 	for c: Vector2i in _cells():
-		if c.x >= HALF - 2 or land.has(c):
-			continue
-		var near := false
-		var touch := false
-		for d in _disc(c, 3):
-			if land.has(d):
-				near = true
-		for d in _disc(c, 1):
-			if land.has(d):
-				touch = true
-		if near and not touch:
+		if c.x < HALF - 2 and not land.has(c):
 			spots.append(c)
 	_shuffle(spots)
 	var kept: Array[Vector2i] = []
@@ -862,10 +856,20 @@ func _scatter_water_rocks() -> void:
 		for k in kept:
 			if _dist(c, k) < 6:
 				apart = false
-		if apart:
-			kept.append(c)
-	for c in kept:
 		var r := {"at": MapGrid.cell_mid(c), "v": _rng.randi_range(1, 4), "flip": -1.0 if _rng.randf() < 0.5 else 1.0}
+		var box := water_rock_box(r.v, r.at, r.flip)
+		var near := false
+		for d in _disc(MapGrid.cell_at(box.get_center()), 3):
+			near = near or land.has(d)
+		if not apart or not near:
+			continue
+		var open := true
+		for k in _under(box):
+			for d in _disc(k, 1):
+				open = open and not land.has(d) and not _g.cliff.has(d)
+		if not open:
+			continue
+		kept.append(c)
 		water_rocks.append(r)
 		water_rocks.append({"at": mirror(r.at), "v": r.v, "flip": -float(r.flip)})
 
@@ -1055,6 +1059,29 @@ static func _under(r: Rect2) -> Array[Vector2i]:
 		for x in range(a.x, b.x + 1):
 			out.append(Vector2i(x, y))
 	return out
+
+
+## Where water rock `v` at `at` is drawn: its art's opaque box over all its
+## frames, placed as MapWorld draws it (Art.anim_sprite: the frame's bottom
+## centre at `at`, at WATER_ROCK_SCALE, mirrored by `flip`).
+static func water_rock_box(v: int, at: Vector2, flip: float) -> Rect2:
+	if not _rock_art.has(v):
+		var img := Art.tex(MapWorld.WATER_ROCK % v).get_image()
+		if img.is_compressed():
+			img.decompress()
+		var fw := img.get_width() / 16
+		var used := Rect2i()
+		for f in 16:
+			var r := img.get_region(Rect2i(f * fw, 0, fw, img.get_height())).get_used_rect()
+			used = r if used.size == Vector2i.ZERO else used.merge(r)
+		var k := MapWorld.WATER_ROCK_SCALE
+		_rock_art[v] = Rect2((Vector2(used.position) - Vector2(fw * 0.5, img.get_height())) * k,
+			Vector2(used.size) * k)
+	var box: Rect2 = _rock_art[v]
+	if flip < 0.0:
+		box.position.x = -box.end.x
+	box.position += at
+	return box
 
 
 static func _rects_at(name: String, at: Vector2, flip: float) -> Array[Rect2]:
