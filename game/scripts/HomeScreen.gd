@@ -208,18 +208,34 @@ func _build_header() -> void:
 	var edge := INSET + (0.0 if _logout_in_settings() else 86.0)
 	# A MOBA client's profile plate: the hero in a slot, the name, and the
 	# record under it. Tapping it opens Player Records.
+	# The corner: the Leaderboard's trophy, then the plate.
+	var corner := HBoxContainer.new()
+	corner.add_theme_constant_override("separation", 6)
+	corner.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	corner.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	corner.offset_right = -edge
+	corner.offset_top = INSET
+	add_child(corner)
+	# ponytail: the drawn white trophy is a placeholder until an icon pack
+	# (GTORAVERSE's achievement icons) is in.
+	var trophy := Ui.button("", 44, 48, Ui.RED)
+	trophy.name = "Leaderboard"
+	trophy.tooltip_text = "Leaderboard"
+	trophy.icon = Art.tex(ICONS % "trophy")
+	trophy.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	trophy.add_theme_color_override("icon_normal_color", Pal.GOLD)
+	trophy.add_theme_color_override("icon_hover_color", Pal.GOLD.lightened(0.2))
+	trophy.add_theme_color_override("icon_pressed_color", Pal.GOLD)
+	trophy.pressed.connect(func() -> void: main.open("records", {"tab": "player_board"}))
+	corner.add_child(trophy)
 	var plate := PanelContainer.new()
-	plate.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	plate.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	plate.offset_right = -edge
-	plate.offset_top = INSET
 	var face := Ui.face("res://assets/ui/SpecialPaper.png")
 	face.content_margin_left = 6
 	face.content_margin_right = 12
 	face.content_margin_top = 4
 	face.content_margin_bottom = 4
 	plate.add_theme_stylebox_override("panel", face)
-	add_child(plate)
+	corner.add_child(plate)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE

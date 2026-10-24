@@ -4,8 +4,6 @@ var main: Control
 var _tab := "my_matches"
 var _offset := 0
 var _version := 0
-var _history: Button
-var _board: Button
 var _previous: Button
 var _next: Button
 var _page: Label
@@ -15,16 +13,14 @@ var _scroll: ScrollContainer
 var _summary: HBoxContainer
 
 
-func setup(_options: Dictionary) -> void:
+## One screen, two uses: Player Records (your profile and matches) and,
+## with {"tab": "player_board"}, the Leaderboard -- opened from Home's trophy.
+func setup(options: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var box := Ui.back_panel(self, Vector2(600,330), "Player Records", go_back)
+	_tab = str(options.get("tab", "my_matches"))
+	var box := Ui.back_panel(self, Vector2(600,330),
+			"Leaderboard" if _tab == "player_board" else "Player Records", go_back)
 	box.add_theme_constant_override("separation", 6)
-	_history = Ui.button("My Matches", 180, Ui.H, Ui.SMALL)
-	_board = Ui.button("Global Players", 180, Ui.H, Ui.SMALL)
-	Ui.centre_row(box, _history).add_child(_board)
-	Ui.tabs([_history, _board])
-	_history.pressed.connect(func() -> void: _select("my_matches"))
-	_board.pressed.connect(func() -> void: _select("player_board"))
 	# A MOBA profile's strip: games, wins, win rate, words -- My Matches only.
 	_summary = HBoxContainer.new()
 	_summary.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -61,17 +57,9 @@ func setup(_options: Dictionary) -> void:
 	_load()
 
 
-func _select(tab: String) -> void:
-	_tab = tab
-	_offset = 0
-	_load()
-
-
 func _load() -> void:
 	_version += 1
 	var version := _version
-	_history.set_pressed_no_signal(_tab == "my_matches")
-	_board.set_pressed_no_signal(_tab == "player_board")
 	_previous.disabled = true
 	_next.disabled = true
 	for child in _list.get_children():

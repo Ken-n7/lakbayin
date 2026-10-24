@@ -221,7 +221,7 @@ func _room_flow() -> void:
 			main.open("records")
 			await _wait(2.5)
 			await _shot("records")
-			main.current.call("_select", "player_board")
+			main.open("records", {"tab": "player_board"})
 			await _wait(2.0)
 			await _shot("records_board")
 			main.open("home")
