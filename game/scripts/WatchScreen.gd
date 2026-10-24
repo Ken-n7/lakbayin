@@ -24,6 +24,7 @@ var _roster := {}
 
 ## A room's own spectator (Lobby.SPECTATE), not a visitor with the code.
 var _spectator := false
+var _stats: PanelContainer   # the players' lists and the legend, behind Stats
 ## The aerial view: where it looks and how near. `_fit` shows the whole world;
 ## a spectator drags to move and pinches, scrolls or taps +/- to look closer.
 var _center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
@@ -70,51 +71,17 @@ func _unavailable(why: String) -> void:
 	box.add_child(l)
 
 
+## A MOBA-style spectator view: the aerial map fills the screen and the UI
+## floats over it -- scores and clock on top, zoom in the corner. Who carries
+## and has deposited what sits behind a Stats button, not under the map.
 func _build_ui() -> void:
 	var bg := ColorRect.new()
 	bg.color = MapCfg.WATER_TINT * Color("47aba9")
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
-	var bar := HBoxContainer.new()
-	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	bar.offset_left = 8
-	bar.offset_right = -8
-	bar.offset_top = 6
-	bar.offset_bottom = 42
-	bar.add_theme_constant_override("separation", 6)
-	add_child(bar)
-	var title := Art.label("Watch  " + _code, Pal.BODY, Pal.CREAM)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	Art.shadow(title)
-	bar.add_child(title)
-	for i in 2:
-		var l := Art.label("%s  0 + 0" % Match.TEAMS[i], Pal.SMALL, Peers.TEAM_COLOURS[i].lightened(0.3))
-		l.custom_minimum_size.x = 128
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		bar.add_child(Ui.plank(l))
-		_totals.append(l)
-	_time = Art.label("--:--", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	_time.custom_minimum_size.x = 48
-	_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	bar.add_child(Ui.plank(_time))
-	var back := Ui.button("Leave", 70, Ui.H, Ui.SMALL)
-	back.pressed.connect(go_back)
-	bar.add_child(back)
-	_status = Art.label("Opening live match…", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	_status.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	_status.offset_top = 43
-	_status.offset_bottom = 64
-	_status.clip_text = true
-	Art.shadow(_status)
-	add_child(_status)
 	_map_box = SubViewportContainer.new()
 	_map_box.stretch = true
 	_map_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_map_box.offset_left = 8
-	_map_box.offset_right = -8
-	_map_box.offset_top = 68
-	_map_box.offset_bottom = -103
 	add_child(_map_box)
 	_map_view = SubViewport.new()
 	_map_view.disable_3d = true
@@ -124,54 +91,101 @@ func _build_ui() -> void:
 	_pins = Pins.new()
 	_pins.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_pins)
-	var bottom := HBoxContainer.new()
-	bottom.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom.offset_left = 12
-	bottom.offset_right = -12
-	bottom.offset_top = -99
-	bottom.offset_bottom = -25
-	bottom.add_theme_constant_override("separation", 8)
-	add_child(bottom)
+
+	var bar := HBoxContainer.new()
+	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	bar.offset_left = 8
+	bar.offset_right = -8
+	bar.offset_top = 6
+	bar.offset_bottom = 42
+	bar.add_theme_constant_override("separation", 6)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bar)
+	var title := Art.label("Watch  " + _code, Pal.BODY, Pal.CREAM)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	Art.shadow(title)
+	bar.add_child(title)
 	for i in 2:
-		var paper := PanelContainer.new()
-		paper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		paper.add_theme_stylebox_override("panel", Ui._paper_box(false))
-		bottom.add_child(paper)
-		var scroll := ScrollContainer.new()
-		Ui.style_scroll(scroll)
-		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		paper.add_child(scroll)
-		DragScroll.attach(scroll)
-		var list := VBoxContainer.new()
-		list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		list.add_theme_constant_override("separation", 0)
-		scroll.add_child(list)
-		_lists.append(list)
-	var legend := Art.label("Monks: Blue left / Red right · ring = carried · solid = deposited",
-		Pal.TINY, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
-	legend.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	legend.offset_left = 40
-	legend.offset_right = -8
-	legend.offset_top = -23
-	legend.offset_bottom = -3
-	Art.shadow(legend)
-	add_child(legend)
-	resized.connect(_frame_map)
-	_map_box.gui_input.connect(_on_map_input)
-	# Touch has no wheel: + and - over the map's corner.
+		var l := Art.label("%s  0 + 0" % Match.TEAMS[i], Pal.SMALL, Peers.TEAM_COLOURS[i].lightened(0.3))
+		l.custom_minimum_size.x = 100
+		l.clip_text = true
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		bar.add_child(Ui.plank(l))
+		_totals.append(l)
+	_time = Art.label("--:--", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	_time.custom_minimum_size.x = 48
+	_time.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bar.add_child(Ui.plank(_time))
+	var stats := Ui.button("Stats", 58, Ui.H, Ui.SMALL)
+	stats.pressed.connect(func() -> void: _stats.visible = not _stats.visible)
+	bar.add_child(stats)
+	# Leave as the arrow alone: the bar is the whole width of a phone.
+	var back := Ui.button("", 38, Ui.H, Ui.SMALL)
+	back.icon = Ui.icon("back")
+	back.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	back.tooltip_text = "Leave"
+	back.pressed.connect(go_back)
+	bar.add_child(back)
+	_status = Art.label("Opening live match…", Pal.SMALL, Pal.CREAM, HORIZONTAL_ALIGNMENT_CENTER)
+	_status.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_status.offset_top = 43
+	_status.offset_bottom = 64
+	_status.clip_text = true
+	_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Art.shadow(_status)
+	add_child(_status)
+
+	# Touch has no wheel: + and - in the corner.
 	var zoom_row := HBoxContainer.new()
 	zoom_row.add_theme_constant_override("separation", 4)
 	zoom_row.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	zoom_row.offset_left = -92
-	zoom_row.offset_right = -14
-	zoom_row.offset_top = -141
-	zoom_row.offset_bottom = -107
+	zoom_row.offset_right = -10
+	zoom_row.offset_top = -44
+	zoom_row.offset_bottom = -10
 	for step: Array in [["−", 1.0 / 1.4], ["+", 1.4]]:
 		var b := Ui.button(step[0], 36, Ui.H, Ui.SMALL)
 		b.add_theme_font_size_override("font_size", 20)
 		b.pressed.connect(func() -> void: _look(_center, _zoom * float(step[1])))
 		zoom_row.add_child(b)
 	add_child(zoom_row)
+
+	# Stats: each team's players, carried and deposited, and what the monk
+	# marks mean -- on paper over the map's lower edge, closed until asked.
+	_stats = PanelContainer.new()
+	_stats.add_theme_stylebox_override("panel", Ui.frame(Ui.PAPER, Ui.ART_K, Vector2(4, 0)))
+	_stats.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_stats.offset_left = 10
+	_stats.offset_right = -100
+	_stats.offset_top = -126
+	_stats.offset_bottom = -8
+	_stats.visible = false
+	add_child(_stats)
+	var inside := VBoxContainer.new()
+	inside.add_theme_constant_override("separation", 2)
+	_stats.add_child(inside)
+	var columns := HBoxContainer.new()
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	columns.add_theme_constant_override("separation", 12)
+	inside.add_child(columns)
+	for i in 2:
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		Ui.style_scroll(scroll)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		columns.add_child(scroll)
+		DragScroll.attach(scroll)
+		var list := VBoxContainer.new()
+		list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		list.add_theme_constant_override("separation", 0)
+		scroll.add_child(list)
+		_lists.append(list)
+	inside.add_child(Art.label("Monks: Blue left / Red right · ring = carried · solid = deposited",
+		Pal.TINY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+
+	resized.connect(_frame_map)
+	_map_box.gui_input.connect(_on_map_input)
 
 
 func _process(delta: float) -> void:
@@ -348,8 +362,6 @@ class Pins extends Control:
 	var peers: Peers
 	var snapshot := {}
 	var zoom := 0.1
-	## A hero's frame (16x20) drawn at this many canvas px per art px.
-	const HERO_SIZE := 1.5
 	var center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
 	func _at(point: Vector2) -> Vector2:
 		return size * 0.5 + (point - center) * zoom
@@ -378,8 +390,8 @@ class Pins extends Control:
 			var font := get_theme_default_font()
 			for id: String in peers.get("_markers"):
 				var marker: Node2D = peers.get("_markers")[id]
-				# The world's own hero is a few pixels at an aerial zoom: it is
-				# drawn here instead, at one readable size whatever the zoom.
+				# The world's own hero stays hidden: from above a player is a
+				# dot in their team's colour and a name, one size at any zoom.
 				marker.visible = false
 				# Unknown / stale positions aren't fabricated at the Monastery.
 				if not peers._is_live(id) or not view.has_point(_at(marker.position)):
@@ -387,23 +399,14 @@ class Pins extends Control:
 				var at := _at(marker.position)
 				var row: Dictionary = peers.get("_roster").get(id, {})
 				var col: Color = peers.colour_of(str(row.get("team_id", "")))
-				# A ring in the team's colour under the feet...
-				draw_set_transform(at, 0.0, Vector2(1.0, 0.45))
-				draw_circle(Vector2.ZERO, 12.0, Color(col, 0.45))
-				draw_arc(Vector2.ZERO, 12.0, 0.0, TAU, 24, col, 2.0)
-				draw_set_transform(Vector2.ZERO)
-				# ...the hero as it walks, facing the way it goes...
-				var spr: AnimatedSprite2D = marker.get_node("Spr")
-				if spr.sprite_frames != null and spr.sprite_frames.has_animation(spr.animation):
-					var tex := spr.sprite_frames.get_frame_texture(spr.animation, spr.frame)
-					var sz := tex.get_size() * HERO_SIZE
-					var r := Rect2(at - Vector2(sz.x * 0.5, sz.y - 2.0), sz)
-					if spr.flip_h:
-						r = Rect2(r.position + Vector2(r.size.x, 0), Vector2(-r.size.x, r.size.y))
-					draw_texture_rect(tex, r, false)
-				# ...and the name under it.
+				# A dot in the team's colour, ringed dark so it reads on grass
+				# and water alike...
+				draw_circle(at, 6.0, Color(0, 0, 0, 0.75))
+				draw_circle(at, 4.5, col)
+				draw_arc(at, 4.5, 0.0, TAU, 16, Color.WHITE, 1.0)
+				# ...and the name over it.
 				var name := str(row.get("username", ""))
 				var w := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-				var at_name := at + Vector2(-w * 0.5, 15)
+				var at_name := at + Vector2(-w * 0.5, -9)
 				draw_string_outline(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 4, Color(0, 0, 0, 0.75))
 				draw_string(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col.lightened(0.45))

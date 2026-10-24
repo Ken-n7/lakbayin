@@ -175,6 +175,10 @@ func _room_flow() -> void:
 			watch.call("_look", aim, float(watch.get("_fit")) * 2.5)
 			await _wait(1.5)
 			await _shot("spectator_zoom")
+			(watch.get("_stats") as Control).visible = true
+			await _wait(1.0)
+			await _shot("spectator_stats")
+			(watch.get("_stats") as Control).visible = false
 			await _wait(25.0)
 			await _shot("spectator_end")
 	else:
