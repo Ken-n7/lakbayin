@@ -145,7 +145,8 @@ const LAST_MINUTE := 60
 
 func _plate(pad_x: float) -> PanelContainer:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", Art.panel(PLANK, Vector2(pad_x, 0), 0.6))
+	p.add_theme_stylebox_override("panel", Ui.frame(PLANK, Ui.BAR_K, Vector2(pad_x, 0)))
+	p.custom_minimum_size.y = 51.0 * Ui.BAR_K
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return p
 
@@ -530,7 +531,10 @@ class Minimap extends Control:
 				p.y / (MapCfg.WORLD_H * MapCfg.TILE) * SIZE.y)
 
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2(-2, -2), SIZE + Vector2(4, 4)), Color(0.24, 0.16, 0.1, 0.9))
+		# The pack's edge: a navy outline round a wooden rim.
+		draw_rect(Rect2(Vector2(-4, -4), SIZE + Vector2(8, 8)), Color("101828"))
+		draw_rect(Rect2(Vector2(-3, -3), SIZE + Vector2(6, 6)), Color("986050"))
+		draw_rect(Rect2(Vector2(-1, -1), SIZE + Vector2(2, 2)), Color("101828"))
 		if land != null:
 			draw_texture_rect(land, Rect2(Vector2.ZERO, SIZE), false)
 		if _pts.is_empty():

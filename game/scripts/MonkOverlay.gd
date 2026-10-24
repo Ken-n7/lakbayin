@@ -53,11 +53,8 @@ func _build() -> void:
 	w.name = "Word"
 	left.add_child(w)
 	var shown := PanelContainer.new()
-	var face := StyleBoxFlat.new()
-	face.bg_color = Pal.PARCHMENT.darkened(0.08)
-	face.border_color = Pal.WOOD
-	face.set_border_width_all(2)
-	face.set_corner_radius_all(4)
+	# A sunken sand slot the answer is written into.
+	var face := Ui.frame(Ui.SLOT)
 	face.set_content_margin_all(4)
 	shown.add_theme_stylebox_override("panel", face)
 	shown.custom_minimum_size = Vector2(210, 52)

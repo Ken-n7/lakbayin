@@ -26,6 +26,13 @@ const KINDS := [
 ## tiles; the canvas is 640x360 and a phone shows it ~3x, so a third of the art
 ## lands one art pixel per screen pixel and every outline is the same width.
 const ART_K := 1.0 / 3.0
+## Bars (the wooden plates, the loading bar) are thin art: twice ART_K, still
+## a whole number of screen pixels per art pixel on a 3x phone.
+const BAR_K := 2.0 / 3.0
+const BAR := "res://assets/ui/BigBar_Base.png"
+const BAR_FILL := "res://assets/ui/BigBar_Fill.png"
+## A sunken sand slot (the pack's Banner_Slots): where something sits.
+const SLOT := "res://assets/ui/Banner_Slots.png"
 ## The pack's own icons (assets/ui/Icon_NN.png), by what they mean here.
 const ICON := {"play": 7, "swords": 5, "shield": 6, "gear": 10, "close": 9,
 	"back": 8, "info": 11, "music": 12, "coin": 3}
@@ -84,19 +91,81 @@ static func icon(name: String) -> Texture2D:
 	return Art.tex("res://assets/ui/Icon_%02d.png" % ICON[name])
 
 
-## A nine-slice of pack art at ART_K, tinted by `tint`.
+## A button face: pack art at ART_K, tinted, with button padding.
 static func face(path: String, tint := Color.WHITE) -> PixelBox:
-	var np := Art.ninepatch(path)
-	var sb := PixelBox.new()
-	sb.texture = np.texture
-	sb.margins = np.margins
-	sb.k = ART_K
-	sb.modulate = tint
+	var sb := frame(path, ART_K, Vector2.ZERO, tint)
 	sb.content_margin_left = BTN_PAD.x
 	sb.content_margin_right = BTN_PAD.x
 	sb.content_margin_top = BTN_PAD.y
 	sb.content_margin_bottom = BTN_PAD.y
 	return sb
+
+
+## Any pack art as a nine-slice at scale `k`; content sits inside the drawn
+## border plus `pad`.
+static func frame(path: String, k := ART_K, pad := Vector2.ZERO, tint := Color.WHITE) -> PixelBox:
+	var np := Art.ninepatch(path)
+	var m: Vector4 = np.margins
+	var sb := PixelBox.new()
+	sb.texture = np.texture
+	sb.margins = m
+	sb.k = k
+	sb.modulate = tint
+	sb.content_margin_left = m.x * k + pad.x
+	sb.content_margin_top = m.y * k + pad.y
+	sb.content_margin_right = m.z * k + pad.x
+	sb.content_margin_bottom = m.w * k + pad.y
+	return sb
+
+
+## The pack's wooden bar with its red fill, `w` wide: a loading or progress
+## bar. Set `value` (0..1) on the returned control's "fill" child via `bar_set`.
+static func bar(w: float) -> Control:
+	var base := Panel.new()
+	base.custom_minimum_size = Vector2(w, 51.0 * BAR_K)
+	base.add_theme_stylebox_override("panel", frame(BAR, BAR_K))
+	base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fill := TextureRect.new()
+	fill.name = "Fill"
+	var at := AtlasTexture.new()
+	at.atlas = Art.tex(BAR_FILL)
+	at.region = Rect2(0, 20, 64, 24)
+	fill.texture = at
+	fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	fill.stretch_mode = TextureRect.STRETCH_SCALE
+	# The fill sits in the base's channel: 11 art px down, inside the caps.
+	fill.position = Vector2(BAR_INSET, 11.0 * BAR_K)
+	fill.size = Vector2(0, 24.0 * BAR_K)
+	base.add_child(fill)
+	return base
+
+
+const BAR_INSET := 9.0
+
+
+static func bar_set(b: Control, value: float) -> void:
+	(b.get_node("Fill") as Control).size.x = (b.custom_minimum_size.x - 2.0 * BAR_INSET) * clampf(value, 0.0, 1.0)
+
+
+## A scroll bar in the parchment kit: a slim wooden grip on a faint track,
+## instead of the engine's grey.
+static func style_scroll(sc: ScrollContainer) -> void:
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(Pal.WOOD, 0.18)
+	track.set_corner_radius_all(3)
+	track.content_margin_left = 3
+	track.content_margin_right = 3
+	var grip := StyleBoxFlat.new()
+	grip.bg_color = Pal.WOOD
+	grip.set_corner_radius_all(3)
+	var lit := grip.duplicate() as StyleBoxFlat
+	lit.bg_color = Pal.BRONZE
+	for bar_node: ScrollBar in [sc.get_v_scroll_bar(), sc.get_h_scroll_bar()]:
+		bar_node.add_theme_stylebox_override("scroll", track)
+		bar_node.add_theme_stylebox_override("scroll_focus", track)
+		bar_node.add_theme_stylebox_override("grabber", grip)
+		bar_node.add_theme_stylebox_override("grabber_highlight", lit)
+		bar_node.add_theme_stylebox_override("grabber_pressed", lit)
 
 
 ## The button sound, on press -- unless the button is `quiet()`: one whose
@@ -300,7 +369,7 @@ static func number_field(w: float, h := 26.0, size := 15) -> LineEdit:
 static func panel(s: Vector2, title := "", title_col: Color = Pal.TITLE) -> PanelContainer:
 	var pc := PanelContainer.new()
 	pc.custom_minimum_size = s
-	pc.add_theme_stylebox_override("panel", Art.panel(PAPER, Vector2(8, 4), 0.3))
+	pc.add_theme_stylebox_override("panel", frame(PAPER, ART_K, Vector2(4, 0)))
 	var box := VBoxContainer.new()
 	# 4, not 8. Four pixels a row is nothing to look at and 32px across an
 	# eight-row form, which is the difference between a Back button on the
@@ -386,8 +455,8 @@ static func ribbon(row: int, text: String, h := 22.0, size := Pal.SMALL) -> HBox
 ## a score. The HUD's plates, for anywhere else a number should read the same.
 static func plank(content: Control, pad_x := 6.0) -> PanelContainer:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", Art.panel("res://assets/ui/BigBar_Base.png",
-		Vector2(pad_x, 0), 0.6))
+	p.add_theme_stylebox_override("panel", frame(BAR, BAR_K, Vector2(pad_x, 0)))
+	p.custom_minimum_size.y = 51.0 * BAR_K
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.add_child(content)
 	return p
@@ -532,6 +601,7 @@ static func scroll(parent: Node, h: float) -> ScrollContainer:
 	sc.size_flags_vertical = Control.SIZE_FILL
 	sc.custom_minimum_size = Vector2(0, h)
 	sc.add_theme_constant_override("scrollbar_margin", 0)
+	style_scroll(sc)
 	parent.add_child(sc)
 	DragScroll.attach(sc)
 	return sc

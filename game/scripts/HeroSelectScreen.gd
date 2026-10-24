@@ -52,6 +52,7 @@ func _build() -> void:
 	body.add_child(right)
 	var grid_scroll := ScrollContainer.new()
 	DragScroll.attach(grid_scroll)
+	Ui.style_scroll(grid_scroll)
 	grid_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	grid_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right.add_child(grid_scroll)
@@ -96,12 +97,7 @@ func _build() -> void:
 ## thumbnail.
 func _preview_stage() -> Control:
 	var stage := PanelContainer.new()
-	var face := StyleBoxFlat.new()
-	face.bg_color = Color("5a9a4a")
-	face.border_color = Pal.WOOD
-	face.set_border_width_all(2)
-	face.set_corner_radius_all(4)
-	stage.add_theme_stylebox_override("panel", face)
+	stage.add_theme_stylebox_override("panel", Ui.frame(Ui.SLOT))
 	stage.custom_minimum_size = Vector2(190, 132)
 	var wrap := Control.new()
 	wrap.clip_contents = true
@@ -141,17 +137,12 @@ func _pick_hero(id: int) -> void:
 ## the grid reads as a set of choices rather than 32 loose sprites -- and a
 ## hover shows which one a click would take.
 func _swatch_style(selected: bool, hover := false) -> StyleBox:
-	var tile := StyleBoxFlat.new()
-	tile.set_corner_radius_all(4)
+	# The buttons' kit: the picked hero on the gold-trimmed paper, the rest
+	# on tan paper that lifts under the pointer.
 	if selected:
-		tile.bg_color = Color(Pal.GOLD, 0.30)
-		tile.border_color = Pal.AMBER
-		tile.set_border_width_all(3)
-	else:
-		tile.bg_color = Color(Pal.WOOD, 0.22 if hover else 0.12)
-		tile.border_color = Color(Pal.WOOD, 0.6 if hover else 0.0)
-		tile.set_border_width_all(2)
-	return tile
+		return Ui.face("res://assets/ui/SpecialPaper.png")
+	return Ui.face("res://assets/ui/RegularPaper.png",
+			Ui._TAN * (Color(1.1, 1.1, 1.1) if hover else Color.WHITE))
 
 
 func _save_hero() -> void:

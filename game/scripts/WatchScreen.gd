@@ -115,6 +115,7 @@ func _build_ui() -> void:
 		paper.add_theme_stylebox_override("panel", Ui._paper_box(false))
 		bottom.add_child(paper)
 		var scroll := ScrollContainer.new()
+		Ui.style_scroll(scroll)
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		paper.add_child(scroll)
 		DragScroll.attach(scroll)

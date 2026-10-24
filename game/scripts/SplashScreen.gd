@@ -6,7 +6,6 @@ extends Control
 
 const HOLD := 1.8
 const BAR_W := 260.0
-const BAR_H := 10.0
 
 var main: Control
 
@@ -14,7 +13,7 @@ var main: Control
 ## last, for as long as it takes -- the login is still good.
 const RETRY_S := [2.0, 4.0, 8.0, 15.0]
 
-var _bar: ColorRect
+var _bar: Control
 var _done := false
 var _status: Label
 var _other: Button
@@ -43,16 +42,9 @@ func setup(_data: Dictionary) -> void:
 	pad.custom_minimum_size = Vector2(0, 18)
 	col.add_child(pad)
 
-	var track := ColorRect.new()
-	track.color = Color(1, 1, 1, 0.14)
-	track.custom_minimum_size = Vector2(BAR_W, BAR_H)
-	track.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	col.add_child(track)
-
-	_bar = ColorRect.new()
-	_bar.color = Pal.GOLD
-	_bar.size = Vector2(0, BAR_H)
-	track.add_child(_bar)
+	_bar = Ui.bar(BAR_W)
+	_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	col.add_child(_bar)
 
 	_status = Art.label("Loading...", Pal.BODY, Color(1, 1, 1, 0.8),
 			HORIZONTAL_ALIGNMENT_CENTER)
@@ -66,7 +58,7 @@ func setup(_data: Dictionary) -> void:
 	col.add_child(_other)
 
 	var tw := create_tween()
-	tw.tween_property(_bar, "size:x", BAR_W, HOLD)
+	tw.tween_method(func(v: float) -> void: Ui.bar_set(_bar, v), 0.0, 1.0, HOLD)
 	tw.tween_callback(skip)
 
 

@@ -20,6 +20,12 @@ var modulate := Color.WHITE
 func _draw(to_canvas_item: RID, rect: Rect2) -> void:
 	var t := texture.get_size()
 	var m := margins
+	# An axis with no border pieces (a bar's height) keeps its drawn size,
+	# centred, rather than stretching the art out of proportion.
+	if m.y + m.w == 0.0 and rect.size.y > t.y * k:
+		rect = Rect2(rect.position.x, rect.get_center().y - t.y * k / 2.0, rect.size.x, t.y * k)
+	if m.x + m.z == 0.0 and rect.size.x > t.x * k:
+		rect = Rect2(rect.get_center().x - t.x * k / 2.0, rect.position.y, t.x * k, rect.size.y)
 	# A box smaller than its two borders squeezes the borders, never inverts.
 	var kx := minf(k, rect.size.x / maxf(m.x + m.z, 1.0))
 	var ky := minf(k, rect.size.y / maxf(m.y + m.w, 1.0))

@@ -242,6 +242,7 @@ func _build_lobby() -> void:
 	# scrolls when two full rows outgrow a 360px screen. One row of six ran
 	# off the panel's sides.
 	var scroll := ScrollContainer.new()
+	Ui.style_scroll(scroll)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(scroll)
