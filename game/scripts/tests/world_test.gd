@@ -63,6 +63,7 @@ func steps(cells: Dictionary, from: Vector2, to: Vector2) -> int:
 
 func _ready() -> void:
 	backup_save()
+	_levels()
 	var slowest := 0
 	var all_monks := true
 	var all_reach := true
@@ -126,3 +127,100 @@ func _ready() -> void:
 	check("no prop stands on a clearing", inside)
 	completed = true
 	finish("WORLD")
+
+
+# --- Levels -----------------------------------------------------------------
+## A board drawn by hand, 24x16 of ground: a plateau (1) at x 6-15, y 3-9,
+## with a hill (2) on it at x 9-12, y 4-6; a ramp up the plateau's east side
+## from the ground, another up the hill's from the plateau.
+func board() -> MapGrid:
+	var g := MapGrid.new()
+	for y in 16:
+		for x in 24:
+			var c := Vector2i(x, y)
+			g.land[c] = true
+			g.height[c] = 2 if x >= 9 and x <= 12 and y >= 4 and y <= 6 \
+				else (1 if x >= 6 and x <= 15 and y >= 3 and y <= 9 else 0)
+	g.lay_ramp(Vector2i(16, 8), 0, 1)
+	g.lay_ramp(Vector2i(13, 5), 1, 1)
+	g.lay_cliffs()
+	return g
+
+
+const FEET := Rect2(-6, -5, 12, 5)      # the hero's Foot box (scenes/Hero.tscn)
+
+
+## Walk as the hero does, `dir` held for `s` seconds: [where, level, the
+## lowest and highest level on the way, whether the feet ever stood where
+## they may not].
+func walk(g: MapGrid, at: Vector2, level: int, dir: Vector2, s: float) -> Array:
+	var lo := level
+	var hi := level
+	var bad := false
+	var step := dir.normalized() * MapCfg.PLAYER_SPEED / 60.0
+	for _f in int(s * 60.0):
+		var n := ceili(step.length() / 2.0)
+		for _i in n:
+			var got := g.step(at, step / n, FEET, level)
+			at = got[0]
+			level = got[1]
+			lo = mini(lo, level)
+			hi = maxi(hi, level)
+			var c := MapGrid.cell_at(at)
+			if g.cliff.has(c) or not g.land.has(c):
+				bad = true
+	return [at, level, lo, hi, bad]
+
+
+static func px(cx: float, cy: float) -> Vector2:
+	return Vector2(cx, cy) * MapCfg.TILE
+
+
+func _levels() -> void:
+	var g := board()
+	check("each level's south edge has its cliff face, none under a ramp",
+		g.cliff.get(Vector2i(10, 10)) == 1 and g.cliff.get(Vector2i(10, 7)) == 2
+		and not g.cliff.has(Vector2i(16, 10)) and not g.cliff.has(Vector2i(10, 11)),
+		str(g.cliff.keys()))
+	var r := walk(g, px(10.5, 13), 0, Vector2.UP, 3.0)
+	check("from the ground, a cliff face stops the hero", r[0].y > 11 * MapCfg.TILE and r[3] == 0 and not r[4], str(r))
+	r = walk(g, px(3, 6.5), 0, Vector2.RIGHT, 3.0)
+	check("from the ground, a plateau's side stops the hero", r[0].x < 6 * MapCfg.TILE and r[3] == 0, str(r))
+	r = walk(g, px(4, 2.5), 0, Vector2(1, 0.4), 4.0)
+	check("from the ground, a plateau's back stops the hero", r[3] == 0 and not r[4], str(r))
+	r = walk(g, px(7.5, 8.5), 1, Vector2.DOWN, 3.0)
+	check("on a plateau, its edge over the cliff stops the hero", r[0].y < 10 * MapCfg.TILE and r[2] == 1, str(r))
+	r = walk(g, px(7.5, 6.5), 1, Vector2.LEFT, 3.0)
+	check("on a plateau, its side stops the hero", r[0].x > 6 * MapCfg.TILE and r[2] == 1, str(r))
+	r = walk(g, px(7.5, 4.5), 1, Vector2.UP, 3.0)
+	check("on a plateau, its back stops the hero", r[0].y > 3 * MapCfg.TILE and r[2] == 1, str(r))
+	r = walk(g, px(7.5, 5.5), 1, Vector2.RIGHT, 3.0)
+	check("on a plateau, a hill's side stops the hero", r[0].x < 9 * MapCfg.TILE and r[3] == 1, str(r))
+	r = walk(g, px(10.5, 8.5), 1, Vector2.UP, 3.0)
+	check("on a plateau, a hill's cliff stops the hero", r[0].y > 8 * MapCfg.TILE and r[3] == 1 and not r[4], str(r))
+	r = walk(g, px(16.5, 12.5), 0, Vector2.UP, 3.0)
+	check("held straight up, a ramp takes the hero from the ground onto the plateau",
+		r[1] == 1 and g.height.get(MapGrid.cell_at(r[0])) == 1 and not g.stairs.has(MapGrid.cell_at(r[0])), str(r))
+	r = walk(g, r[0], r[1], Vector2.DOWN, 0.3)
+	r = walk(g, px(14.5, 8.5), 1, Vector2.RIGHT, 0.6)
+	r = walk(g, r[0], r[1], Vector2.DOWN, 3.0)
+	check("and down it again, back onto the ground", r[1] == 0 and r[0].y > 11 * MapCfg.TILE and not r[4], str(r))
+	r = walk(g, px(13.5, 9.0), 1, Vector2.UP, 3.0)
+	check("a ramp on the plateau takes the hero up onto the hill", r[1] == 2, str(r))
+	r = walk(g, px(19, 8.6), 0, Vector2.LEFT, 3.0)
+	check("a ramp's top is no way on from its open side", r[3] == 0 and r[0].x > 17 * MapCfg.TILE, str(r))
+	r = walk(g, px(16.5, 6.5), 0, Vector2.DOWN, 3.0)
+	check("nor from behind it", r[3] == 0 and r[0].y < 8 * MapCfg.TILE, str(r))
+	r = walk(g, px(4, 11.5), 0, Vector2.RIGHT, 6.0)
+	check("the ground under a cliff is walked along freely", r[0].x > 20 * MapCfg.TILE and r[1] == 0, str(r))
+	var all := g.flood(px(2, 2), 0)
+	check("walking, every level is reached from the ground", all.has(Vector2i(10, 5)) and all.has(Vector2i(7, 7)))
+	var flat := g.flood(px(2, 2), 0, true)
+	check("without its stairs, none above it is", not flat.has(Vector2i(7, 7)) and not flat.has(Vector2i(10, 5)))
+	var shut := true
+	for c: Vector2i in g.cliff:
+		for level in 3:
+			if g.box_walkable(MapGrid.cell_mid(c), FEET, level):
+				shut = false
+	check("nobody stands in a cliff face, at any level", shut)
+

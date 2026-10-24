@@ -21,8 +21,9 @@ var trail := {}       # Vector2i -> true, the road corridor: decor keeps off it
 var taken := {}       # Vector2i -> true, cells a prop already stands on
 var height := {}      # Vector2i -> level: 0 the ground, 1 a terrace, 2 the summit
 var cliff := {}       # Vector2i -> level, the cliff face under that level's south edge
-var stairs := {}      # Vector2i -> {low, tile, top, side, row}: a ramp's three cells
-                      # (rows 0-2: top, middle, foot), where low and low+1 meet
+var stairs := {}      # Vector2i -> {low, top, side, row}: a ramp's three cells
+                      # (rows 0-2: top, middle, foot), where low and low+1 meet;
+                      # side -1 when the high ground is to its right
 
 # --- Boxes, in world px -----------------------------------------------------
 var solid: Array[Rect2] = []          # walls: buildings, boulders, guards
@@ -106,6 +107,74 @@ func level_at(pos: Vector2, was: int) -> int:
 func stair_low_at(pos: Vector2) -> int:
 	var c := cell_at(pos)
 	return int(stairs[c].low) if stairs.has(c) else -1
+
+
+## One step of a walker from `pos` by `d` (at most 2px, or a thin rail is
+## jumped), one axis at a time so a diagonal into a wall slides along it.
+## Returns [where it ends, the level it is on].
+func step(pos: Vector2, d: Vector2, box: Rect2, level: int) -> Array:
+	# Set down somewhere new (a test, a rejoin): the level of the ground there.
+	if not cell_ok(cell_at(pos), level, stair_low_at(pos)):
+		level = level_at(pos, level)
+	var low := stair_low_at(pos)
+	pos.x += d.x
+	if not box_walkable(pos, box, level, low):
+		pos.x -= d.x
+	pos.y += d.y
+	if not box_walkable(pos, box, level, low):
+		pos.y -= d.y
+		pos = _slip(pos, d.y, box, level, low)
+	return [pos, level_at(pos, level)]
+
+
+## On a ramp, up and down follow the slope: a step up or down the ramp's edge
+## stops is steered toward the middle of its grass instead. At the top, up
+## steps off onto the high ground; beside a ramp's top, down steps onto it --
+## so straight up or down takes the whole stair.
+func _slip(here: Vector2, dy: float, box: Rect2, level: int, low: int) -> Vector2:
+	var at := cell_at(here)
+	var c := Vector2i(-1, -1)
+	# Where the feet are, where they step, and the box's leading edge: walking
+	# straight at a foot, the box meets the ramp's rock before the feet do.
+	var edge := box.position.y if dy < 0.0 else box.end.y
+	for k in [at, cell_at(here + Vector2(0, dy)), cell_at(here + Vector2(0, dy + edge))]:
+		if stairs.has(k):
+			c = k
+			break
+	# ...or on the high ground at a ramp's top: that ramp, not a neighbour's foot.
+	var beside := false
+	for k in [at + Vector2i(-1, 0), at + Vector2i(1, 0)]:
+		if c.x < 0 and stairs.has(k) and bool(stairs[k].top) \
+				and k - Vector2i(int(stairs[k].side), 0) == at:
+			c = k
+			beside = true
+	if c.x < 0:
+		return here
+	var d := absf(dy)
+	var high := -float(stairs[c].side)          # which way the high ground is
+	# Just off the top, the box still part over the ramp's back: on, onto the
+	# high ground -- and no further than clear of the ramp. Steering to the
+	# ramp's middle here pulled the hero back onto its back and he stuck.
+	if beside and dy < 0.0:
+		var feet := Rect2(box.position + here, box.size)
+		if feet.intersects(Rect2(Vector2(c) * MapCfg.TILE, Vector2.ONE * MapCfg.TILE)) \
+				and box_walkable(here + Vector2(high * d, 0.0), box, level, low):
+			return here + Vector2(high * d, 0.0)
+		return here
+	var mid := clampf(ramp_mid_x(c, here.y + dy) - here.x, -d, d)
+	var tries: Array[Vector2] = []
+	if absf(mid) > 0.01:
+		tries.append(Vector2(mid, dy))
+	# Off at the ends: up from its top onto the high ground, down from its
+	# foot out of its open side.
+	if stairs.has(at) and bool(stairs[at].top) == (dy < 0.0):
+		tries.append(Vector2((high if dy < 0.0 else -high) * d, 0.0))
+	if absf(mid) > 0.01:
+		tries.append(Vector2(mid, 0.0))
+	for n in tries:
+		if box_walkable(here + n, box, level, low):
+			return here + n
+	return here
 
 
 ## Every cell reachable from `from` starting at `level`, walking as the hero
@@ -251,6 +320,35 @@ func block(r: Rect2) -> void:
 
 func keep_out(r: Rect2) -> void:
 	station_rects.append(r)
+
+
+## A ramp from `low` up to the ground beside it, three cells down from `top`.
+## It is climbed from its foot or from the side, and left at its top onto the
+## higher ground -- not off its back, or the open side of its slanted top,
+## which are air: two thin walls round the top cell.
+func lay_ramp(top: Vector2i, low: int, side: int) -> void:
+	for row in 3:
+		stairs[top + Vector2i(0, row)] = {"low": low, "top": row < 2, "side": side, "row": row}
+	var t := float(MapCfg.TILE)
+	var at := Vector2(top) * t
+	var x := at.x if side < 0 else at.x + t
+	block(Rect2(at + Vector2(0, -2), Vector2(t, 4)))
+	block(Rect2(Vector2(x - 2, at.y), Vector2(4, t)))
+
+
+## Under every south edge of every level, the cliff face -- in the cell below,
+## over lower ground or the sea -- except where a ramp stands.
+func lay_cliffs() -> void:
+	cliff.clear()
+	for c: Vector2i in height:
+		if stairs.has(c):
+			continue
+		for level in range(1, int(height[c]) + 1):
+			var k := c + Vector2i(0, 1)
+			if int(height.get(k, -1)) >= level or stairs.has(k):
+				continue
+			if int(cliff.get(k, 0)) < level:
+				cliff[k] = level
 
 
 ## The keep-out box round a base-anchored building: its footprint plus a tile of

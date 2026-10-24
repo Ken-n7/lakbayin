@@ -53,6 +53,8 @@ var _speed_mult := 1.0
 var _dev_aerial := false
 ## The hero's Foot box, relative to their feet (scenes/Hero.tscn).
 var hero_box := Rect2()
+## The level the hero stands on: 0 the ground, 1 a plateau, 2 a hill on one.
+var hero_level := 0
 var _hero_scale := MapCfg.UNIT_SCALE
 ## Team vision (DESIGN.md 3.2): monks someone on the team has come near.
 var _seen := {}
@@ -626,12 +628,9 @@ func _process(delta: float) -> void:
 		var n := ceili(step.length() / 2.0)
 		step /= n
 		for _i in n:
-			player.position.x += step.x
-			if not grid.box_walkable(player.position, hero_box):
-				player.position.x -= step.x
-			player.position.y += step.y
-			if not grid.box_walkable(player.position, hero_box):
-				player.position.y -= step.y
+			var got := grid.step(player.position, step, hero_box, hero_level)
+			player.position = got[0]
+			hero_level = got[1]
 		var face := _facing(dir)
 		if spr.animation != face or not spr.is_playing():
 			spr.play(face)
