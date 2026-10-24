@@ -25,7 +25,7 @@ func setup(data: Dictionary) -> void:
 ## 64px preview over a strip that showed two rows of heroes at a time.
 func _build() -> void:
 	# No scrim: Main's moving scene is the background (Backdrop.gd).
-	var outer := Ui.screen_panel(self, Vector2(600, 330), "Choose Your Adventurer")
+	var outer := Ui.back_panel(self, Vector2(600, 330), "Choose Your Adventurer", go_back)
 	outer.add_theme_constant_override("separation", 6)
 
 	# The heading over the preview, and under it the preview and the grid
@@ -77,16 +77,10 @@ func _build() -> void:
 		_hero_buttons[id] = b
 		grid.add_child(b)
 
-	# Back on the left, the one thing to do on the right and biggest.
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 12)
-	var back := Ui.back_button(func() -> void: main.open("home"))
-	row.add_child(back)
+	# Back is the title's arrow; the one thing to do here, alone.
 	var start := Ui.button("Set", 240, Ui.H, Ui.RED)
 	start.pressed.connect(_save_hero)
-	row.add_child(start)
-	outer.add_child(row)
+	Ui.centre_row(outer, start)
 
 	_pick_hero(Game.hero_id)
 
@@ -159,3 +153,8 @@ func _save_hero() -> void:
 	Game.save_profile()
 	Sfx.play("success")
 	main.open(_then)
+
+
+## The title's arrow and the phone's Back key: Home.
+func go_back() -> void:
+	main.open("home")

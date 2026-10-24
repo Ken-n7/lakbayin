@@ -150,7 +150,7 @@ func _run() -> void:
 	# Signed out, Find Match asks for an account; Home's Practice is the
 	# offline game.
 	check("signed out, Find Match asks to sign in", _find_label(_screen(), "Sign in to find a match.") != null)
-	_click(_screen(), "Back")
+	_find_button_tooltip(_screen(), "Back").pressed.emit()   # the title's arrow
 	await _wait(3)
 	_click(_screen(), "Practice")
 	await _wait(6)

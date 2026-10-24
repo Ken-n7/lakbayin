@@ -100,10 +100,9 @@ func _background() -> void:
 ## be here -- a leftover: Practice on Home is the offline game.)
 func _build_offline() -> void:
 	_background()
-	var box := Ui.screen_panel(self, Vector2(320, 0), "Find Match")
+	var box := Ui.back_panel(self, Vector2(320, 0), "Find Match", go_back)
 	box.add_child(Art.label("Sign in to find a match.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	_back_button(box)
 
 
 # --- Online: the code -------------------------------------------------------
@@ -663,10 +662,6 @@ func _process(delta: float) -> void:
 
 
 # --- Shared -----------------------------------------------------------------
-func _back_button(box: Control) -> void:
-	Ui.centre_row(box, Ui.back_button(go_back, 300))
-
-
 func _say(text: String, col: Color) -> void:
 	if col == Pal.WRONG and text != "":
 		Sfx.play("error")

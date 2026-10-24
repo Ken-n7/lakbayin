@@ -31,10 +31,9 @@ func _resume() -> void:
 
 func _build_offline() -> void:
 	_background()
-	var box := Ui.screen_panel(self, Vector2(320, 0), "Custom Room")
+	var box := Ui.back_panel(self, Vector2(320, 0), "Custom Room", go_back)
 	box.add_child(Art.label("Sign in to play with friends.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	_back_button(box)
 
 
 func _build_code() -> void:

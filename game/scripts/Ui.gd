@@ -86,17 +86,6 @@ static func button(text: String, w: float, h: float, kind := BLUE) -> Button:
 	return b
 
 
-## The one Back: a paper button with the pack's orange arrow. (There were
-## three -- a text link, a plain button and a bare ← -- for the same move.)
-static func back_button(on_back: Callable, w := float(W_MED), text := "Back") -> Button:
-	var b := button(text, w, H, SMALL)
-	b.icon = icon("back")
-	b.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.add_theme_constant_override("h_separation", 6)
-	b.pressed.connect(on_back)
-	return b
-
-
 ## Two or more buttons as tabs: the open one wears the primary's gold-trimmed
 ## paper. (Disabling it, as before, read as "unavailable", not "you are here".)
 static func tabs(buttons: Array) -> void:

@@ -64,11 +64,10 @@ func _unavailable(why: String) -> void:
 	for c in get_children():
 		if c is not ColorRect:
 			c.visible = false
-	var box := Ui.screen_panel(self, Vector2(320, 0), "Watch")
+	var box := Ui.back_panel(self, Vector2(320, 0), "Watch", go_back)
 	var l := Art.label(why, Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(l)
-	Ui.centre_row(box, Ui.back_button(go_back, 280))
 
 
 func _build_ui() -> void:

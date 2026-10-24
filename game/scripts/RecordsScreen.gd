@@ -16,7 +16,7 @@ var _scroll: ScrollContainer
 
 func setup(_options: Dictionary) -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var box := Ui.screen_panel(self, Vector2(600,330), "Player Records")
+	var box := Ui.back_panel(self, Vector2(600,330), "Player Records", go_back)
 	box.add_theme_constant_override("separation", 6)
 	_history = Ui.button("My Matches", 180, Ui.H, Ui.SMALL)
 	_board = Ui.button("Global Players", 180, Ui.H, Ui.SMALL)
@@ -52,9 +52,6 @@ func setup(_options: Dictionary) -> void:
 	var refresh := Ui.button("Refresh", 90, Ui.H, Ui.SMALL)
 	refresh.pressed.connect(_load)
 	row.add_child(refresh)
-	var back := Ui.button("Home", 90, Ui.H, Ui.SMALL)
-	back.pressed.connect(go_back)
-	row.add_child(back)
 	_load()
 
 
