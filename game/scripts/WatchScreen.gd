@@ -362,6 +362,10 @@ class Pins extends Control:
 	var peers: Peers
 	var snapshot := {}
 	var zoom := 0.1
+	## A hero stands 32 world px (a 20px frame x 1.6); drawn x zoom, but
+	## never under HERO_MIN_H canvas px.
+	const HERO_WORLD_H := 32.0
+	const HERO_MIN_H := 16.0
 	var center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
 	func _at(point: Vector2) -> Vector2:
 		return size * 0.5 + (point - center) * zoom
@@ -390,8 +394,8 @@ class Pins extends Control:
 			var font := get_theme_default_font()
 			for id: String in peers.get("_markers"):
 				var marker: Node2D = peers.get("_markers")[id]
-				# The world's own hero stays hidden: from above a player is a
-				# dot in their team's colour and a name, one size at any zoom.
+				# The world's own hero is hidden and drawn here instead, so it
+				# keeps a readable size zoomed out (and its name stays legible).
 				marker.visible = false
 				# Unknown / stale positions aren't fabricated at the Monastery.
 				if not peers._is_live(id) or not view.has_point(_at(marker.position)):
@@ -399,14 +403,25 @@ class Pins extends Control:
 				var at := _at(marker.position)
 				var row: Dictionary = peers.get("_roster").get(id, {})
 				var col: Color = peers.colour_of(str(row.get("team_id", "")))
-				# A dot in the team's colour, ringed dark so it reads on grass
-				# and water alike...
-				draw_circle(at, 6.0, Color(0, 0, 0, 0.75))
-				draw_circle(at, 4.5, col)
-				draw_arc(at, 4.5, 0.0, TAU, 16, Color.WHITE, 1.0)
-				# ...and the name over it.
+				# The player's own hero, at the map's scale like a MOBA camera --
+				# real size zoomed all the way in, never smaller than HERO_MIN_H
+				# zoomed out -- on a small ring in the team's colour.
+				var h := maxf(HERO_WORLD_H * zoom, HERO_MIN_H)
+				draw_set_transform(at, 0.0, Vector2(1.0, 0.45))
+				draw_circle(Vector2.ZERO, h * 0.32, Color(col, 0.5))
+				draw_arc(Vector2.ZERO, h * 0.32, 0.0, TAU, 20, col, 1.5)
+				draw_set_transform(Vector2.ZERO)
+				var spr: AnimatedSprite2D = marker.get_node("Spr")
+				if spr.sprite_frames != null and spr.sprite_frames.has_animation(spr.animation):
+					var tex := spr.sprite_frames.get_frame_texture(spr.animation, spr.frame)
+					var sz := tex.get_size() * (h / tex.get_size().y)
+					var r := Rect2(at - Vector2(sz.x * 0.5, sz.y - 1.0), sz)
+					if spr.flip_h:
+						r = Rect2(r.position + Vector2(r.size.x, 0), Vector2(-r.size.x, r.size.y))
+					draw_texture_rect(tex, r, false)
+				# ...and the name over its head, in the team's colour.
 				var name := str(row.get("username", ""))
 				var w := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-				var at_name := at + Vector2(-w * 0.5, -9)
+				var at_name := at + Vector2(-w * 0.5, -h - 3.0)
 				draw_string_outline(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 4, Color(0, 0, 0, 0.75))
 				draw_string(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col.lightened(0.45))
