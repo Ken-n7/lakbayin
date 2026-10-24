@@ -31,7 +31,7 @@ func _resume() -> void:
 
 func _build_offline() -> void:
 	_background()
-	var box := Ui.screen_panel(self, PANEL, "Custom Room")
+	var box := Ui.screen_panel(self, Vector2(320, 0), "Custom Room")
 	box.add_child(Art.label("Sign in to play with friends.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	_back_button(box)

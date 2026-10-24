@@ -142,6 +142,51 @@ static func frame(path: String, k := ART_K, pad := Vector2.ZERO, tint := Color.W
 	return sb
 
 
+## The drawn white menu icons (tools/make_icons.py): speaker, music, exit.
+const MENU_ICONS := "res://assets/ui/icons/%s.png"
+
+
+## Music and Sounds, each a volume row: Home's Settings and the match's.
+static func volume_rows(box: Control, music: Node) -> void:
+	volume_row(box, "Music", "music", music.volume, music.set_volume)
+	var sounds := volume_row(box, "Sounds", "sound", Sfx.volume, Sfx.set_volume)
+	sounds.drag_ended.connect(func(_changed: bool) -> void: Sfx.play("button"))
+
+
+## One volume: a mute toggle on its icon, its name, the slider and its level.
+## Muting remembers the level, so unmuting puts it back.
+static func volume_row(box: Control, caption: String, icon: String, value: float,
+		set_to: Callable) -> HSlider:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var mute := icon_button(Art.tex(MENU_ICONS % icon), "Mute " + caption)
+	row.add_child(mute)
+	var name := Art.label(caption, Pal.LABEL, Pal.INK)
+	name.custom_minimum_size = Vector2(56, 0)
+	row.add_child(name)
+	var vol := slider(128)
+	vol.value = value
+	vol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var pct := Art.label("", Pal.LABEL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
+	pct.custom_minimum_size = Vector2(40, 0)
+	var last := [value if value > 0.0 else 0.8]      # the level to unmute to
+	var show := func(v: float) -> void:
+		pct.text = "Off" if v <= 0.0 else "%d%%" % roundi(v * 100.0)
+		mute.icon = Art.tex(MENU_ICONS % (icon + "_off" if v <= 0.0 else icon))
+		mute.tooltip_text = ("Unmute " if v <= 0.0 else "Mute ") + caption
+	show.call(value)
+	vol.value_changed.connect(func(v: float) -> void:
+		if v > 0.0:
+			last[0] = v
+		set_to.call(v)
+		show.call(v))
+	mute.pressed.connect(func() -> void: vol.value = 0.0 if vol.value > 0.0 else last[0])
+	row.add_child(vol)
+	row.add_child(pct)
+	box.add_child(row)
+	return vol
+
+
 ## The pack's wooden bar with its red fill, `w` wide: a loading or progress
 ## bar. Set `value` (0..1) on the returned control's "fill" child via `bar_set`.
 static func bar(w: float) -> Control:

@@ -11,7 +11,7 @@ extends TestCase
 ## through: the join code (signed in), the reset's second step.
 var SCREENS := [
 	["login", "login", Callable()], ["register", "register", Callable()],
-	["team name (offline)", "team", Callable()], ["join code", "room", _join_code],
+	["join code", "room", _join_code],
 ]
 const KEYBOARDS := [0.5, 0.6, 0.7]      # share of the screen's height
 

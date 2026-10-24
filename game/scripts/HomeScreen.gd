@@ -55,8 +55,7 @@ func _tagline() -> String:
 
 ## [label, route, button kind, data, icon]; an empty route means "work it
 ## out" via `_adventure_route()`, and a Callable is run instead of opened.
-## Change Character and Log Out live in Settings (client), which is what
-## makes room for Quit.
+## Change Character, Log Out and Quit live in Settings, last in the column.
 func _entries() -> Array:
 	return [
 		["Find Match", "", Ui.RED, {}, "play"],
@@ -64,8 +63,8 @@ func _entries() -> Array:
 		["Custom Room", _open_room, Ui.SMALL, {}, "swords"],
 		# Alone, offline, with the keypad's Latin labels: learning the script.
 		["Practice", "adventure", Ui.SMALL, {"practice": true}, "shield"],
+		["Player Records", "records", Ui.SMALL, {}, "coin"],
 		["Settings", _open_settings, Ui.SMALL, {}, "gear"],
-		["Quit", _confirm_quit, Ui.SMALL, {}, "close"],
 	]
 
 
@@ -351,7 +350,7 @@ func go_back() -> void:
 var _dialog: Control = null
 
 
-## Change Character (players and teachers alike) and Log Out.
+## Change Character, Credits, Log Out and Quit.
 ## Two groups (client, redesigned per ui-ux-pro-max): Audio -- each volume
 ## with a mute toggle on its icon -- and Account, where Log Out asks first.
 func _open_settings() -> void:
@@ -363,25 +362,24 @@ func _open_settings() -> void:
 	Ui.section(box, "Audio")
 	# Volumes, 0 is off, kept on the device. A sound on letting go of Sounds,
 	# so it can be heard at the level just set.
-	_volume_row(box, "Music", "music", main.music.volume, main.music.set_volume)
-	var sounds := _volume_row(box, "Sounds", "sound", Sfx.volume, Sfx.set_volume)
-	sounds.drag_ended.connect(func(_changed: bool) -> void: Sfx.play("button"))
+	Ui.volume_rows(box, main.music)
 
 	Ui.section(box, "Account")
 	var hero := _account_button(box, "Change Character", "swords", Ui.SMALL)
 	hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
-	var records := _account_button(box, "Player Records", "coin", Ui.SMALL)
-	records.pressed.connect(func() -> void: main.open("records"))
-	# Credits shares Log Out's row, so the panel keeps its height.
 	var credits := _account_button(box, "Credits", "info", Ui.SMALL)
-	credits.custom_minimum_size.x = 137
 	credits.pressed.connect(_open_credits)
+	# Log Out and Quit share the last row, so the panel keeps its height
+	# (Player Records moved out to the menu).
 	var out := Ui.button("Log Out", 137, Ui.H, Ui.SMALL_RED)
 	out.icon = Art.tex(ICONS % "exit")
 	out.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	out.add_theme_constant_override("h_separation", 6)
-	credits.get_parent().add_child(out)
 	out.pressed.connect(_confirm_logout)
+	# No icon: the pack's red X vanishes on the red button.
+	var quit := Ui.button("Quit", 137, Ui.H, Ui.SMALL_RED)
+	quit.pressed.connect(_confirm_quit)
+	Ui.centre_row(box, out).add_child(quit)
 
 
 ## Who made what. The music and the characters' licences require their credit
@@ -421,40 +419,6 @@ func _account_button(box: Control, text: String, icon: String, kind: int) -> But
 	return b
 
 
-## One volume: a mute toggle on its icon, its name, the slider and its level.
-## Muting remembers the level, so unmuting puts it back.
-func _volume_row(box: Control, caption: String, icon: String, value: float,
-		set_to: Callable) -> HSlider:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	var mute := Ui.icon_button(Art.tex(ICONS % icon), "Mute " + caption)
-	row.add_child(mute)
-	var name := Art.label(caption, Pal.LABEL, Pal.INK)
-	name.custom_minimum_size = Vector2(56, 0)
-	row.add_child(name)
-	var vol := Ui.slider(128)
-	vol.value = value
-	vol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var pct := Art.label("", Pal.LABEL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
-	pct.custom_minimum_size = Vector2(40, 0)
-	var last := [value if value > 0.0 else 0.8]      # the level to unmute to
-	var show := func(v: float) -> void:
-		pct.text = "Off" if v <= 0.0 else "%d%%" % roundi(v * 100.0)
-		mute.icon = Art.tex(ICONS % (icon + "_off" if v <= 0.0 else icon))
-		mute.tooltip_text = ("Unmute " if v <= 0.0 else "Mute ") + caption
-	show.call(value)
-	vol.value_changed.connect(func(v: float) -> void:
-		if v > 0.0:
-			last[0] = v
-		set_to.call(v)
-		show.call(v))
-	mute.pressed.connect(func() -> void: vol.value = 0.0 if vol.value > 0.0 else last[0])
-	row.add_child(vol)
-	row.add_child(pct)
-	box.add_child(row)
-	return vol
-
-
 ## Log Out is the one step here that cannot be undone from this screen, so it
 ## asks (ui-ux-pro-max: confirm destructive actions) -- over Settings.
 func _confirm_logout() -> void:
@@ -475,15 +439,19 @@ func _confirm_logout() -> void:
 	box.add_child(row)
 
 
+## From Settings it opens over Settings; from the back key, over Home.
 func _confirm_quit() -> void:
-	_dialog = Ui.dim(self)
-	var box := Ui.screen_panel(_dialog, Vector2(300, 124), "Quit Lakbayin?")
+	var over: Node = _dialog if is_instance_valid(_dialog) else self
+	var dim := Ui.dim(over)
+	if over == self:
+		_dialog = dim
+	var box := Ui.screen_panel(dim, Vector2(300, 124), "Quit Lakbayin?")
 	box.add_theme_constant_override("separation", 10)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 10)
 	var stay := Ui.button("Stay", 110, Ui.H, Ui.SMALL)
-	stay.pressed.connect(func() -> void: _dialog.queue_free())
+	stay.pressed.connect(dim.queue_free)
 	var quit := Ui.button("Quit", 110, Ui.H, Ui.SMALL_RED)
 	quit.pressed.connect(func() -> void: get_tree().quit())
 	row.add_child(stay)

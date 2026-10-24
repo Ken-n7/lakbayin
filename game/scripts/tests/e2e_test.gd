@@ -135,7 +135,7 @@ func _run() -> void:
 	for gone in ["Learn", "Leaderboard"]:
 		check("no %s button" % gone, _find_button(_screen(), gone) == null)
 
-	print("== 2. hero select -> the offline team form -> a match ==")
+	print("== 2. hero select -> sign in to Find Match; Practice -> a match ==")
 	_click(_screen(), "Find Match")
 	await _wait(3)
 	var hero := _screen()
@@ -147,9 +147,12 @@ func _run() -> void:
 	_click(hero, "Set")
 	await _wait(3)
 	check("hero 12 kept", Game.hero_id == 12, str(Game.hero_id))
-	# Signed out, the team screen is the offline form, and it starts Practice.
-	_screen()._team.text = "Test Team"
-	_click(_screen(), "Ready!")
+	# Signed out, Find Match asks for an account; Home's Practice is the
+	# offline game.
+	check("signed out, Find Match asks to sign in", _find_label(_screen(), "Sign in to find a match.") != null)
+	_click(_screen(), "Back")
+	await _wait(3)
+	_click(_screen(), "Practice")
 	await _wait(6)
 	var adv := _screen()
 	check("reached the match", _script_of(adv, "res://scripts/AdventureScreen.gd"))

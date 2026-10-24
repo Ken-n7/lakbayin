@@ -27,7 +27,6 @@ const SHOW_NAMES := 4
 
 var main: Control
 
-var _team: LineEdit          # offline: the team name
 var _msg: Label
 var _go: Button
 
@@ -95,35 +94,15 @@ func _background() -> void:
 	# No backdrop of its own: Main's moving scene shows through (Backdrop.gd).
 
 
-# --- Offline: a team name ---------------------------------------------------
+# --- Signed out --------------------------------------------------------------
+## Find Match needs an account. (A team-name form for an offline run used to
+## be here -- a leftover: Practice on Home is the offline game.)
 func _build_offline() -> void:
 	_background()
-	var box := Ui.screen_panel(self, PANEL, "Enter Team Name")
-	box.add_child(Art.label("Offline: name your team for a Practice run.",
+	var box := Ui.screen_panel(self, Vector2(320, 0), "Find Match")
+	box.add_child(Art.label("Sign in to find a match.",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
-	_team = Ui.field(box, "Team", "e.g. Math Mavericks")
-	_team.text = Game.team_name
-	_team.max_length = 18
-	_team.text_submitted.connect(func(_t: String) -> void: _begin_offline())
-	_msg = Art.label("", Pal.SMALL, Pal.WRONG, HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(_msg)
-	_go = Ui.button("Ready!", 300, Ui.H, Ui.RED)
-	_go.pressed.connect(_begin_offline)
-	Ui.centre_row(box, _go)
 	_back_button(box)
-	# Deliberately no grab_focus(): on a phone that opens the soft keyboard
-	# immediately, over the form the student has not read yet.
-
-
-func _begin_offline() -> void:
-	var name := _team.text.strip_edges()
-	if name.is_empty():
-		_say("Enter a team name.", Pal.WRONG)
-		return
-	Game.team_name = name
-	Game.save_profile()
-	Game.begin_adventure(int(Game.duration_seconds))
-	main.open("adventure")
 
 
 # --- Online: the code -------------------------------------------------------

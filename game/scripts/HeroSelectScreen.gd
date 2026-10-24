@@ -105,13 +105,17 @@ func _preview_stage() -> Control:
 	shade.texture = Art.tex("res://assets/terrain/tileset/Shadow.png")
 	shade.scale = Vector2(0.55, 0.4)
 	shade.modulate.a = 0.5
-	shade.position = Vector2(95, 104)
 	wrap.add_child(shade)
 	_preview = AnimatedSprite2D.new()
 	_preview.scale = Vector2(4, 4)
 	_preview.offset = Vector2(0, -10)      # feet on the ground
-	_preview.position = Vector2(95, 106)
 	wrap.add_child(_preview)
+	# Centred on the room the slot's border leaves, not on fixed numbers: the
+	# 20px-tall frame drawn x4 stands 40px above and below its middle.
+	wrap.resized.connect(func() -> void:
+		var mid := wrap.size / 2.0
+		_preview.position = mid + Vector2(0, 40)
+		shade.position = mid + Vector2(0, 38))
 	var turn := stage.create_tween().set_loops()
 	for facing in ["down", "right", "up", "left"]:
 		turn.tween_callback(func() -> void:

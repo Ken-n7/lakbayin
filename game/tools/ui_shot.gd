@@ -34,14 +34,19 @@ func _ready() -> void:
 	vp.add_child(main)
 	await get_tree().process_frame
 
+	# "screen:method" opens the screen, then calls a method on it -- a dialog
+	# such as "home:_open_settings".
 	for name: String in wanted:
-		main.open(name)
+		main.open(name.get_slice(":", 0))
+		if name.contains(":"):
+			await get_tree().process_frame
+			main.current.call(name.get_slice(":", 1))
 		for i in 60:
 			await get_tree().process_frame
 		# The viewport texture holds the last *drawn* frame, so the capture has
 		# to wait for the draw, not merely for the frame to be processed.
 		await RenderingServer.frame_post_draw
-		var path: String = out.path_join("%s.png" % name)
+		var path: String = out.path_join("%s.png" % name.replace(":", "_"))
 		var err := vp.get_texture().get_image().save_png(path)
 		print("%s  %s" % ["ok " if err == OK else "FAIL", ProjectSettings.globalize_path(path)])
 	get_tree().quit(0)
