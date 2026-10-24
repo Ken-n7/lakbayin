@@ -60,6 +60,7 @@ const RULES := [
 	"levels: no monk or door is in reach from another level",
 	"water rocks are drawn over open sea only: no land, no cliff under them",
 	"ponds: 1-2 a side, mirrored, each with a 3x3 core and two cells of land round it, none near a spawn",
+	"each team's two houses stand side by side by its spawn, no tree, stump or rock in their yard",
 ]
 
 
@@ -194,6 +195,20 @@ func rules(w: MapWorld) -> Dictionary:
 						core = false
 		if not core:
 			out[RULES[10]] = "pond at %s" % pond.keys()[0]
+	for team in 2:
+		var hs: Array = g.houses.filter(func(h: Dictionary) -> bool: return int(h.team) == team)
+		var a: Vector2 = hs[0].at if hs.size() == 2 else Vector2.ZERO
+		var b: Vector2 = hs[1].at if hs.size() == 2 else Vector2.ZERO
+		if hs.size() != 2 or a.y != b.y or absf(a.x - b.x) != WorldGen.HOUSE_STEP * MapCfg.TILE \
+				or a.distance_to(g.spawns[team]) > WorldGen.HOUSE_LOOK * MapCfg.TILE * 1.5:
+			out[RULES[11]] = "team %d: %s" % [team, hs]
+			continue
+		var yard := Rect2(Vector2(minf(a.x, b.x) - MapCfg.TILE * 2, a.y - MapCfg.TILE * 4),
+			Vector2(MapCfg.TILE * 7, MapCfg.TILE * (4 + WorldGen.HOUSE_FRONT)))
+		for p: Dictionary in g.props:
+			for r: Rect2 in WorldGen._rects_at(p.name, p.at, p.flip):
+				if r.intersects(yard.grow(-1.0)):
+					out[RULES[11]] = "%s at %s in team %d's yard" % [p.name, p.at, team]
 	for r: Dictionary in g.water_rocks:
 		for k in WorldGen._under(WorldGen.water_rock_box(r.v, r.at, r.flip)):
 			if g.land.has(k) or grid.cliff.has(k):

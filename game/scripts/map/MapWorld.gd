@@ -106,9 +106,12 @@ func _build_houses() -> void:
 		var colour: String = TEAM_COLOURS[int(h.team)]
 		var flip := 1.0 if int(h.team) == 0 else -1.0
 		_building(HOUSE % [colour, int(h.variant)], h.at, MapCfg.HOUSE_WALL_FRAC, flip)
-		var pawn := Art.anim_sprite(self, PAWN % colour, h.at + Vector2(22.0 * flip, 10),
-			PAWN_SCALE, 6.0, flip, 8)
+		# In front of the door, his feet on the spot: sit_on_art leaves the
+		# picture where it was, 17px up, and the house's wall drew over him.
+		var feet: Vector2 = h.at + Vector2(14.0 * flip, 10)
+		var pawn := Art.anim_sprite(self, PAWN % colour, feet, PAWN_SCALE, 6.0, flip, 8)
 		Art.sit_on_art(pawn)
+		pawn.position = feet
 		pawn.frame = absi(int(h.at.y)) % 8
 
 

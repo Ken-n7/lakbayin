@@ -103,12 +103,13 @@ const STONE_LEVEL := 0.7
 const BUSHES := 40                # per half
 const WATER_ROCKS := 8            # per half
 
-## Houses round each spawn: where each one's bottom-left cell goes, from the
-## spawn, tried in order -- behind it first (toward the world's edge), then
-## above and below, then ahead.
-const HOUSE_SPOTS := [Vector2i(-4, -1), Vector2i(-4, 3), Vector2i(-1, -3), Vector2i(-1, 5),
-	Vector2i(2, -3), Vector2i(2, 5), Vector2i(-6, 1), Vector2i(3, 1)]
-const HOUSES := 2
+## Each team's houses: a pair side by side beside its spawn, HOUSE_STEP cells
+## apart (a cell between them), with a yard round them -- a cell each side,
+## HOUSE_FRONT rows in front -- where no tree grows. Behind the spawn
+## (toward the world's edge) if they fit, else wherever is nearest.
+const HOUSE_STEP := 3
+const HOUSE_FRONT := 2
+const HOUSE_LOOK := 9             # how far from the spawn to look, cells
 const HOUSE_CELLS := Vector2i(2, 3)
 
 var seed := 0
@@ -166,8 +167,8 @@ func generate() -> void:
 		_g = MapGrid.new()
 		_reach = main
 	_place_monastery()
-	_place_monks()
 	_place_houses()
+	_place_monks()
 	_carve_trails()
 	_scatter_props()
 	_scatter_bushes()
@@ -751,7 +752,7 @@ func _place_monks() -> void:
 	var door_cell := MapGrid.cell_at(door)
 	var spots: Array[Vector2i] = []
 	for c: Vector2i in _cells():
-		if c.x >= 3 and c.x < HALF - 3 and _flat(c) and not _blocked.has(c) and _room(c, 1):
+		if c.x >= 3 and c.x < HALF - 3 and _flat(c) and not _blocked.has(c) and not trail.has(c) and _room(c, 1):
 			spots.append(c)
 	_shuffle(spots)
 	var left: Array[Vector2i] = []
@@ -785,30 +786,54 @@ func _place_monks() -> void:
 				break
 
 
-## Blue's houses beside its spawn, Red's mirrored: off the yard, on inland
-## ground, clear of every other building.
+## Blue's houses beside its spawn, Red's mirrored: the pair and its yard on
+## flat ground, off the spawn's yard and every other building.
 func _place_houses() -> void:
 	var spawn := MapGrid.cell_at(spawns[0])
-	var placed := 0
-	for spot: Vector2i in HOUSE_SPOTS:
-		if placed >= HOUSES:
-			break
-		var base := spawn + spot
-		var cells := _footprint(base, HOUSE_CELLS)
-		var ok := true
-		for c in cells:
-			if not _flat(c) or int(height[c]) != 0 or _blocked.has(c) or _dist(c, spawn) <= SPAWN_YARD or _near_monk(c):
-				ok = false
-		if not ok:
-			continue
-		for c in cells:
+	var best := Vector2i(-1, -1)
+	var best_score := INF
+	for base: Vector2i in MapGrid.rings(spawn, HOUSE_LOOK):
+		var score := _dist(base + Vector2i(2, 0), spawn) + (4.0 if base.x + 4 > spawn.x else 0.0)
+		if score < best_score and _houses_fit(base, spawn):
+			best = base
+			best_score = score
+	if best.x < 0:
+		return
+	var variant := _rng.randi_range(1, 3)
+	for i in 2:
+		var base := best + Vector2i(HOUSE_STEP * i, 0)
+		for c in _footprint(base, HOUSE_CELLS):
 			_blocked[c] = true
 			_blocked[mirror_cell(c)] = true
 		var at := Vector2(base.x * T + T, (base.y + 1) * T)
-		var variant := _rng.randi_range(1, 3)
 		houses.append({"at": at, "team": 0, "variant": variant})
 		houses.append({"at": mirror(at), "team": 1, "variant": variant})
-		placed += 1
+		variant = variant % 3 + 1
+	for c in _house_yard(best):
+		trail[c] = true
+
+
+## The pair with its left house's bottom-left cell at `base`: both houses
+## on flat ground off the spawn's yard and other buildings, their yard on
+## ground that can be walked.
+func _houses_fit(base: Vector2i, spawn: Vector2i) -> bool:
+	for i in 2:
+		for c in _footprint(base + Vector2i(HOUSE_STEP * i, 0), HOUSE_CELLS):
+			if not _flat(c) or int(height[c]) != 0 or _blocked.has(c) or _dist(c, spawn) <= SPAWN_YARD:
+				return false
+	for c in _house_yard(base):
+		if not _reach.has(c) or int(height[c]) != 0 or _g.cliff.has(c) or _g.stairs.has(c) \
+				or c.x >= HALF - 3:
+			return false
+	return true
+
+
+func _house_yard(base: Vector2i) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for y in range(base.y - HOUSE_CELLS.y, base.y + HOUSE_FRONT + 1):
+		for x in range(base.x - 1, base.x + HOUSE_STEP + HOUSE_CELLS.x + 1):
+			out.append(Vector2i(x, y))
+	return out
 
 
 ## Clearings from Blue's spawn to the door and to each monk on its side, three
