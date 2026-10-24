@@ -7,7 +7,6 @@ var _version := 0
 var _more := false          # the server has rows past the ones shown
 var _fetching := false
 var _tail: Label            # "Loading…" under the last row while more come
-var _message: Label
 var _list: VBoxContainer
 var _scroll: ScrollContainer
 var _summary: HBoxContainer
@@ -26,13 +25,14 @@ func setup(options: Dictionary) -> void:
 	_summary.alignment = BoxContainer.ALIGNMENT_CENTER
 	_summary.add_theme_constant_override("separation", 6)
 	box.add_child(_summary)
-	_message = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
-	box.add_child(_message)
 	# Infinite scroll: 20 rows at a time, the next 20 fetched as the list
 	# nears its end -- no page buttons. Opening the screen reloads it.
 	_scroll = Ui.scroll(box, 220)
+	# The list takes the panel's whole height, so a note centres in all of it.
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 4)
 	_scroll.add_child(_list)
 	_scroll.get_v_scroll_bar().value_changed.connect(func(_v: float) -> void: _near_end())
@@ -52,10 +52,9 @@ func _load() -> void:
 		_list.remove_child(child)
 		child.queue_free()
 	if not Net.signed_in():
-		_message.text = "Sign in to see match records."
+		_note("Sign in to see match records.")
 		return
-	_message.visible = true
-	_message.text = "Loading…"
+	_note("Loading…")
 	_load_summary(version)
 	await _fetch(version)
 
@@ -68,8 +67,8 @@ func _fetch(version: int) -> void:
 		return
 	_fetching = false
 	if got.error != "":
-		_message.visible = true
-		_message.text = "Could not load records. Open this screen again to retry."
+		if _offset == 0:
+			_note("Could not load records. Open this screen again to retry.")
 		_set_tail("")
 		return
 	_show(got.data if got.data is Array else [])
@@ -93,11 +92,9 @@ func _show(rows: Array) -> void:
 		for child in _list.get_children():
 			_list.remove_child(child)
 			child.queue_free()
-		_message.text = "" if history else "Ranked games · wins, then words deposited"
-		_message.visible = not history
 		_scroll.scroll_vertical = 0
 		if rows.is_empty():
-			_list.add_child(Art.label("No completed matches yet." if history else "No completed matchmade games yet.",Pal.BODY,Pal.INK))
+			_note("No completed matches yet." if history else "No ranked games yet.")
 	_set_tail("")
 	for p: Dictionary in rows.slice(0, PAGE):
 		_list.add_child(_match_row(p) if history else _ladder_row(p))
@@ -107,6 +104,19 @@ func _show(rows: Array) -> void:
 	# the rest: check once the rows are laid out.
 	if _more:
 		_near_end.call_deferred()
+
+
+## A line in the middle of the list's space -- empty, loading, signed out,
+## failed -- instead of in its top corner.
+func _note(text: String) -> void:
+	for child in _list.get_children():
+		_list.remove_child(child)
+		child.queue_free()
+	var l := Art.label(text, Pal.BODY, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_list.add_child(l)
 
 
 func _set_tail(text: String) -> void:

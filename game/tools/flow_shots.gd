@@ -56,7 +56,10 @@ func _ready() -> void:
 	# FLOW_SCREENS="room,records": just those screens, signed in.
 	if OS.get_environment("FLOW_SCREENS") != "":
 		for name in OS.get_environment("FLOW_SCREENS").split(","):
-			main.open(name.get_slice(":", 0))
+			if name == "leaderboard":
+				main.open("records", {"tab": "player_board"})
+			else:
+				main.open(name.get_slice(":", 0))
 			await _wait(1.5)
 			if name.contains(":"):
 				main.current.call(name.get_slice(":", 1))
