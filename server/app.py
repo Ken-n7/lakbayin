@@ -113,6 +113,7 @@ class Store:
 
     def session(self, who):
         token = secrets.token_urlsafe(32)
+        self.db.execute("delete from tokens where expires<=?", (time.time(),))
         self.db.execute("insert into tokens values(?,?,?)", (digest(token), who, time.time() + 30 * 86400))
         self.db.commit()
         return {"access_token": token, "refresh_token": token, "user": {"id": who}}
@@ -426,20 +427,23 @@ class Hub:
             self.peers.pop(ws, None)
 
     async def presence(self):
+        # Group once (O(peers), not O(peers²)), then send each peer its own
+        # session's roster only when it differs from what it last received.
         state = self.store.load()
+        groups = defaultdict(dict)
+        for p in self.peers.values():
+            meta = p.get("meta", {})
+            if meta:
+                groups[meta.get("sid")].setdefault(p["who"], {"metas": []})["metas"].append({**meta, "phx_ref": p["ref"]})
         for ws, peer in list(self.peers.items()):
             if TOPIC not in peer["topics"]:
                 continue
             sid = peer.get("meta", {}).get("sid")
-            people = {}
-            for other, p in self.peers.items():
-                meta = p.get("meta", {})
-                if not meta or meta.get("sid") != sid:
-                    continue
-                s = state["sessions"].get(sid)
-                if s and may_read(s, peer["who"]):
-                    people.setdefault(p["who"], {"metas": []})["metas"].append({**meta, "phx_ref": p["ref"]})
-            await self.send(ws, TOPIC, "presence_state", people)
+            s = state["sessions"].get(sid)
+            people = groups.get(sid, {}) if s and may_read(s, peer["who"]) else {}
+            if peer.get("presence") != people:
+                peer["presence"] = people
+                await self.send(ws, TOPIC, "presence_state", people)
 
     async def changes(self, before, after):
         # Diff committed checkpoints. Only authenticated session participants
@@ -539,6 +543,10 @@ def create_app(db_path=None):
 
     @app.get("/health")
     def health():
+        try:
+            store.db.execute("select 1 from checkpoint").fetchone()
+        except sqlite3.Error:
+            return JSONResponse({"ok": False, "server": "lakbayin"}, status_code=503)
         return {"ok": True, "server": "lakbayin"}
 
     @app.middleware("http")
@@ -648,6 +656,7 @@ def create_app(db_path=None):
                     await hub.send(ws, topic, "phx_reply", {"status": "ok", "response": {}}, ref)
                     if topic == TOPIC:
                         await hub.send(ws, topic, "system", {"status": "ok", "extension": "postgres_changes"})
+                        peer.pop("presence", None)  # a (re)join always gets a roster
                         await hub.presence()
                     continue
                 require(peer["who"], "Authenticate first", 401)

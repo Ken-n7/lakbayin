@@ -258,6 +258,32 @@ class ServerTest(unittest.TestCase):
             self.assertNotIn(ws,hub.peers)  # overflow dropped the peer
         asyncio.run(go())
 
+    def test_expired_tokens_are_purged(self):
+        db=self.app.state.store.db
+        db.execute('update tokens set expires=0'); db.commit()
+        self.client.post('/auth/login',json={'username':'alpha','password':'testing-password'})
+        self.assertEqual(db.execute('select count(*) from tokens').fetchone()[0],1)
+
+    def test_health_reports_database(self):
+        self.assertEqual(self.client.get('/health').status_code,200)
+        db=self.app.state.store.db
+        db.execute('alter table checkpoint rename to hidden'); db.commit()
+        try: self.assertEqual(self.client.get('/health').status_code,503)
+        finally: db.execute('alter table hidden rename to checkpoint'); db.commit()
+
+    def test_presence_roster_per_session(self):
+        s=self.room(); sid=s['id']; other=self.rpc(3,'create_room').json()['id']
+        track=lambda ws,sid,where:ws.send_json({'topic':TOPIC,'event':'presence','payload':{'event':'track','payload':{'sid':sid,'where':where}}})
+        with self.client.websocket_connect('/realtime/v1/websocket') as a, self.client.websocket_connect('/realtime/v1/websocket') as b, self.client.websocket_connect('/realtime/v1/websocket') as c:
+            for ws,n in ((a,0),(b,1),(c,3)): self.join_ws(ws,n)
+            track(a,sid,'lobby'); self.assertEqual(set(a.receive_json()['payload']),{self.users[0]['user']['id']})
+            track(c,other,'lobby'); self.assertEqual(set(c.receive_json()['payload']),{self.users[3]['user']['id']})
+            track(b,sid,'lobby')
+            roster=a.receive_json()['payload']
+            self.assertEqual(set(roster),{self.users[0]['user']['id'],self.users[1]['user']['id']})
+            self.assertEqual(roster[self.users[1]['user']['id']]['metas'][0]['name'],'bravo')
+            self.assertEqual(set(b.receive_json()['payload']),set(roster))
+
     def test_private_channel_denies_outsider(self):
         from starlette.websockets import WebSocketDisconnect
         s=self.room();sid=s['id']
