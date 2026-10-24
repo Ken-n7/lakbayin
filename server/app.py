@@ -120,7 +120,10 @@ class Store:
 
 
 def public_session(s):
-    return {**{k: v for k, v in s.items() if k not in ("members", "teams", "words", "answers", "locks", "watchers", "deadline", "ended_ts")}, "admin_id": s.get("owner_id")}
+    # `matchmade` was a Supabase column the client still branches on: without
+    # it a Find Match lobby looked like a custom room and polled poll_room,
+    # which rejects it, so the player silently fell out of the queue.
+    return {**{k: v for k, v in s.items() if k not in ("members", "teams", "words", "answers", "locks", "watchers", "deadline", "ended_ts")}, "admin_id": s.get("owner_id"), "matchmade": not s.get("custom", True)}
 
 
 def find(store, state, sid):

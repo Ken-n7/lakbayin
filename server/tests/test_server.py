@@ -74,6 +74,8 @@ class ServerTest(unittest.TestCase):
         s = self.rpc(0, 'find_match').json()
         t = self.rpc(1, 'find_match').json()
         self.assertEqual(s['id'], t['id'])
+        self.assertTrue(s['matchmade'])
+        self.assertFalse(self.rpc(2, 'create_room').json()['matchmade'])
         self.assertEqual(t['state'], 'lobby')
         self.assertEqual(self.rpc(0, 'find_match').json()['id'], s['id'])
         poll = self.rpc(1, 'poll_match', p_session=s['id']).json()
