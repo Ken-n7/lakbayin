@@ -288,8 +288,10 @@ English meanings are not shown.
 ### 6.4 Watch (spectator)
 - An aerial view of a live match, for the event screen at NSTW.
 - Shows both teams, monk states, and carried and deposited counts.
-- Open **Custom Room**, enter the live code, and press **Watch**. A viewer
-  waits through the lobby and sees the same seeded island when play starts.
+- Join the room with its code and pick **Spectators** in the lobby (§6.2);
+  at Start the spectator sees the same seeded island from above. (A Watch
+  button on the code form did the same without joining; it was removed so
+  there is one way to watch.) An event screen joins before Start.
 - Viewers never join a team or submit answers, deposits, or movement. Each
   monk has separate Blue/Red markers: an outline is carried, a fill deposited.
 - The event screen keeps the final result visible until the viewer leaves.

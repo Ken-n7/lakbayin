@@ -47,7 +47,8 @@ func _build_code() -> void:
 	box.add_child(Art.label("or type a friend's room code",
 			Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 	# The code as a code: four big spaced letters, the way it is read out.
-	_code = Ui.line_edit("K7QM", 200, 52, 32)
+	# Not an example code: "K7QM" read as a room to join.
+	_code = Ui.line_edit("4-letter code", 200, 52, 32)
 	_code.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_code.max_length = 4
 	_code.add_theme_constant_override("minimum_character_width", 4)
@@ -69,13 +70,10 @@ func _build_code() -> void:
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_msg.custom_minimum_size = Vector2(260, 0)
 	box.add_child(_msg)
-	_go = Ui.button("Join", 126, Ui.H, Ui.BLUE)
+	# No Watch here: watching is the Spectators bar inside the room.
+	_go = Ui.button("Join", 260, Ui.H, Ui.BLUE)
 	_go.pressed.connect(_enter)
-	var watch := Ui.button("Watch", 126, Ui.H, Ui.SMALL)
-	watch.pressed.connect(func() -> void:
-		if not _joining:
-			main.open("watch", {"code": _code.text}))
-	Ui.centre_row(box, _go).add_child(watch)
+	Ui.centre_row(box, _go)
 	Ui.centre_row(box, Ui.back_button(go_back))
 
 

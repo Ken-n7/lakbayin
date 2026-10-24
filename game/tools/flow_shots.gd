@@ -49,6 +49,17 @@ func _ready() -> void:
 	main.open("home")
 	await _wait(1.5)
 	await _shot("home")
+	# FLOW_SCREENS="room,records": just those screens, signed in.
+	if OS.get_environment("FLOW_SCREENS") != "":
+		for name in OS.get_environment("FLOW_SCREENS").split(","):
+			main.open(name.get_slice(":", 0))
+			await _wait(1.5)
+			if name.contains(":"):
+				main.current.call(name.get_slice(":", 1))
+				await _wait(1.0)
+			await _shot(name.replace(":", "_"))
+		get_tree().quit(0)
+		return
 	if OS.get_environment("FLOW_SCENARIO") == "room":
 		await _room_flow()
 		return
