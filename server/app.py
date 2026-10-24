@@ -233,7 +233,7 @@ def snapshot(store, s):
 
 def rpc(store, state, who, name, body):
     sessions = state["sessions"]
-    if name in ("my_matches", "player_board"):
+    if name in ("my_matches", "player_board", "my_summary"):
         history, board = [], {}
         for s in [*sessions.values(), *store.archives()]:
             if s["state"] != "ended" or not s.get("starts_at"):
@@ -249,6 +249,11 @@ def rpc(store, state, who, name, body):
                     row["wins"] += result == "win"
                     row["deposited"] += p["deposited"]
                     row["played"] += 1
+        if name == "my_summary":
+            # The profile strip over My Matches: every completed game, custom too.
+            return {"played": len(history), "wins": sum(h["result"] == "win" for h in history),
+                    "draws": sum(h["result"] == "draw" for h in history),
+                    "deposited": sum(h["deposited"] for h in history)}
         rows = sorted(history, key=lambda x: x["completed_at"], reverse=True) if name == "my_matches" else sorted(board.values(), key=lambda x: (-x["wins"], -x["deposited"], x["username"]))
         if name == "player_board":
             for i, row in enumerate(rows):

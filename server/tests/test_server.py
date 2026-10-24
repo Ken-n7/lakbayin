@@ -195,6 +195,8 @@ class ServerTest(unittest.TestCase):
         self.assertEqual((board[0]['wins'],board[0]['deposited'],board[0]['played']),(1,10,1))
         self.assertEqual(self.rpc(1,'my_matches').json()[0]['result'],'loss')
         self.assertEqual(self.rpc(3,'my_matches').json(),[])
+        self.assertEqual(self.rpc(0,'my_summary').json(),{'played':1,'wins':1,'draws':0,'deposited':10})
+        self.assertEqual(self.rpc(3,'my_summary').json()['played'],0)
 
     def test_six_player_queue_starts_only_when_full(self):
         for name in ('echo','foxtrot'):
