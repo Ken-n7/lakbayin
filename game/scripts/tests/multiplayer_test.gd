@@ -325,15 +325,22 @@ func _records_view() -> void:
 		rows.append({"session_id":str(i),"code":"TEST","custom":true,"completed_at":"2026-10-23T10:11:12+00:00",
 			"result":"win","deposited":3,"place":2})
 	records._show(rows)
-	check("records show twenty rows and enable the next page", records.get("_list").get_child_count() == 20
-		and not records.get("_next").disabled)
+	check("records show twenty rows and know more are coming", records.get("_list").get_child_count() == 20
+		and records.get("_more"))
 	var labels: Array = records.find_children("*","Label",true,false).map(func(l: Label) -> String: return l.text)
 	check("history labels Custom games and the player's rank", labels.any(func(t: String) -> bool: return t.contains("Custom"))
 		and labels.any(func(t: String) -> bool: return t.contains("rank 2")))
+	var more: Array = rows.slice(0, 5)
+	records._show(more)                      # the next batch, scrolled into
+	check("scrolling on adds the next batch under the first", records.get("_list").get_child_count() == 25
+		and not records.get("_more") and records.get("_offset") == 25)
+	records.set("_offset", 0)
 	records._show([])
-	check("empty history disables Next and explains the empty list", records.get("_next").disabled
+	await get_tree().process_frame
+	check("empty history expects no more and explains the empty list", not records.get("_more")
 		and records.get("_list").get_child_count() == 1)
 	records.set("_tab","player_board")
+	records.set("_offset", 0)
 	records._show([{"profile_id":Net.user_id,"username":"Me","place":1,"wins":2,"deposited":7,"played":3}])
 	labels = records.find_children("*","Label",true,false).map(func(l: Label) -> String: return l.text)
 	check("global board shows wins and deposited answers", labels.any(func(t: String) -> bool: return t.contains("2 wins") and t.contains("7 deposited")))

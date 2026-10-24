@@ -4,9 +4,9 @@ var main: Control
 var _tab := "my_matches"
 var _offset := 0
 var _version := 0
-var _previous: Button
-var _next: Button
-var _page: Label
+var _more := false          # the server has rows past the ones shown
+var _fetching := false
+var _tail: Label            # "Loading…" under the last row while more come
 var _message: Label
 var _list: VBoxContainer
 var _scroll: ScrollContainer
@@ -28,40 +28,26 @@ func setup(options: Dictionary) -> void:
 	box.add_child(_summary)
 	_message = Art.label("", Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
 	box.add_child(_message)
-	_scroll = Ui.scroll(box, 150)
+	# Infinite scroll: 20 rows at a time, the next 20 fetched as the list
+	# nears its end -- no page buttons. Opening the screen reloads it.
+	_scroll = Ui.scroll(box, 220)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 4)
 	_scroll.add_child(_list)
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
-	box.add_child(row)
-	_previous = Ui.button("Previous", 100, Ui.H, Ui.SMALL)
-	_previous.pressed.connect(func() -> void:
-		_offset = maxi(0,_offset-20)
-		_load())
-	row.add_child(_previous)
-	_page = Art.label("Page 1", Pal.SMALL, Pal.INK)
-	_page.custom_minimum_size.x = 62
-	_page.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(_page)
-	_next = Ui.button("Next", 100, Ui.H, Ui.SMALL)
-	_next.pressed.connect(func() -> void:
-		_offset += 20
-		_load())
-	row.add_child(_next)
-	var refresh := Ui.button("Refresh", 90, Ui.H, Ui.SMALL)
-	refresh.pressed.connect(_load)
-	row.add_child(refresh)
+	_scroll.get_v_scroll_bar().value_changed.connect(func(_v: float) -> void: _near_end())
 	_load()
+
+
+const PAGE := 20
+const NEAR_END_PX := 60.0
 
 
 func _load() -> void:
 	_version += 1
 	var version := _version
-	_previous.disabled = true
-	_next.disabled = true
+	_offset = 0
+	_more = false
 	for child in _list.get_children():
 		_list.remove_child(child)
 		child.queue_free()
@@ -71,31 +57,65 @@ func _load() -> void:
 	_message.visible = true
 	_message.text = "Loading…"
 	_load_summary(version)
+	await _fetch(version)
+
+
+## The next PAGE rows, added under the ones shown.
+func _fetch(version: int) -> void:
+	_fetching = true
 	var got := await Net.rest(HTTPClient.METHOD_POST,"/rest/v1/rpc/"+_tab,{"p_offset":_offset})
 	if not is_inside_tree() or version != _version:
 		return
+	_fetching = false
 	if got.error != "":
-		_message.text = "Could not load records. Press Refresh to retry."
-		_previous.disabled = _offset == 0
+		_message.visible = true
+		_message.text = "Could not load records. Open this screen again to retry."
+		_set_tail("")
 		return
 	_show(got.data if got.data is Array else [])
 
 
+## Scrolled close to the bottom with more to come: fetch them.
+func _near_end() -> void:
+	if not _more or _fetching:
+		return
+	var bar := _scroll.get_v_scroll_bar()
+	if bar.value + bar.page >= bar.max_value - NEAR_END_PX:
+		_set_tail("Loading…")
+		_fetch(_version)
+
+
+## `rows` is a page from the server (up to PAGE + 1: the extra says more
+## exist). The first page replaces the list; later ones are added to it.
 func _show(rows: Array) -> void:
-	for child in _list.get_children():
-		_list.remove_child(child)
-		child.queue_free()
 	var history := _tab == "my_matches"
-	_message.text = "" if history else "Ranked games · wins, then words deposited"
-	_message.visible = not history
-	_page.text = "Page %d" % (_offset / 20 + 1)
-	_previous.disabled = _offset == 0
-	_next.disabled = rows.size() <= 20
-	_scroll.scroll_vertical = 0
-	if rows.is_empty():
-		_list.add_child(Art.label("No completed matches yet." if history else "No completed matchmade games yet.",Pal.BODY,Pal.INK))
-	for p: Dictionary in rows.slice(0,20):
+	if _offset == 0:
+		for child in _list.get_children():
+			_list.remove_child(child)
+			child.queue_free()
+		_message.text = "" if history else "Ranked games · wins, then words deposited"
+		_message.visible = not history
+		_scroll.scroll_vertical = 0
+		if rows.is_empty():
+			_list.add_child(Art.label("No completed matches yet." if history else "No completed matchmade games yet.",Pal.BODY,Pal.INK))
+	_set_tail("")
+	for p: Dictionary in rows.slice(0, PAGE):
 		_list.add_child(_match_row(p) if history else _ladder_row(p))
+	_more = rows.size() > PAGE
+	_offset += mini(rows.size(), PAGE)
+	# A short first page may not fill the view, so no scroll would ask for
+	# the rest: check once the rows are laid out.
+	if _more:
+		_near_end.call_deferred()
+
+
+func _set_tail(text: String) -> void:
+	if is_instance_valid(_tail):
+		_tail.queue_free()
+		_tail = null
+	if text != "":
+		_tail = Art.label(text, Pal.SMALL, Pal.INK_MUTED, HORIZONTAL_ALIGNMENT_CENTER)
+		_list.add_child(_tail)
 
 
 ## One match, as a MOBA history row: a stripe in its result's colour, the
