@@ -1091,6 +1091,12 @@ func finish(reason: String) -> void:
 		if main != null:
 			var got := play.result(reason == "time")
 			got["custom"] = bool(_session_row.get("custom", false))
+			# Who played which hero, for the scoreboard's portraits.
+			var heroes := {Net.user_id: Game.hero_id}
+			if _peers != null and is_instance_valid(_peers):
+				for id: String in _peers.get("_live"):
+					heroes[id] = int(_peers.get("_live")[id].get("hero", 0))
+			got["heroes"] = heroes
 			main.open("results", got))
 
 
