@@ -53,3 +53,17 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 | `logo_shot.tscn` | the logo and the app icon's layers |
 | `map_export.tscn`, `walk_export.tscn` | a match's map for the server, and honest walks on it for the server's tests |
 | `make_words.py`, `make_icons.py`, `fix_glyphs.py`, `tune_fonts.py` | the word list, the menu icons, glyph and font fixes |
+| `showcase.py` (`showcase.tscn`, `Recorder.gd`) | footage for the videos: a real 3 v 3 on a throwaway server, scripted players (`match`: the hero's phone view from Home through How to Play to the Records; `room`: a spectator's custom room), recorded live at 1080p with the sound effects on their own track and timed marks |
+| `cards.tscn` + `cards.json` | the videos' words in the game's fonts, as transparent PNGs |
+| `edit.py` | cuts the trailer and the gameplay video from that footage with ffmpeg; music is the game's own soundtrack |
+
+Videos, from the repo root (about 20 minutes on this laptop):
+
+```
+D=/tmp/lakbayin-video; mkdir -p $D/cards $D/out
+server/.venv/bin/python game/tools/showcase.py match $D/hero
+server/.venv/bin/python game/tools/showcase.py room $D/room
+godot --path game res://tools/cards.tscn -- game/tools/cards.json $D/cards
+python3 game/tools/edit.py trailer $D $D/out/trailer.mp4
+python3 game/tools/edit.py gameplay $D $D/out/gameplay.mp4
+```
