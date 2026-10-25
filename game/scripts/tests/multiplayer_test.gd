@@ -300,6 +300,17 @@ func _watch_view() -> void:
 	check("watch renders the same match seed without creating a controllable player", screen.world.seed == Game.seed_of("s1")
 		and screen.find_children("*", "TouchScreenButton", true, false).is_empty()
 		and screen.find_children("*", "MonkOverlay", true, false).is_empty())
+	check("a watched monk takes the colour of the first team to answer him",
+		screen.world.monks[0].colour == "Blue" and screen.world.monks[1].colour == "Black")
+	check("the watched island is drawn on the screen itself, not a stretched view",
+		screen.find_children("*", "SubViewport", true, false).is_empty() and screen.get("_camera").is_current())
+	screen._look(screen.get("_center"), screen.get("_fit") * 3.0)
+	var was: Vector2 = screen.get("_center")
+	var drag := InputEventScreenDrag.new()
+	drag.relative = Vector2(-40, 0)
+	(screen.get("_pad") as Control).gui_input.emit(drag)
+	check("dragging the watched island pans the view", (screen.get("_center") as Vector2).x > was.x
+		and screen.get("_camera").position == screen.get("_center"))
 	snapshot.session.state = "ended"
 	screen._apply(snapshot)
 	check("a finished spectator view stops showing an active countdown", screen.get("_time").text == "Final")

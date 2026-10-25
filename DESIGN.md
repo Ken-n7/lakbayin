@@ -336,8 +336,12 @@ English meanings are not shown.
   at Start the spectator sees the same seeded island from above. (A Watch
   button on the code form did the same without joining; it was removed so
   there is one way to watch.) An event screen joins before Start.
-- Viewers never join a team or submit answers, deposits, or movement. Each
-  monk has separate Blue/Red markers: an outline is carried, a fill deposited.
+- Viewers never join a team or submit answers, deposits, or movement. A monk
+  turns the colour of the first team to answer him, as a match shows its own
+  team's; each side's carried and deposited counts are in Stats.
+- The view is the match's own aerial view: the island drawn on the screen at
+  the phone's resolution, not in a stretched inner view. Zoomed out, heroes
+  and their names are kept large enough to read.
 - The event screen keeps the final result visible until the viewer leaves.
 - MOBA-style: the aerial map fills the screen with the scores, clock, Stats
   and Leave over it. Players show as their own heroes at the map's scale

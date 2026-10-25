@@ -15,10 +15,11 @@ var _status: Label
 var _time: Label
 var _totals: Array[Label] = []
 var _lists: Array[GridContainer] = []   # each side's Player / Carry / Deposited table
-var _map_box: SubViewportContainer
-var _map_view: SubViewport
 var _camera: Camera2D
-var _pins: Pins
+## The scores, Stats and the drag surface, on a layer of their own: the
+## camera moves the world, not them.
+var _ui: CanvasLayer
+var _pad: Control
 var _roster := {}
 
 
@@ -31,12 +32,19 @@ const STATS_HEAD_H := 64.0     # a side's name and totals
 const STATS_ROW_H := 30.0
 ## When the delayed feed reaches the start (local clock), while it has not.
 var _starts_at := 0.0
-## The aerial view: where it looks and how near. `_fit` shows the whole world;
-## a spectator drags to move and pinches, scrolls or taps +/- to look closer.
+## The aerial view: the match's own (AdventureScreen's start and end), the
+## island drawn straight on the screen by a camera, at the phone's own
+## resolution. Where it looks and how near: `_fit` shows the whole world; a
+## spectator drags to move and pinches or scrolls to look closer.
 var _center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
 var _zoom := 0.0
 var _fit := 0.1
 const ZOOM_MAX := 5.0      # times the whole-world fit
+## Zoomed out, a hero is kept at least this tall and a name this big (layout
+## px): at the whole-island view they would be specks.
+const HERO_MIN_H := 16.0
+const HERO_WORLD_H := 32.0
+const TAG_MIN_PX := 10.0
 
 
 func setup(options: Dictionary) -> void:
@@ -81,22 +89,19 @@ func _unavailable(why: String) -> void:
 ## floats over it -- scores and clock on top, zoom in the corner. Who carries
 ## and has deposited what sits behind a Stats button, not under the map.
 func _build_ui() -> void:
+	var sea := CanvasLayer.new()
+	sea.layer = -1
+	add_child(sea)
 	var bg := ColorRect.new()
 	bg.color = MapCfg.WATER_TINT * Color("47aba9")
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-	_map_box = SubViewportContainer.new()
-	_map_box.stretch = true
-	_map_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_map_box)
-	_map_view = SubViewport.new()
-	_map_view.disable_3d = true
-	_map_view.transparent_bg = true
-	_map_view.handle_input_locally = false
-	_map_box.add_child(_map_view)
-	_pins = Pins.new()
-	_pins.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_pins)
+	sea.add_child(bg)
+	_ui = CanvasLayer.new()
+	_ui.layer = 2
+	add_child(_ui)
+	_pad = Control.new()
+	_pad.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_ui.add_child(_pad)
 
 	var bar := HBoxContainer.new()
 	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
@@ -106,7 +111,7 @@ func _build_ui() -> void:
 	bar.offset_bottom = 42
 	bar.add_theme_constant_override("separation", 6)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bar)
+	_ui.add_child(bar)
 	var title := Art.label("Watch  " + _code, Pal.BODY, Pal.CREAM)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -141,7 +146,7 @@ func _build_ui() -> void:
 	_status.clip_text = true
 	_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Art.shadow(_status)
-	add_child(_status)
+	_ui.add_child(_status)
 
 	# Stats: centred over the map, Blue on the left and Red on the right, on a
 	# dark see-through plate -- the match still shows behind, the text reads.
@@ -159,7 +164,7 @@ func _build_ui() -> void:
 	centre.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	centre.offset_top = 44
 	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(centre)
+	_ui.add_child(centre)
 	centre.add_child(_stats)
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 0)
@@ -195,7 +200,7 @@ func _build_ui() -> void:
 		_lists.append(grid)
 
 	resized.connect(_frame_map)
-	_map_box.gui_input.connect(_on_map_input)
+	_pad.gui_input.connect(_on_map_input)
 
 
 func _process(delta: float) -> void:
@@ -206,7 +211,7 @@ func _process(delta: float) -> void:
 		_poll()
 	if not data.is_empty():
 		_update_clock()
-		_pins.queue_redraw()
+	_keep_legible()
 
 
 func _poll() -> void:
@@ -237,11 +242,12 @@ func _apply(snapshot: Dictionary) -> void:
 		world = MapWorld.new()
 		world.seed = Game.seed_of(str(session.get("id", session_id)))
 		world.monk_count = int(data.get("monks", 10))
-		_map_view.add_child(world)
+		add_child(world)
 		world.build()
 		_camera = Camera2D.new()
 		_camera.position = Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
 		world.add_child(_camera)
+		_camera.make_current()
 		peers = Peers.new()
 		world.add_child(peers)
 		_frame_map()
@@ -280,9 +286,16 @@ func _apply(snapshot: Dictionary) -> void:
 			return str(p.get("team_id", "")) == str(teams[i].id)).size())
 	_stats.custom_minimum_size = Vector2(STATS_SIDE_W * 2 + 1, STATS_HEAD_H + STATS_ROW_H * (most + 1)) \
 		+ Vector2(36, 36)
-	_pins.world = world
-	_pins.peers = peers
-	_pins.snapshot = data
+	# A monk in the colour of the team that answered him first, as a match
+	# shows its own team's: who got there is the race. Both sides' counts
+	# are in Stats.
+	for i in world.monks.size():
+		for a: Dictionary in data.get("answers", []):
+			if int(a.get("monk", -1)) == i:
+				var side := ids.find(str(a.get("team_id", "")))
+				if side >= 0:
+					world.monks[i].take(Match.TEAMS[side])
+				break
 	_starts_at = Time.get_unix_time_from_system() + float(data.get("starts_in", 0))
 	_update_clock()
 
@@ -301,11 +314,27 @@ func _cell(text: String, colour: Color, name: bool, size := Pal.BODY) -> Label:
 func _frame_map() -> void:
 	if world == null:
 		return
-	var area := _map_box.size
-	_fit = minf(area.x / float(MapCfg.WORLD_W * MapCfg.TILE), area.y / float(MapCfg.WORLD_H * MapCfg.TILE))
-	_pins.position = _map_box.position
-	_pins.size = area
+	_fit = minf(size.x / float(MapCfg.WORLD_W * MapCfg.TILE), size.y / float(MapCfg.WORLD_H * MapCfg.TILE))
 	_look(_center, _zoom if _zoom > 0.0 else _fit)
+
+
+## Heroes at the map's scale, like the match's own -- but never smaller than
+## HERO_MIN_H zoomed out, their names never under TAG_MIN_PX.
+func _keep_legible() -> void:
+	if peers == null or _zoom <= 0.0:
+		return
+	var hero := maxf(1.0, HERO_MIN_H / (HERO_WORLD_H * _zoom))
+	var markers: Dictionary = peers.get("_markers")
+	for id: String in markers:
+		var marker: Node2D = markers[id]
+		# No position yet, or a stale one: not guessed at the Monastery.
+		marker.visible = peers._is_live(id)
+		marker.scale = Vector2(hero, hero)
+		var tag := marker.get_node_or_null("Tag") as Control
+		if tag != null:
+			var k := maxf(1.0, TAG_MIN_PX / (11.0 * _zoom * hero))
+			tag.pivot_offset = tag.size * Vector2(0.5, 1.0)
+			tag.scale = Vector2(k, k)
 
 
 ## Drag to move the view; wheel or pinch to zoom.
@@ -331,14 +360,12 @@ func _look(center: Vector2, zoom: float) -> void:
 		return
 	_zoom = clampf(zoom, _fit, _fit * ZOOM_MAX)
 	var world_px := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE
-	var half := _map_box.size / _zoom / 2.0
+	var half := size / _zoom / 2.0
 	_center = Vector2(clampf(center.x, minf(half.x, world_px.x / 2.0), maxf(world_px.x - half.x, world_px.x / 2.0)),
 			clampf(center.y, minf(half.y, world_px.y / 2.0), maxf(world_px.y - half.y, world_px.y / 2.0)))
 	_camera.zoom = Vector2(_zoom, _zoom)
 	_camera.position = _center
-	_pins.zoom = _zoom
-	_pins.center = _center
-	_pins.queue_redraw()
+	_keep_legible()
 
 
 func _update_clock() -> void:
@@ -389,75 +416,3 @@ func go_back() -> void:
 		main.open("home")
 		return
 	main.open("room")
-
-
-## Fixed-size aerial pins stay legible while the actual world is zoomed out.
-## Each monk has two halves: independent state for Blue and for Red.
-class Pins extends Control:
-	var world: MapWorld
-	var peers: Peers
-	var snapshot := {}
-	var zoom := 0.1
-	## A hero stands 32 world px (a 20px frame x 1.6); drawn x zoom, but
-	## never under HERO_MIN_H canvas px.
-	const HERO_WORLD_H := 32.0
-	const HERO_MIN_H := 16.0
-	var center := Vector2(MapCfg.WORLD_W, MapCfg.WORLD_H) * MapCfg.TILE * 0.5
-	func _at(point: Vector2) -> Vector2:
-		return size * 0.5 + (point - center) * zoom
-	func _draw() -> void:
-		if world == null:
-			return
-		var teams: Array = snapshot.get("teams", [])
-		# Zoomed in, what is off the view is skipped, not drawn over the page.
-		var view := Rect2(Vector2.ZERO, size).grow(-2)
-		for i in world.monks.size():
-			var at := _at(world.monks[i].position)
-			if not view.has_point(at):
-				continue
-			for side in mini(2, teams.size()):
-				var pos := at + Vector2(-4 if side == 0 else 4, -5)
-				var state := WatchFeed.monk_state(snapshot, str(teams[side].id), i)
-				draw_circle(pos, 4, Pal.SHADOW)
-				var col: Color = Peers.TEAM_COLOURS[side]
-				if state == 2:
-					draw_circle(pos, 3, col)
-				else:
-					draw_arc(pos, 3, 0, TAU, 16, col if state == 1 else Pal.WHITE_DIM, 1.3)
-			var font := ThemeDB.fallback_font
-			draw_string(font, at + Vector2(-3, 12), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Pal.CREAM)
-		if peers != null:
-			var font := get_theme_default_font()
-			for id: String in peers.get("_markers"):
-				var marker: Node2D = peers.get("_markers")[id]
-				# The world's own hero is hidden and drawn here instead, so it
-				# keeps a readable size zoomed out (and its name stays legible).
-				marker.visible = false
-				# Unknown / stale positions aren't fabricated at the Monastery.
-				if not peers._is_live(id) or not view.has_point(_at(marker.position)):
-					continue
-				var at := _at(marker.position)
-				var row: Dictionary = peers.get("_roster").get(id, {})
-				var col: Color = peers.colour_of(str(row.get("team_id", "")))
-				# The player's own hero, at the map's scale like a MOBA camera --
-				# real size zoomed all the way in, never smaller than HERO_MIN_H
-				# zoomed out -- on a small ring in the team's colour.
-				var h := maxf(HERO_WORLD_H * zoom, HERO_MIN_H)
-				draw_set_transform(at, 0.0, Vector2(1.0, 0.45))
-				draw_circle(Vector2.ZERO, h * 0.32, Color(col, 0.5))
-				draw_arc(Vector2.ZERO, h * 0.32, 0.0, TAU, 20, col, 1.5)
-				draw_set_transform(Vector2.ZERO)
-				var spr: AnimatedSprite2D = marker.get_node("Spr")
-				if spr.sprite_frames != null and spr.sprite_frames.has_animation(spr.animation):
-					var tex := spr.sprite_frames.get_frame_texture(spr.animation, spr.frame)
-					var sz := tex.get_size() * (h / tex.get_size().y)
-					var r := Rect2(at - Vector2(sz.x * 0.5, sz.y - 1.0), sz)
-					if spr.flip_h:
-						r = Rect2(r.position + Vector2(r.size.x, 0), Vector2(-r.size.x, r.size.y))
-					draw_texture_rect(tex, r, false)
-				# ...and the name over its head, in the team's colour.
-				var name := str(row.get("username", ""))
-				var w := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-				var at_name := at + Vector2(-w * 0.5, -h - 3.0)
-				draw_string_outline(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 4, Color(0, 0, 0, 0.75))
-				draw_string(font, at_name, name, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col.lightened(0.45))
