@@ -328,7 +328,7 @@ static func _key(row: Container, glyph: String) -> Button:
 static func _key_of(pad: BaybayinKeypad, glyph: String) -> Button:
 	for k: Array in Baybayin.KEYS:
 		if k[0] == glyph:
-			return pad.get_node("Key_" + str(k[1])) as Button
+			return pad.get_node(("Key_" + str(k[1])).validate_node_name()) as Button
 	return null
 
 
