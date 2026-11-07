@@ -32,3 +32,13 @@ build/*.idsig
 # Self-hosted server accounts, sessions, checkpoints and isolated dependencies.
 server/data/
 server/.venv/
+
+# Original asset pack downloads. The game uses its own copies in game/assets/;
+# the licences don't allow passing the packs on as-is.
+/Pixel Crawler - Free Pack*
+/SuperRetroWorld_CharacterPack_Full*
+/Tiny Swords (Free Pack)*
+
+# Deploy keys
+server-cred/
+*.pem

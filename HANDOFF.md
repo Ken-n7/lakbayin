@@ -27,8 +27,9 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - Repo: `~/Workspace/games/levelup-entry` (git, **no remote**, branch `main`).
 - Godot project: `game/`.
 - Backend: `server/` (FastAPI + SQLite + WebSockets). The former Supabase backend (`supabase/`) and the movement relay were deleted on Oct 25; git history keeps them.
-- The asset packs at the root (Tiny Swords, Super Retro World, Pixel
-  Crawler) are tracked. Pixel Crawler is unused.
+- The original asset pack downloads (Tiny Swords, Super Retro World, Pixel
+  Crawler) sit at the root but are gitignored; the game uses its copies in
+  `game/assets/`. Pixel Crawler is unused.
 - This repo is a **fork** of an earlier client project, NumXventure, at
   `~/Workspace/games/NumXventure`. **Never change that repo.**
   - The fork's history was rewritten: client documents were removed, and every
