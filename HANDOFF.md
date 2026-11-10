@@ -38,6 +38,22 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 
 ## 3. State
 
+### Bug fixes before the finals (Nov 10, uncommitted)
+- **Viewer movement delay:** the delayed copy sent the sender's *latest*
+  socket message, not the packet from a minute before (`app.py`, the
+  `call_later` lambda now binds topic and payload).
+- **Deserted matches:** a running match one side has been off for
+  `ABANDON_S` (60 s, `LAKBAYIN_ABANDON_S`, 0 = off) ends with the score
+  standing (`abandon` in the ticker; DESIGN.md 3.4). "Off" = no socket of that
+  side on the match's snap channel. Not a forfeit: Results reads the winner
+  off the standings, so a walkover would need a client change too.
+- **Joining on a bad line:** `_join_online` retries the session read three
+  times and no longer forgets the match on a failed request.
+- **Teams not arriving:** `Match.start_online` now fails with a message
+  instead of putting everyone on Blue.
+- Two new server tests (30 total). The client fixes have no test of their own.
+- **Not yet live:** `lakbayin.service` needs a restart, and the APK a rebuild.
+
 ### Deferred: database backups (user chose to postpone, Oct 24)
 - `server/data/lakbayin.sqlite3` has **no automatic backup** and exists only
   on this laptop. `python -m server.manage backup DEST` works when run by hand.

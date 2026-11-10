@@ -118,7 +118,19 @@ func setup(data: Dictionary) -> void:
 ## The match this phone joined: its row, its words and teams, every answer so
 ## far. "" or why not.
 func _join_online() -> String:
-	var session: Dictionary = await Teams.session(Game.joined_session)
+	# A request that failed is not a match that is gone: asked again, and the
+	# match kept for the next try. Only the server saying so forgets it.
+	var got := {}
+	for _try in 3:
+		got = await Net.rest(HTTPClient.METHOD_GET,
+			Teams.SESSIONS + "?select=*&id=eq." + Game.joined_session)
+		if got.error == "" or not is_instance_valid(self):
+			break
+		await get_tree().create_timer(1.5).timeout
+	if got.error != "":
+		return "Could not reach the match. Check your connection."
+	var rows: Array = got.data if got.data is Array else []
+	var session: Dictionary = rows[0] if not rows.is_empty() else {}
 	if session.is_empty() or Teams.expired(session):
 		Game.joined_session = ""
 		Game.save_profile()

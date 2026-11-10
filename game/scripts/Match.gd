@@ -104,6 +104,10 @@ func start_online(session: String) -> String:
 	team_ids.clear()
 	for t: Dictionary in await Teams.teams_of(session):
 		team_ids.append(str(t.get("id", "")))
+	# Without them every player read as Blue, on the wrong spawn, with a
+	# board deaf to every score.
+	if team_ids.size() < 2:
+		return "The match's teams did not arrive"
 	var mine: Dictionary = await Teams.membership(session)
 	if mine.has("error"):
 		return str(mine.error)

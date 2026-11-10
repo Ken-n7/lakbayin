@@ -66,6 +66,12 @@ REACH_SLACK = 16.0
 # "Online" on Home: signed in and heard from this recently. Home asks every
 # 20 s, lobbies every 3 s, a match's socket every few seconds.
 ONLINE_S = 60.0
+# A running match one whole side has left -- nobody of it connected to the
+# match for this long -- ends as if its clock ran out: the score stands. No
+# player is then held in it (one_game) for the rest of fifteen minutes. A
+# dropped phone is back in seconds; a restarted server counts from its start.
+# 0 turns it off.
+ABANDON_S = float(os.environ.get("LAKBAYIN_ABANDON_S", 60))
 
 
 def stamp(value=None):
@@ -817,10 +823,36 @@ def create_app(db_path=None):
                         del where[key]
             return result
 
+    # (sid, team id) -> since when nobody of that side has been on the match's
+    # channel. Memory only.
+    absent = {}
+
+    def abandon(state):
+        now, live = time.time(), set()
+        here = defaultdict(set)
+        for p in hub.peers.values():
+            for topic in p["topics"]:
+                here[topic].add(p["who"])
+        for sid, s in state["sessions"].items():
+            if s["state"] != "running":
+                continue
+            on = here.get(TOPIC + ":snap:" + sid, ())
+            for t in s["teams"]:
+                key = (sid, t["id"])
+                live.add(key)
+                if any(m["team_id"] == t["id"] and who in on for who, m in s["members"].items()):
+                    absent.pop(key, None)
+                elif ABANDON_S and now - absent.setdefault(key, now) >= ABANDON_S:
+                    print(f"match {sid} abandoned by {t['name']}", flush=True)
+                    s["deadline"] = now
+            finish(s)
+        for key in [k for k in absent if k not in live]:
+            del absent[key]
+
     async def ticker():
         while True:
             await asyncio.sleep(1)
-            await commit(lambda state: None)
+            await commit(abandon)
             for key in [k for k, q in attempts.items() if not q or q[-1] < time.time() - 60]:
                 del attempts[key]
             prune_history()
@@ -1030,7 +1062,7 @@ def create_app(db_path=None):
                         if other != ws and topic in target["topics"] and may_read(s, target["who"]):
                             if kind == "snap" and not plays(s, target["who"]):
                                 asyncio.get_running_loop().call_later(SPECTATOR_DELAY_S,
-                                    lambda o=other: asyncio.ensure_future(hub.send(o, topic, "broadcast", payload)))
+                                    lambda o=other, t=topic, p=payload: asyncio.ensure_future(hub.send(o, t, "broadcast", p)))
                             else:
                                 await hub.send(other, topic, "broadcast", payload)
         except (WebSocketDisconnect, asyncio.TimeoutError, HTTPException, ValueError, TypeError, KeyError):

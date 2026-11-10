@@ -352,6 +352,42 @@ class ServerTest(unittest.TestCase):
             one.send_json({'topic':topic,'event':'broadcast','payload':{'event':'snap','payload':data}})
             self.assertEqual(one.receive()['type'],'websocket.close')
 
+    def test_viewer_gets_the_packet_sent_then_not_the_latest(self):
+        self.addCleanup(setattr, appmod, 'SPECTATOR_DELAY_S', appmod.SPECTATOR_DELAY_S)
+        appmod.SPECTATOR_DELAY_S = 0.3
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        self.rpc(3,'watch_match',p_code=s['code'])
+        topic=TOPIC+':snap:'+sid
+        with self.client.websocket_connect('/realtime/v1/websocket') as one, self.client.websocket_connect('/realtime/v1/websocket') as two:
+            self.join_ws(one,0,topic); self.join_ws(two,3,topic)
+            data={'sid':sid,'p':[{'id':self.users[0]['user']['id'],'hero':1,'cadence':0.05,'p':[[1,100,200]]}]}
+            one.send_json({'topic':topic,'event':'broadcast','payload':{'event':'snap','payload':data}})
+            one.send_json({'topic':'phoenix','event':'heartbeat','payload':{},'ref':'9'})
+            got=two.receive_json()
+            self.assertEqual((got['topic'],got['payload'].get('payload')),(topic,data))
+
+    def test_match_a_side_left_ends_with_the_score_standing(self):
+        self.addCleanup(setattr, appmod, 'ABANDON_S', appmod.ABANDON_S)
+        appmod.ABANDON_S = 1.5
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        w=self.app.state.store.load()['sessions'][sid]['words'][0]
+        self.rpc(1,'answer_monk',p_session=sid,p_monk=0,p_typed=w['modern']); self.rpc(1,'deposit',p_session=sid)
+        topic=TOPIC+':snap:'+sid
+        state=lambda: self.request(0,'GET',f'/rest/v1/sessions?id=eq.{sid}').json()[0]
+        with self.client.websocket_connect('/realtime/v1/websocket') as one:
+            self.join_ws(one,0,topic)
+            with self.client.websocket_connect('/realtime/v1/websocket') as two:
+                self.join_ws(two,1,topic)
+                time.sleep(3)
+                self.assertEqual(state()['state'],'running')   # both sides here
+            time.sleep(4)                                       # user 1's side gone
+            ended=state()
+        self.assertEqual(ended['state'],'ended')
+        # The score stands: the side that left had the only word.
+        team1=self.app.state.store.load()['sessions'][sid]['members'][self.users[1]['user']['id']]['team_id']
+        self.assertEqual(ended['winner_team'],team1)
+        self.assertEqual(self.rpc(0,'create_room').status_code,200)   # nobody is held in it
+
     def test_websocket_score_events(self):
         s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
         with self.client.websocket_connect('/realtime/v1/websocket') as ws:

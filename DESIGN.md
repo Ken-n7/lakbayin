@@ -92,6 +92,11 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 - When it ends, everyone sees an **aerial view** of the whole map, then the
   results screen.
 - Match clock: **15 minutes**. Default monk count: **10**.
+- **A match one side has left ends early.** If nobody of a side has been
+  connected to the match for **60 s**, the server ends it as if the clock ran
+  out: the score stands (more words, then sooner). Nobody is held in a
+  deserted match. A dropped phone that reconnects within that time changes
+  nothing. (`ABANDON_S` in `server/app.py`.)
 - **No leaving an online match.** The match's Settings (⚙, top right) holds
   only Music and Sounds; **Leave Practice** appears in Practice alone.
 
