@@ -61,6 +61,14 @@ SPAWN_PX = 12.0
 # each hero's next position as it comes. In the first seconds of a match
 # everyone is at their spawn.
 FRESH_S = 15.0
+# Nothing taken from a hero for this long -- their line dropped while they
+# walked on, and the path in between never came -- and the server has lost
+# them: their next position is taken as a jump, anywhere they could have
+# walked to in that time, the way between unchecked. Without it every later
+# packet was measured from where they were last seen and dropped, and every
+# answer refused, for the rest of the match. Longer than the gap between a
+# standing hero's packets (the client's STILL_EVERY_S, 3 s).
+LOST_S = 5.0
 # Reach is the client's INTERACT_RADIUS, from a hero who stopped a hair late.
 REACH_SLACK = 16.0
 # "Online" on Home: signed in and heard from this recently. Home asks every
@@ -359,16 +367,18 @@ def spawn_of(s, who, mp):
 
 def hero(s, who, mp, where, now):
     """Where `who` is as far as the server knows -- {x, y, level, t (their
-    clock), budget, at} with the budget refilled to now -- or None after a
-    restart, when nobody is known."""
+    clock), budget, at, lost} with the budget refilled to now (past its cap
+    for a hero unheard for LOST_S: `lost`) -- or None after a restart, when
+    nobody is known."""
     st = where.get((s["id"], who))
     if st is None:
         if now - (s["deadline"] - s["duration_s"]) > FRESH_S:
             return None
         x, y = spawn_of(s, who, mp)
         st = {"x": x, "y": y, "level": level_at(mp, cell_of(mp, x, y), 0), "t": -math.inf, "budget": cap(mp), "at": now}
-    budget = min(cap(mp), st["budget"] + mp["speed"] * SPEED_SLACK * (now - st["at"]))
-    return {**st, "budget": budget, "at": now}
+    lost = now - st["at"] > LOST_S
+    budget = st["budget"] + mp["speed"] * SPEED_SLACK * (now - st["at"])
+    return {**st, "budget": budget if lost else min(cap(mp), budget), "at": now, "lost": lost}
 
 
 def moved_ok(s, who, mp, where, points, now):
@@ -395,13 +405,16 @@ def moved_ok(s, who, mp, where, points, now):
             x, y, level, budget = *home, level_at(mp, cell_of(mp, *home), 0), cap(mp)
     if not fresh:
         return True
+    jump = st["lost"]                 # the way to the first point was never seen
     for _t, px, py in fresh:
         budget -= math.dist((x, y), (px, py))
-        level = walk_line(mp, (x, y), (px, py), level) if budget >= 0 and standable(mp, px, py) else None
+        if budget < 0 or not standable(mp, px, py):
+            return False
+        level = level_at(mp, cell_of(mp, px, py), 0) if jump else walk_line(mp, (x, y), (px, py), level)
         if level is None:
             return False
-        x, y = px, py
-    where[(s["id"], who)] = {**st, "x": x, "y": y, "level": level, "t": fresh[-1][0], "budget": budget}
+        x, y, jump = px, py, False
+    where[(s["id"], who)] = {**st, "x": x, "y": y, "level": level, "t": fresh[-1][0], "budget": min(cap(mp), budget)}
     return True
 
 
@@ -415,6 +428,11 @@ def placed_ok(s, who, mp, where, name, body, now):
     require(math.dist(at, target) <= mp["reach"] + REACH_SLACK and standable(mp, *at), "Walk up to it first", 403)
     st = hero(s, who, mp, where, now)
     require(st is None or math.dist(at, (st["x"], st["y"])) <= st["budget"] + PX_SLACK, "Walk up to it first", 403)
+    if st and st["lost"]:
+        # Unheard, and here now: this is where they are, the walk spent --
+        # or one long silence would reach every monk on the map at once.
+        where[(s["id"], who)] = {**st, "x": at[0], "y": at[1], "level": level_at(mp, cell_of(mp, *at), 0),
+                                 "budget": max(0.0, min(cap(mp), st["budget"] - math.dist(at, (st["x"], st["y"]))))}
 
 
 def snapshot(store, s):
@@ -1071,7 +1089,12 @@ def create_app(db_path=None):
                     if kind == "snap":
                         # A spectator member is no hero on anyone's map.
                         require(plays(s, peer["who"]), "Spectators cannot move")
-                        require(s["state"] == "running" and topic == TOPIC + ":snap:" + sid, "Movement denied")
+                        require(topic == TOPIC + ":snap:" + sid, "Movement denied")
+                        if s["state"] != "running":
+                            # The match ended while this was on its way:
+                            # dropped. Refusing it closed every walking
+                            # hero's socket at the end of every match.
+                            continue
                         paths = data.get("p", [])
                         require(isinstance(paths, list) and len(paths) == 1 and isinstance(paths[0], dict) and paths[0].get("id") == peer["who"] and not data.get("r"), "Cannot move another player")
                         points = paths[0].get("p", [])

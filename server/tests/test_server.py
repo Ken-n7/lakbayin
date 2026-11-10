@@ -252,6 +252,23 @@ class ServerTest(unittest.TestCase):
         where.clear()
         ok,t,now=walk(foot,(976,1100),0.0,T,bunch=2.0)
         self.assertTrue(all(ok))
+        # A line that dropped for six seconds while they walked on: the next
+        # packet is taken from where they are now, and so is all after it.
+        where.clear()
+        ok,t,now=walk(foot,(976,700),0.0,T); self.assertTrue(all(ok))
+        ok,t,now=walk((96,700),(96,900),t+6,now+6); self.assertTrue(all(ok))
+        # ...but no further than six seconds' walk, nor onto a cliff face.
+        where.clear()
+        ok,t,now=walk(foot,(1200,560),0.0,T)
+        self.assertFalse(appmod.moved_ok(s,'u',mp,where,[[t+6,40,1240]],now+6))
+        self.assertFalse(appmod.moved_ok(s,'u',mp,where,[[t+6,700,496]],now+6))
+        # Silent, then at a monk: allowed there, and the walk is spent -- the
+        # next monk is not within reach of the same silence.
+        mp['monks'][1]=[1200,1200]
+        appmod.placed_ok(s,'u',mp,where,'answer_monk',{'p_monk':1,'p_at':[1200,1180]},now+8)
+        mp['monks'][2]=[100,1200]
+        with self.assertRaises(Exception):
+            appmod.placed_ok(s,'u',mp,where,'answer_monk',{'p_monk':2,'p_at':[100,1180]},now+8.5)
         # A rejoined app: its clock starts again, its hero at the spawn.
         where.clear()
         ok,t,now=walk(foot,(976,1200),0.0,T)

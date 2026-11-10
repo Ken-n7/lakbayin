@@ -849,11 +849,20 @@ func _on_overlay_gone() -> void:
 		_update_interaction()
 
 
+var _depositing := false
+
+
 func _deposit() -> void:
+	# One at a time: a second press while the first was on its way sent a
+	# second deposit, and announced the same words twice.
+	if _depositing:
+		return
+	_depositing = true
 	var elapsed := Game.duration_seconds - Game.time_left
 	var got: Dictionary = await play.deposit(elapsed, player.position)
 	if not is_instance_valid(self):
 		return
+	_depositing = false
 	if got.error != "":
 		Sfx.play("error")
 		hud.flash("Not deposited: " + str(got.error))

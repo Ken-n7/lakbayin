@@ -49,6 +49,17 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   Both sides off: ends with the score standing. `team_standings` rows carry
   `forfeit`; `ResultsScreen._rank_key` sorts a forfeiting side last, so the
   title, WINNER tag and "<side> left the match" all follow from it.
+- **Lost heroes (uncommitted):** a hero whose line dropped for more than
+  about 2 s of walking was never taken again -- every later packet was
+  measured from where they were last seen, and every answer refused ("Walk up
+  to it first"). Now a hero unheard for `LOST_S` (5 s) is taken where they
+  next say they are, within what they could have walked (`hero`'s `lost`,
+  `moved_ok`'s jump; `placed_ok` moves them and spends the walk). The way
+  across the gap is not checked: a silent client can cross a cliff, no faster
+  than walking.
+- **Match end (uncommitted):** a movement packet arriving after the match
+  ended closed the sender's socket; it is dropped now. `_deposit` runs one at
+  a time.
 - **Joining on a bad line:** `_join_online` retries the session read three
   times and no longer forgets the match on a failed request.
 - **Teams not arriving:** `Match.start_online` now fails with a message
