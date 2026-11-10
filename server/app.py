@@ -71,6 +71,9 @@ ONLINE_S = 60.0
 # player is then held in it (one_game) for the rest of fifteen minutes. A
 # dropped phone is back in seconds; a restarted server counts from its start.
 # 0 turns it off.
+# A socket's token is looked up again this often, not on every message: a
+# hero sends twenty a second. A signed-out token works here that much longer.
+TOKEN_RECHECK_S = 5.0
 ABANDON_S = float(os.environ.get("LAKBAYIN_ABANDON_S", 60))
 
 
@@ -112,6 +115,8 @@ class Store:
         self.db.execute("insert or ignore into checkpoint values(1,?)", (json.dumps({"sessions": {}, "config": {"id": 1, "team_size": 1, "duration_s": 900, "monks": 10, "search_s": 90}}),))
         self.db.commit()
         self.cache, self.version = None, None
+        # Finished matches, parsed once: id -> match, and the last row read.
+        self.past, self.past_row = {}, 0
 
     def load(self):
         # The parsed checkpoint stays in memory; data_version only changes when
@@ -137,9 +142,15 @@ class Store:
         return json.loads(row[0]) if row else None
 
     def archives(self):
-        # ponytail: parses every finished match per Records request; keep a
-        # per-player results table if Records gets slow.
-        return (json.loads(d) for (d,) in self.db.execute("select data from matches"))
+        """Every finished match, each parsed once and kept (they never change
+        again): a Records request reads only the rows added since the last.
+        Callers may hang what they work out on one (rpc's `_ranked`), nothing
+        else."""
+        # ponytail: all of history in memory, a few KB a match; a per-player
+        # results table if that ever gets large.
+        for row, sid, data in self.db.execute("select rowid,id,data from matches where rowid>? order by rowid", (self.past_row,)):
+            self.past[sid], self.past_row = json.loads(data), row
+        return self.past.values()
 
     def user(self, token):
         require(isinstance(token, str) and len(token) <= 512, "Sign in again", 401)
@@ -416,7 +427,13 @@ def rpc(store, state, who, name, body, place=None):
         for s in [*sessions.values(), *store.archives()]:
             if s["state"] != "ended" or not s.get("starts_at"):
                 continue
-            ranked = sorted(player_standings(store, s), key=rank_key)
+            # A finished match's table never changes: worked out once for
+            # an archived one (a live one is a copy, saved as it is).
+            ranked = s.get("_ranked")
+            if ranked is None:
+                ranked = sorted(player_standings(store, s), key=rank_key)
+                if s["id"] not in sessions:
+                    s["_ranked"] = ranked
             for i, p in enumerate(ranked):
                 place = next(j + 1 for j, q in enumerate(ranked) if rank_key(q) == rank_key(p))
                 result = "draw" if not s["winner_team"] else "win" if s["winner_team"] == p["team_id"] else "loss"
@@ -738,14 +755,16 @@ def create_app(db_path=None):
             return None
         if isinstance(maps.get(s["id"]), dict):
             return maps[s["id"]]
-        if not GODOT:
+        if not GODOT or maps.get(s["id"]) is False:   # False: failed, said once
             return None
         if s["id"] not in maps:
             maps[s["id"]] = asyncio.ensure_future(build_map(s))
         try:
             return await asyncio.shield(maps[s["id"]])
         except Exception as e:
-            print(f"map for {s['id']} failed: {e!r}", flush=True)
+            if maps.get(s["id"]) is not False:
+                print(f"map for {s['id']} failed: {e!r}", flush=True)
+                maps[s["id"]] = False
             return None
 
     def record(before, state):
@@ -811,6 +830,7 @@ def create_app(db_path=None):
                     store.db.rollback()
             except Exception:
                 store.db.rollback()
+                store.past, store.past_row = {}, 0   # may hold rows just undone
                 raise
             if state != before:
                 await hub.changes(before, state)
@@ -1001,7 +1021,7 @@ def create_app(db_path=None):
                     if topic != TOPIC:
                         sid = topic.removeprefix(TOPIC + ":snap:")
                         require(topic == TOPIC + ":snap:" + sid and sid in state["sessions"] and may_read(state["sessions"][sid], who), "Private channel denied")
-                    peer.update(who=who, token=token)
+                    peer.update(who=who, token=token, checked=time.monotonic())
                     peer["topics"][topic] = payload.get("config", {})
                     await hub.send(ws, topic, "phx_reply", {"status": "ok", "response": {}}, ref)
                     if topic == TOPIC:
@@ -1010,7 +1030,9 @@ def create_app(db_path=None):
                         await hub.presence()
                     continue
                 require(peer["who"], "Authenticate first", 401)
-                store.user(peer["token"])
+                if time.monotonic() - peer["checked"] >= TOKEN_RECHECK_S:
+                    store.user(peer["token"])
+                    peer["checked"] = time.monotonic()
                 active[peer["who"]] = time.time()
                 if event == "heartbeat":
                     await hub.send(ws, topic, "phx_reply", {"status": "ok", "response": {}}, ref)

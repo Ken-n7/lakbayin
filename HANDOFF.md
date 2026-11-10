@@ -52,7 +52,21 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - **Teams not arriving:** `Match.start_online` now fails with a message
   instead of putting everyone on Blue.
 - Two new server tests (30 total). The client fixes have no test of their own.
-- **Not yet live:** `lakbayin.service` needs a restart, and the APK a rebuild.
+- **Server optimizations (uncommitted):** a socket's token is looked up every
+  `TOKEN_RECHECK_S` (5 s), not per message; finished matches are parsed once
+  and kept (`Store.archives`, `_ranked`): Records with 2,000 matches went
+  from ~320 ms to ~40 ms a request; a failed map build is logged once.
+  The 50 ms movement send rate stays: a 3 v 3 with a spectator (seven
+  windows, position checks on) peaked at 5% of one core on this laptop.
+- **Tested Nov 10:** 30 server tests, 12 Godot suites; `flow_shots.py` room
+  scenario with 7 clients, with and without `FLOW_CHECKS`; on the Realme
+  against the live server process (over `adb reverse`, the phone was in
+  airplane mode), a Find Match game whose opponent never connected ended
+  after 60 s and showed Results (Draw 0-0).
+- **Live:** `lakbayin.service` was restarted on this code. `build/Lakbayin.apk`
+  (debug, public server address) is rebuilt and on the Realme; the release
+  APK is not rebuilt. Live config is still `team_size = 1`. Two test
+  accounts were made on the live server (`t_phone_*`, `t_ghost_*`).
 
 ### Deferred: database backups (user chose to postpone, Oct 24)
 - `server/data/lakbayin.sqlite3` has **no automatic backup** and exists only
