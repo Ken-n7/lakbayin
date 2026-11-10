@@ -118,7 +118,11 @@ func _subtitle(teams: Array) -> String:
 	by_side.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.index) < int(b.index))
 	if by_side.size() < 2:
 		return "%s %d" % [by_side[0].name, by_side[0].deposited]
-	return "%s  %d  –  %d  %s" % [by_side[0].name, by_side[0].deposited, by_side[1].deposited, by_side[1].name]
+	var score := "%s  %d  –  %d  %s" % [by_side[0].name, by_side[0].deposited, by_side[1].deposited, by_side[1].name]
+	for t: Dictionary in by_side:
+		if t.get("forfeit") == true:
+			score += "  ·  %s left the match" % t.name
+	return score
 
 
 ## Both sides as tables, Bughaw left and Pula right: hero, name, words
@@ -261,11 +265,13 @@ func _title(teams: Array) -> Array:
 	return ["Defeat", Pal.WRONG]
 
 
-## A team's or player's place, as something that sorts: finished first, then
-## words, then the sooner that total was reached (never reached sorts last).
+## A team's or player's place, as something that sorts: a side that left the
+## match (forfeit) last whatever its score, then finished first, then words,
+## then the sooner that total was reached (never reached sorts last).
 static func _rank_key(r: Dictionary) -> Array:
 	var at := float(r.get("reached_s", -1))
-	return [0 if r.get("finished") == true else 1, -int(r.get("deposited", 0)),
+	return [1 if r.get("forfeit") == true else 0,
+		0 if r.get("finished") == true else 1, -int(r.get("deposited", 0)),
 		at if at >= 0.0 else INF]
 
 
@@ -299,7 +305,8 @@ static func _seconds_in(stamp: Variant, start: float) -> float:
 static func _team_standing(row: Dictionary, index: int, start: float) -> Dictionary:
 	return {"name": str(row.name), "index": index, "deposited": int(row.deposited),
 		# SQL returns null for finished when the match has no winner_team.
-		"finished": row.get("finished") == true, "reached_s": _seconds_in(row.reached_at, start)}
+		"finished": row.get("finished") == true, "forfeit": row.get("forfeit") == true,
+		"reached_s": _seconds_in(row.reached_at, start)}
 
 
 ## {teams, players}, ranked, from the server's standings.

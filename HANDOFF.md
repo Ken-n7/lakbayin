@@ -42,11 +42,13 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - **Viewer movement delay:** the delayed copy sent the sender's *latest*
   socket message, not the packet from a minute before (`app.py`, the
   `call_later` lambda now binds topic and payload).
-- **Deserted matches:** a running match one side has been off for
-  `ABANDON_S` (60 s, `LAKBAYIN_ABANDON_S`, 0 = off) ends with the score
-  standing (`abandon` in the ticker; DESIGN.md 3.4). "Off" = no socket of that
-  side on the match's snap channel. Not a forfeit: Results reads the winner
-  off the standings, so a walkover would need a client change too.
+- **Forfeit (uncommitted):** a running match one side has been off for
+  `ABANDON_S` (60 s, `LAKBAYIN_ABANDON_S`, 0 = off) ends and the side that
+  stayed wins (`abandon` in the ticker sets `winner_team` and `forfeit_by`;
+  DESIGN.md 3.4). "Off" = no socket of that side on the match's snap channel.
+  Both sides off: ends with the score standing. `team_standings` rows carry
+  `forfeit`; `ResultsScreen._rank_key` sorts a forfeiting side last, so the
+  title, WINNER tag and "<side> left the match" all follow from it.
 - **Joining on a bad line:** `_join_online` retries the session read three
   times and no longer forgets the match on a failed request.
 - **Teams not arriving:** `Match.start_online` now fails with a message
@@ -65,8 +67,11 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   after 60 s and showed Results (Draw 0-0).
 - **Live:** `lakbayin.service` was restarted on this code. `build/Lakbayin.apk`
   (debug, public server address) is rebuilt and on the Realme; the release
-  APK is not rebuilt. Live config is still `team_size = 1`. Two test
-  accounts were made on the live server (`t_phone_*`, `t_ghost_*`).
+  APK is not rebuilt. Live config is `team_size = 3` since Nov 10 (a fresh
+  database still starts at 1). Test accounts on the live server:
+  `t_phone_*`, five `t_ghost_*`. Forfeit checked on the Realme the same way:
+  a live 3 v 3 Find Match, the other side never connected, Results said
+  Victory, "Pula left the match" (31 server tests, match suite 47).
 
 ### Deferred: database backups (user chose to postpone, Oct 24)
 - `server/data/lakbayin.sqlite3` has **no automatic backup** and exists only

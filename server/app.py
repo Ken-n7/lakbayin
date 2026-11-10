@@ -67,10 +67,11 @@ REACH_SLACK = 16.0
 # 20 s, lobbies every 3 s, a match's socket every few seconds.
 ONLINE_S = 60.0
 # A running match one whole side has left -- nobody of it connected to the
-# match for this long -- ends as if its clock ran out: the score stands. No
-# player is then held in it (one_game) for the rest of fifteen minutes. A
-# dropped phone is back in seconds; a restarted server counts from its start.
-# 0 turns it off.
+# match for this long -- is forfeited: it ends and the side that stayed wins,
+# whatever the score (`forfeit_by`, the side that left). Both sides gone: it
+# ends as if its clock ran out, the score standing. No player is then held in
+# it (one_game) for the rest of fifteen minutes. A dropped phone is back in
+# seconds; a restarted server counts from its start. 0 turns it off.
 # A socket's token is looked up again this often, not on every message: a
 # hero sends twenty a second. A signed-out token works here that much longer.
 TOKEN_RECHECK_S = 5.0
@@ -201,7 +202,7 @@ def standings(s):
     for t in s["teams"]:
         answers = [a for a in s["answers"] if a["team_id"] == t["id"]]
         deposited = [a for a in answers if a["deposited_at"] is not None]
-        out.append({**t, "team_id": t["id"], "deposited": len(deposited), "carried": len(answers) - len(deposited), "reached_at": max((a["deposited_at"] for a in deposited), default=None), "finished": len(deposited) == len(s["words"])})
+        out.append({**t, "team_id": t["id"], "deposited": len(deposited), "carried": len(answers) - len(deposited), "reached_at": max((a["deposited_at"] for a in deposited), default=None), "finished": len(deposited) == len(s["words"]), "forfeit": s.get("forfeit_by") == t["id"]})
     return out
 
 
@@ -857,15 +858,22 @@ def create_app(db_path=None):
             if s["state"] != "running":
                 continue
             on = here.get(TOPIC + ":snap:" + sid, ())
+            gone = []
             for t in s["teams"]:
                 key = (sid, t["id"])
                 live.add(key)
                 if any(m["team_id"] == t["id"] and who in on for who, m in s["members"].items()):
                     absent.pop(key, None)
                 elif ABANDON_S and now - absent.setdefault(key, now) >= ABANDON_S:
-                    print(f"match {sid} abandoned by {t['name']}", flush=True)
-                    s["deadline"] = now
-            finish(s)
+                    gone.append(t)
+            if len(gone) == 1:
+                print(f"match {sid} forfeited by {gone[0]['name']}", flush=True)
+                s.update(state="ended", completed_at=stamp(), forfeit_by=gone[0]["id"],
+                         winner_team=next(t["id"] for t in s["teams"] if t["id"] != gone[0]["id"]))
+            elif gone:
+                print(f"match {sid} abandoned by both sides", flush=True)
+                s["deadline"] = now
+                finish(s)
         for key in [k for k in absent if k not in live]:
             del absent[key]
 

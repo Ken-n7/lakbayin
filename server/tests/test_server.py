@@ -366,7 +366,7 @@ class ServerTest(unittest.TestCase):
             got=two.receive_json()
             self.assertEqual((got['topic'],got['payload'].get('payload')),(topic,data))
 
-    def test_match_a_side_left_ends_with_the_score_standing(self):
+    def test_match_a_side_left_is_forfeited_to_the_side_that_stayed(self):
         self.addCleanup(setattr, appmod, 'ABANDON_S', appmod.ABANDON_S)
         appmod.ABANDON_S = 1.5
         s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
@@ -383,10 +383,26 @@ class ServerTest(unittest.TestCase):
             time.sleep(4)                                       # user 1's side gone
             ended=state()
         self.assertEqual(ended['state'],'ended')
-        # The score stands: the side that left had the only word.
-        team1=self.app.state.store.load()['sessions'][sid]['members'][self.users[1]['user']['id']]['team_id']
-        self.assertEqual(ended['winner_team'],team1)
+        # The side that left had the only word, and still loses.
+        members=self.app.state.store.load()['sessions'][sid]['members']
+        left,stayed=(members[self.users[n]['user']['id']]['team_id'] for n in (1,0))
+        self.assertEqual((ended['winner_team'],ended['forfeit_by']),(stayed,left))
+        rows={t['team_id']:t for t in self.request(0,'GET',f'/rest/v1/team_standings?session_id=eq.{sid}').json()}
+        self.assertTrue(rows[left]['forfeit'] and not rows[stayed]['forfeit'] and rows[left]['deposited']==1)
+        mine=self.rpc(0,'my_matches').json()[0]; theirs=self.rpc(1,'my_matches').json()[0]
+        self.assertEqual((mine['result'],theirs['result']),('win','loss'))
         self.assertEqual(self.rpc(0,'create_room').status_code,200)   # nobody is held in it
+
+    def test_match_both_sides_left_ends_with_the_score_standing(self):
+        self.addCleanup(setattr, appmod, 'ABANDON_S', appmod.ABANDON_S)
+        appmod.ABANDON_S = 1.0
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        w=self.app.state.store.load()['sessions'][sid]['words'][0]
+        self.rpc(1,'answer_monk',p_session=sid,p_monk=0,p_typed=w['modern']); self.rpc(1,'deposit',p_session=sid)
+        time.sleep(3.5)
+        ended=self.request(0,'GET',f'/rest/v1/sessions?id=eq.{sid}').json()[0]
+        team1=self.app.state.store.load()['sessions'][sid]['members'][self.users[1]['user']['id']]['team_id']
+        self.assertEqual((ended['state'],ended['winner_team'],ended.get('forfeit_by')),('ended',team1,None))
 
     def test_websocket_score_events(self):
         s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)

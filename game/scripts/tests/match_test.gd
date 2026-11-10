@@ -161,6 +161,14 @@ func _online_standings() -> void:
 	red.reached_s = -1.0
 	ordered = results_script.ranked([red, blue])
 	check("online results: deposited words outrank an empty team", ordered[0].name == "Blue")
+	# A side that left the match loses it, whatever it had deposited.
+	var quit: Dictionary = results_script._team_standing({"name": "Blue", "deposited": 5,
+		"finished": false, "forfeit": true, "reached_at": "2026-10-23T10:00:30+00:00"}, 0, start)
+	var stayed: Dictionary = results_script._team_standing({"name": "Red", "deposited": 0,
+		"finished": false, "forfeit": false, "reached_at": null}, 1, start)
+	ordered = results_script.ranked([quit, stayed])
+	check("online results: a forfeiting team ranks last with more words",
+		ordered[0].name == "Red" and results_script._rank_key(quit) != results_script._rank_key(stayed))
 	# Ranking also tolerates nullable or absent flags, while true still wins.
 	ordered = results_script.ranked([
 		{"name": "unfinished", "finished": null, "deposited": 2, "reached_s": 10.0},

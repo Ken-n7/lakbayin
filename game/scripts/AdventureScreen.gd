@@ -294,6 +294,9 @@ func _on_row(table: String, type: String, record: Dictionary) -> void:
 			if str(record.get("state", "")) == "ended":
 				var won := play.team_ids.find(str(record.get("winner_team", "")))
 				play.winner = won
+				var left := play.team_ids.find(str(record.get("forfeit_by", "")))
+				if left >= 0:
+					hud.announce("%s left the match" % Match.NAMES[left])
 				finish("finished" if won >= 0 else "ended")
 			else:
 				Game.apply_session(record)
