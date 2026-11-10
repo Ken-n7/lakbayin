@@ -122,15 +122,13 @@ func _join_online() -> String:
 	# match kept for the next try. Only the server saying so forgets it.
 	var got := {}
 	for _try in 3:
-		got = await Net.rest(HTTPClient.METHOD_GET,
-			Teams.SESSIONS + "?select=*&id=eq." + Game.joined_session)
+		got = await Teams.session_read(Game.joined_session)
 		if got.error == "" or not is_instance_valid(self):
 			break
 		await get_tree().create_timer(1.5).timeout
 	if got.error != "":
 		return "Could not reach the match. Check your connection."
-	var rows: Array = got.data if got.data is Array else []
-	var session: Dictionary = rows[0] if not rows.is_empty() else {}
+	var session: Dictionary = got.session
 	if session.is_empty() or Teams.expired(session):
 		Game.joined_session = ""
 		Game.save_profile()

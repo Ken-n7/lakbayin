@@ -157,9 +157,15 @@ func _rejoin_match() -> void:
 	_joining = true
 	_join_version += 1
 	var version := _join_version
-	var session: Dictionary = await Teams.session(Game.joined_session)
+	var got: Dictionary = await Teams.session_read(Game.joined_session)
 	if not is_instance_valid(self) or version != _join_version:
 		return
+	if got.error != "":
+		# Not reached, not gone: the match is kept for the next try.
+		_joining = false
+		_say("Could not reach the server. Check your connection.", Pal.WRONG)
+		return
+	var session: Dictionary = got.session
 	if bool(session.get("custom", false)):
 		_joining = false      # a room's: RoomScreen goes back to it
 		return
@@ -809,5 +815,11 @@ func _say(text: String, col: Color) -> void:
 		_msg.add_theme_color_override("font_color", col)
 
 
+## Android's back. In a lobby or a queue it is Leave / Cancel: going Home
+## and staying a member left a place nobody was in, and a match could start
+## with it. Once the match has started there is no way out but playing it.
 func go_back() -> void:
-	main.open("home")
+	if _session.is_empty():
+		main.open("home")
+	elif str(_session.get("state", "")) == "lobby":
+		_leave()

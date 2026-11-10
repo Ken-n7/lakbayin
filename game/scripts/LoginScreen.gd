@@ -53,6 +53,8 @@ func setup(_data: Dictionary) -> void:
 
 
 func _submit() -> void:
+	if _go.disabled:            # Enter again while the first is on its way
+		return
 	if _email.text.strip_edges().is_empty() or _pass.text.is_empty():
 		_say("Enter your username and password.")
 		return

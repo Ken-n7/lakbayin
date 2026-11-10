@@ -60,6 +60,15 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - **Match end (uncommitted):** a movement packet arriving after the match
   ended closed the sender's socket; it is dropped now. `_deposit` runs one at
   a time.
+- **Menus (uncommitted):** Android's back in a lobby or the Find Match
+  queue is now Leave / Cancel (`TeamNameScreen.go_back`; it went Home and
+  left the place taken, so a match could start with nobody in it), and does
+  nothing once the match has started. `_rejoin_match` no longer forgets the
+  match on a failed request (`Teams.session_read`). Login and Register
+  ignore a second Enter while the first is on its way.
+- **Realme:** unplugged mid-session with a USB test build on it that points
+  at `127.0.0.1:8000` -- it cannot reach the server on its own. Reinstall
+  `build/Lakbayin.apk` (`game/tools/device.sh install`).
 - **Joining on a bad line:** `_join_online` retries the session read three
   times and no longer forgets the match on a failed request.
 - **Teams not arriving:** `Match.start_online` now fails with a message

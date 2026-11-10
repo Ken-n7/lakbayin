@@ -88,6 +88,15 @@ static func session(session_id: String) -> Dictionary:
 	return rows[0] if got.error == "" and not rows.is_empty() else {}
 
 
+## The same read, with a failed request told apart from a session that is
+## gone: {error, session}. A phone must not forget its match over a bad line.
+static func session_read(session_id: String) -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
+		SESSIONS + "?select=*&id=eq." + session_id)
+	var rows: Array = got.data if got.data is Array else []
+	return {"error": got.error, "session": rows[0] if got.error == "" and not rows.is_empty() else {}}
+
+
 ## A run whose deadline has passed is over whether or not anybody set its state
 ## to `ended`. Without this a student joining tomorrow lands in yesterday's
 ## adventure, with a clock that reads 00:00 and a board that will not start.

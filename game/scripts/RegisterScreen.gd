@@ -63,6 +63,8 @@ func setup(_data: Dictionary) -> void:
 ## Checked here as well as in Postgres: a round trip to say "too short" is a
 ## round trip the classroom's connection does not need to make.
 func _submit() -> void:
+	if _go.disabled:            # Enter again while the first is on its way
+		return
 	var user := _user.text.strip_edges()
 	if not RegEx.create_from_string("^[A-Za-z0-9_-]{3,20}$").search(user):
 		_err("Username: 3-20 letters, digits, _ or - only.")
