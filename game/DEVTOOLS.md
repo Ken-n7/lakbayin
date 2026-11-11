@@ -53,6 +53,7 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 | `logo_shot.tscn` | the logo and the app icon's layers |
 | `server/tests/slow_proxy.py` | a bad line to test through: delay, jitter, a bandwidth cap, freezes. `FLOW_SLOW="--delay 150 --handshake 3 --stall 20,6"` runs `flow_shots.py`'s clients through one; its `timing` lines say how long joining a match and its results took |
 | `WORLD_SEEDS=400` | with `scripts/tests/world_test.tscn`: that many more random maps through every world rule (`WORLD_SEED_FROM=N` for other ones). About 1 s a map; do it before an event and after touching `WorldGen` |
+| `net_check.tscn` | six small calls to the server, timed -- how quick the line is from here, and whether calls go over a kept connection |
 | `map_export.tscn`, `walk_export.tscn` | a match's map for the server, and honest walks on it for the server's tests |
 | `make_words.py`, `make_icons.py`, `fix_glyphs.py`, `tune_fonts.py` | the word list, the menu icons, glyph and font fixes |
 | `showcase.py` (`showcase.tscn`, `Recorder.gd`) | footage for the videos: a real 3 v 3 on a throwaway server, scripted players (`match`: the hero's phone view from Home through How to Play to the Records; `room`: a spectator's custom room), recorded live at 1080p with the sound effects on their own track and timed marks |

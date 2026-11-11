@@ -48,6 +48,7 @@ run "keyboard    " res://scripts/tests/keyboard_test.tscn
 run "backdrop    " res://scripts/tests/backdrop_test.tscn
 run "baybayin    " res://scripts/tests/baybayin_test.tscn
 run "multiplayer " res://scripts/tests/multiplayer_test.tscn
+run "http        " res://scripts/tests/http_test.tscn
 run "layout      " res://tools/layout.tscn
 
 [[ $fail -eq 0 ]] && echo "all suites green" || echo "SUITES FAILED"

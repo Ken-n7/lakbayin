@@ -37,22 +37,24 @@ func _init() -> void:
 	url = _conf("LAKBAYIN_SERVER_URL", "lakbayin/server/url").rstrip("/")
 
 
-## One `HTTPRequest` per call, not one for the client.
-##
-## A single shared node refuses a second request while the first is in flight
-## -- "HTTPRequest is processing a request" -- and the map issues two at once
-## every time it opens. It failed only on the phone, because that is the
-## first place two requests raced in earnest.
-func _new_http() -> HTTPRequest:
-	var req := HTTPRequest.new()
-	# Godot's default is no timeout at all: on a dying connection a request
-	# hung for good, and every call queued behind it with it.
-	req.timeout = REQUEST_TIMEOUT_S
-	add_child(req)
-	return req
-
-
+## Every call's connection, kept between calls (HttpPool). Calls in flight
+## together each get their own -- the map issues two at once every time it
+## opens, and a single shared `HTTPRequest` refused the second.
+var pool := HttpPool.new()
+## No timeout at all, Godot's default, hung a call for good on a dying
+## connection, and every call queued behind it with it.
 const REQUEST_TIMEOUT_S := 12.0
+## A match keeps a connection warm: with nothing said for this long a small
+## call goes out, so the next answer at a monk finds one open (AdventureScreen
+## sets `warm`).
+const WARM_EVERY_S := 20.0
+var warm := false
+var _last_call_at := 0.0
+
+
+func _process(_delta: float) -> void:
+	if warm and signed_in() and Time.get_ticks_msec() / 1000.0 - _last_call_at > WARM_EVERY_S:
+		_call(HTTPClient.METHOD_GET, "/health", null)
 ## The error of a call that never reached the server (or whose reply never
 ## came back) -- told apart from the server saying no.
 const NO_CONNECTION := "No connection"
@@ -163,6 +165,8 @@ func sign_out() -> void:
 		_call(HTTPClient.METHOD_POST, "/auth/logout", {}, access_token)
 	if is_instance_valid(_realtime):
 		_realtime.close_socket()
+	warm = false
+	pool.clear()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SESSION_PATH))
 	refresh_token = ""
 	access_token = ""
@@ -247,20 +251,16 @@ func _call(method: int, path: String, body: Variant, as_token := "") -> Dictiona
 	# certificate and the Host header.
 	var host := Dial.host_of(url)
 	var at := await Dial.address(host)
-	var http := _new_http()
 	var target := url
+	var tls: TLSOptions = null
 	if at != "":
 		target = url.replace("://" + host, "://" + at)
-		http.set_tls_options(TLSOptions.client(null, host))
+		tls = TLSOptions.client(null, host)
 		headers.append("Host: " + host)
 	var payload := "" if body == null else JSON.stringify(body)
 	var sent := Time.get_unix_time_from_system()
-	var err := http.request(target + path, headers, method, payload)
-	if err != OK:
-		http.queue_free()
-		return {"error": NO_CONNECTION, "data": null, "network": true, "maybe_sent": false}
-	var res: Array = await http.request_completed
-	http.queue_free()
+	_last_call_at = Time.get_ticks_msec() / 1000.0
+	var res: Array = await pool.send(target, tls, method, path, PackedStringArray(headers), payload, REQUEST_TIMEOUT_S)
 	# Never reached the server -- no connection, or the timeout above. Said
 	# apart from a refusal, so a scoring call is retried rather than dropped.
 	if int(res[0]) != HTTPRequest.RESULT_SUCCESS:

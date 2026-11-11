@@ -57,9 +57,19 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - **Bursts after a freeze:** `BURST_S` 2 -> 5 and a lost hero keeps the time
   they were away (`LOST_BANK_S`): on a line freezing 6 s in every 20, dropped
   movement went from 113 packets a match to 17.
-- Not done: reusing connections (every call still pays its own TCP + TLS
-  setup; `HTTPRequest` closes after each -- an `HTTPClient` pool would take
-  an answer from about 4 round trips to 1).
+- **Kept connections (Nov 11, uncommitted):** every call goes over
+  `HttpPool` (`game/scripts/net/HttpPool.gd`, `Backend.pool`), not a new
+  `HTTPRequest` each: a connection is kept 45 s and used again; one the far
+  end let go of is given 5 s, then the call is made once more on a new one.
+  A match keeps one warm with a `/health` every 20 s of silence
+  (`Net.warm`). Measured: over the public address the first call 319 ms, the
+  next five about 60 ms; through `slow_proxy.py` an answer at a monk on a
+  300 ms round trip 1.2 s -> 0.47 s, on 800 ms 3.2 s -> 1.2 s; joining
+  7.5 s -> 1-2 s. `http_test` (12 checks, its own HTTP server) is in
+  `run_tests.sh`; `tools/net_check.tscn` times six calls to the server from
+  wherever it is run. `run.sh` has `--timeout-keep-alive 75`. Checked on the
+  Realme over the public address: sign-in restore, a Find Match game, forfeit,
+  Results. No gzip is asked for (`HTTPRequest` did): answers are a few KB.
 
 ### The booth (Nov 10, uncommitted)
 - For the finals the user runs a booth: two of their own phones for

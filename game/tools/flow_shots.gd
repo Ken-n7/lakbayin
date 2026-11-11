@@ -127,10 +127,13 @@ func _ready() -> void:
 		await _wait(2.0)
 		await _shot("match_carrying")
 		# Finish: the rest answered and everything deposited.
+		var t_ans := Time.get_ticks_msec()
 		for i in range(1, screen.play.words.size()):
 			var r: String = await Monks.answer(screen.play.session_id, i, _spelling(screen.play.words[i]))
 			if r != "correct":
 				push_error(r)
+		print("timing p%d answer_ms=%d  (connections made %d, calls over a kept one %d)" % [index,
+			(Time.get_ticks_msec() - t_ans) / (screen.play.words.size() - 1), Net.pool.opened, Net.pool.reused])
 		await Monks.deposit(screen.play.session_id)
 	else:
 		await _wait(4.0)

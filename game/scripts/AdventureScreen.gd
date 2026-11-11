@@ -174,6 +174,7 @@ func _exit_tree() -> void:
 	if _frozen:
 		Game.clock_paused = false
 	if not play.practice:
+		Net.warm = false
 		var rt := Net.realtime()
 		if rt.presence_changed.is_connected(_refresh_busy):
 			rt.presence_changed.disconnect(_refresh_busy)
@@ -268,6 +269,7 @@ func _go_live() -> void:
 	if not rt.presence_changed.is_connected(_refresh_busy):
 		rt.presence_changed.connect(_refresh_busy)
 	_publish_activity(-1)
+	Net.warm = true
 	rt.watch_positions([Realtime.snap_topic(sid)])
 	_show_peers(play.roster)          # read with the match: no call of its own
 
@@ -1022,6 +1024,7 @@ func finish(reason: String) -> void:
 	Sfx.play("victory_gate" if won == play.team else ("time_up" if reason == "time" else "ended"))
 	hud.set_prompt(head)
 	if not play.practice:
+		Net.warm = false
 		Net.realtime().watch_positions([])
 		Net.realtime().untrack()
 		Game.joined_session = ""
