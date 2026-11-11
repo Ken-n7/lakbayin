@@ -132,8 +132,8 @@ unchanged.
   `python -m server.manage config --team-size N --hints on|off` does the same
   from here.
 - **Installing.** `/get` is a download page for `build/Lakbayin-release.apk`
-  (`game/tools/device.sh release`). `python -m server.booth [--wifi NAME
-  PASSWORD] [--link URL]` opens a sheet of QR codes: the install page, and
+  (`game/tools/device.sh release`). `server/booth.py` (on the development laptop only, not in the repository)
+  `[--wifi NAME PASSWORD] [--link URL]` opens a sheet of QR codes: the install page, and
   optionally a network to join first.
 - **Parked: local network.** Branch `lan-fallback` has the app finding this
   server on the local network when the public address fails (no internet

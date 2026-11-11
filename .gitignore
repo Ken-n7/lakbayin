@@ -42,3 +42,26 @@ server/.venv/
 # Deploy keys
 server-cred/
 *.pem
+
+# Tools kept on this machine only: video, screenshots, the poster and logo,
+# asset and word-list generation, the booth's QR sheet. Not needed to run
+# the game or the server, or to test them (game/DEVTOOLS.md lists them).
+game/tools/Recorder.gd*
+game/tools/showcase.*
+game/tools/cards.*
+game/tools/edit.py
+game/tools/backdrop_shot.*
+game/tools/button_gallery.*
+game/tools/collision_shot.*
+game/tools/guide_moments.*
+game/tools/guide_shot.*
+game/tools/guide_shots.py
+game/tools/logo_shot.*
+game/tools/ui_shot.*
+game/tools/make_icons.py
+game/tools/make_words.py
+game/tools/fix_glyphs.py
+game/tools/tune_fonts.py
+game/tools/poster_art.*
+game/tools/poster.py
+server/booth.py

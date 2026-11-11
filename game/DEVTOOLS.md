@@ -42,6 +42,18 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 
 ## Tools (`game/tools/`)
 
+In the repository: what the game, the server and the tests need --
+`run_tests.sh`, `layout.tscn`, `map_export.tscn`, `walk_export.tscn` -- and
+`device.sh`, `flow_shots`, `net_check` and `server/tests/slow_proxy.py`.
+
+**On the development laptop only** (in `.gitignore`, not in the repository;
+git history still has the older ones): the video tools (`showcase`,
+`Recorder.gd`, `cards`, `edit.py`), the screenshot tools (`*_shot`,
+`button_gallery`, `guide_moments`, `guide_shots.py`), the poster and logo
+(`poster_art`, `poster.py`), asset and word-list generation (`make_icons.py`,
+`make_words.py`, `fix_glyphs.py`, `tune_fonts.py`) and `server/booth.py`.
+Back them up with the rest of the laptop; a fresh clone does not have them.
+
 | Tool | Does |
 |---|---|
 | `run_tests.sh` | every Godot test suite, one exit code (the server's: `server/tests`) |
@@ -53,6 +65,7 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 | `logo_shot.tscn` | the logo and the app icon's layers |
 | `server/tests/slow_proxy.py` | a bad line to test through: delay, jitter, a bandwidth cap, freezes. `FLOW_SLOW="--delay 150 --handshake 3 --stall 20,6"` runs `flow_shots.py`'s clients through one; its `timing` lines say how long joining a match and its results took |
 | `WORLD_SEEDS=400` | with `scripts/tests/world_test.tscn`: that many more random maps through every world rule (`WORLD_SEED_FROM=N` for other ones). About 1 s a map; do it before an event and after touching `WorldGen` |
+| `poster_art.tscn` + `poster.py` | the 30 x 48 in poster (the monk casting before the Monastery, the two sides facing him, the title at the foot) and the logo (the name in Baybayin over the monk, on navy and transparent), all from the game's own art: `godot --path game res://tools/poster_art.tscn -- /tmp/lakbayin-poster/art` (windowed) draws the pieces, `python3 game/tools/poster.py /tmp/lakbayin-poster/art build/poster` lays them out (PNG and PDF at 150 dpi; logo at 2048/1024/512) |
 | `net_check.tscn` | six small calls to the server, timed -- how quick the line is from here, and whether calls go over a kept connection |
 | `map_export.tscn`, `walk_export.tscn` | a match's map for the server, and honest walks on it for the server's tests |
 | `make_words.py`, `make_icons.py`, `fix_glyphs.py`, `tune_fonts.py` | the word list, the menu icons, glyph and font fixes |
