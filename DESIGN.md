@@ -92,6 +92,14 @@ explore the map ─► find a monk ─► type its word in Baybayin ─► carry
 - When it ends, everyone sees an **aerial view** of the whole map, then the
   results screen.
 - Match clock: **15 minutes**. Default monk count: **10**.
+- **Find Match's settings** are the server's, changed by an admin from the
+  app (Home → Settings → Control, shown to admin accounts only) or from the
+  laptop (`python -m server.manage config`): **team size 1 v 1 to 5 v 5**,
+  and **keypad letters** (the Latin syllable under each key) on or off. A
+  lobby copies both when it is made: a change reaches the next lobby, never a
+  match or a queue under way. A custom room's host still sets the room's own
+  letters. An account becomes an admin only from the laptop
+  (`python -m server.manage admin NAME`).
 - **Forfeit.** If nobody of a side has been connected to the match for
   **60 s**, that side forfeits: the match ends and the **side that stayed
   wins**, whatever the score. Results say "<side> left the match"; Records

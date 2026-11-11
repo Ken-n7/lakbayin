@@ -217,6 +217,14 @@ static func set_room_hints(session_id: String, on: bool) -> String:
 	return got.error
 
 
+## The booth's control panel (admins only; server/app.py `control`): reads
+## Find Match's settings and who is playing, and sets what `change` names --
+## {p_team_size: 1-5, p_hints: bool}. {error, data}.
+static func control(change := {}) -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/control", change)
+	return {"error": got.error, "data": got.data if got.data is Dictionary else {}}
+
+
 ## Authoritative room heartbeat and roster; only members may check in.
 static func poll_room(session_id: String) -> Dictionary:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/poll_room",
@@ -295,13 +303,19 @@ static func everyone(session_id: String) -> Array:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
 		MEMBERS + "?select=profile_id,team_id,items_done,gems,eliminated,"
 		+ "profiles(username)&session_id=eq." + session_id)
+	return roster(got.data if got.data is Array else [])
+
+
+## Members rows as the board draws them. The name is in `profiles` on a
+## table read, on the row itself in `match_state`.
+static func roster(rows: Array) -> Array:
 	var out: Array = []
-	for row: Dictionary in (got.data if got.data is Array else []):
+	for row: Dictionary in rows:
 		var who: Variant = row.get("profiles")
 		out.append({
 			"profile_id": str(row.get("profile_id", "")),
 			"team_id": "" if row.get("team_id") == null else str(row.get("team_id")),
-			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else "?",
+			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else str(row.get("username", "?")),
 			"items_done": int(row.get("items_done", 0)),
 			"gems": int(row.get("gems", 0)),
 			"eliminated": bool(row.get("eliminated", false)),

@@ -35,6 +35,10 @@ var reached_s := -1.0
 var team_reached_s := [-1.0, -1.0]
 ## The team that deposited every word, or -1.
 var winner := -1
+## Online, from the last read: the session's row, and everyone in it as
+## `Teams.roster` rows.
+var row := {}
+var roster: Array = []
 
 
 # --- Asking -----------------------------------------------------------------
@@ -98,33 +102,39 @@ func start_online(session: String) -> String:
 	practice = false
 	session_id = session
 	seed = Game.seed_of(session)
-	words = await Monks.words_of(session)
-	if words.is_empty():
-		return "The match's words did not arrive"
-	team_ids.clear()
-	for t: Dictionary in await Teams.teams_of(session):
-		team_ids.append(str(t.get("id", "")))
-	# Without them every player read as Blue, on the wrong spawn, with a
-	# board deaf to every score.
-	if team_ids.size() < 2:
-		return "The match's teams did not arrive"
-	var mine: Dictionary = await Teams.membership(session)
-	if mine.has("error"):
-		return str(mine.error)
-	team = maxi(team_ids.find(str(mine.get("team_id", ""))), 0)
 	return await reload()
 
 
-## Every answer in the match, read again: on start, and when the socket comes
-## back from a drop and may have missed some.
+## The whole match read again, in one call (Monks.state): on start, and when
+## the socket comes back from a drop and may have missed some. "" or what
+## went wrong -- Net.NO_CONNECTION when the server was not reached.
 func reload() -> String:
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		"/rest/v1/monk_answers?select=team_id,monk,profile_id,deposited_at&session_id=eq." + session_id)
+	var got: Dictionary = await Monks.state(session_id)
 	if got.error != "":
-		return got.error
+		return Net.NO_CONNECTION if got.network else str(got.error)
+	var d: Dictionary = got.data
+	var ids: Array[String] = []
+	for t: Variant in d.get("teams", []):
+		if t is Dictionary:
+			ids.append(str(t.get("id", "")))
+	var said: Array = d.get("words", []) if d.get("words") is Array else []
+	if said.is_empty():
+		return "The match's words did not arrive"
+	# Without them every player read as Blue, on the wrong spawn, with a
+	# board deaf to every score.
+	if ids.size() < 2:
+		return "The match's teams did not arrive"
+	words = said
+	team_ids = ids
+	row = d.get("session", {}) if d.get("session") is Dictionary else {}
+	roster = Teams.roster(d.get("members", []) if d.get("members") is Array else [])
+	for m: Dictionary in roster:
+		if str(m.profile_id) == Net.user_id:
+			team = maxi(team_ids.find(str(m.team_id)), 0)
 	answers.clear()
-	for row: Dictionary in (got.data if got.data is Array else []):
-		take_row("INSERT", row, false)
+	for a: Variant in (d.get("answers", []) if d.get("answers") is Array else []):
+		if a is Dictionary:
+			take_row("INSERT", a, false)
 	changed.emit()
 	return ""
 

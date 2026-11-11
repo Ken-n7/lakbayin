@@ -120,20 +120,21 @@ func setup(data: Dictionary) -> void:
 func _join_online() -> String:
 	# A request that failed is not a match that is gone: asked again, and the
 	# match kept for the next try. Only the server saying so forgets it.
-	var got := {}
+	# One read brings the whole match (Match.reload).
+	var err := ""
 	for _try in 3:
-		got = await Teams.session_read(Game.joined_session)
-		if got.error == "" or not is_instance_valid(self):
+		err = await play.start_online(Game.joined_session)
+		if err != Net.NO_CONNECTION or not is_instance_valid(self):
 			break
 		await get_tree().create_timer(1.5).timeout
-	if got.error != "":
+	if err == Net.NO_CONNECTION:
 		return "Could not reach the match. Check your connection."
-	var session: Dictionary = got.session
-	if session.is_empty() or Teams.expired(session):
+	var session: Dictionary = play.row
+	# Gone, or not this player's: the server said so.
+	if err in ["No such session", "Not a member or viewer"] or (err == "" and Teams.expired(session)):
 		Game.joined_session = ""
 		Game.save_profile()
 		return "That match is over."
-	var err: String = await play.start_online(str(session.id))
 	if err != "":
 		return err
 	Game.begin_adventure(int(session.get("duration_s", PRACTICE_S)))
@@ -268,7 +269,7 @@ func _go_live() -> void:
 		rt.presence_changed.connect(_refresh_busy)
 	_publish_activity(-1)
 	rt.watch_positions([Realtime.snap_topic(sid)])
-	_refresh_peers()
+	_show_peers(play.roster)          # read with the match: no call of its own
 
 
 func _on_row(table: String, type: String, record: Dictionary) -> void:
@@ -304,10 +305,10 @@ func _on_row(table: String, type: String, record: Dictionary) -> void:
 func _resync() -> void:
 	if play.practice or _ending:
 		return
-	await play.reload()
-	var session: Dictionary = await Teams.session(play.session_id)
-	if is_instance_valid(self) and not session.is_empty():
-		_on_row("sessions", "UPDATE", session)
+	var err := await play.reload()
+	if is_instance_valid(self) and err == "" and not play.row.is_empty():
+		_show_peers(play.roster)
+		_on_row("sessions", "UPDATE", play.row)
 
 
 var _peers_loading := false
@@ -321,6 +322,10 @@ func _refresh_peers() -> void:
 	if not is_instance_valid(self):
 		return
 	_peers_loading = false
+	_show_peers(rows)
+
+
+func _show_peers(rows: Array) -> void:
 	if _peers == null or not is_instance_valid(_peers):
 		_peers = Peers.new()
 		_peers.set_team_order(play.team_ids)

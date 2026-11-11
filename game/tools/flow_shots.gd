@@ -63,8 +63,9 @@ func _ready() -> void:
 			else:
 				main.open(name.get_slice(":", 0))
 			await _wait(1.5)
-			if name.contains(":"):
-				main.current.call(name.get_slice(":", 1))
+			# "home:_open_settings:_open_control": each call in turn.
+			for i in range(1, name.get_slice_count(":")):
+				main.current.call(name.get_slice(":", i))
 				await _wait(1.0)
 			await _shot(name.replace(":", "_"))
 		get_tree().quit(0)
@@ -96,6 +97,11 @@ func _ready() -> void:
 		await _shot("stuck")
 		get_tree().quit(1)
 		return
+	# How long "Joining the match…" stands before the map is up: the number
+	# a slow line makes long (FLOW_SLOW).
+	var t_join := Time.get_ticks_msec()
+	await _until(func() -> bool: return screen.get("hud") != null, 90.0)
+	print("timing p%d join_ms=%d" % [index, Time.get_ticks_msec() - t_join])
 	await _wait(1.0)
 	await _shot("match_intro")
 	screen.call("skip_intro")
@@ -131,6 +137,10 @@ func _ready() -> void:
 		await _shot("match_other")
 
 	var results := await _until_screen("ResultsScreen.gd", 40.0)
+	var t_res := Time.get_ticks_msec()
+	if results != null:
+		await _until(func() -> bool: return results.get_child_count() > 0, 90.0)
+		print("timing p%d results_ms=%d" % [index, Time.get_ticks_msec() - t_res])
 	await _wait(2.5)
 	await _shot("results" if results != null else "no_results")
 	Net.realtime().close_socket()

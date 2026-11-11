@@ -26,6 +26,9 @@ var access_token := ""
 var user_id := ""
 ## Filled from the profile on every successful sign-in.
 var username := ""
+## The booth's control panel is this account's to open (the server decides
+## again on every use: server/app.py, `control`).
+var is_admin := false
 
 var _realtime: Realtime
 
@@ -165,6 +168,7 @@ func sign_out() -> void:
 	access_token = ""
 	user_id = ""
 	username = ""
+	is_admin = false
 
 
 ## One call to a table or a server function. `path` is a table and its
@@ -194,6 +198,7 @@ func _load_profile() -> String:
 	var rows: Variant = got.data
 	if rows is Array and not (rows as Array).is_empty():
 		username = (rows[0] as Dictionary).get("username", "")
+		is_admin = (rows[0] as Dictionary).get("admin") == true
 		# Desktop windows run side by side under `--profile`; the title says
 		# which account each one is, since the screens all look alike.
 		if Game.profile_suffix() != "":

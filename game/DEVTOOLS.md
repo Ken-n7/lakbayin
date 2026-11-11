@@ -46,11 +46,13 @@ After `--` on the Godot command line, e.g. `godot --path game -- --touch`.
 |---|---|
 | `run_tests.sh` | every Godot test suite, one exit code (the server's: `server/tests`) |
 | `device.sh` | build, install, run and screenshot on a USB phone (`build`, `install`, `run`, `shot`, `release`) |
-| `flow_shots.py` | windowed clients through the online flow against a throwaway local server, with screenshots (`FLOW_CLIENTS`, `FLOW_SCREENS`, `FLOW_CHECKS`, ...) |
+| `flow_shots.py` | windowed clients through the online flow against a throwaway local server, with screenshots (`FLOW_CLIENTS`, `FLOW_SCREENS`, `FLOW_CHECKS`, `FLOW_ADMIN` for the control panel: `FLOW_SCREENS="home:_open_settings:_open_control"`, ...) |
 | `layout.tscn` | does every screen fit 640×360 and 800×360, and does the DEV tab cover nothing |
 | `ui_shot.tscn`, `backdrop_shot.tscn`, `collision_shot.tscn` | screenshots of screens, the menu backdrop, a map's walls and levels |
 | `guide_shot.tscn`, `guide_shots.py` | How to Play's pages, and its screenshots of the game (staged by `guide_moments.tscn`) |
 | `logo_shot.tscn` | the logo and the app icon's layers |
+| `server/tests/slow_proxy.py` | a bad line to test through: delay, jitter, a bandwidth cap, freezes. `FLOW_SLOW="--delay 150 --handshake 3 --stall 20,6"` runs `flow_shots.py`'s clients through one; its `timing` lines say how long joining a match and its results took |
+| `WORLD_SEEDS=400` | with `scripts/tests/world_test.tscn`: that many more random maps through every world rule (`WORLD_SEED_FROM=N` for other ones). About 1 s a map; do it before an event and after touching `WorldGen` |
 | `map_export.tscn`, `walk_export.tscn` | a match's map for the server, and honest walks on it for the server's tests |
 | `make_words.py`, `make_icons.py`, `fix_glyphs.py`, `tune_fonts.py` | the word list, the menu icons, glyph and font fixes |
 | `showcase.py` (`showcase.tscn`, `Recorder.gd`) | footage for the videos: a real 3 v 3 on a throwaway server, scripted players (`match`: the hero's phone view from Home through How to Play to the Records; `room`: a spectator's custom room), recorded live at 1080p with the sound effects on their own track and timed marks |

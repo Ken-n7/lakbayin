@@ -241,7 +241,7 @@ class ServerTest(unittest.TestCase):
         # Speed: a long walk at walking pace is all taken; a sustained 15%
         # boost runs dry (in about 20 s); two seconds of packets bunched by
         # lag are fine.
-        legs=[(foot,(976,1250)),((976,1250),(100,1250)),((100,1250),(100,600)),((100,600),(900,600))]*2
+        legs=[(foot,(976,1250)),((976,1250),(100,1250)),((100,1250),(100,600)),((100,600),(900,600))]*4
         for speed,honest in ((150,True),(172.5,False)):
             where.clear(); t,now,got=0.0,T,[]
             for a,b in legs:
@@ -257,10 +257,11 @@ class ServerTest(unittest.TestCase):
         where.clear()
         ok,t,now=walk(foot,(976,700),0.0,T); self.assertTrue(all(ok))
         ok,t,now=walk((96,700),(96,900),t+6,now+6); self.assertTrue(all(ok))
-        # ...but no further than six seconds' walk, nor onto a cliff face.
+        # ...but no further than they could have walked (the time away and
+        # the bank), nor onto a cliff face.
         where.clear()
-        ok,t,now=walk(foot,(1200,560),0.0,T)
-        self.assertFalse(appmod.moved_ok(s,'u',mp,where,[[t+6,40,1240]],now+6))
+        ok,t,now=walk(foot,(1240,40),0.0,T); self.assertTrue(all(ok))
+        self.assertFalse(appmod.moved_ok(s,'u',mp,where,[[t+5.2,40,1240]],now+5.2))
         self.assertFalse(appmod.moved_ok(s,'u',mp,where,[[t+6,700,496]],now+6))
         # Silent, then at a monk: allowed there, and the walk is spent -- the
         # next monk is not within reach of the same silence.
@@ -269,6 +270,14 @@ class ServerTest(unittest.TestCase):
         mp['monks'][2]=[100,1200]
         with self.assertRaises(Exception):
             appmod.placed_ok(s,'u',mp,where,'answer_monk',{'p_monk':2,'p_at':[100,1180]},now+8.5)
+        # A line frozen 4 s, then 7 s, while they walked on: all of it comes
+        # in one burst when it thaws, and all of it is taken.
+        for frozen in (4.0, 7.0):
+            where.clear()
+            ok,t,now=walk(foot,(1200,700),0.0,T); self.assertTrue(all(ok))
+            far=(1200-150*frozen,700)
+            ok,t2,_=walk((1200,700),far,t,now,bunch=frozen); self.assertTrue(all(ok),frozen)
+            ok,_,_=walk(far,(far[0],1000),t2,now+frozen+0.1); self.assertTrue(all(ok),frozen)
         # A rejoined app: its clock starts again, its hero at the spawn.
         where.clear()
         ok,t,now=walk(foot,(976,1200),0.0,T)
@@ -420,6 +429,47 @@ class ServerTest(unittest.TestCase):
         ended=self.request(0,'GET',f'/rest/v1/sessions?id=eq.{sid}').json()[0]
         team1=self.app.state.store.load()['sessions'][sid]['members'][self.users[1]['user']['id']]['team_id']
         self.assertEqual((ended['state'],ended['winner_team'],ended.get('forfeit_by')),('ended',team1,None))
+
+    def test_control_panel_is_admins_only_and_sets_the_next_lobby(self):
+        self.assertEqual(self.rpc(0,'control').status_code,403)
+        self.assertFalse(self.request(0,'GET','/rest/v1/profiles').json()[0]['admin'])
+        db=self.app.state.store.db; db.execute("update users set admin=1 where username='alpha'"); db.commit()
+        self.assertTrue(self.request(0,'GET','/rest/v1/profiles').json()[0]['admin'])
+        self.assertEqual(self.rpc(1,'control',p_team_size=2).status_code,403)
+        for bad in ({'p_team_size':0},{'p_team_size':6},{'p_team_size':'2'},{'p_hints':'yes'}):
+            self.assertEqual(self.rpc(0,'control',**bad).status_code,400,bad)
+        waiting=self.rpc(2,'find_match').json()            # a 1 v 1 lobby, made before the change
+        got=self.rpc(0,'control',p_team_size=2,p_hints=True).json()
+        self.assertEqual((got['team_size'],got['hints'],got['queued'],got['matches']),(2,True,1,0))
+        self.assertEqual(self.rpc(3,'find_match').json()['state'],'running')   # ...still fills at two
+        self.assertEqual((waiting['team_size'],waiting['hints']),(1,False))
+        made=self.rpc(1,'find_match').json()               # the next one is 2 v 2, letters on
+        self.assertEqual((made['team_size'],made['hints'],made['state']),(2,True,'lobby'))
+        self.assertFalse(self.rpc(0,'create_room').json()['hints'])            # a room's host decides its own
+        self.assertEqual(self.rpc(0,'control').json()['playing'],2)
+
+    def test_match_state_is_the_tables_in_one_answer(self):
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        w=self.app.state.store.load()['sessions'][sid]['words'][0]
+        self.rpc(1,'answer_monk',p_session=sid,p_monk=0,p_typed=w['modern']); self.rpc(1,'deposit',p_session=sid)
+        self.assertEqual(self.rpc(3,'match_state',p_session=sid).status_code,403)        # nobody's business
+        got=self.rpc(0,'match_state',p_session=sid).json()
+        self.assertEqual(got['session']['state'],'running')
+        self.assertEqual(got['teams'],self.request(0,'GET',f'/rest/v1/teams?session_id=eq.{sid}').json())
+        self.assertEqual(got['answers'],self.request(0,'GET',f'/rest/v1/monk_answers?session_id=eq.{sid}').json())
+        self.assertEqual(got['standings'],self.request(0,'GET',f'/rest/v1/team_standings?session_id=eq.{sid}').json())
+        self.assertEqual(sorted(m['username'] for m in got['members']),['alpha','bravo','charlie'])
+        self.assertEqual(len(got['words']),10)
+        self.assertNotIn('modern',got['words'][0]); self.assertEqual(got['words'][3]['monk'],3)    # no spellings yet
+        self.rpc(3,'watch_match',p_code=s['code'])
+        self.assertNotIn('answers',self.rpc(3,'match_state',p_session=sid).json())       # a viewer: no live score
+        state=self.app.state.store.load(); state['sessions'][sid]['deadline']=time.time()-1; self.app.state.store.save(state)
+        done=self.rpc(0,'match_state',p_session=sid).json()
+        self.assertEqual((done['session']['state'],done['words'][0]['modern']),('ended',w['modern']))
+        self.assertEqual(done['players'],self.request(0,'GET',f'/rest/v1/player_standings?session_id=eq.{sid}').json())
+
+    def test_install_page(self):
+        self.assertIn('Download Lakbayin',self.client.get('/get').text)
 
     def test_websocket_score_events(self):
         s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)

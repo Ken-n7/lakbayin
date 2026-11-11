@@ -38,6 +38,57 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 
 ## 3. State
 
+### Maps and slow lines (Nov 11, uncommitted)
+- **Map generator, found by a seed sweep** (`WORLD_SEEDS`, DEVTOOLS; the
+  suite's own eight seeds never hit them):
+  - About 1 world in 200 walled Red in at its spawn: where a plateau across
+    the axis kept the halves apart, `_let_up` / `_let_down` mended by what
+    Blue's spawn reached alone and raised Red's half. `_levels_sound()` now
+    throws such a try away (levels mirrored, reach mirrored), and after
+    `LEVEL_TRIES` the island stays flat.
+  - 1 in 800 put the Monastery down across a cliff (`base_row = H / 2` when
+    it fitted nowhere): a try with no place for it is unsound too.
+  - Every other seed builds exactly the map it did before.
+- **One read for a match** (`match_state` rpc, `Monks.state`, `Match.reload`):
+  opening a match was six reads one after another, its results seven, each
+  a new connection. Through `slow_proxy.py` at a 300 ms round trip: joining
+  7.5 s -> 2.1 s, results 10 s -> 1.3 s; at 800 ms: 19 s -> 4.5 s, 25 s ->
+  3.6 s. Results also read again while the server has not ended the match.
+- **Bursts after a freeze:** `BURST_S` 2 -> 5 and a lost hero keeps the time
+  they were away (`LOST_BANK_S`): on a line freezing 6 s in every 20, dropped
+  movement went from 113 packets a match to 17.
+- Not done: reusing connections (every call still pays its own TCP + TLS
+  setup; `HTTPRequest` closes after each -- an `HTTPClient` pool would take
+  an answer from about 4 round trips to 1).
+
+### The booth (Nov 10, uncommitted)
+- For the finals the user runs a booth: two of their own phones for
+  visitors, this laptop as the server, on the venue's WiFi.
+  `server/README.md` "The booth" has the commands.
+- **Control panel:** `control` rpc (admins only; `users.admin`, set by
+  `server.manage admin NAME`), `config.hints` copied into matchmade sessions;
+  Home → Settings → Control (`HomeScreen._open_control`). No account is an
+  admin yet -- the user has to name theirs.
+- **Local network: parked** on branch `lan-fallback` (commit `c715305`),
+  Nov 10. The user chose the venue's WiFi and the public address instead.
+  The branch has `Backend._reroute` / `_find_local` (scan this device's /24
+  for port 8000 + `/health`), `Realtime`'s probe, `game/tools/lan_check.tscn`
+  and `LAKBAYIN_HOST` in `run.sh`. It worked laptop-to-laptop (found in
+  0.4 s); on the phone it was stopped by ufw blocking port 8000, which needs
+  `sudo ufw allow 8000/tcp` -- never finished. To bring it back:
+  `git diff main lan-fallback -- game/scripts/net server/run.sh game/tools`.
+- **Install:** `/get` serves the release APK; `server/booth.py` makes the QR
+  sheet. Release APK rebuilt Nov 10 22:34 with everything up to here.
+- **Backups:** `lakbayin-backup.timer` is enabled; first copy made.
+- `ken` is the admin account. The Realme has the current debug build.
+- **Public route checked from the phone (Nov 10):** on a different WiFi from
+  the laptop, through `server.lakbayin.space`: sign-in restore, a 1 v 1 Find
+  Match with letters on, forfeit after 60 s, Results. Config put back to
+  3 v 3, letters off.
+- Open: a GitHub release for the download link -- the user said not yet, the
+  app is still changing. Until then the QR points at this server's `/get`,
+  so the 88 MB APK goes out through the tunnel on the laptop's upload.
+
 ### Bug fixes before the finals (Nov 10, uncommitted)
 - **Viewer movement delay:** the delayed copy sent the sender's *latest*
   socket message, not the packet from a minute before (`app.py`, the

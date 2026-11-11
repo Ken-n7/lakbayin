@@ -228,10 +228,19 @@ func _ready() -> void:
 	var bad := {}
 	var mon_levels := {}
 	var any_hill := false
-	for seed in SEEDS:
+	# WORLD_SEEDS=300: that many more seeds, of the size a match's are
+	# (Game.seed_of) -- a sweep for before an event, too slow for every run.
+	var seeds: Array = SEEDS.duplicate()
+	var more := RandomNumberGenerator.new()
+	more.seed = int(OS.get_environment("WORLD_SEED_FROM")) if OS.get_environment("WORLD_SEED_FROM") != "" else 12345
+	for i in int(OS.get_environment("WORLD_SEEDS")):
+		seeds.append(more.randi_range(1, 0x40000000))
+	var total_ms := 0
+	for seed: int in seeds:
 		var t0 := Time.get_ticks_msec()
 		var w := build(seed)
 		slowest = maxi(slowest, Time.get_ticks_msec() - t0)
+		total_ms += Time.get_ticks_msec() - t0
 		var g := w.gen
 		if g.monks.size() != 10 or w.monks.size() != 10:
 			all_monks = false
@@ -258,6 +267,15 @@ func _ready() -> void:
 		if blue != red or blue < 0:
 			all_fair = false
 			why.append("seed %d: door %d vs %d steps" % [seed, blue, red])
+		# Each monk is as far from Blue as its twin is from Red.
+		for i in 5:
+			var b := steps(w, walls, g.spawns[0], g.monks[i])
+			var r := steps(w, walls, g.spawns[1], g.monks[i + 5])
+			var b2 := steps(w, walls, g.spawns[0], g.monks[i + 5])
+			var r2 := steps(w, walls, g.spawns[1], g.monks[i])
+			if b != r or b2 != r2:
+				all_fair = false
+				why.append("seed %d: monk %d is %d/%d steps for Blue, its twin %d/%d for Red" % [seed, i, b, b2, r, r2])
 		var broke := rules(w)
 		for rule: String in broke:
 			bad[rule] = (bad.get(rule, []) as Array) + ["seed %d: %s" % [seed, broke[rule]]]
@@ -273,8 +291,8 @@ func _ready() -> void:
 	check("every world has its 10 monks", all_monks, str(why))
 	check("every world is mirrored: land, spawns, monks, Monastery on the axis", all_mirror, str(why))
 	check("from both spawns, every monk and the Monastery's door can be walked to", all_reach, str(why))
-	check("the Monastery is the same walk from either spawn", all_fair, str(why))
-	print("  slowest build: %d ms" % slowest)
+	check("the Monastery and every monk are the same walk for either side", all_fair, str(why).left(900))
+	print("  %d worlds, slowest build: %d ms, average %d ms" % [seeds.size(), slowest, total_ms / seeds.size()])
 	check("a world builds in under 4 s headless", slowest < 4000, str(slowest))
 
 	var a := build(42)

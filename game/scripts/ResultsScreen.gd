@@ -27,24 +27,35 @@ func _build() -> void:
 	var teams: Array = []
 	var players: Array = []
 	if not bool(result.get("practice", true)) and str(result.get("session_id", "")) != "":
-		var got := await _standings(str(result.session_id))
-		if not is_instance_valid(self):
-			return
+		# The whole of it in one read (Monks.state). Again if the line failed,
+		# and if the server has not ended the match yet -- this phone's clock
+		# can reach zero a moment before the server's, and the spellings and
+		# the final score only come once it has.
+		var d := {}
+		for _try in 4:
+			var read: Dictionary = await Monks.state(str(result.session_id))
+			if not is_inside_tree():
+				return
+			d = read.data
+			if read.error == "" and str(d.get("session", {}).get("state", "")) == "ended":
+				break
+			await get_tree().create_timer(1.0).timeout
+			if not is_inside_tree():
+				return
+		var got := _standings(d)
 		teams = got.teams
 		players = got.players
-		# Spellings are revealed only once the server ends the match. Reload
-		# answers too: the end event may precede the last deposit row.
-		var final_words := await Monks.words_of(str(result.session_id))
-		var final_answers := await Net.rest(HTTPClient.METHOD_GET,
-			"/rest/v1/monk_answers?session_id=eq." + str(result.session_id))
-		var my_membership := await Teams.membership(str(result.session_id))
-		if not is_inside_tree():
-			return
+		var mine := ""
+		for m: Variant in d.get("members", []):
+			if m is Dictionary and str(m.get("profile_id", "")) == Net.user_id:
+				mine = str(m.get("team_id", ""))
 		var learned: Array = []
-		for w: Dictionary in final_words:
+		for w: Variant in d.get("words", []):
+			if not (w is Dictionary):
+				continue
 			var state := "missed"
-			for a: Dictionary in (final_answers.data if final_answers.data is Array else []):
-				if a.get("team_id") == my_membership.get("team_id") and int(a.get("monk", -1)) == int(w.monk):
+			for a: Variant in d.get("answers", []):
+				if a is Dictionary and str(a.get("team_id", "")) == mine and int(a.get("monk", -1)) == int(w.get("monk", -2)):
 					state = "deposited" if a.get("deposited_at") != null else "lost"
 			learned.append({"word": w.get("word", ""), "modern": w.get("modern", ""), "state": state})
 		if not learned.is_empty():
@@ -309,26 +320,22 @@ static func _team_standing(row: Dictionary, index: int, start: float) -> Diction
 		"reached_s": _seconds_in(row.reached_at, start)}
 
 
-## {teams, players}, ranked, from the server's standings.
-func _standings(sid: String) -> Dictionary:
-	var session: Dictionary = await Teams.session(sid)
+## {teams, players}, ranked, from the server's standings in a match's state
+## (Monks.state).
+static func _standings(d: Dictionary) -> Dictionary:
+	var session: Dictionary = d.get("session", {}) if d.get("session") is Dictionary else {}
 	var ends := Time.get_unix_time_from_datetime_string(str(session.get("ends_at", "")).left(19))
 	var start := float(ends) - float(session.get("duration_s", 0))
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		"/rest/v1/team_standings?select=team_id,name,deposited,reached_at,finished&session_id=eq."
-		+ sid + "&order=name")
 	var teams: Array = []
 	var team_index := {}
-	for t: Dictionary in (got.data if got.data is Array else []):
+	for t: Dictionary in (d.get("standings", []) if d.get("standings") is Array else []):
 		team_index[str(t.team_id)] = teams.size()
 		teams.append(_team_standing(t, teams.size(), start))
-	var ps: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		"/rest/v1/player_standings?select=profile_id,team_id,deposited,reached_at&session_id=eq." + sid)
 	var names := {}
-	for m: Dictionary in await Teams.everyone(sid):
-		names[str(m.profile_id)] = str(m.username)
+	for m: Dictionary in (d.get("members", []) if d.get("members") is Array else []):
+		names[str(m.get("profile_id", ""))] = str(m.get("username", "?"))
 	var players: Array = []
-	for p: Dictionary in (ps.data if ps.data is Array else []):
+	for p: Dictionary in (d.get("players", []) if d.get("players") is Array else []):
 		players.append({"profile_id": str(p.profile_id), "username": names.get(str(p.profile_id), "?"),
 			"team": int(team_index.get(str(p.team_id), 0)), "deposited": int(p.deposited),
 			"reached_s": _seconds_in(p.reached_at, start)})

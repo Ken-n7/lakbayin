@@ -155,10 +155,12 @@ func generate() -> void:
 	_make_land()
 	_place_spawns()
 	_dig_ponds()
-	for attempt in LEVEL_TRIES:
-		_raise(attempt)
+	for attempt in LEVEL_TRIES + 1:
+		# Past the last try the island stays flat: always sound.
+		if attempt < LEVEL_TRIES:
+			_raise(attempt)
 		_place_ramps()
-		if _above(0).size() >= main.size() * MIN_RAISED or attempt == LEVEL_TRIES - 1:
+		if _levels_sound() and (_above(0).size() >= main.size() * MIN_RAISED or attempt >= LEVEL_TRIES - 1):
 			break
 		for c: Vector2i in land:
 			height[c] = 0
@@ -173,6 +175,26 @@ func generate() -> void:
 	_scatter_props()
 	_scatter_bushes()
 	_scatter_water_rocks()
+
+
+## The levels are the same on both halves, and so is what a walk from the
+## spawn reaches: Red's side is Blue's, mirrored. Not a given -- where a
+## plateau across the axis kept the halves apart, the mending in
+## `_place_ramps` saw only what Blue's spawn reached, raised Red's whole half
+## as "lost" ground and took its ramps up: about one world in two hundred
+## left Red walled in at its spawn (seeds 1015441664, 1015558002). Such a
+## try is thrown away, like one with too little raised.
+func _levels_sound() -> bool:
+	for c: Vector2i in height:
+		if int(height[c]) != int(height.get(mirror_cell(c), -1)):
+			return false
+	for c: Vector2i in _reach:
+		if not _reach.has(mirror_cell(c)):
+			return false
+	# ...and the Monastery has a level place on the axis. Where the mending
+	# left none it was put down regardless, its yard across a cliff (seed
+	# 886335434, one world in eight hundred).
+	return _monastery_row() >= 0
 
 
 # --- Land -------------------------------------------------------------------
@@ -713,16 +735,7 @@ func _place_spawns() -> void:
 ## On the axis: the footprint straddles cells HALF-2..HALF+1, on ground of
 ## one level -- the plateau or the ground the seed meant for it, else either.
 func _place_monastery() -> void:
-	# Nearest where it was meant to go, on the level the seed gave it if it fits.
-	var base_row := -1
-	for want in [1 if _raised else 0, -1]:
-		for dy in H:
-			for base in [_centre_row + dy, _centre_row - dy]:
-				if base_row < 0 and base > BORDER + MONASTERY_CELLS.y and base < H - BORDER - DOOR_YARD - 1 \
-						and _monastery_fits(base, want):
-					base_row = base
-		if base_row >= 0:
-			break
+	var base_row := _monastery_row()
 	if base_row < 0:
 		base_row = H / 2
 	monastery = Vector2(HALF * T, (base_row + 1) * T)
@@ -730,6 +743,18 @@ func _place_monastery() -> void:
 	for y in range(base_row - MONASTERY_CELLS.y + 1, base_row + 1):
 		for x in range(HALF - 2, HALF + 2):
 			_blocked[Vector2i(x, y)] = true
+
+
+## The row the Monastery's base goes on: nearest where it was meant to go, on
+## the level the seed gave it if it fits; -1 if it fits nowhere on the axis.
+func _monastery_row() -> int:
+	for want in [1 if _raised else 0, -1]:
+		for dy in H:
+			for base in [_centre_row + dy, _centre_row - dy]:
+				if base > BORDER + MONASTERY_CELLS.y and base < H - BORDER - DOOR_YARD - 1 \
+						and _monastery_fits(base, want):
+					return base
+	return -1
 
 
 ## The footprint and its yard on the base row given, all flat ground of one

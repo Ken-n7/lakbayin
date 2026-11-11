@@ -28,6 +28,17 @@ static func deposit(session_id: String, at := Vector2.INF) -> Dictionary:
 	return {"error": got.error, "deposited": int(got.data) if got.error == "" and got.data != null else 0}
 
 
+## A match in one answer (server/app.py `match_state`): {session, teams,
+## members, words, and for its players or once it is over: answers,
+## standings, players}. {error, network, data} -- `network` when the server
+## was not reached, which is not the match being gone.
+static func state(session_id: String) -> Dictionary:
+	var got: Dictionary = await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/match_state",
+		{"p_session": session_id})
+	return {"error": got.error, "network": bool(got.get("network", false)),
+		"data": got.data if got.error == "" and got.data is Dictionary else {}}
+
+
 ## The match's words, monk by monk: [{monk, word, meaning, modern, traditional}].
 static func words_of(session_id: String) -> Array:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,

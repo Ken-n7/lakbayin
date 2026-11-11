@@ -24,7 +24,7 @@ from uuid import uuid4
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, InvalidHashError
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 ROOT = Path(__file__).resolve().parents[1]
 TOPIC = "realtime:numxventure"  # Existing client's protocol identifier.
@@ -51,7 +51,12 @@ GODOT = os.environ.get("LAKBAYIN_GODOT", "godot")
 # hair over that and holds BURST_S of walking -- packets bunch up on a bad
 # link -- and every step spends it: a speed hack drains it in seconds.
 SPEED_SLACK = 1.05
-BURST_S = 2.0
+# The bank is as long as a hero may go unheard before they count as lost
+# (LOST_S): a line that froze for a few seconds delivers those seconds of
+# walking in one burst, and at 2 s all past the first two were dropped and
+# the hero stood frozen on everyone's board until LOST_S ran out (113 packets
+# in one four-player match on a line stalling 6 s in 20).
+BURST_S = 5.0
 PX_SLACK = 32.0
 # How finely a move is walked through, cell by cell, for the level rules.
 STEP_PX = 8.0
@@ -69,6 +74,7 @@ FRESH_S = 15.0
 # answer refused, for the rest of the match. Longer than the gap between a
 # standing hero's packets (the client's STILL_EVERY_S, 3 s).
 LOST_S = 5.0
+LOST_BANK_S = 30.0
 # Reach is the client's INTERACT_RADIUS, from a hero who stopped a hair late.
 REACH_SLACK = 16.0
 # "Online" on Home: signed in and heard from this recently. Home asks every
@@ -121,6 +127,10 @@ class Store:
           create table if not exists checkpoint (id integer primary key check(id=1), data text not null);
           create table if not exists matches (id text primary key, data text not null);
         """)
+        # The booth's control panel is for accounts marked here, and only
+        # `python -m server.manage admin NAME` marks one: nothing online can.
+        if "admin" not in [r[1] for r in self.db.execute("pragma table_info(users)")]:
+            self.db.execute("alter table users add column admin integer not null default 0")
         self.db.execute("insert or ignore into checkpoint values(1,?)", (json.dumps({"sessions": {}, "config": {"id": 1, "team_size": 1, "duration_s": 900, "monks": 10, "search_s": 90}}),))
         self.db.commit()
         self.cache, self.version = None, None
@@ -168,8 +178,8 @@ class Store:
         return dict(row)
 
     def profile(self, who):
-        row = self.db.execute("select id,username from users where id=?", (who,)).fetchone()
-        return dict(row) if row else {}
+        row = self.db.execute("select id,username,admin from users where id=?", (who,)).fetchone()
+        return {**dict(row), "admin": bool(row["admin"])} if row else {}
 
     def session(self, who):
         token = secrets.token_urlsafe(32)
@@ -283,7 +293,10 @@ def make_session(state, who, custom):
     while any(s["code"] == code and s["state"] != "ended" for s in state["sessions"].values()):
         code = "".join(secrets.choice(CODES) for _ in range(4))
     sid = uid()
-    s = {"id": sid, "code": code, "owner_id": who, "custom": custom, "state": "lobby", "created_at": stamp(), "starts_at": None, "ends_at": None, "winner_team": None, "duration_s": cfg["duration_s"], "search_s": cfg["search_s"], "team_size": cfg["team_size"], "monk_count": cfg["monks"], "hints": False, "members": {}, "teams": [{"id": uid(), "session_id": sid, "name": n} for n in TEAM_NAMES], "words": random.SystemRandom().sample(WORDS, cfg["monks"]), "answers": [], "locks": {}, "watchers": {}}
+    s = {"id": sid, "code": code, "owner_id": who, "custom": custom, "state": "lobby", "created_at": stamp(), "starts_at": None, "ends_at": None, "winner_team": None, "duration_s": cfg["duration_s"], "search_s": cfg["search_s"], "team_size": cfg["team_size"], "monk_count": cfg["monks"],
+         # Letters under the keys: a room's host decides for the room; for
+         # Find Match the control panel does (config).
+         "hints": bool(cfg.get("hints")) and not custom, "members": {}, "teams": [{"id": uid(), "session_id": sid, "name": n} for n in TEAM_NAMES], "words": random.SystemRandom().sample(WORDS, cfg["monks"]), "answers": [], "locks": {}, "watchers": {}}
     add_member(s, who, s["teams"][0]["id"])
     state["sessions"][sid] = s
     return s
@@ -378,7 +391,11 @@ def hero(s, who, mp, where, now):
         st = {"x": x, "y": y, "level": level_at(mp, cell_of(mp, x, y), 0), "t": -math.inf, "budget": cap(mp), "at": now}
     lost = now - st["at"] > LOST_S
     budget = st["budget"] + mp["speed"] * SPEED_SLACK * (now - st["at"])
-    return {**st, "budget": budget if lost else min(cap(mp), budget), "at": now, "lost": lost}
+    # The bank fills to its cap; what a lost hero came back with -- the time
+    # they were away, LOST_BANK_S of it at most -- is theirs until spent: the
+    # burst that follows a long freeze is that long a walk.
+    most = mp["speed"] * SPEED_SLACK * LOST_BANK_S if lost else max(cap(mp), st["budget"])
+    return {**st, "budget": min(most, budget), "at": now, "lost": lost}
 
 
 def moved_ok(s, who, mp, where, points, now):
@@ -414,7 +431,7 @@ def moved_ok(s, who, mp, where, points, now):
         if level is None:
             return False
         x, y, jump = px, py, False
-    where[(s["id"], who)] = {**st, "x": x, "y": y, "level": level, "t": fresh[-1][0], "budget": min(cap(mp), budget)}
+    where[(s["id"], who)] = {**st, "x": x, "y": y, "level": level, "t": fresh[-1][0], "budget": budget}
     return True
 
 
@@ -432,7 +449,7 @@ def placed_ok(s, who, mp, where, name, body, now):
         # Unheard, and here now: this is where they are, the walk spent --
         # or one long silence would reach every monk on the map at once.
         where[(s["id"], who)] = {**st, "x": at[0], "y": at[1], "level": level_at(mp, cell_of(mp, *at), 0),
-                                 "budget": max(0.0, min(cap(mp), st["budget"] - math.dist(at, (st["x"], st["y"]))))}
+                                 "budget": max(0.0, st["budget"] - math.dist(at, (st["x"], st["y"])))}
 
 
 def snapshot(store, s):
@@ -476,6 +493,23 @@ def rpc(store, state, who, name, body, place=None):
         require(type(offset) is int, "Invalid offset", 400)
         offset = max(0, min(offset, 100000))
         return rows[offset:offset + 21]
+    if name == "control":
+        # The booth's control panel: Find Match's team size and its letter
+        # hints, and who is playing. A session copies both when it is made,
+        # so a change reaches the next lobby and no match under way.
+        require(store.profile(who).get("admin"), "Admins only")
+        cfg = state["config"]
+        if "p_team_size" in body:
+            require(type(body["p_team_size"]) is int and 1 <= body["p_team_size"] <= 5, "Team size is 1 to 5", 400)
+            cfg["team_size"] = body["p_team_size"]
+        if "p_hints" in body:
+            require(type(body["p_hints"]) is bool, "Hints are on or off", 400)
+            cfg["hints"] = body["p_hints"]
+        live = [s for s in sessions.values() if s["state"] == "running"]
+        return {"team_size": cfg["team_size"], "hints": bool(cfg.get("hints")),
+                "matches": len(live), "playing": sum(plays(s, w) for s in live for w in s["members"]),
+                "queued": sum(len(s["members"]) for s in sessions.values() if s["state"] == "lobby" and not s["custom"]),
+                "rooms": sum(s["state"] == "lobby" and s["custom"] for s in sessions.values())}
     if name == "create_room":
         one_game(sessions, who)
         return public_session(make_session(state, who, True))
@@ -504,6 +538,19 @@ def rpc(store, state, who, name, body, place=None):
     require(isinstance(body.get("p_session"), str), "Invalid session", 400)
     s = find(store, state, body["p_session"])
     require(s, "No such session", 404)
+    if name == "match_state":
+        # Everything a board needs to open, or its results to show, in one
+        # answer: each used to be a read of its own -- six to open a match,
+        # seven for the results -- and on a slow line each is seconds.
+        require(may_read(s, who), "Not a member or viewer")
+        ended = s["state"] == "ended"
+        out = {"session": {**public_session(s), "server_now": stamp()}, "teams": s["teams"],
+               "members": [{**mm, "username": store.profile(pid)["username"]} for pid, mm in s["members"].items()],
+               "words": [{"monk": i, **{k: v for k, v in w.items() if ended or k not in ("modern", "traditional")}} for i, w in enumerate(s["words"])]}
+        # As the tables: the live score is the players' while the match is on.
+        if s["state"] != "running" or plays(s, who):
+            out.update(answers=s["answers"], standings=standings(s), players=player_standings(store, s))
+        return out
     if name in ("watch_snapshot", "leave_watch"):
         require(s["watchers"].get(who, 0) > time.time(), "watch expired")
         if name == "leave_watch":
@@ -935,6 +982,24 @@ def create_app(db_path=None):
             return JSONResponse({"ok": False, "server": "lakbayin"}, status_code=503)
         return {"ok": True, "server": "lakbayin"}
 
+    # The booth's install page, what its QR code opens: the release build
+    # straight off this machine.
+    apk = ROOT / "build/Lakbayin-release.apk"
+
+    @app.get("/get")
+    def install_page():
+        size = f"{apk.stat().st_size / 1e6:.0f} MB" if apk.exists() else "not built yet"
+        return HTMLResponse(f"""<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Lakbayin</title><body style="font:18px sans-serif;max-width:28em;margin:2em auto;padding:0 1em;text-align:center">
+<h1>Lakbayin</h1><p>Android only. Tap to download ({size}), open the file, and allow the install.</p>
+<p><a href="/get/Lakbayin.apk" style="display:inline-block;padding:.8em 1.4em;background:#2f6b3a;color:#fff;border-radius:8px;text-decoration:none">Download Lakbayin</a></p>
+<p style="color:#666;font-size:15px">Then open the game and tap Create Account.</p>""")
+
+    @app.get("/get/Lakbayin.apk")
+    def install_file():
+        require(apk.exists(), "Not built yet", 404)
+        return FileResponse(apk, media_type="application/vnd.android.package-archive", filename="Lakbayin.apk")
+
     @app.middleware("http")
     async def size_limit(request, call_next):
         if len(await request.body()) > 16384:
@@ -966,7 +1031,7 @@ def create_app(db_path=None):
             hashed = await asyncio.to_thread(HASHER.hash, password)
             who = uid()
             try:
-                store.db.execute("insert into users values(?,?,?)", (who, username, hashed))
+                store.db.execute("insert into users(id,username,password) values(?,?,?)", (who, username, hashed))
                 store.db.commit()
             except sqlite3.IntegrityError:
                 store.db.rollback()

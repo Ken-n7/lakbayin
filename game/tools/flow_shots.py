@@ -22,6 +22,7 @@ with tempfile.TemporaryDirectory(prefix='lakbayin-flow-') as tmp:
                                '--host', '127.0.0.1', '--port', str(port)],
                               cwd=os.environ.get('FLOW_SERVER_ROOT', ROOT), env=env, stdout=log, stderr=log)
     clients = []
+    proxy = None
     try:
         c = httpx.Client(base_url=url, timeout=5)
         for _ in range(100):
@@ -35,20 +36,32 @@ with tempfile.TemporaryDirectory(prefix='lakbayin-flow-') as tmp:
             pw = secrets.token_urlsafe(18)
             c.post('/auth/register', json={'username': n, 'password': pw}).raise_for_status()
             accounts.append({'username': n, 'password': pw})
+        if os.environ.get('FLOW_ADMIN'):       # the first account opens the control panel
+            import sqlite3
+            db = sqlite3.connect(tmp / 'db.sqlite3'); db.execute('update users set admin=1 where username=?', (names[0],)); db.commit(); db.close()
         (tmp / 'info.json').write_text(json.dumps({'accounts': accounts}))
+        # FLOW_SLOW="--delay 300 --handshake 3": the clients reach the server
+        # through a bad line (server/tests/slow_proxy.py); this script does not.
+        if os.environ.get('FLOW_SLOW'):
+            s = socket.socket(); s.bind(('127.0.0.1', 0)); slow = s.getsockname()[1]; s.close()
+            proxy = subprocess.Popen([sys.executable, str(ROOT / 'server/tests/slow_proxy.py'), str(slow), str(port),
+                                      *os.environ['FLOW_SLOW'].split()])
+            env['LAKBAYIN_SERVER_URL'] = f'http://127.0.0.1:{slow}'
+            time.sleep(.5)
         for i in range(len(names)):
             o = open(OUT / f'godot-{i}.log', 'w')
             p = subprocess.Popen(['godot', '--path', 'game', '--resolution', '960x540',
                                   'res://tools/flow_shots.tscn', '--', f'--player={i}', f'--out={OUT}',
                                   f'--profile=flow-{i}'], cwd=ROOT, env=env, stdout=o, stderr=o)
             clients.append((p, o))
-        codes = [p.wait(timeout=240) for p, _ in clients]
+        codes = [p.wait(timeout=int(os.environ.get('FLOW_TIMEOUT', '240'))) for p, _ in clients]
         for i in range(len(names)):
             print(f'--- client {i} exit {codes[i]}')
             print('\n'.join(l for l in (OUT / f'godot-{i}.log').read_text().splitlines()
-                            if 'shot' in l or 'ERROR' in l)[-3000:])
+                            if 'shot' in l or 'ERROR' in l or l.startswith('timing'))[-3000:])
     finally:
         for p, o in clients:
             if p.poll() is None: p.terminate()
             o.close()
+        if proxy: proxy.terminate()
         server.terminate(); server.wait(timeout=5); log.close()

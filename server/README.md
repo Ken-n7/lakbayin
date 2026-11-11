@@ -123,3 +123,22 @@ Python integration cases cover auth hashing/revocation, queue capacity/expiry,
 room authority/cleanup, spectators, concurrent answers, durable progress,
 finish/timeout, history and ranked-only records. Procedural generation is
 unchanged.
+
+## The booth
+
+- **Control panel.** `python -m server.manage admin NAME` marks an account;
+  it then has Home → Settings → Control in the app: Find Match's team size
+  (1–5 a side) and keypad letters, and who is playing. `--off` unmarks.
+  `python -m server.manage config --team-size N --hints on|off` does the same
+  from here.
+- **Installing.** `/get` is a download page for `build/Lakbayin-release.apk`
+  (`game/tools/device.sh release`). `python -m server.booth [--wifi NAME
+  PASSWORD] [--link URL]` opens a sheet of QR codes: the install page, and
+  optionally a network to join first.
+- **Parked: local network.** Branch `lan-fallback` has the app finding this
+  server on the local network when the public address fails (no internet
+  needed at a booth). It needs `LAKBAYIN_HOST=0.0.0.0` and port 8000 open in
+  the firewall; see that branch's README and HANDOFF.
+- **Backups.** `server/backup.sh` copies the database into
+  `~/Backups/lakbayin` and keeps 14 days; `lakbayin-backup.timer` (a user
+  unit) runs it daily at 03:00. The copies are on this laptop only.

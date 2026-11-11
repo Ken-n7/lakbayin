@@ -446,8 +446,17 @@ func _open_settings() -> void:
 	Ui.volume_rows(box, main.music)
 
 	Ui.section(box, "Account")
-	var hero := _account_button(box, "Change Character", "swords", Ui.SMALL)
-	hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
+	# An admin's row is shared with the booth's control panel, so the panel
+	# keeps its height.
+	if Net.is_admin:
+		var hero := _half_button("Character", "swords", Ui.SMALL)
+		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
+		var control := _half_button("Control", "gear", Ui.SMALL)
+		control.pressed.connect(_open_control)
+		Ui.centre_row(box, hero).add_child(control)
+	else:
+		var hero := _account_button(box, "Change Character", "swords", Ui.SMALL)
+		hero.pressed.connect(func() -> void: main.open("hero", {"then": "home"}))
 	# How to Play and Credits share a row, as Log Out and Quit do: the panel
 	# keeps its height on a 360px-tall screen.
 	var guide := _half_button("How to Play", "info", Ui.SMALL)
@@ -466,6 +475,50 @@ func _open_settings() -> void:
 	var quit := Ui.button("Quit", 137, Ui.H, Ui.SMALL_RED)
 	quit.pressed.connect(_confirm_quit)
 	Ui.centre_row(box, out).add_child(quit)
+
+
+## The booth's control panel, for an admin account: Find Match's team size
+## and whether its keypad shows the Latin letters, set from this phone. A
+## change reaches the next lobby made; matches and queues under way keep
+## what they started with, so it is safe at any time.
+func _open_control() -> void:
+	var d := Ui.dim(_dialog)
+	var box := Ui.back_panel(d, Vector2(312, 0), "Control Center", func() -> void: d.queue_free())
+	box.add_theme_constant_override("separation", 8)
+	Ui.section(box, "Find Match")
+	var size := Ui.option(280)
+	for n in range(1, 6):
+		size.add_item("%d v %d" % [n, n])
+	box.add_child(size)
+	var letters := Ui.button("Keypad letters: …", 280, Ui.H, Ui.SMALL)
+	box.add_child(letters)
+	Ui.section(box, "Now")
+	var now := Art.label("Loading…", Pal.SMALL, Pal.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	now.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	now.custom_minimum_size = Vector2(280, 0)
+	box.add_child(now)
+	var state := {"hints": false}
+	var show := func(got: Dictionary) -> void:
+		if not is_instance_valid(d):
+			return
+		if got.error != "":
+			now.text = str(got.error)
+			return
+		var c: Dictionary = got.data
+		state.hints = bool(c.get("hints", false))
+		size.select(clampi(int(c.get("team_size", 1)), 1, 5) - 1)
+		letters.text = "Keypad letters: %s" % ("On" if state.hints else "Off")
+		now.text = "%d matches · %d playing · %d in queue · %d rooms open" % [int(c.get("matches", 0)),
+			int(c.get("playing", 0)), int(c.get("queued", 0)), int(c.get("rooms", 0))]
+	size.item_selected.connect(func(i: int) -> void: show.call(await Teams.control({"p_team_size": i + 1})))
+	letters.pressed.connect(func() -> void: show.call(await Teams.control({"p_hints": not state.hints})))
+	# Kept current while open.
+	var tick := Timer.new()
+	tick.wait_time = 3.0
+	tick.autostart = true
+	tick.timeout.connect(func() -> void: show.call(await Teams.control()))
+	d.add_child(tick)
+	show.call(await Teams.control())
 
 
 ## Who made what. The music and the characters' licences require their credit
