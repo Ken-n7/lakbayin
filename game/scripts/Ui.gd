@@ -323,7 +323,7 @@ static func field(parent: Node, caption: String, placeholder: String,
 	return le
 
 
-## The same parchment field, as a dropdown. `OptionButton` and `TextEdit` come
+## The same parchment field, as a dropdown. `OptionButton` comes
 ## with the engine's grey, which on these panels reads as an OS form dropped
 ## onto the artwork -- the exact complaint `line_edit()` was written to fix.
 static func option(w: float, h := 30.0) -> OptionButton:
@@ -345,19 +345,7 @@ static func option(w: float, h := 30.0) -> OptionButton:
 	return o
 
 
-static func text_area(w: float, h: float) -> TextEdit:
-	var t := TextEdit.new()
-	t.custom_minimum_size = Vector2(w, h)
-	t.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	t.add_theme_font_size_override("font_size", Art.MIN_FONT)
-	t.add_theme_color_override("font_color", Pal.INK)
-	t.add_theme_color_override("caret_color", Pal.TITLE)
-	t.add_theme_stylebox_override("normal", _paper_box(false))
-	t.add_theme_stylebox_override("focus", _paper_box(true))
-	return t
-
-
-## The field face both of those wear, and the one `line_edit()` already used.
+## The field face `line_edit()` and `option()` wear.
 static func _paper_box(focused: bool) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = Pal.PAPER
@@ -369,33 +357,6 @@ static func _paper_box(focused: bool) -> StyleBoxFlat:
 	box.content_margin_top = 3.0
 	box.content_margin_bottom = 3.0
 	return box
-
-
-## A tab that is text, not a button: underlined when it is the one you are on.
-## Buttons here cost a whole row of panel for something that only has to say
-## which of two places you are looking at.
-static func tab_text(text: String, active: bool) -> VBoxContainer:
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 1)
-	var b := Button.new()
-	b.text = text
-	b.flat = true
-	b.add_theme_font_size_override("font_size", Pal.LABEL)
-	b.add_theme_color_override("font_color", Pal.TITLE if active else Pal.INK_MUTED)
-	b.add_theme_color_override("font_hover_color", Pal.TITLE)
-	b.add_theme_color_override("font_pressed_color", Pal.TITLE)
-	col.add_child(b)
-	var rule := ColorRect.new()
-	rule.color = Pal.TITLE if active else Color.TRANSPARENT
-	rule.custom_minimum_size = Vector2(0, 2)
-	col.add_child(rule)
-	click(b)
-	return col
-
-
-## The button inside a `tab_text`, for connecting `pressed`.
-static func tab_button(t: VBoxContainer) -> Button:
-	return t.get_child(0) as Button
 
 
 ## A glyph with no box around it: the back arrow, a card's close ×. Anything
@@ -411,16 +372,6 @@ static func glyph(text: String, size := 20, color: Color = Pal.TITLE) -> Button:
 	click(b)
 	click(b)
 	return b
-
-
-## A field a soft keyboard opens as a numpad. Typing a duration on a full
-## QWERTY is the same mistake the quiz screen already fixed.
-static func number_field(w: float, h := 26.0, size := 15) -> LineEdit:
-	var le := line_edit("", w, h, size)
-	le.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	le.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
-	le.max_length = 2
-	return le
 
 
 ## A paper panel with a title bar; returns a PanelContainer sized to `s`.

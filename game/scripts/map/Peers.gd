@@ -7,25 +7,20 @@ extends Node2D
 ## team's colour. Where they stand comes from `move()`: every phone broadcasts
 ## its hero's position over the realtime socket (a Broadcast message, so no
 ## database writes). Somebody whose position has not arrived yet, or has gone
-## quiet, stands at the circle their `items_done` puts them on instead.
+## quiet, stands at the Monastery's door instead.
 
-## One colour per team, in the order Game Controls lists the teams: six, for
-## the client's 6 teams of 5 (GameControlsScreen.MAX_TEAMS).
+## One colour per team, in the match's team order.
 const TEAM_COLOURS := [
 	Color("4aa3df"),   # blue
 	Color("e8663c"),   # red
-	Color("52b262"),   # green
-	Color("d9a125"),   # amber
-	Color("c39cf0"),   # purple, light: the summit is dark
-	Color("e86fae"),   # pink
 ]
 
-## Side-by-side spacing for markers sharing a circle, and the half-step down
+## Side-by-side spacing for markers waiting at the door, and the half-step down
 ## every other one takes so neighbouring names do not touch.
 const FAN_STEP := 26.0
 const FAN_STAGGER := 12.0
 ## A position older than this is a phone that has gone away; fall back to the
-## circle rather than leave a hero frozen mid-road.
+## door rather than leave a hero frozen mid-road.
 const STALE_S := 12.0
 ## Playback, the way a video call plays sound: each player's walk arrives as
 ## a bundle of their path every AdventureScreen.BUNDLE_S and is played
@@ -72,14 +67,12 @@ var _team_order: Array = []
 ## face, hero, t (when a bundle last came)}
 var _live := {}
 var _roster := {}           # profile_id -> the last row refresh() saw
-var _anchors: Array = []
 var _gate := Vector2.ZERO
 var _me := ""
 
 
-## The session's teams in the order Game Controls lists them (by name), so a
-## team is the same colour on every phone in the room. Teams that appear later
-## still get a colour, just after these.
+## The session's teams in order, so a team is the same colour on every phone
+## in the room.
 func set_team_order(team_ids: Array) -> void:
 	_team_order = team_ids.duplicate()
 
@@ -93,8 +86,7 @@ func _init() -> void:
 ## Who is in the session, from the members rows. Heroes already on the board
 ## are updated where they stand -- rebuilding them all on every answer anyone
 ## gave reset every walk cycle mid-step, a hitch across the whole board.
-func refresh(rows: Array, anchors: Array, gate: Vector2, me: String) -> void:
-	_anchors = anchors
+func refresh(rows: Array, gate: Vector2, me: String) -> void:
 	_gate = gate
 	_me = me
 	_roster.clear()
@@ -113,29 +105,24 @@ func refresh(rows: Array, anchors: Array, gate: Vector2, me: String) -> void:
 			remove_child(old)
 			old.queue_free()
 
-	# Team-mates move in step, so several often stand on one circle. Fanned
-	# out side by side, or the names print over each other and read as one.
-	var at_stop := {}
-	for id: String in _roster:
-		var done := _done(_roster[id])
-		at_stop[done] = int(at_stop.get(done, 0)) + 1
-	var placed := {}
+	# Everyone unheard from waits at the door. Fanned out side by side, or the
+	# names print over each other and read as one.
+	var k := 0
 	for id: String in _roster:
 		var row: Dictionary = _roster[id]
-		var done := _done(row)
-		var k: int = placed.get(done, 0)
-		placed[done] = k + 1
-		var spread := (k - (int(at_stop[done]) - 1) / 2.0) * FAN_STEP
+		var spread := (k - (_roster.size() - 1) / 2.0) * FAN_STEP
+		var stagger := Vector2(spread, (k % 2) * FAN_STAGGER)
+		k += 1
 		var team: String = str(row.get("team_id", ""))
 		var marker: Node2D = _markers.get(id)
 		if marker == null:
 			marker = _make(id, str(row.get("username", "?")), team)
 			_markers[id] = marker
 			add_child(marker)
-			marker.set_meta("fallback", _stop(done) + Vector2(spread, (k % 2) * FAN_STAGGER))
+			marker.set_meta("fallback", _gate + stagger)
 			marker.position = _live_pos(id) if _is_live(id) else marker.get_meta("fallback")
 		else:
-			marker.set_meta("fallback", _stop(done) + Vector2(spread, (k % 2) * FAN_STAGGER))
+			marker.set_meta("fallback", _gate + stagger)
 			var tag: Label = marker.get_node("Tag")
 			tag.text = str(row.get("username", tag.text))
 			tag.add_theme_color_override("font_color", colour_of(team))
@@ -144,9 +131,6 @@ func refresh(rows: Array, anchors: Array, gate: Vector2, me: String) -> void:
 		# watch from): no position of theirs will come to say it.
 		if row.has("hero"):
 			_dress(marker, int(row.hero))
-		# Out of the adventure: still shown, because a teacher and a team-mate
-		# both want to know where somebody stopped.
-		marker.modulate.a = 0.45 if bool(row.get("eliminated", false)) else 1.0
 
 
 ## A bundle off the socket: a stretch of the player's path. Somebody who
@@ -154,13 +138,12 @@ func refresh(rows: Array, anchors: Array, gate: Vector2, me: String) -> void:
 ##
 ## Times are the sender's own clock; its offset from ours is the smallest gap
 ## seen between a bundle's last point and its arrival -- the fastest trip,
-## steady while network delay jumps about. A single position (an older sender)
-## is a one-point bundle.
+## steady while network delay jumps about.
 func move(id: String, data: Dictionary) -> void:
 	if id == _me or id == "":
 		return
 	var now := Time.get_ticks_msec() / 1000.0
-	var incoming := _points(data, now)
+	var incoming := _points(data)
 	if incoming.is_empty():
 		return
 	var got: Dictionary = _live.get(id, {})
@@ -211,24 +194,14 @@ static func direct_buffer(data: Dictionary) -> float:
 	return clampf(float(cadence) + 0.05, 0.1, LAG_MAX)
 
 
-## [[sender time, Vector2]] from a message: a bundle {t, dt, x: [], y: []}, a
-## list of [t, x, y], or one position {ts, x, y}.
-static func _points(data: Dictionary, now: float) -> Array:
+## [[sender time, Vector2]] from a message's list of [t, x, y].
+static func _points(data: Dictionary) -> Array:
 	var out: Array = []
 	var p: Variant = data.get("p")
-	if p is Dictionary:
-		var t0 := float(p.get("t", now))
-		var dt := float(p.get("dt", 0.1))
-		var xs: Array = p.get("x", [])
-		var ys: Array = p.get("y", [])
-		for i in mini(xs.size(), ys.size()):
-			out.append([t0 + i * dt, Vector2(float(xs[i]), float(ys[i]))])
-	elif p is Array:
+	if p is Array:
 		for q: Variant in p:
 			if q is Array and (q as Array).size() >= 3:
 				out.append([float(q[0]), Vector2(float(q[1]), float(q[2]))])
-	elif data.has("x"):
-		out.append([float(data.get("ts", now)), Vector2(float(data.x), float(data.get("y", 0.0)))])
 	return out
 
 
@@ -355,16 +328,6 @@ func _is_live(id: String) -> bool:
 
 func _live_pos(id: String) -> Vector2:
 	return _live[id].pts[-1][1]
-
-
-func _done(row: Dictionary) -> int:
-	return clampi(int(row.get("items_done", 0)), 0, _anchors.size())
-
-
-func _stop(done: int) -> Vector2:
-	if _anchors.is_empty():
-		return _gate
-	return _gate if done >= _anchors.size() else _anchors[done]
 
 
 ## Where `team_id`'s players stand right now, as drawn: what the minimap's

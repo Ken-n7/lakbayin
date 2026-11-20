@@ -286,14 +286,6 @@ static func _rank_key(r: Dictionary) -> Array:
 		at if at >= 0.0 else INF]
 
 
-## The same contribution and timestamp share a place, as My Matches does.
-static func _place(rows: Array, index: int) -> int:
-	var first := index
-	while first > 0 and _rank_key(rows[first - 1]) == _rank_key(rows[index]):
-		first -= 1
-	return first + 1
-
-
 static func ranked(rows: Array) -> Array:
 	var out := rows.duplicate()
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:

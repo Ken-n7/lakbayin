@@ -46,7 +46,6 @@ const PLAY_ZOOM := 0.95
 ## behind, which is what the y-sort expects.
 const WALL_HEIGHT_FRAC := 0.45
 const HOUSE_WALL_FRAC := 0.4
-const KEEPOUT_PAD := TILE
 
 ## Trees, stumps and rocks are scenes (`Tree1`..`Rock4`): the sprite, and a
 ## `Foot` body whose shapes are the solid part -- resize them in the editor.

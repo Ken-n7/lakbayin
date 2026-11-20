@@ -280,7 +280,7 @@ static func join(code: String, team_name: String) -> String:
 	return "No team by that name."
 
 
-## The caller's own row in a session: gems, progress, whether they are out.
+## The caller's own row in a session.
 ## `{}` when they never joined it; `{"error": ...}` when the question could
 ## not be asked, which is not the same thing and must not send them to rejoin.
 static func membership(session_id: String) -> Dictionary:
@@ -292,17 +292,11 @@ static func membership(session_id: String) -> Dictionary:
 	return rows[0] if not rows.is_empty() else {}
 
 
-## Everyone in the session, whatever team: who they are, where they have got
-## to, and which team's colour to draw them in. This is what puts the whole
-## class on one board.
-##
-## Scoped to a session, so the fan-out is the session's size -- eight players
-## is ~900 realtime messages an adventure. A class of forty would be ~22,000,
-## which is the number to remember before widening this.
+## Everyone in the session, whatever team: who they are and which team's
+## colour to draw them in.
 static func everyone(session_id: String) -> Array:
 	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		MEMBERS + "?select=profile_id,team_id,items_done,gems,eliminated,"
-		+ "profiles(username)&session_id=eq." + session_id)
+		MEMBERS + "?select=profile_id,team_id,profiles(username)&session_id=eq." + session_id)
 	return roster(got.data if got.data is Array else [])
 
 
@@ -316,8 +310,5 @@ static func roster(rows: Array) -> Array:
 			"profile_id": str(row.get("profile_id", "")),
 			"team_id": "" if row.get("team_id") == null else str(row.get("team_id")),
 			"username": str((who as Dictionary).get("username", "?")) if who is Dictionary else str(row.get("username", "?")),
-			"items_done": int(row.get("items_done", 0)),
-			"gems": int(row.get("gems", 0)),
-			"eliminated": bool(row.get("eliminated", false)),
 		})
 	return out

@@ -28,8 +28,6 @@ var stairs := {}      # Vector2i -> {low, top, side, row}: a ramp's three cells
 # --- Boxes, in world px -----------------------------------------------------
 var solid: Array[Rect2] = []          # walls: buildings, boulders, guards
 var rails: Array[Rect2] = []          # the walls round each ramp's top, also in `solid`
-var station_rects: Array[Rect2] = []  # keep-outs the decor pass avoids
-var sign_rects: Array[Rect2] = []     # the station signboards, specifically
 
 
 ## The grass layer. Walkability asks `land`, which is exactly what it is
@@ -38,11 +36,6 @@ var grass: TileMapLayer = null
 
 
 # --- Conversions ------------------------------------------------------------
-## A normalized (0..1) point to world px.
-static func norm(p: Vector2) -> Vector2:
-	return Vector2(p.x * MapCfg.WORLD_W * MapCfg.TILE, p.y * MapCfg.WORLD_H * MapCfg.TILE)
-
-
 static func cell_at(pos: Vector2) -> Vector2i:
 	return Vector2i(floori(pos.x / MapCfg.TILE), floori(pos.y / MapCfg.TILE))
 
@@ -67,16 +60,6 @@ static func rings(c: Vector2i, radius: int) -> Array[Vector2i]:
 
 
 # --- Questions --------------------------------------------------------------
-## Can something stand at `pos` at the level of the ground there: clear of
-## walls, on land, not in a cliff face.
-func is_walkable(pos: Vector2) -> bool:
-	for r in solid:
-		if r.has_point(pos):
-			return false
-	var c := cell_at(pos)
-	return land.has(c) and not cliff.has(c)
-
-
 ## May a walker at `level` stand in `c`? Ground of that height takes them; a
 ## ramp takes either of the two levels it joins; a cliff takes nobody. A
 ## walker on a ramp now (`stair_low` its lower level, else -1) may step off it
@@ -328,45 +311,9 @@ func _ramp_span(c: Vector2i, y: float) -> Vector2:
 	return Vector2(0.0, 16.0)
 
 
-## The world rect of the ramp whose top cell is `top`: one cell across, three
-## down.
-static func ramp_rect(top: Vector2i) -> Rect2:
-	var t := float(MapCfg.TILE)
-	return Rect2(Vector2(top) * t, Vector2(1.0, 3.0) * t)
-
-
-static func clear_of(r: Rect2, boxes: Array) -> bool:
-	for b: Rect2 in boxes:
-		if r.intersects(b):
-			return false
-	return true
-
-
-## A station is a building, a signboard off one side and a keeper off the
-## other, so a single radius either lets trees land on the board or blanks out
-## half the island. Each keep-out box is checked on its own, shrunk by a tile:
-## touching a station's outermost cell is close enough to plant.
-func clear_of_buildings(r: Rect2) -> bool:
-	for b: Rect2 in station_rects:
-		var box := b.grow(-MapCfg.TILE)
-		# A box that was only the margin has nothing left to stand clear of, and
-		# Rect2 will not take a negative size.
-		if box.size.x > 0.0 and box.size.y > 0.0 and box.intersects(r):
-			return false
-	return true
-
-
-func clear_of_signs(r: Rect2) -> bool:
-	return clear_of(r, sign_rects)
-
-
 # --- Writing ----------------------------------------------------------------
 func block(r: Rect2) -> void:
 	solid.append(r)
-
-
-func keep_out(r: Rect2) -> void:
-	station_rects.append(r)
 
 
 ## A ramp from `low` up to the ground beside it, three cells down from `top`.
@@ -410,12 +357,3 @@ func lay_cliffs() -> void:
 				continue
 			if int(cliff.get(k, 0)) < level:
 				cliff[k] = level
-
-
-## The keep-out box round a base-anchored building: its footprint plus a tile of
-## breathing room. Written once because the gate, each station keep and each
-## outpost house all wanted the same four terms and each spelled them out.
-static func building_keepout(base: Vector2, hw: float, bh: float) -> Rect2:
-	var pad := MapCfg.KEEPOUT_PAD
-	return Rect2(Vector2(base.x - (hw + pad), base.y - (bh + pad)),
-			Vector2(hw * 2.0 + pad * 2.0, bh + pad * 2.0))

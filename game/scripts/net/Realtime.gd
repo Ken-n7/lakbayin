@@ -88,7 +88,7 @@ var live := false
 ## Who is connected right now: user id -> every connection's announcement
 ## from `track()` ({sid, where, name}), one per device. The server keeps this
 ## list and drops a phone from it by itself when its connection goes, which is
-## the point -- nothing here has to notice a phone dying. Ask `where_is()`.
+## the point -- nothing here has to notice a phone dying.
 var online := {}
 ## key -> {phx_ref: meta}. One user can hold two connections (two windows);
 ## they only count as gone when the last one leaves.
@@ -114,20 +114,13 @@ var _pos_topics := {}
 var _pos_live := {}
 
 
-## Where one player's positions go: only they and the teacher are on it.
+## Where a match's movement goes; every phone in it is on it.
 ## Ids only: Realtime topics take no spaces.
-static func in_topic(session_id: String, profile_id: String) -> String:
-	return "%s:in:%s:%s" % [TOPIC, session_id, profile_id]
-
-
-## Where the teacher's snapshots of everyone come out; every phone is on it.
 static func snap_topic(session_id: String) -> String:
 	return "%s:snap:%s" % [TOPIC, session_id]
 
 
-## The position channels this device is on: its own and the snapshots on a
-## phone; every player's and the snapshots on the teacher's. Replaces the last
-## set.
+## The position channels this device is on. Replaces the last set.
 func watch_positions(topics: Array) -> void:
 	for t: String in _pos_topics.keys():
 		if not topics.has(t):
@@ -153,13 +146,13 @@ func _join_pos(topic: String) -> void:
 	})
 
 
-## A position ("pos"), or the teacher's snapshot ("snap"), to one of those
-## channels. False while its private channel is joining, so the sender keeps
-## its initial position / stop pending instead of waiting for an idle tick.
-func send_position(topic: String, payload: Dictionary, event := "pos") -> bool:
+## A stretch of this player's path ("snap") to one of those channels. False
+## while its private channel is joining, so the sender keeps its initial
+## position / stop pending instead of waiting for an idle tick.
+func send_position(topic: String, payload: Dictionary) -> bool:
 	if _state != WebSocketPeer.STATE_OPEN or not _pos_live.has(topic):
 		return false
-	_send(topic, "broadcast", {"type": "broadcast", "event": event, "payload": payload})
+	_send(topic, "broadcast", {"type": "broadcast", "event": "snap", "payload": payload})
 	return true
 
 
@@ -423,7 +416,7 @@ func _handle(msg: Dictionary) -> void:
 				var event := str(b.get("event", ""))
 				var data: Dictionary = b.payload
 				var topic := str(msg.get("topic", ""))
-				if event in ["pos", "snap"]:
+				if event == "snap":
 					if _pos_live.has(topic) and valid_position(topic, event, data):
 						position.emit(event, data)
 				elif topic == TOPIC:
@@ -518,33 +511,18 @@ func _retry_position(topic: String) -> void:
 			_join_pos(topic))
 
 
-## RLS authenticates the publisher; bind the payload to that topic and
+## The server checks the publisher; bind the payload to that topic and
 ## validate its bounded shape before giving it to map code.
 static func valid_position(topic: String, event: String, data: Dictionary) -> bool:
 	var sid := str(data.get("sid", ""))
-	if sid == "":
-		return false
-	if event == "pos":
-		var id := str(data.get("id", ""))
-		return id != "" and topic == in_topic(sid, id) and _valid_path(data)
-	if event != "snap" or topic != snap_topic(sid):
+	if sid == "" or event != "snap" or topic != snap_topic(sid):
 		return false
 	var paths: Variant = data.get("p", [])
-	var rows: Variant = data.get("r", [])
-	if not (paths is Array) or not (rows is Array) or paths.size() > 255 or rows.size() > 255:
+	if not (paths is Array) or paths.size() > 255:
 		return false
 	for p: Variant in paths:
 		if not (p is Dictionary) or str(p.get("id", "")) == "" or not _valid_path(p):
 			return false
-	for row: Variant in rows:
-		if not (row is Dictionary) or str(row.get("profile_id", "")) == "":
-			return false
-		for key in ["items_done", "gems"]:
-			if row.has(key) and not _number(row[key]):
-				return false
-		for key in ["gone", "eliminated"]:
-			if row.has(key) and not (row[key] is bool):
-				return false
 	return true
 
 
@@ -556,25 +534,12 @@ static func _valid_path(data: Dictionary) -> bool:
 	if data.has("hero") and not _number(data.hero):
 		return false
 	var p: Variant = data.get("p")
-	if p is Dictionary:
-		var xs: Variant = p.get("x")
-		var ys: Variant = p.get("y")
-		if not (xs is Array) or not (ys is Array) or xs.is_empty() or xs.size() != ys.size() or xs.size() > 128:
+	if not (p is Array) or p.is_empty() or p.size() > 128:
+		return false
+	for q: Variant in p:
+		if not (q is Array) or q.size() < 3 or not _number(q[0]) or not _number(q[1]) or not _number(q[2]):
 			return false
-		if not _number(p.get("t")) or not _number(p.get("dt")) or float(p.dt) <= 0.0:
-			return false
-		for i in xs.size():
-			if not _number(xs[i]) or not _number(ys[i]):
-				return false
-		return true
-	if p is Array:
-		if p.is_empty() or p.size() > 128:
-			return false
-		for q: Variant in p:
-			if not (q is Array) or q.size() < 3 or not _number(q[0]) or not _number(q[1]) or not _number(q[2]):
-				return false
-		return true
-	return _number(data.get("x")) and _number(data.get("y"))
+	return true
 
 
 ## --- Debug counters (HubDebug) ---------------------------------------------
@@ -587,7 +552,7 @@ var log_lines: Array[String] = []
 const LOG_KEEP := 14
 
 
-## "pos", "snap", "postgres_changes", "presence_diff", "heartbeat"...
+## "snap", "postgres_changes", "presence_diff", "heartbeat"...
 static func _kind(event: String, payload: Variant) -> String:
 	if event == "broadcast" and payload is Dictionary:
 		return str((payload as Dictionary).get("event", "broadcast"))
@@ -601,19 +566,9 @@ func _tally(into: Dictionary, kind: String, topic: String, payload: Variant, dir
 	var what := ""
 	var inner: Variant = (payload as Dictionary).get("payload") if payload is Dictionary else null
 	match kind:
-		"pos":
-			if inner is Dictionary and inner.get("p") is Dictionary:
-				var xs: Array = inner.p.get("x", [])
-				var ys: Array = inner.p.get("y", [])
-				what = "%s %d pts -> (%d,%d)" % [str(inner.get("id", "")).left(6), xs.size(),
-					int(xs[-1]) if not xs.is_empty() else 0, int(ys[-1]) if not ys.is_empty() else 0]
-			elif inner is Dictionary:
-				what = "%s (%d,%d)" % [str(inner.get("id", "")).left(6),
-					int(inner.get("x", 0)), int(inner.get("y", 0))]
 		"snap":
 			if inner is Dictionary:
-				what = "%d heroes, %d rows" % [(inner.get("p", []) as Array).size(),
-					(inner.get("r", []) as Array).size()]
+				what = "%d heroes" % (inner.get("p", []) as Array).size()
 		"postgres_changes":
 			var d: Variant = (payload as Dictionary).get("data") if payload is Dictionary else null
 			if d is Dictionary:
@@ -667,20 +622,6 @@ func _expire_leaves() -> void:
 			_leaving.erase(key)
 	if dropped:
 		_presence_publish()
-
-
-## Where a user is in one session: "map", "lobby", or "" for not connected to
-## it. All their connections count -- the same account open on two devices,
-## or still open in last session's window, is common, and taking whichever
-## connection came first read a student on the map as not here at all.
-func where_is(user_id: String, session_id: String) -> String:
-	var found := ""
-	for meta: Variant in online.get(user_id, []):
-		if meta is Dictionary and str(meta.get("sid", "")) == session_id:
-			if str(meta.get("where", "")) == "map":
-				return "map"
-			found = "lobby"
-	return found
 
 
 func _send(topic: String, event: String, payload: Dictionary) -> void:

@@ -83,7 +83,6 @@ func _building(path: String, at: Vector2, wall_frac: float, flip := 1.0) -> Spri
 	spr.offset = Vector2(0, -tex.region.size.y * 0.5)
 	add_child(spr)
 	grid.block(Rect2(at.x - size.x * 0.5, at.y - size.y * wall_frac, size.x, size.y * wall_frac))
-	grid.keep_out(MapGrid.building_keepout(at, size.x * 0.5, size.y))
 	return spr
 
 

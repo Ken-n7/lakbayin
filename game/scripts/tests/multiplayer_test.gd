@@ -71,7 +71,7 @@ func _private_movement() -> void:
 	check("movement joins request private authorization", bool(socket.messages[0].payload.config.get("private", false)))
 	var received: Array = []
 	rt.position.connect(func(event: String, data: Dictionary) -> void: received.append([event, data]))
-	var snap := {"sid": "s1", "r": [{"profile_id": "alice", "gems": 60, "items_done": 1, "eliminated": false}]}
+	var snap := {"sid": "s1", "p": [{"id": "alice", "p": [[1.0, 10, 20]]}]}
 	var msg := {"event": "broadcast", "topic": Realtime.TOPIC,
 		"payload": {"event": "snap", "payload": snap}}
 	rt._handle(msg)
@@ -83,14 +83,14 @@ func _private_movement() -> void:
 	rt._handle({"event": "phx_reply", "topic": topic, "ref": ref, "payload": {"status": "ok"}})
 	rt._handle(msg)
 	check("an authorized snapshot reaches the map", received.size() == 1)
-	msg.payload.payload = {"sid": "other", "r": snap.r}
+	msg.payload.payload = {"sid": "other", "p": snap.p}
 	rt._handle(msg)
 	check("a snapshot cannot claim another session", received.size() == 1)
 	msg.payload.payload = {"sid": "s1", "p": "not an array"}
 	rt._handle(msg)
 	check("malformed snapshots are rejected before reaching map code", received.size() == 1)
-	check("a player input must match its own topic", not Realtime.valid_position(
-		Realtime.in_topic("s1", "bob"), "pos", {"sid": "s1", "id": "alice", "x": 1, "y": 2}))
+	check("only path lists pass as movement", not Realtime.valid_position(
+		topic, "snap", {"sid": "s1", "p": [{"id": "alice", "x": 1, "y": 2}]}))
 	rt.close_socket()
 	rt.free()
 
@@ -275,16 +275,11 @@ func _room_controls() -> void:
 
 
 func _watch_view() -> void:
-	check("only matching event viewers request spectator snapshots", WatchFeed.has_viewers(
-		{"viewer": [{"sid": "s1", "where": "watch"}]}, "s1") and not WatchFeed.has_viewers(
-		{"viewer": [{"sid": "other", "where": "watch"}]}, "s1"))
 	var snapshot := {"session": {"id": "s1", "state": "running", "duration_s": 600}, "monks": 3,
 		"teams": [{"id": "blue", "name": "Blue", "deposited": 1, "carried": 1, "reached_at": "2026-10-23T00:01:00.1+00:00"},
 			{"id": "red", "name": "Red", "deposited": 1, "carried": 0, "reached_at": "2026-10-23T00:01:00.9+00:00"}],
 		"players": [{"profile_id": "mate", "team_id": "blue", "username": "Mate", "hero": 1, "carried": 1, "deposited": 1}],
 		"answers": [{"team_id": "blue", "monk": 0, "deposited": false}, {"team_id": "red", "monk": 0, "deposited": true}]}
-	check("watch monk state is independent for each team", WatchFeed.monk_state(snapshot, "blue", 0) == 1
-		and WatchFeed.monk_state(snapshot, "red", 0) == 2 and WatchFeed.monk_state(snapshot, "blue", 1) == 0)
 	check("watch timeout tie-break keeps fractional deposit times", WatchFeed.outcome(snapshot) == "Blue wins!")
 	snapshot.teams[1].reached_at = snapshot.teams[0].reached_at
 	check("watch true ties are draws", WatchFeed.outcome(snapshot) == "Draw")
@@ -355,9 +350,6 @@ func _records_view() -> void:
 	labels = records.find_children("*","Label",true,false).map(func(l: Label) -> String: return l.text)
 	check("global board shows wins and deposited answers", labels.any(func(t: String) -> bool: return t.contains("2 wins") and t.contains("7 deposited")))
 	var results := preload("res://scripts/ResultsScreen.gd")
-	check("results and history share ranks for exact player ties", results._place([
-		{"deposited":2,"reached_s":3.0},{"deposited":2,"reached_s":3.0},{"deposited":0}],1) == 1
-		and results._place([{"deposited":2},{"deposited":2},{"deposited":0}],2) == 3)
 	check("results preserve sub-second deposit tie-breaks", is_equal_approx(results._seconds_in("2026-10-23T00:00:00.125+00:00",float(Time.get_unix_time_from_datetime_string("2026-10-23T00:00:00"))),0.125))
 	records.queue_free()
 	await get_tree().process_frame
@@ -368,7 +360,7 @@ func _direct_movement() -> void:
 	check("old senders keep a compatible playback buffer", Peers.direct_buffer({}) == Peers.LAG_START)
 	check("malformed cadence cannot set unbounded delay", Peers.direct_buffer({"cadence":INF}) == Peers.LAG_START
 		and Peers.direct_buffer({"cadence":1000}) == Peers.LAG_MAX)
-	var points := Peers._points({"p":[[1.0,10,20],[1.07,12,20],[1.23,14,20]]},0.0)
+	var points := Peers._points({"p":[[1.0,10,20],[1.07,12,20],[1.23,14,20]]})
 	check("frame hitches retain the real sample timestamps", points[1][0]==1.07 and points[2][0]==1.23)
 	var peer := Peers.new()
 	peer.move("remote",{"cadence":0.1,"p":[[1.0,10,20],[1.05,12,20]]})
@@ -384,7 +376,7 @@ func _direct_movement() -> void:
 	adv.play.session_id="pace-test"
 	adv._peers=Peers.new()
 	adv.world.add_child(adv._peers)
-	adv._peers.refresh([{"profile_id":"remote","team_id":"red","username":"Remote"}],[],Vector2.ZERO,Net.user_id)
+	adv._peers.refresh([{"profile_id":"remote","team_id":"red","username":"Remote"}],Vector2.ZERO,Net.user_id)
 	var rt := Net.realtime()
 	var previous_socket: Variant=rt.get("_ws")
 	var previous_state: int=rt.get("_state")

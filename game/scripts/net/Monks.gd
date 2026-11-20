@@ -38,15 +38,3 @@ static func state(session_id: String) -> Dictionary:
 	return {"error": got.error, "network": bool(got.get("network", false)),
 		"data": got.data if got.error == "" and got.data is Dictionary else {}}
 
-
-## The match's words, monk by monk: [{monk, word, meaning, modern, traditional}].
-static func words_of(session_id: String) -> Array:
-	var got: Dictionary = await Net.rest(HTTPClient.METHOD_GET,
-		"/rest/v1/session_words?select=monk,words(word,meaning,syllables,modern,traditional)"
-		+ "&session_id=eq." + session_id + "&order=monk")
-	var out: Array = []
-	for row: Dictionary in (got.data if got.error == "" and got.data is Array else []):
-		var w: Dictionary = row.get("words", {}) if row.get("words") is Dictionary else {}
-		w["monk"] = int(row.get("monk", 0))
-		out.append(w)
-	return out

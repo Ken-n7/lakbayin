@@ -87,53 +87,48 @@ func _init() -> void:
 	print("session: a new match starts clean")
 
 	# --- Everyone else on the board -----------------------------------------
-	# `items_done` is the position: a player who has answered three items
-	# stands at circle three, and one who has finished stands at the gate.
+	# Unheard from: waiting at the Monastery's door, fanned out side by side.
 	var P: Node2D = load("res://scripts/map/Peers.gd").new()
-	var anchors: Array = []
-	for i in 14:
-		anchors.append(Vector2(i * 100, 0))
 	var gate := Vector2(9999, 0)
 	var rows: Array = [
-		{"profile_id": "me", "username": "me", "team_id": "a", "items_done": 5},
-		{"profile_id": "b", "username": "bea", "team_id": "a", "items_done": 3},
-		{"profile_id": "c", "username": "cy", "team_id": "z", "items_done": 14},
-		{"profile_id": "d", "username": "dee", "team_id": "z", "items_done": 0,
-			"eliminated": true},
+		{"profile_id": "me", "username": "me", "team_id": "a"},
+		{"profile_id": "b", "username": "bea", "team_id": "a"},
+		{"profile_id": "c", "username": "cy", "team_id": "z"},
+		{"profile_id": "d", "username": "dee", "team_id": "z"},
 	]
-	P.refresh(rows, anchors, gate, "me")
+	P.refresh(rows, gate, "me")
 	assert(P.get_child_count() == 3, "the player themselves is not a marker: %d" % P.get_child_count())
 	var spots := {}
 	for m in P.get_children():
-		spots[(m as Node2D).position] = true
-	assert(spots.has(Vector2(300, 0)), "three items done stands at circle three")
-	assert(spots.has(gate), "everything done stands at the gate")
-	assert(spots.has(Vector2(0, 0)), "nothing done stands at the first circle")
+		var at: Vector2 = (m as Node2D).position
+		assert(at.distance_to(gate) < 60.0, "an unheard player waits at the door: %s" % at)
+		spots[at] = true
+	assert(spots.size() == 3, "side by side, not on top of each other")
 
 	# Two teams, two colours, and the same team keeps its colour.
 	assert(P.colour_of("a") == P.colour_of("a"), "a team's colour is stable")
 	assert(P.colour_of("a") != P.colour_of("z"), "two teams read apart")
 
-	# A live position beats the circle: bea is standing on the road, not on 3.
-	P.move("b", {"x": 555.0, "y": 77.0, "face": "left", "moving": true, "hero": 4})
-	P.refresh(rows, anchors, gate, "me")
+	# A live position beats the door: bea is standing on the road.
+	P.move("b", {"p": [[0.0, 555.0, 77.0]], "hero": 4})
+	P.refresh(rows, gate, "me")
 	# Heading there, not snapped: `_process` walks the hero onto it frame by frame.
 	assert(P._is_live("b") and P._live_pos("b") == Vector2(555, 77),
 		"a live hero heads where it was sent: %s" % P._live_pos("b"))
 	P._process(1.0)
 	assert(P._markers["b"].position == Vector2(555, 77),
 		"and gets there: %s" % P._markers["b"].position)
-	P.move("new", {"x": 1.0, "y": 2.0, "name": "late", "team": "z"})
+	P.move("new", {"p": [[0.0, 1.0, 2.0]], "name": "late", "team": "z"})
 	assert(P._markers.has("new"), "someone the roster has not caught up with still appears")
-	P.move("me", {"x": 1.0, "y": 2.0})
+	P.move("me", {"p": [[0.0, 1.0, 2.0]]})
 	assert(not P._markers.has("me"), "your own echo is not a second you")
 
 	# Played back along the path that was walked: between two points halfway
 	# in time is halfway there, and past the newest it walks on only briefly.
 	var PeersScript: GDScript = load("res://scripts/map/Peers.gd")
-	var bundle: Array = PeersScript._points({"p": {"t": 5.0, "dt": 0.1, "x": [0, 15, 30], "y": [7, 7, 7]}}, 0.0)
+	var bundle: Array = PeersScript._points({"p": [[5.0, 0, 7], [5.1, 15, 7], [5.2, 30, 7]]})
 	assert(bundle.size() == 3 and is_equal_approx(float(bundle[2][0]), 5.2)
-		and bundle[2][1] == Vector2(30, 7), "a bundle is its points, a step apart: %s" % str(bundle))
+		and bundle[2][1] == Vector2(30, 7), "a bundle is its points: %s" % str(bundle))
 	var walk: Array = []
 	for i in 21:
 		walk.append([i * 0.1, Vector2(i * 15.0, 0)])       # 150 px/s for 2s
@@ -207,15 +202,15 @@ func _init() -> void:
 	# A refresh updates heroes where they stand rather than rebuilding them --
 	# rebuilding reset every walk cycle on every answer anyone gave.
 	var bea_before: Node2D = P._markers["b"]
-	P.refresh(rows, anchors, gate, "me")
+	P.refresh(rows, gate, "me")
 	assert(P._markers["b"] == bea_before, "a refresh keeps the same hero")
 
 	# Somebody who leaves the session leaves the board. "new" stays: known only
 	# from live positions, it goes when those stop.
-	P.refresh(rows.slice(0, 2), anchors, gate, "me")
+	P.refresh(rows.slice(0, 2), gate, "me")
 	assert(not P._markers.has("c") and not P._markers.has("d"), "left the session, left the board")
 	assert(P._markers.has("b") and P._markers.has("new"), "the rest stay: %s" % str(P._markers.keys()))
-	print("peers: markers stand where items_done says, and leave when the player does")
+	print("peers: unheard players wait at the door, and leave when the player does")
 
 	print("test_rules: all assertions passed")
 	quit()

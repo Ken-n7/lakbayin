@@ -15,23 +15,6 @@ static func leave(session: String) -> void:
 	await Net.rest(HTTPClient.METHOD_POST, "/rest/v1/rpc/leave_watch", {"p_session": session})
 
 
-## Presence is a delivery hint only; permission to read is checked by RLS.
-static func has_viewers(online: Dictionary, session: String) -> bool:
-	for states: Array in online.values():
-		for meta: Variant in states:
-			if meta is Dictionary and meta.get("sid") == session and meta.get("where") == "watch":
-				return true
-	return false
-
-
-## 0 = unanswered, 1 = carried, 2 = deposited, separately for each team.
-static func monk_state(data: Dictionary, team: String, monk: int) -> int:
-	for a: Dictionary in data.get("answers", []):
-		if str(a.get("team_id", "")) == team and int(a.get("monk", -1)) == monk:
-			return 2 if bool(a.get("deposited", false)) else 1
-	return 0
-
-
 static func time_left(session: Dictionary, now: float) -> int:
 	var end: Variant = session.get("ends_at")
 	if end == null:

@@ -19,10 +19,6 @@ const COUNT := 6
 ## outside its crenellations. (It first went round the middle of the tower,
 ## on a flat ellipse, which read as circling the top's south edge.)
 const RADIUS := Vector2(38, 30)
-## The top's centre above a tower's base, as a share of the tower's drawn
-## height. The four tower sprites share their shape: drawn from art row 46 to
-## 230 of 256, the ring's centre at row 92 -- 0.75 of the way up.
-const TOP := 0.75
 const SPIN := 0.9                    # radians a second, at rest
 const WHIRL := 11.0                  # ... and at the top of the whirl
 const WHIRL_S := 0.55                # the whirl, then the dash
@@ -41,12 +37,6 @@ var _angle := 0.0
 var _burst_t := -1.0                 # time since burst(); -1 at rest
 var _dirs: Array[Vector2] = []       # each sign's way out, fixed at the dash
 var _each: Array = []                # each sign's own ways, see `_ready`
-
-
-## Where the signs circle for a tower drawn `height` world px tall (its art
-## as `Art.cell` trims it), from its base.
-static func top_of(height: float) -> Vector2:
-	return Vector2(0, -height * TOP)
 
 
 func _ready() -> void:

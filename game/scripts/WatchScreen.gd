@@ -260,7 +260,7 @@ func _apply(snapshot: Dictionary) -> void:
 	var players: Array = data.get("players", [])
 	for row: Dictionary in players:
 		_roster[str(row.profile_id)] = row
-	peers.refresh(players, [], world.door(), "")
+	peers.refresh(players, world.door(), "")
 	for i in 2:
 		for c in _lists[i].get_children():
 			_lists[i].remove_child(c)

@@ -332,7 +332,7 @@ func _show_peers(rows: Array) -> void:
 		_peers = Peers.new()
 		_peers.set_team_order(play.team_ids)
 		world.add_child(_peers)
-	_peers.refresh(rows, [world.door()], world.door(), Net.user_id)
+	_peers.refresh(rows, world.door(), Net.user_id)
 	_typing_peers.clear()
 	for row: Dictionary in rows:
 		var id := str(row.get("profile_id", ""))
@@ -420,7 +420,7 @@ func _share_position(delta: float) -> void:
 			# Real timestamps survive frame hitches; uniform dt invented times
 			# for late samples and added delay on a busy laptop.
 			"p": _path.duplicate(true)}],
-	}, "snap")
+	})
 	if sent:
 		_bundle_clock = 0.0
 		_moved_since_send = false
