@@ -651,6 +651,10 @@ def read_rows(store, state, who, table, params):
         return rows
     s = find(store, state, sid)
     require(s, "No such session", 404)
+    # Your own row, when you have none, is no row -- not a refusal: a code
+    # typed for a room already under way must say so (Teams.enter).
+    if table == "members" and params.get("profile_id", "").removeprefix("eq.") == who and not member(s, who):
+        return []
     require(may_read(s, who), "Not a member or viewer")
     if table == "teams":
         return s["teams"]
