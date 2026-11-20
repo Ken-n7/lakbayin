@@ -1,7 +1,7 @@
 # Lakbayin — Handoff
 
-Updated 2026-10-24 for the next agent (Codex). Read this, then `DESIGN.md`
-(the source of truth for every game rule), then `server/README.md`. Former Supabase notes below are historical.
+Updated 2026-11-20. Read this, then `DESIGN.md` (the source of truth for
+every game rule), then `server/README.md`.
 
 ## 1. What this is
 
@@ -19,12 +19,11 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   (more words, then whoever reached that total sooner).
 - **Practice** is the same match, solo and offline.
 
-**Deadlines:** entries (videos + forms) due **2026-10-25**; finalists announced
-2026-11-09; finals 2026-11-26/27 (General Santos City).
+**Finals:** 2026-11-26/27 (General Santos City). Entries were due 2026-10-25.
 
 ## 2. Repo
 
-- Repo: `~/Workspace/games/levelup-entry` (git, **no remote**, branch `main`).
+- Repo: `~/Workspace/games/levelup-entry` (git, branch `main`, remote `origin` = github.com/Ken-n7/lakbayin).
 - Godot project: `game/`.
 - Backend: `server/` (FastAPI + SQLite + WebSockets). The former Supabase backend (`supabase/`) and the movement relay were deleted on Oct 25; git history keeps them.
 - The original asset pack downloads (Tiny Swords, Super Retro World, Pixel
@@ -38,7 +37,7 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 
 ## 3. State
 
-### Maps and slow lines (Nov 11, uncommitted)
+### Maps and slow lines (Nov 11)
 - **Map generator, found by a seed sweep** (`WORLD_SEEDS`, DEVTOOLS; the
   suite's own eight seeds never hit them):
   - About 1 world in 200 walled Red in at its spawn: where a plateau across
@@ -57,7 +56,7 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - **Bursts after a freeze:** `BURST_S` 2 -> 5 and a lost hero keeps the time
   they were away (`LOST_BANK_S`): on a line freezing 6 s in every 20, dropped
   movement went from 113 packets a match to 17.
-- **Kept connections (Nov 11, uncommitted):** every call goes over
+- **Kept connections (Nov 11):** every call goes over
   `HttpPool` (`game/scripts/net/HttpPool.gd`, `Backend.pool`), not a new
   `HTTPRequest` each: a connection is kept 45 s and used again; one the far
   end let go of is given 5 s, then the call is made once more on a new one.
@@ -71,7 +70,7 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   Realme over the public address: sign-in restore, a Find Match game, forfeit,
   Results. No gzip is asked for (`HTTPRequest` did): answers are a few KB.
 
-### The booth (Nov 10, uncommitted)
+### The booth (Nov 10)
 - For the finals the user runs a booth: two of their own phones for
   visitors, this laptop as the server, on the venue's WiFi.
   `server/README.md` "The booth" has the commands.
@@ -99,18 +98,18 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   app is still changing. Until then the QR points at this server's `/get`,
   so the 88 MB APK goes out through the tunnel on the laptop's upload.
 
-### Bug fixes before the finals (Nov 10, uncommitted)
+### Bug fixes before the finals (Nov 10)
 - **Viewer movement delay:** the delayed copy sent the sender's *latest*
   socket message, not the packet from a minute before (`app.py`, the
   `call_later` lambda now binds topic and payload).
-- **Forfeit (uncommitted):** a running match one side has been off for
+- **Forfeit:** a running match one side has been off for
   `ABANDON_S` (60 s, `LAKBAYIN_ABANDON_S`, 0 = off) ends and the side that
   stayed wins (`abandon` in the ticker sets `winner_team` and `forfeit_by`;
   DESIGN.md 3.4). "Off" = no socket of that side on the match's snap channel.
   Both sides off: ends with the score standing. `team_standings` rows carry
   `forfeit`; `ResultsScreen._rank_key` sorts a forfeiting side last, so the
   title, WINNER tag and "<side> left the match" all follow from it.
-- **Lost heroes (uncommitted):** a hero whose line dropped for more than
+- **Lost heroes:** a hero whose line dropped for more than
   about 2 s of walking was never taken again -- every later packet was
   measured from where they were last seen, and every answer refused ("Walk up
   to it first"). Now a hero unheard for `LOST_S` (5 s) is taken where they
@@ -118,10 +117,10 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   `moved_ok`'s jump; `placed_ok` moves them and spends the walk). The way
   across the gap is not checked: a silent client can cross a cliff, no faster
   than walking.
-- **Match end (uncommitted):** a movement packet arriving after the match
+- **Match end:** a movement packet arriving after the match
   ended closed the sender's socket; it is dropped now. `_deposit` runs one at
   a time.
-- **Menus (uncommitted):** Android's back in a lobby or the Find Match
+- **Menus:** Android's back in a lobby or the Find Match
   queue is now Leave / Cancel (`TeamNameScreen.go_back`; it went Home and
   left the place taken, so a match could start with nobody in it), and does
   nothing once the match has started. `_rejoin_match` no longer forgets the
@@ -135,7 +134,7 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - **Teams not arriving:** `Match.start_online` now fails with a message
   instead of putting everyone on Blue.
 - Two new server tests (30 total). The client fixes have no test of their own.
-- **Server optimizations (uncommitted):** a socket's token is looked up every
+- **Server optimizations:** a socket's token is looked up every
   `TOKEN_RECHECK_S` (5 s), not per message; finished matches are parsed once
   and kept (`Store.archives`, `_ranked`): Records with 2,000 matches went
   from ~320 ms to ~40 ms a request; a failed map build is logged once.
@@ -153,19 +152,6 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   `t_phone_*`, five `t_ghost_*`. Forfeit checked on the Realme the same way:
   a live 3 v 3 Find Match, the other side never connected, Results said
   Victory, "Pula left the match" (31 server tests, match suite 47).
-
-### Deferred: database backups (user chose to postpone, Oct 24)
-- `server/data/lakbayin.sqlite3` has **no automatic backup** and exists only
-  on this laptop. `python -m server.manage backup DEST` works when run by hand.
-- Agreed plan: a daily systemd user timer (03:00, `Persistent=true`) runs that
-  command into `~/Backups/lakbayin/` and keeps 14 days. It then uploads the
-  file to a private `lakbayin-backups` bucket in the old Supabase project
-  (`yvklwmtsvjgppnmtlede`) and keeps 30 days there.
-- The `service_role` key goes only in `~/.config/lakbayin/backup.env`
-  (mode 600), never in the repo; the user writes that file themselves.
-- Still to decide: encrypt backups with a passphrase before upload (they hold
-  password and token hashes). Free Supabase projects pause after about a week
-  without activity, so the script must log a clear error when uploads fail.
 
 ### Server checks positions (Oct 24)
 - The server runs **Godot** (`LAKBAYIN_GODOT`, else `godot` on PATH, else
@@ -188,114 +174,31 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 - The dev panel's Answer Monk / teleport / fast walk are refused or dropped
   by a checking server, as they should be.
 
-### Current: self-hosted server migration (Oct 24)
-- User changed architecture: all accounts, rules, state, records and realtime
-  run on this machine, publicly reachable, not LAN-only. Username/password,
-  no emails or password reset. Domain **lakbayin.space**, registered at
-  Namecheap. On Oct 24 the user corrected/confirmed **lakbayin.space**
-  (earlier `.website` was wrong). Cloudflare DNS and the named tunnel are live.
-- `Net` loads `net/Backend.gd` (Oct 25: the old Supabase client and the
-  self-hosted subclass merged into it; Supabase auth/recovery and the relay
-  removed). The default endpoint is `https://server.lakbayin.space`; local
-  tests set `LAKBAYIN_SERVER_URL=http://127.0.0.1:8000`. The server keeps the
-  REST/Phoenix shapes (`/rest/v1/...`, `/realtime/v1/websocket`) the client
-  was first written against.
-- `server/app.py` supplies Argon2id username auth, hashed opaque 30-day
-  revocable sessions, SQLite atomic checkpoints, ranked matching, custom
-  host controls/cleanup, answers/lockouts/deposits, finish/timeout rankings,
-  history/board and read-only spectators. Auth rate limiting and bounded
-  messages; private sockets enforce membership and publisher identity.
-- New local config: **1v1**, **900 seconds**, ten monks. Current map generation,
-  art, fonts and Home placement remain unchanged. Movement is 20Hz with a
-  100ms minimum playback buffer; this is not a measured Internet latency.
-  Movement/collision are still client simulated; outcomes are server-owned.
-- Persistent match data survives process restart. Absolute clocks continue
-  through outages; position/presence are transient and are not checkpointed.
-  Local accounts start fresh; remote Supabase users/history were neither
-  imported nor deleted. Do not alter the unrelated connected projects.
-- Login/Register have no email or recovery controls. The reset router entry
-  is removed. Results fetch final spellings and deposit states after the
-  server ends a match; no correct spellings in active-match responses.
-- Start with `server/run.sh` after installing `server/requirements.txt` into
-  `server/.venv`. The user systemd unit is installed/enabled: `systemctl --user status lakbayin.service`. Both it and `lakbayin-tunnel.service` are enabled/active and restart on failure. `loginctl show-user ken -p Linger` reports `yes`, so they can start before login.
-  `python -m server.manage config` prints config; `backup DEST` makes a
-  consistent SQLite backup. Database/venv ignored; protect/retain backups.
-- Validation so far: all 15 Godot suites pass (match 46, multiplayer 69,
-  e2e 56, layout 0); 11 Python integration cases; isolated two-real-Godot
-  clients pass identical seed, movement, presence, answer/deposit and clocks. A real server process restart preserves progress; both clients reconnect and agree on a 10–0 finish and all ten final spellings.
-  Server auth/scoring/restart/permissions/concurrency covered. Use
-  `server/.venv/bin/python server/tests/run_godot.py` to repeat the live check.
+### Self-hosted server (Oct 24)
+- All accounts, rules, state, records and realtime run on this laptop,
+  publicly reachable. Username/password, no emails or password reset.
+  Domain **lakbayin.space** (Namecheap, Cloudflare DNS).
+- `Net` loads `net/Backend.gd` (the old Supabase client was merged into it and
+  removed Oct 25). The default endpoint is `https://server.lakbayin.space`;
+  local tests set `LAKBAYIN_SERVER_URL=http://127.0.0.1:8000`. The server
+  keeps the REST/Phoenix shapes (`/rest/v1/...`, `/realtime/v1/websocket`)
+  the client was first written against.
+- `server/app.py`: Argon2id username auth, hashed opaque 30-day revocable
+  sessions, SQLite atomic checkpoints, ranked matching, custom rooms,
+  answers/lockouts/deposits, rankings, history/board, read-only spectators.
+  Auth rate limiting and bounded messages; private sockets enforce
+  membership and publisher identity.
+- Persistent match data survives a process restart. Absolute clocks continue
+  through outages; position/presence are transient and not checkpointed.
+- `lakbayin.service` and `lakbayin-tunnel.service` (systemd user units) are
+  enabled and restart on failure; linger is on, so they start before login.
+  `python -m server.manage config` prints config.
 - Public tunnel: **lakbayin-game**, UUID
-  `602e56f1-54e1-4b7c-a72d-b946aea626f2`. Its private JSON credentials and
-  `lakbayin.yml` live under `~/.cloudflared`, never in the repository. Only
+  `602e56f1-54e1-4b7c-a72d-b946aea626f2`. Its credentials and `lakbayin.yml`
+  live under `~/.cloudflared`, never in the repository. Only
   `server.lakbayin.space` routes to `http://127.0.0.1:8000`; unmatched hosts
   return 404. Do not modify the unrelated `fscs-laptop` tunnel.
-- Public validation: `/health`, register/sign-in, private WSS join and movement;
-  one movement-delivery sample was 106ms (not a general latency guarantee).
-  Restarted the actual tunnel; the same hostname recovered. Two actual Godot
-  clients then completed a custom match through public HTTPS/WSS: identical
-  seed `596247768`, both received movement and **Blue 10–0 Red** Results with
-  ten final spellings. Playback buffers were 100ms. This was automated API/
-  client testing, not a human balance playtest or a phone/cellular test.
-- Public probe clients have stopped. New private test accounts/info are in
-  `/tmp/lakbayin-cloudflare-test/info.json` (mode 600, directory 700); evidence
-  and logs are in the same directory. Earlier `/tmp` test credentials and the
-  four desktop test windows were lost/closed across the desktop/reboot; do not
-  assume those earlier temporary helpers or windows are still present.
-- The initial authorization selected `.space`; a DNS CLI call for the earlier
-  wrong `.website` name therefore created a suffixed record. That exact
-  accidental record was removed through the Cloudflare API before publishing
-  the user's confirmed `.space` hostname. It is no longer present.
-- Migration/tunnel changes and preceding latency/timer tuning are uncommitted.
-  Android export now targets `https://server.lakbayin.space`; APK signature
-  and compiled endpoint are verified at `build/Lakbayin.apk`. Phone testing
-  remains: ADB currently has no connected devices.
-
-
-
-### Movement latency improvement
-- The user explicitly kept live matchmaking at **1 v 1** after reporting the
-  early start; do not restore 3 v 3 yet. The 15-minute clock remains.
-- No fast relay was published. Fixed the direct path: sample every 50 ms;
-  send as often as 100 ms for a small match, with an adaptive 60-event/s
-  project budget based on active players/rooms and viewers. Idle updates stay
-  sparse, but first positions and stops publish promptly. Paths retain actual
-  timestamps instead of reconstructing frame-hitched samples with uniform dt.
-- Peer playback now follows the sender's cadence (+50 ms), instead of giving
-  every direct sender the legacy 750 ms buffer. Old senders and relay playback
-  remain compatible. A more aggressive predictive buffer was tested and
-  rejected because it caused tracking errors.
-- Two-account live movement traces, relay off: baseline **1190 ms** delay /
-  6.08 px RMS error; revised path **420 ms** / 0.56 px with other rooms active,
-  repeat **320 ms** / 0.68 px with a 150 ms playback buffer. These are local
-  live-test measurements, not a guarantee for every network. Evidence:
-  ignored `build/shots/latency/` (summaries and traces).
-- All **15 client suites pass**; multiplayer **69**, including traffic pacing,
-  viewers, real timestamps, backward compatibility, stop packets and retaining
-  pending movement while a private channel joins. The four isolated desktop
-  test windows are refreshed and signed in on Home. No SQL change needed.
-- The new Android APK is built and verified at `build/Lakbayin.apk`. Realme
-  installation could not run because the phone is no longer connected over
-  USB (ADB has no devices). Install this APK after reconnecting it.
-- The isolated latency probe clients have stopped; their custom session
-  expires normally. Verified live config is still `team_size = 1`,
-  `duration_s = 900`.
-- These changes and the earlier timer/results tuning remain uncommitted.
-
-### Latest requested tuning
-- Results now display the Filipino word and Baybayin spelling only; English
-  meanings remain in source data but are not rendered.
-- The match clock is now **15 minutes (900 s)** in Practice and new server
-  defaults. Schema reruns upgrade the former 360 s config to 900 s while
-  preserving team size, other custom durations, and existing session clocks.
-- Local checks: match suite **46**, clock rules, layout **0** overflows at
-  640/800; full SQL suite **266** plus upgrade/rerun/concurrency checks.
-- The user applied the live config update and reported 900. Verified through
-  the authenticated API: `duration_s = 900`, `team_size = 1`. A newly created
-  custom room also had 900 s; its empty lobby was closed after the check.
-  The connector still cannot access this project. Confirm email stays off.
-- Updated Android APK exported and installed on the Realme; Practice runs
-  with the fifteen-minute clock. These tuning changes are uncommitted.
+- `server/tests/run_godot.py` repeats a live check with two real Godot clients.
 
 ### Done and tested
 - **Day 1:** Baybayin keypad, word list, server answer checking, monk node,
@@ -308,139 +211,18 @@ Challenge** (Student Category; themes: Education + Philippine culture).
   monks with Baybayin glyphs, and the selected adventurer. `Backdrop.gd` pans
   across peaceful monastery/village/forest islands; military scenery is gone.
   Fonts and Home button layout are retained. Match-generation files are unchanged.
-- **Two-phone test setup:** `match_config.team_size` now accepts **1–5**,
-  with a re-runnable upgrade for existing projects. The default remains **3**.
-  The full SQL suite passes, including 29 matchmaking checks and an explicit
-  upgrade from the old 2–5 constraint that preserves a configured 1 v 1.
+- **Built:** typing marker on monks (DESIGN.md), custom rooms with host
+  Move/Shuffle and host transfer (§6.2, `RoomScreen.gd`), Watch (§6.4,
+  `WatchScreen.gd`), Records (§7). Each was checked live across laptop
+  clients and the Realme, and a full 3 v 3 (five laptop clients plus the
+  Realme) played to a ten-word finish and to a timeout.
 
-### Live online play: two-phone 1 v 1 verified 2026-10-23
-- The user's Supabase project is `https://yvklwmtsvjgppnmtlede.supabase.co`;
-  its anon key is already in `game/project.godot`.
-- The user reported running `schema.sql` and `words.sql`. The old 2–5
-  team-size check was still active, so the user applied the explicit
-  drop/add-constraint upgrade in the SQL Editor. Live API reads confirmed
-  `team_size = 1`.
-- Never ask for, or store, the `service_role` key.
-- **Current live settings, by the user's explicit request:** leave
-  `team_size = 1` and **Confirm email off** for more testing. The schema's
-  default is still 3. Restore 3 v 3 and email confirmation when the user wants
-  normal settings again.
-- The Supabase connector's account **cannot access** Lakbayin's project.
-  The user must run administrative SQL in its SQL Editor; do not change
-  either of the unrelated projects the connector lists. Normal authenticated
-  API access as the test players works.
-- **Both phones have the current debug APK installed and are signed in:**
-  - Realme RMX1851: `6d718c9c`, player `laktest_a_e6be92`, hero 1.
-  - Second phone (23106RN0DA): `8DSWAYCU99PRWOMN`, player `laktest_b_e6be92`,
-    hero 2.
-  - USB debugging and USB installation are authorized. With both connected,
-    use `ANDROID_SERIAL` or `adb -s SERIAL` explicitly. The second phone may
-    require accepting an installation prompt again after each rebuild.
-- **Verified live:** both enter the same match and build the same island;
-  each manually typed a correct Baybayin answer; carried words do not score.
-  In the final match (`1df4e1b8-ee7f-4d54-8df6-1e77065381a4`), the Realme
-  deposited ten words at the Monastery. The server ended the match, and both
-  phones loaded **Red 10–0 Blue**, matching player standings and word lists.
-  The winner's words were marked deposited. Neither updated phone process
-  logged a script error.
-  - Existing debug Teleport and Answer Monk tools accelerated that earlier
-    finish. Six-player ordinary walking and teammate updates have now been
-    verified below.
-  - Evidence: `build/shots/1v1-results-realme.png` and
-    `build/shots/1v1-results-second-phone.png` (ignored build artifacts).
-- **Two live bugs fixed:**
-  - `Lobby.load` now selects `teams!teams_session_id_fkey`; the unqualified
-    embed became ambiguous after adding the match's winner relationship.
-  - `ResultsScreen` treats a null `team_standings.finished` as false, avoiding
-    a crash on timeout when there is no `winner_team`. Parsing and ranking
-    have regression coverage. Reading the actual timed-out match's standings
-    now succeeds with both teams, both players, and a draw title.
-- **Validation:** full SQL suite (179 checks plus schema/concurrency checks),
-  Godot multiplayer suite (14 checks), Godot match suite (44 checks), live
-  timeout standings read, Android export, and the two-phone finish above.
-  The user has authorized testing and a separate commit after each remaining
-  feature. Baseline commit: `ad34cb7` (rooms, fonts, scenery, 1 v 1 fixes).
-- **Current verification:** six-player custom matches now pass normal walking,
-  teammate updates, reconnect/carry recovery, timeout ties and a ten-word
-  finish (below). Human balance review remains. Online code paths:
-  `AdventureScreen._join_online`, `_go_live`, `_on_row`, `Match.start_online`
-  / `take_row`, `ResultsScreen._standings`.
+### Phones
+- Realme RMX1851: `6d718c9c`. Second phone (23106RN0DA): `8DSWAYCU99PRWOMN`.
+  USB debugging is authorized on both. With both connected, use
+  `ANDROID_SERIAL` or `adb -s SERIAL`. The second phone may ask to accept
+  the install again after each rebuild.
 
-### Completed features and remaining submission work
-1. **Typing marker built:** teammate presence shows “Teammate typing…” on
-   monks. Hints expire after 12 s and clear on close, lockout, answer, or
-   disconnect; they never block interaction or transmit typed answers.
-   Verified between two real laptop clients in the same live room: opening
-   one keypad marks the monk on the other client. The public key was valid;
-   an OpenAPI discovery failure was initially mistaken for a key error.
-   Core game API requests work. Typing commit: `c420069`.
-2. **Custom rooms** (§6.2): built. Home → Custom Room → `RoomScreen.gd`
-   (extends `TeamNameScreen`'s lobby); server `create_room` / `start_room` /
-   `leave_room` (schema 4f, `rooms_test.sql`). Host Move/Shuffle and room
-   heartbeat cleanup are now implemented. Lobby phones poll every 3 s;
-   30 s silence drops a member and transfers hosting if needed. Running
-   memberships remain intact. The user applied the SQL. Verified live Move,
-   Shuffle, closed-client cleanup, and host transfer across laptop clients,
-   with the Realme joining the same room. SQL: 37 room checks plus both
-   Start/cleanup lock-order races; client multiplayer: 38 checks. Room commit: `ee83e9d`.
-3. **Watch mode built** (§6.4): Custom Room → code → Watch. Read-only aerial
-   island, both rosters, per-team monk markers, carried/deposited counts,
-   final result. Renewable viewer registrations never create memberships;
-   movement receive only. Relay players also send bounded snapshots while
-   viewers are present. Local SQL: 24 authorization/state checks; multiplayer:
-   48 checks, plus a clean 640/800 layout run. All other client suites pass.
-   The user applied the SQL. A live viewer receives both laptop positions,
-   lobby/start updates, independent monk state and carried/deposited counts.
-   Watch commit: `4cda679`.
-4. **Records built** (§7): Settings → Player Records; online Results also
-   links to My Matches. Completed history includes Custom tags, own rank and
-   deposits. Global Players counts only matchmade games, ordered by wins then
-   deposited answers. Abandoned lobbies / active matches / Practice are
-   excluded; exact ties award no wins. 20 rows/page, server-derived results;
-   24 SQL checks. Client multiplayer: 53 checks; match: 44; layout: zero
-   overflow at 640/800. Results now retain sub-second deposit tie-breaks.
-   The user applied the SQL. Verified actual My Matches and Global Players
-   on the updated Realme, including its earlier 10-deposit matchmade win.
-   All Godot suites and the complete SQL suite pass.
-5. **Full 3 v 3 verified:** five isolated laptop clients plus the Realme,
-   three players per team. See the live playtest notes below.
-6. **Videos and forms** for the 25 Oct entry: 1–2 min trailer, 3–5 min
-   gameplay video, Forms 01–03, a ≤500-word synopsis. Practice mode records
-   fine solo.
-
-### Live six-player playtest: verified 2026-10-23
-- **Timeout:** room `889Y`, session `fa96d515-956b-4d9d-8cdd-2eb7a7e21ed3`.
-  All six connected, five remote positions on every laptop, identical seed
-  `93709977`. Blue teammate typing/answered states propagated. Carried words
-  survived restarting all five laptop clients. Both sides walked to monks,
-  answered and walked to the Monastery. Final: **Red wins 2–2**, reaching two
-  deposits at `09:45:12.151046Z` before Blue at `09:45:23.760422Z`.
-- **Ten-word finish:** room `E4KU`, session
-  `3f39041a-041a-4312-8c82-ffb13e22a964`. Automated laptop controls used normal
-  movement, collision checks, keypad entry and interaction throughout; no
-  teleport or direct scoring RPC shortcut. All three Blue players contributed
-  (4/3/3 deposits), and both Red laptop players deposited three each. The
-  Realme stayed connected on Red. Final: **Blue 10–6 Red**, ending for all six
-  at `13:01:46.628282Z`. All five laptop Results and the Realme agreed.
-- The phone's history records the Custom loss, rank 6, zero own deposits.
-  The global board stayed unchanged by both custom matches. Live Watch also
-  received a complete 10–0 finish in room `NRC6` before these tests.
-- Evidence under ignored `build/shots/features/`: `six-timeout.json`,
-  `six-complete.json`, `six-live-run.json`, `six-finish-progress.json`,
-  `six-teammate-typing.json`, `watch-live-*.json`. Phone captures copied there
-  as `six-timeout-realme.png`, `six-complete-realme.png`, `records-realme.png`,
-  `board-realme.png`. Private test credentials remain only in `/tmp`.
-- Live-play fixes: completed Watch shows **Final**, and Results shares ranks
-  for exact contribution/time ties, matching My Matches. Neither changes map
-  generation, fonts or the approved Home composition.
-- Latest validation: all 15 Godot suites, including multiplayer **55**, match
-  **44**, and layout **0** overflows at 640/800; complete SQL suite **264**
-  numbered checks plus schema upgrade/rerun and concurrency checks. Android
-  debug export and updated Realme install. Records commit: `06b8a7e`.
-- This was automated multi-client testing with a connected phone, not six
-  human players. Word review, human usability/balance and submission media
-  still need attention. Live ranked size remains **1** and email confirmation
-  remains **off**, as requested; custom 3 v 3 needs no configuration change.
 
 ### Known rough edges
 - The minimap (132×74) covers the top-right of the play view.

@@ -266,8 +266,8 @@ English meanings are not shown.
   are #14 (villager), #11 and #19 (near-black hair), #7 and #23 (morena,
   warriors) and #1 (headband, like a *putong*), and the license allows
   recolouring them.
-- **Team colours:** the pack has Monk and Monastery in Blue, Red, Yellow,
-  Purple and Black. Blue and Red are the two teams.
+- **Team colours:** Blue and Red are the two teams. Monks are Black until
+  answered; the Monastery is Purple. The game keeps only those colours.
 - Above each monk: decorative Baybayin glyphs drift, replacing the old maths
   symbols. They are **not** the answer. The word itself appears on the answer
   panel.
