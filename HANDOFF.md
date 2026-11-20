@@ -37,6 +37,19 @@ Challenge** (Student Category; themes: Education + Philippine culture).
 
 ## 3. State
 
+### Tests widened (Nov 20, branch `chore/trim-dead-code`)
+- `game/scripts/tests/net_contract_test.gd`: every client server call
+  (Backend, Teams, Lobby, Monks, WatchFeed) against a real server, answers
+  and refusals. Run by the server suite
+  (`test_client_calls_against_a_real_server`), not `run_tests.sh`.
+- It found one bug, fixed in `server/app.py` `read_rows`: a code typed for a
+  room already under way said "Not a member or viewer"; your own member row,
+  when you have none, is now `[]`, so it says "That room has already started."
+- New server tests for the WebSocket refusals, rate limit, token recheck,
+  watch lease, code clashes, login lockout expiry, failed map build, APK
+  download, and `manage.py`. Checked by breaking each guarded line in a copy:
+  every break is caught.
+
 ### Maps and slow lines (Nov 11)
 - **Map generator, found by a seed sweep** (`WORLD_SEEDS`, DEVTOOLS; the
   suite's own eight seeds never hit them):

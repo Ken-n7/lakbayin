@@ -49,6 +49,10 @@ func _ready() -> void:
 	await _watch_view()
 	await _records_view()
 	_account_change()
+	_movement_edges()
+	_board_edges()
+	_lobby_rows()
+	_session_helpers()
 	Net.realtime().close_socket()
 	Net.url = was_url
 	Net.access_token = ""
@@ -153,6 +157,177 @@ func _account_change() -> void:
 	Net.sign_out()
 	check("logout forgets the previous player", Net.access_token == "" and Net.user_id == ""
 		and Net.username == "" and not FileAccess.file_exists(Net.SESSION_PATH))
+
+
+## What a movement packet must be before map code sees it -- every way of
+## not being one -- and what is taken out of one.
+func _movement_edges() -> void:
+	var topic := Realtime.snap_topic("s1")
+	var ok := func(paths: Variant, event := "snap", at := topic, sid := "s1") -> bool:
+		return Realtime.valid_position(at, event, {"sid": sid, "p": paths})
+	var hero := func(pts: Variant, extra := {}) -> Array:
+		var p := {"id": "a", "p": pts}
+		p.merge(extra, true)
+		return [p]
+	check("a path list is movement", ok.call(hero.call([[1.0, 2, 3]])))
+	check("so is a packet of no heroes", ok.call([]))
+	check("only on its own match's channel", not ok.call(hero.call([[1, 2, 3]]), "snap", Realtime.snap_topic("s2")))
+	check("not without a session", not ok.call(hero.call([[1, 2, 3]]), "snap", Realtime.snap_topic(""), ""))
+	check("not as any other event", not ok.call(hero.call([[1, 2, 3]]), "pos"))
+	check("heroes come as a list", not ok.call({"id": "a", "p": [[1, 2, 3]]}))
+	check("each hero an object with an id", not ok.call(["a"]) and not ok.call(hero.call([[1, 2, 3]], {"id": ""})))
+	var many: Array = []
+	for i in 255:
+		many.append({"id": str(i), "p": [[1, 2, 3]]})
+	check("up to 255 heroes", ok.call(many))
+	many.append({"id": "x", "p": [[1, 2, 3]]})
+	check("...not 256", not ok.call(many))
+	check("a hero number is a number", ok.call(hero.call([[1, 2, 3]], {"hero": 3}))
+		and not ok.call(hero.call([[1, 2, 3]], {"hero": "3"})))
+	check("a path has points", not ok.call(hero.call([])) and not ok.call(hero.call(null)))
+	var long: Array = []
+	for i in 128:
+		long.append([i, 1, 1])
+	check("up to 128 points", ok.call(hero.call(long)))
+	long.append([200, 1, 1])
+	check("...not 129", not ok.call(hero.call(long)))
+	for bad: Variant in [[1, 2], [1, "2", 3], [INF, 2, 3], [1, NAN, 3], "1,2,3", null]:
+		check("a point is three finite numbers, not %s" % str(bad), not ok.call(hero.call([[1, 2, 3], bad])))
+	check("a point may carry more after the three", ok.call(hero.call([[1, 2, 3, "x"]])))
+
+	check("points: [time, place], ints taken as floats",
+		Peers._points({"p": [[1, 2, 3]]}) == [[1.0, Vector2(2, 3)]])
+	check("points: what is not a point is skipped", Peers._points({"p": [[1, 2], "x", [2, 4, 5]]}) == [[2.0, Vector2(4, 5)]])
+	check("points: none in what is not a list", Peers._points({"p": {"x": 1}}).is_empty() and Peers._points({}).is_empty())
+	for bad: Variant in [-1, 0, "0.1", NAN, null]:
+		check("a cadence of %s is no cadence" % str(bad), Peers.direct_buffer({"cadence": bad}) == Peers.LAG_START)
+	check("a tiny cadence still gets the least buffer", is_equal_approx(Peers.direct_buffer({"cadence": 0.001}), 0.1))
+
+
+## Everyone on the board: fanned out at the door until heard from, then
+## where they are; what team vision sees; colours.
+func _board_edges() -> void:
+	var p := Peers.new()
+	var door := Vector2(400, 300)
+	p.refresh([{"profile_id": "a", "team_id": "blue", "username": "A"}], door, "me")
+	check("one player waits on the door itself", (p.get("_markers")["a"] as Node2D).position == door)
+	var rows: Array = [{"profile_id": "me", "team_id": "blue"}, {"profile_id": "", "team_id": "blue"}]
+	for i in 5:
+		rows.append({"profile_id": "p%d" % i, "team_id": "blue" if i % 2 else "red", "username": "P%d" % i})
+	p.refresh(rows, door, "me")
+	var markers: Dictionary = p.get("_markers")
+	check("not yourself, not a row with no id; gone from the roster, gone", not markers.has("me") and not markers.has("")
+		and not markers.has("a") and markers.size() == 5, str(markers.keys()))
+	var xs: Array = []
+	var spots := {}
+	for i in 5:
+		var at: Vector2 = (markers["p%d" % i] as Node2D).get_meta("fallback")
+		xs.append(at.x - door.x)
+		spots[at] = true
+	check("five side by side, none on another", spots.size() == 5)
+	check("centred on the door", is_equal_approx(xs.reduce(func(a: float, b: float) -> float: return a + b, 0.0), 0.0), str(xs))
+	check("a newcomer is placed where they wait", (markers["p0"] as Node2D).position == (markers["p0"] as Node2D).get_meta("fallback"))
+	check("nobody heard from: team vision sees nobody", p.positions_of("blue").is_empty() and p.heroes_of("blue").is_empty())
+	p.move("p1", {"p": [[0.0, 50, 60]]})
+	p.move("p0", {"p": [[0.0, 70, 80]]})
+	p.move("stranger", {"p": [[0.0, 1, 1]], "team": "blue"})
+	check("team vision: your side's heroes heard from",
+		p.positions_of("blue").size() == 1 and p.heroes_of("blue").size() == 1
+		and p.positions_of("red").size() == 1, str(p.positions_of("blue")))
+	check("someone not on the roster is no one's team-mate", not p.positions_of("blue").has(Vector2(1, 1)))
+	check("no team is white", p.colour_of("") == Color.WHITE)
+	var blue := p.colour_of("blue")
+	var red := p.colour_of("red")
+	check("two sides, two colours, kept", blue != red and p.colour_of("blue") == blue)
+	check("a third side still gets a colour", p.colour_of("green") in [blue, red])
+	p.free()
+
+
+## Lobby: every row the change feed can bring, and the doorbell.
+func _lobby_rows() -> void:
+	var l := Lobby.new()
+	l.session = {"id": "s"}
+	check("another session's change is not ours", l.apply("sessions", "UPDATE", {"id": "x", "state": "ended"}) == ""
+		and not l.session.has("state"))
+	check("our session's change is merged", l.apply("sessions", "UPDATE", {"id": "s", "state": "running"}) == "changed"
+		and l.session.state == "running")
+	check("a team comes", l.apply("teams", "INSERT", {"id": "t2", "session_id": "s", "name": "pula"}) == "changed")
+	check("another session's team does not", l.apply("teams", "INSERT", {"id": "t9", "session_id": "x", "name": "a"}) == ""
+		and l.teams.size() == 1)
+	l.apply("teams", "INSERT", {"id": "t1", "session_id": "s", "name": "Bughaw"})
+	check("teams in name order, whatever the capitals", l.teams.map(func(t: Dictionary) -> String: return t.id) == ["t1", "t2"])
+	check("a team renamed in place", l.apply("teams", "UPDATE", {"id": "t2", "session_id": "s", "name": "Aaa"}) == "changed"
+		and l.teams.size() == 2 and l.teams[0].id == "t2")
+	check("a newcomer without a name costs a read", l.apply("members", "INSERT", {"session_id": "s", "profile_id": "u"}) == "reload")
+	check("a newcomer with one is placed, on no side", l.apply("members", "INSERT",
+		{"session_id": "s", "profile_id": "u", "username": "Una", "team_id": null}) == "changed" and l.team_of("u") == "")
+	l.apply("members", "UPDATE", {"session_id": "s", "profile_id": "u", "team_id": "t1"})
+	l.apply("members", "INSERT", {"session_id": "s", "profile_id": "v", "username": "Ana", "team_id": "t1"})
+	check("on a side; a side's members by name", l.team_of("u") == "t1"
+		and l.members_of("t1").map(func(m: Dictionary) -> String: return m.username) == ["Ana", "Una"])
+	check("another session's member is not ours", l.apply("members", "UPDATE", {"session_id": "x", "profile_id": "u", "team_id": "t2"}) == ""
+		and l.team_of("u") == "t1")
+	check("a team going takes its players off it", l.apply("teams", "DELETE", {"id": "t1"}) == "changed"
+		and l.team_of("u") == "" and l.team_of("v") == "")
+	check("a team we never had going is nothing", l.apply("teams", "DELETE", {"id": "nope"}) == "")
+	check("a member we never had leaving is nothing", l.apply("members", "DELETE", {"profile_id": "w"}) == "")
+	check("nor one from another session", l.apply("members", "DELETE", {"profile_id": "u", "session_id": "x"}) == ""
+		and l.players.has("u"))
+	check("a member leaving", l.apply("members", "DELETE", {"profile_id": "u"}) == "changed" and not l.players.has("u"))
+	check("RELOAD asks for a read", l.apply("members", "RELOAD", {}) == "reload")
+	check("a table the lobby does not keep", l.apply("monk_answers", "INSERT", {"session_id": "s"}) == "")
+	check("names: spectators, a side, nothing", l.name_of(Lobby.SPECTATE) == "Spectators" and l.name_of("t2") == "Aaa"
+		and l.name_of("nope") == "" and l.team_of("nobody") == "")
+	check("the session going empties it", l.apply("sessions", "DELETE", {"id": "s"}) == "changed" and l.session == {})
+	l.session = {"id": "s"}
+	check("the doorbell: another event, another session -- nothing", l.hear("score", {"sid": "s"}) == ""
+		and l.hear(Lobby.EVENT, {"sid": "x"}) == "")
+	check("the doorbell rings a read", l.hear(Lobby.EVENT, {"sid": "s"}) == "reload")
+	check("...at most once a second", l.hear(Lobby.EVENT, {"sid": "s"}) == "")
+	l.set("_rang_at", -INF)
+	check("...and again after", l.hear(Lobby.EVENT, {"sid": "s"}) == "reload")
+
+
+## Teams' and WatchFeed's helpers on what the server sends.
+func _session_helpers() -> void:
+	check("roster: the name embedded, or on the row, or ?", Teams.roster([
+		{"profile_id": "a", "team_id": null, "profiles": {"username": "Al"}},
+		{"profile_id": "b", "team_id": "t", "username": "Bo"}, {}]) == [
+		{"profile_id": "a", "team_id": "", "username": "Al"},
+		{"profile_id": "b", "team_id": "t", "username": "Bo"},
+		{"profile_id": "", "team_id": "", "username": "?"}])
+	check("one bad character named", Teams.bad_note("O") == "Codes never use O — check that character.")
+	check("a code with nothing wrong", Teams.clean_code("a c-d e") == "ACDE" and Teams.bad_chars("ACDE") == "")
+	check("look-alikes are what codes use", Teams.clean_code("zsbvg") == "258U6" and Teams.bad_chars("258U6") == "")
+	check("no time is 0, not 1970", Teams._stamp(null) == 0 and Teams._stamp("") == 0)
+	var now := Game.now()
+	var at := func(t: float) -> String: return Time.get_datetime_string_from_unix_time(int(t))
+	check("ended is over", Teams.expired({"state": "ended"}))
+	check("a fresh lobby is not", not Teams.expired({"state": "lobby", "created_at": at.call(now - 60)}))
+	check("a lobby from yesterday is", Teams.expired({"state": "lobby", "created_at": at.call(now - Teams.MAX_AGE_S - 1)}))
+	check("a running match before its deadline is not", not Teams.expired({"state": "running", "created_at": at.call(now - 60),
+		"ends_at": at.call(now + 300)}))
+	check("...after it is", Teams.expired({"state": "running", "created_at": at.call(now - 600), "ends_at": at.call(now - 1)}))
+	check("...and with no deadline yet is not", not Teams.expired({"state": "running", "ends_at": null}))
+	check("a lobby's past deadline means nothing", not Teams.expired({"state": "lobby", "ends_at": at.call(now - 1)}))
+
+	check("time left: no deadline yet is the whole clock", WatchFeed.time_left({"duration_s": 600}, now) == 600
+		and WatchFeed.time_left({"duration_s": 600, "ends_at": null}, now) == 600)
+	check("time left: to the deadline, rounded up", WatchFeed.time_left({"duration_s": 900, "ends_at": at.call(floorf(now) + 100)}, floorf(now) + 0.5) == 100)
+	check("time left: none after it", WatchFeed.time_left({"duration_s": 900, "ends_at": at.call(now - 5)}, now) == 0)
+	check("time left: never more than the clock", WatchFeed.time_left({"duration_s": 60, "ends_at": at.call(now + 600)}, now) == 60)
+	var teams := [{"id": "b", "name": "Bughaw", "deposited": 3, "reached_at": "2026-10-23T00:01:00+00:00"},
+		{"id": "r", "name": "Pula", "deposited": 3, "reached_at": "2026-10-23T00:02:00+00:00"}]
+	check("the server's winner", WatchFeed.outcome({"session": {"winner_team": "r"}, "teams": teams}) == "Pula wins!")
+	check("more words", WatchFeed.outcome({"session": {}, "teams": [teams[0], {"id": "r", "name": "Pula", "deposited": 4}]}) == "Pula wins!")
+	check("the same words: sooner", WatchFeed.outcome({"session": {}, "teams": teams}) == "Bughaw wins!")
+	teams[1].reached_at = null
+	check("the same words, one time unknown: a draw", WatchFeed.outcome({"session": {}, "teams": teams}) == "Draw")
+	check("not two sides", WatchFeed.outcome({"session": {}, "teams": [teams[0]]}) == "Match ended")
+	check("stamps: none", WatchFeed.stamp("") == 0.0 and WatchFeed.stamp("<null>") == 0.0)
+	var whole := WatchFeed.stamp("2026-10-23T00:00:00Z")
+	check("stamps: a space for the T, fractions, an offset", whole > 0
+		and is_equal_approx(WatchFeed.stamp("2026-10-23 00:00:00.25+00:00"), whole + 0.25))
 
 
 func _monk_activity() -> void:

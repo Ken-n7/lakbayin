@@ -322,6 +322,42 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(len(mp['monks']),10)
         self.assertTrue(appmod.standable(mp,*mp['spawns'][0]) and appmod.standable(mp,*mp['door']))
 
+    @unittest.skipUnless(shutil.which('godot'), 'needs Godot')
+    def test_client_calls_against_a_real_server(self):
+        """game/scripts/tests/net_contract_test: every call the client makes
+        (Backend, Teams, Lobby, Monks, WatchFeed), against this server run for
+        real on a fresh database."""
+        import httpx, secrets, socket, sqlite3, sys
+        tmp=Path(self.tmp.name)
+        sock=socket.socket(); sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]; sock.close()
+        url=f'http://127.0.0.1:{port}'
+        env={**os.environ,'LAKBAYIN_DB':str(tmp/'contract.sqlite3'),'LAKBAYIN_SERVER_URL':url,
+             'LAKBAYIN_TEST_INFO':str(tmp/'info.json'),'LAKBAYIN_GODOT':''}
+        with open(tmp/'server.log','w') as log:
+            server=subprocess.Popen([sys.executable,'-m','uvicorn','server.app:create_app','--factory','--host','127.0.0.1',
+                '--port',str(port),'--no-access-log'],cwd=appmod.ROOT,env=env,stdout=log,stderr=log)
+            self.addCleanup(server.wait,10); self.addCleanup(server.terminate)
+            c=httpx.Client(base_url=url,timeout=5)
+            for _ in range(200):
+                try:
+                    if c.get('/health').is_success: break
+                except httpx.ConnectError: pass
+                time.sleep(.05)
+            accounts=[]
+            for n in range(4):
+                name,pw='k'+secrets.token_hex(4)+str(n),secrets.token_urlsafe(16)
+                r=c.post('/auth/register',json={'username':name,'password':pw}); self.assertEqual(r.status_code,200,r.text)
+                accounts.append({'username':name,'password':pw,'id':r.json()['user']['id']})
+            db=sqlite3.connect(tmp/'contract.sqlite3'); db.execute('update users set admin=1 where id=?',(accounts[2]['id'],)); db.commit(); db.close()
+            (tmp/'info.json').write_text(json.dumps({'accounts':accounts})); os.chmod(tmp/'info.json',0o600)
+            run=subprocess.run(['godot','--headless','--path',str(appmod.ROOT/'game'),'res://scripts/tests/net_contract_test.tscn',
+                '--','--profile=contract-'+secrets.token_hex(4)],capture_output=True,text=True,env=env,timeout=300)
+        out=run.stdout+run.stderr
+        failed=[l for l in out.splitlines() if 'FAIL' in l or 'SCRIPT ERROR' in l]
+        self.assertEqual(run.returncode,0,'\n'.join(failed) or out[-3000:])
+        self.assertIn('---- CONTRACT PASS',out)
+        self.assertNotIn('SCRIPT ERROR',out)
+
     def test_players_online(self):
         self.assertEqual(self.client.post('/rest/v1/rpc/players_online',json={}).status_code,401)
         self.assertEqual(self.rpc(0,'players_online').json(),{'online':1})
@@ -654,12 +690,326 @@ class ServerTest(unittest.TestCase):
         # The live tables are the players' while it runs.
         self.assertEqual(self.request(3,'GET',f'/rest/v1/monk_answers?session_id=eq.{sid}').status_code,403)
 
+    def test_host_moves_players_and_tables_answer_their_edges(self):
+        s=self.room(); sid=s['id']; ids=[u['user']['id'] for u in self.users]
+        teams=self.app.state.store.load()['sessions'][sid]['teams']
+        side=lambda n: self.app.state.store.load()['sessions'][sid]['members'][ids[n]]['team_id']
+        to=teams[0]['id'] if side(1)!=teams[0]['id'] else teams[1]['id']
+        self.assertEqual(self.rpc(0,'move_room_member',p_session=sid,p_profile=ids[1],p_team=to).status_code,200)
+        self.assertEqual(side(1),to)
+        self.assertEqual(self.rpc(0,'move_room_member',p_session=sid,p_profile=ids[1],p_team='spectate').status_code,400)
+        self.assertEqual(self.rpc(0,'move_room_member',p_session=sid,p_profile=ids[3],p_team=to).status_code,400)   # not in the room
+        self.assertEqual(self.rpc(0,'move_room_member',p_session=sid,p_profile=ids[1]).status_code,400)
+        # Joining twice is one place; tables and operations that are not there.
+        self.assertEqual(self.request(1,'POST','/rest/v1/members',{'session_id':sid,'profile_id':ids[1]}).json(),[])
+        self.assertEqual(len(self.app.state.store.load()['sessions'][sid]['members']),3)
+        self.assertEqual(self.request(1,'POST','/rest/v1/members',{'session_id':sid,'profile_id':ids[1],'team_id':to}).status_code,400)
+        self.assertEqual(self.request(1,'DELETE',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{ids[1]}').status_code,405)
+        self.assertEqual(self.request(1,'POST','/rest/v1/teams',{'session_id':sid}).status_code,403)
+        self.assertEqual(self.request(1,'GET',f'/rest/v1/nothing?session_id=eq.{sid}').status_code,404)
+        self.assertEqual(self.rpc(1,'no_such_rpc',p_session=sid).json()['message'],'Match is not running')   # in a lobby
+        self.assertEqual(self.rpc(1,'answer_monk').status_code,400)                 # no session named
+        self.assertEqual(self.rpc(1,'answer_monk',p_session='nope').status_code,404)
+        # A stranger's own row is no row; anyone else's is not theirs to read.
+        self.assertEqual(self.request(3,'GET',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{ids[3]}').json(),[])
+        self.assertEqual(self.request(3,'GET',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{ids[0]}').status_code,403)
+        self.assertEqual(self.request(3,'GET',f'/rest/v1/members?session_id=eq.{sid}').status_code,403)
+        self.assertEqual(self.request(3,'GET',f'/rest/v1/teams?session_id=eq.{sid}').status_code,403)
+        # A member's own row, filtered; everyone's, unfiltered.
+        mine=self.request(1,'GET',f'/rest/v1/members?session_id=eq.{sid}&profile_id=eq.{ids[1]}').json()
+        self.assertEqual(([m['profile_id'] for m in mine],mine[0]['profiles']['username']),([ids[1]],'bravo'))
+        self.assertEqual(len(self.request(1,'GET',f'/rest/v1/members?session_id=eq.{sid}').json()),3)
+        # Sessions: a room by its code for anyone; the lobby with its teams
+        # and members embedded; a matchmade one only for its players.
+        found=self.request(3,'GET',f'/rest/v1/sessions?select=*&custom=is.true&code=eq.{s["code"]}').json()
+        self.assertEqual([r['id'] for r in found],[sid])
+        self.assertNotIn('teams',found[0])
+        self.assertEqual(self.request(3,'GET',f'/rest/v1/sessions?id=eq.{sid}').json(),[])
+        full=self.request(1,'GET',f'/rest/v1/sessions?select=*,teams!teams_session_id_fkey(id,name),members(profile_id)&id=eq.{sid}').json()[0]
+        self.assertEqual((len(full['teams']),len(full['members'])),(2,3))
+        self.assertIn(full['members'][0]['profiles']['username'],('alpha','bravo','charlie'))
+        mm=self.rpc(3,'find_match').json()
+        self.assertEqual(self.request(2,'GET',f'/rest/v1/sessions?code=eq.{mm["code"]}').json(),[])
+        self.assertEqual(self.request(2,'GET',f'/rest/v1/sessions?custom=is.true&code=eq.{mm["code"]}').json(),[])
+        self.assertEqual([r['id'] for r in self.request(3,'GET','/rest/v1/sessions?custom=is.true').json()],[])
+        self.assertEqual([r['id'] for r in self.request(3,'GET','/rest/v1/sessions').json()],[mm['id']])
+
+    def test_leave_watch_ends_the_watch(self):
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        self.assertEqual(self.rpc(0,'no_such_rpc',p_session=sid).status_code,404)    # in a running match
+        self.assertEqual(self.rpc(3,'leave_watch',p_session=sid).status_code,403)    # never watched
+        self.rpc(3,'watch_match',p_code=s['code'])
+        self.assertEqual(self.rpc(3,'watch_snapshot',p_session=sid).status_code,200)
+        self.assertEqual(self.rpc(3,'leave_watch',p_session=sid).status_code,200)
+        self.assertEqual(self.rpc(3,'watch_snapshot',p_session=sid).json()['message'],'watch expired')
+        self.assertEqual(self.rpc(3,'match_state',p_session=sid).status_code,403)
+        self.assertEqual(self.rpc(3,'watch_match',p_code=s['code'].lower()).json(),sid)   # any capitals
+        self.assertEqual(self.rpc(3,'watch_match',p_code='ZZZZ').status_code,404)
+        # The lease runs out by itself 30 s on.
+        with unittest.mock.patch.object(appmod.time,'time',return_value=time.time()+31):
+            self.assertEqual(self.rpc(3,'watch_snapshot',p_session=sid).status_code,403)
+
+    def test_room_codes_never_clash_with_one_in_play(self):
+        first=self.rpc(0,'create_room').json(); taken=first['code']
+        spare=next(c*4 for c in appmod.CODES if c*4!=taken)
+        with unittest.mock.patch.object(appmod.secrets,'choice',side_effect=list(taken)+list(spare)):
+            self.assertEqual(self.rpc(1,'create_room').json()['code'],spare)
+        # An ended room's code is free again.
+        db=self.app.state.store; state=db.load(); state['sessions'][first['id']]['state']='ended'; db.save(state)
+        with unittest.mock.patch.object(appmod.secrets,'choice',side_effect=list(taken)):
+            self.assertEqual(self.rpc(2,'create_room').json()['code'],taken)
+
+    def test_failed_logins_lock_out_for_a_minute_only(self):
+        for _ in range(10):
+            self.client.post('/auth/login',json={'username':'alpha','password':'wrong'})
+        self.assertEqual(self.client.post('/auth/login',json={'username':'alpha','password':'testing-password'}).status_code,429)
+        with unittest.mock.patch.object(appmod.time,'time',return_value=time.time()+61):
+            self.assertEqual(self.client.post('/auth/login',json={'username':'alpha','password':'testing-password'}).status_code,200)
+        # A right password does not count against the name.
+        for _ in range(12):
+            self.assertEqual(self.client.post('/auth/login',json={'username':'bravo','password':'testing-password'}).status_code,200)
+
+    def test_websocket_refuses_what_it_should(self):
+        s=self.room(); sid=s['id']; topic=TOPIC+':snap:'+sid
+        beat=lambda ws,ref='hb': ws.send_json({'topic':TOPIC,'event':'heartbeat','payload':{},'ref':ref})
+        # Refused: closed before the heartbeat behind it is answered (not the
+        # idle timeout, which would close an accepting socket too).
+        closed=lambda ws: (beat(ws,'after'), ws.receive()['type']=='websocket.close')[1]
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:     # nothing before joining
+            self.assertTrue(closed(ws))
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:     # a payload that is not an object
+            self.join_ws(ws,0); ws.send_json({'topic':TOPIC,'event':'heartbeat','payload':[],'ref':'x'}); self.assertTrue(closed(ws))
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:     # someone else's token on the same socket
+            self.join_ws(ws,0)
+            ws.send_json({'topic':topic,'event':'phx_join','ref':'2','payload':{'access_token':self.users[1]['access_token']}})
+            self.assertTrue(closed(ws))
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:     # a renewed token: own yes, another's no
+            self.join_ws(ws,0)
+            again=self.client.post('/auth/login',json={'username':'alpha','password':'testing-password'}).json()['access_token']
+            ws.send_json({'topic':TOPIC,'event':'access_token','payload':{'access_token':again}})
+            beat(ws); self.assertEqual(ws.receive_json()['event'],'phx_reply')
+            ws.send_json({'topic':TOPIC,'event':'access_token','payload':{'access_token':self.users[1]['access_token']}})
+            self.assertTrue(closed(ws))
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:     # a broadcast that is neither movement nor a lobby bell
+            self.join_ws(ws,0)
+            ws.send_json({'topic':TOPIC,'event':'broadcast','payload':{'event':'score','payload':{'sid':sid}}})
+            self.assertTrue(closed(ws))
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:     # a lobby bell on a movement channel
+            self.join_ws(ws,0,topic)
+            ws.send_json({'topic':topic,'event':'broadcast','payload':{'event':'row','payload':{'sid':sid}}})
+            self.assertTrue(closed(ws))
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:     # a bell for a room you are not in
+            self.join_ws(ws,3)
+            ws.send_json({'topic':TOPIC,'event':'broadcast','payload':{'event':'row','payload':{'sid':sid}}})
+            self.assertTrue(closed(ws))
+        # A lobby bell reaches the room's others, and no one else.
+        with self.client.websocket_connect('/realtime/v1/websocket') as a, self.client.websocket_connect('/realtime/v1/websocket') as b, \
+                self.client.websocket_connect('/realtime/v1/websocket') as c:
+            for ws,n in ((a,0),(b,1),(c,3)): self.join_ws(ws,n)
+            bell={'sid':sid,'table':'members','type':'RELOAD','record':{}}
+            a.send_json({'topic':TOPIC,'event':'broadcast','payload':{'event':'row','payload':bell}})
+            self.assertEqual(b.receive_json()['payload']['payload'],bell)
+            beat(c,'c'); self.assertEqual(c.receive_json()['ref'],'c')          # nothing came before the reply
+
+    def test_websocket_rate_limit_and_its_window(self):
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:
+            self.join_ws(ws,0)
+            for i in range(60): ws.send_json({'topic':TOPIC,'event':'heartbeat','payload':{},'ref':str(i)})
+            for i in range(60): self.assertEqual(ws.receive_json()['ref'],str(i))
+            time.sleep(1.1)                                   # a new second, a new allowance
+            for i in range(60): ws.send_json({'topic':TOPIC,'event':'heartbeat','payload':{},'ref':str(i)})
+            for i in range(60): self.assertEqual(ws.receive_json()['ref'],str(i))
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:
+            self.join_ws(ws,0)
+            for i in range(110): ws.send_json({'topic':TOPIC,'event':'heartbeat','payload':{},'ref':str(i)})
+            replies=0
+            while (m:=ws.receive())['type']!='websocket.close': replies+=1
+            self.assertLessEqual(replies,100)
+
+    def test_a_revoked_token_ends_the_socket(self):
+        self.addCleanup(setattr, appmod, 'TOKEN_RECHECK_S', appmod.TOKEN_RECHECK_S)
+        appmod.TOKEN_RECHECK_S = 0.0
+        with self.client.websocket_connect('/realtime/v1/websocket') as ws:
+            self.join_ws(ws,0)
+            ws.send_json({'topic':TOPIC,'event':'heartbeat','payload':{},'ref':'1'})
+            self.assertEqual(ws.receive_json()['ref'],'1')
+            self.assertEqual(self.request(0,'POST','/auth/logout',{}).status_code,200)
+            ws.send_json({'topic':TOPIC,'event':'heartbeat','payload':{},'ref':'2'})
+            self.assertEqual(ws.receive()['type'],'websocket.close')
+
+    def test_leaving_the_channel_leaves_the_roster(self):
+        s=self.room(); sid=s['id']
+        track=lambda ws:ws.send_json({'topic':TOPIC,'event':'presence','payload':{'event':'track','payload':{'sid':sid,'where':'lobby','secret':'x'}}})
+        with self.client.websocket_connect('/realtime/v1/websocket') as a, self.client.websocket_connect('/realtime/v1/websocket') as b:
+            self.join_ws(a,0); self.join_ws(b,1)
+            track(a); a.receive_json()
+            track(b); self.assertEqual(len(a.receive_json()['payload']),2)
+            meta=b.receive_json()['payload'][self.users[0]['user']['id']]['metas'][0]
+            self.assertNotIn('secret',meta)                       # only the fields the game uses pass
+            a.send_json({'topic':TOPIC,'event':'phx_leave','payload':{}})
+            self.assertEqual(set(b.receive_json()['payload']),{self.users[1]['user']['id']})
+        with self.client.websocket_connect('/realtime/v1/websocket') as c:     # presence for a room you are not in
+            self.join_ws(c,3); track(c); self.assertEqual(c.receive()['type'],'websocket.close')
+
+    def test_movement_malformed_is_refused_and_after_the_end_dropped(self):
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        topic=TOPIC+':snap:'+sid; me=self.users[0]['user']['id']
+        elsewhere=self.rpc(3,'create_room').json()['id']           # a room user 0 is not in
+        for bad in ([], [[1,10]], [[1,'10',10]], [[1,float('nan'),10]], [[1,1e13,10]], [[i,10,10] for i in range(81)], 'x'):
+            with self.client.websocket_connect('/realtime/v1/websocket') as ws:
+                self.join_ws(ws,0,topic)
+                ws.send_text(json.dumps({'topic':topic,'event':'broadcast','payload':{'event':'snap','payload':{'sid':sid,'p':[{'id':me,'p':bad}]}}}))
+                ws.send_json({'topic':topic,'event':'heartbeat','payload':{},'ref':'after'})   # refused before this is answered
+                self.assertEqual(ws.receive()['type'],'websocket.close',bad)
+        for bad in ({'sid':sid,'p':[{'id':me,'p':[[1,10,10]]},{'id':me,'p':[[1,10,10]]}]},     # two heroes in one packet
+                    {'sid':sid,'p':[{'id':me,'p':[[1,10,10]]}],'r':[{}]},                       # rows riding along
+                    {'sid':sid,'p':{'id':me}},                                                 # not a list
+                    {'sid':elsewhere,'p':[{'id':me,'p':[[1,10,10]]}]}):                        # another room's
+            with self.client.websocket_connect('/realtime/v1/websocket') as ws:
+                self.join_ws(ws,0,topic)
+                ws.send_json({'topic':topic,'event':'broadcast','payload':{'event':'snap','payload':bad}})
+                ws.send_json({'topic':topic,'event':'heartbeat','payload':{},'ref':'after'})   # refused before this is answered
+                self.assertEqual(ws.receive()['type'],'websocket.close',bad)
+        with self.client.websocket_connect('/realtime/v1/websocket') as one, self.client.websocket_connect('/realtime/v1/websocket') as mate:
+            self.join_ws(one,0,topic); self.join_ws(mate,2,topic)
+            db=self.app.state.store; state=db.load(); state['sessions'][sid]['deadline']=time.time()-1; db.save(state)
+            self.rpc(0,'my_summary')                                   # a commit: the match ends
+            one.send_json({'topic':topic,'event':'broadcast','payload':{'event':'snap','payload':{'sid':sid,'p':[{'id':me,'p':[[1,10,10]]}]}}})
+            one.send_json({'topic':topic,'event':'heartbeat','payload':{},'ref':'hb'})
+            self.assertEqual(one.receive_json()['ref'],'hb')             # still connected
+            mate.send_json({'topic':topic,'event':'heartbeat','payload':{},'ref':'m'})
+            self.assertEqual(mate.receive_json()['ref'],'m')             # and nothing was passed on
+
+    def test_a_failed_map_build_leaves_the_match_unchecked(self):
+        import io, contextlib
+        appmod.GODOT='false'                  # a "Godot" that prints nothing and fails
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+            words=self.app.state.store.load()['sessions'][sid]['words']
+            for i in (0,1):                    # no p_at: nothing to check against
+                self.assertEqual(self.rpc(0,'answer_monk',p_session=sid,p_monk=i,p_typed=words[i]['modern']).json(),'correct')
+        self.assertIs(self.app.state.maps[sid],False)
+        self.assertEqual(out.getvalue().count(f'map for {sid} failed'),1,out.getvalue())
+
+    def test_a_restart_mid_match_starts_the_watch_clock_again(self):
+        self.addCleanup(setattr, appmod, 'SPECTATOR_DELAY_S', appmod.SPECTATOR_DELAY_S)
+        appmod.SPECTATOR_DELAY_S = 5.0
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        self.rpc(3,'watch_match',p_code=s['code'])
+        reopened=create_app(self.path)
+        with TestClient(reopened) as client:
+            token=self.users[3]['access_token']
+            snap=client.post('/rest/v1/rpc/watch_snapshot',headers={'Authorization':'Bearer '+token},json={'p_session':sid}).json()
+            self.assertEqual((snap['session']['state'],snap['answers']),('lobby',[]))
+            self.assertGreater(snap['starts_in'],0)
+
+    def test_a_finished_match_forgets_its_map_and_positions(self):
+        s=self.room(); sid=s['id']; self.rpc(0,'start_room',p_session=sid)
+        self.fake_map(sid); self.app.state.where[(sid,'someone')]={'x':1}
+        db=self.app.state.store; state=db.load(); state['sessions'][sid]['deadline']=time.time()-1; db.save(state)
+        self.rpc(0,'my_summary')                                  # ends it
+        self.assertIn(sid,self.app.state.maps)                    # still kept while Results may read
+        state=db.load(); state['sessions'][sid]['ended_ts']=time.time()-601; db.save(state)
+        self.rpc(0,'my_summary')                                  # archives it
+        self.assertNotIn(sid,self.app.state.maps)
+        self.assertNotIn((sid,'someone'),self.app.state.where)
+
+    def test_walks_on_a_map_with_no_levels_and_repeated_packets(self):
+        mp=self.fake_map(); del mp['height']
+        s={'id':'S','teams':[{'id':'A'},{'id':'B'}],'members':{'u':{'team_id':'A'}},'deadline':1900,'duration_s':900}
+        where={}                              # 100 s in: taken from wherever they turn up
+        self.assertTrue(appmod.moved_ok(s,'u',mp,where,[[1.0,500,500],[1.1,515,500]],1100.0))
+        self.assertEqual(where[('S','u')]['level'],0)
+        self.assertTrue(appmod.moved_ok(s,'u',mp,where,[[1.0,500,500],[1.1,515,500]],1100.2))   # the same packet again
+        self.assertEqual((where[('S','u')]['x'],where[('S','u')]['t']),(515,1.1))
+        self.assertTrue(appmod.moved_ok(s,'u',mp,where,[[1.2,530,500]],1100.3))
+        self.assertFalse(appmod.moved_ok(s,'u',mp,where,[[1.3,900,500]],1100.4))                 # no leap, levels or not
+        # In a match's first seconds everyone is at their spawn: not across the map.
+        self.assertFalse(appmod.moved_ok(s,'u',mp,{},[[1.0,500,500]],1000.0))
+        self.assertTrue(appmod.moved_ok(s,'u',mp,{},[[1.0,20,16]],1000.0))
+
+    def test_install_download(self):
+        import tempfile as tf
+        with tf.TemporaryDirectory() as d, unittest.mock.patch.object(appmod,'ROOT',Path(d)):
+            with TestClient(create_app(Path(d)/'db.sqlite3')) as client:
+                self.assertIn('not built yet',client.get('/get').text)
+                self.assertEqual(client.get('/get/Lakbayin.apk').status_code,404)
+                (Path(d)/'build').mkdir(); (Path(d)/'build/Lakbayin-release.apk').write_bytes(b'PK'+b'\0'*2_000_000)
+                self.assertIn('2 MB',client.get('/get').text)
+                got=client.get('/get/Lakbayin.apk')
+                self.assertEqual((got.status_code,got.headers['content-type'],len(got.content)),(200,'application/vnd.android.package-archive',2_000_002))
+
     def test_private_channel_denies_outsider(self):
         from starlette.websockets import WebSocketDisconnect
         s=self.room();sid=s['id']
         with self.client.websocket_connect('/realtime/v1/websocket') as ws:
             ws.send_json({'topic':TOPIC+':snap:'+sid,'event':'phx_join','payload':{'access_token':self.users[3]['access_token']}})
             self.assertEqual(ws.receive()['type'],'websocket.close')
+
+
+class ManageTest(unittest.TestCase):
+    """server/manage.py, as the booth runs it: config, admin, backup."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.db = Path(self.tmp.name) / 'game.sqlite3'
+        app = create_app(self.db)
+        with TestClient(app) as client:
+            self.assertEqual(client.post('/auth/register', json={'username': 'Booth_1', 'password': 'testing-password'}).status_code, 200)
+
+    def manage(self, *args):
+        import sys
+        return subprocess.run([sys.executable, '-m', 'server.manage', '--db', str(self.db), *args],
+                              cwd=appmod.ROOT, capture_output=True, text=True, timeout=60)
+
+    def config(self):
+        from server.app import Store
+        store = Store(self.db); cfg = store.load()['config']; store.db.close()
+        return cfg
+
+    def test_config(self):
+        shown = self.manage('config')
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertEqual(json.loads(shown.stdout), self.config())
+        got = self.manage('config', '--team-size', '3', '--duration', '600', '--hints', 'on')
+        self.assertEqual(got.returncode, 0, got.stderr)
+        cfg = self.config()
+        self.assertEqual((cfg['team_size'], cfg['duration_s'], cfg['hints']), (3, 600, True))
+        self.assertEqual(json.loads(got.stdout), cfg)
+        self.assertEqual(self.manage('config', '--hints', 'off').returncode, 0)
+        self.assertEqual((self.config()['hints'], self.config()['team_size']), (False, 3))    # only what was named changes
+        for bad in (('--team-size', '0'), ('--team-size', '6'), ('--duration', '59'), ('--duration', '7201'), ('--hints', 'yes')):
+            r = self.manage('config', *bad)
+            self.assertEqual(r.returncode, 2, bad)
+        self.assertEqual((self.config()['team_size'], self.config()['duration_s']), (3, 600))   # untouched
+        for edge in ('60', '7200'):
+            self.assertEqual(self.manage('config', '--duration', edge).returncode, 0, edge)
+            self.assertEqual(self.config()['duration_s'], int(edge))
+
+    def test_admin(self):
+        from server.app import Store
+        admin = lambda: Store(self.db).db.execute("select admin from users where username='Booth_1'").fetchone()[0]
+        got = self.manage('admin', 'booth_1')               # any capitals
+        self.assertEqual((got.returncode, got.stdout.strip(), admin()), (0, 'booth_1 is an admin.', 1))
+        got = self.manage('admin', 'BOOTH_1', '--off')
+        self.assertEqual((got.returncode, admin()), (0, 0))
+        got = self.manage('admin', 'nobody')
+        self.assertEqual(got.returncode, 2)
+        self.assertIn('no account named nobody', got.stderr)
+
+    def test_backup(self):
+        import sqlite3, stat
+        dest = Path(self.tmp.name) / 'copies' / 'one.sqlite3'
+        got = self.manage('backup', str(dest))
+        self.assertEqual((got.returncode, got.stdout.strip()), (0, 'Backup saved.'), got.stderr)
+        self.assertEqual(stat.S_IMODE(dest.stat().st_mode), 0o600)     # it holds password hashes
+        copy = sqlite3.connect(dest)
+        self.assertEqual(copy.execute('select username from users').fetchall(), [('Booth_1',)])
+        self.assertIsNotNone(copy.execute('select data from checkpoint').fetchone())
+        copy.close()
+        again = self.manage('backup', str(dest))
+        self.assertEqual(again.returncode, 2)
+        self.assertIn('destination already exists', again.stderr)
 
 
 if __name__ == '__main__': unittest.main()

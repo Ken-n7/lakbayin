@@ -19,6 +19,7 @@ func _initialize() -> void:
 func _run() -> void:
 	_choice()
 	await _race()
+	await _by_name()
 	await _socket()
 	print("test_dial: all assertions passed")
 	quit()
@@ -61,6 +62,26 @@ func _race() -> void:
 	while _server.is_connection_available():
 		_server.take_connection().disconnect_from_host()
 	print("dial: race (%d ms)" % ms)
+
+
+## By name, the whole way: resolved, the routes this machine has, the race,
+## and the answer kept until forgotten. `_server` still listens on PORT.
+func _by_name() -> void:
+	assert(await Dial.address("") == "", "no host, nothing to dial")
+	assert(await Dial.address("127.0.0.1", PORT) == "", "an address is used as it is")
+	Dial.forget("localhost")
+	var pick: String = await Dial.address("localhost", PORT)
+	var seen: Dictionary = Dial.last.get("localhost", {})
+	assert((seen.get("addrs", []) as Array).has("127.0.0.1"), "localhost resolves: %s" % str(seen))
+	assert(pick in ["", "127.0.0.1"], "the address that answers: %s" % pick)
+	assert(str(seen.get("pick")) == pick)
+	assert(await Dial.address("localhost", PORT) == pick, "kept until forgotten")
+	Dial.forget("localhost")
+	assert(Dial._reachable(["::1", "127.0.0.1"]).has("127.0.0.1"), "IPv4 is always tried")
+	assert(Dial._reachable([]).is_empty())
+	while _server.is_connection_available():
+		_server.take_connection().disconnect_from_host()
+	print("dial: by name -> %s" % (pick if pick != "" else "by name"))
 
 
 func _socket() -> void:
